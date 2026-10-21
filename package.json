@@ -1,0 +1,33 @@
+{
+  "name": "trading-platform",
+  "version": "1.0.0",
+  "description": "Personal stock and crypto charting and trading platform",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cadenb777-jpg/trading-platform.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/cadenb777-jpg/trading-platform/issues"
+  },
+  "homepage": "https://github.com/cadenb777-jpg/trading-platform#readme",
+  "dependencies": {
+    "lightweight-charts": "^5.2.1"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "private": true,
+  "type": "module"
+}
