@@ -36,10 +36,11 @@ import httpx  # noqa: E402
 from schwab.auth import easy_client  # noqa: E402
 from schwab.streaming import StreamClient  # noqa: E402
 from websockets.asyncio.server import broadcast, serve  # noqa: E402
+import engine  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 4
+HELPER_VERSION = 5
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -139,9 +140,21 @@ class HelperError(Exception):
     pass
 
 
+def ask_sec_contact(config):
+    """The SEC asks tools that download its data (company financials, insider trades) for a contact email."""
+    if 'sec_contact' in config:
+        return config
+    print()
+    print('Company financials and insider trades come from the SEC, which asks for a contact email.')
+    print('It is sent only to sec.gov with those requests. Press Enter to skip (those features may not work).')
+    config['sec_contact'] = input('Email for SEC requests: ').strip()
+    CONFIG_PATH.write_text(json.dumps(config, indent=2))
+    return config
+
+
 def load_config(reset):
     if CONFIG_PATH.exists() and not reset:
-        return json.loads(CONFIG_PATH.read_text())
+        return ask_sec_contact(json.loads(CONFIG_PATH.read_text()))
 
     print()
     print('First-time setup: enter your Schwab app details.')
@@ -164,7 +177,7 @@ def load_config(reset):
     # New keys need a fresh login.
     TOKEN_PATH.unlink(missing_ok=True)
     print(f'Saved to {CONFIG_PATH}')
-    return config
+    return ask_sec_contact(config)
 
 
 # ---------- Price history ----------
@@ -534,8 +547,9 @@ def merge_fomc(events):
 class Market:
     """Shares one Schwab stream between every browser tab connected to the helper."""
 
-    def __init__(self, client, stream_factory=StreamClient, news=None):
+    def __init__(self, client, stream_factory=StreamClient, news=None, engine_ctx=None):
         self.client = client
+        self.engine = engine_ctx or engine.EngineContext(client)
         self.stream_factory = stream_factory
         self.news = news or NewsFetcher()
         self.browsers = set()
@@ -575,6 +589,8 @@ class Market:
                 elif kind == 'news':
                     symbols = [str(s).upper() for s in msg.get('symbols') or [] if isinstance(s, str)]
                     asyncio.create_task(self.reply(ws, msg.get('id'), self.news_reply(symbols, str(msg.get('query') or ''))))
+                elif kind in engine.HANDLERS:
+                    asyncio.create_task(self.reply(ws, msg.get('id'), self.engine_reply(kind, msg)))
                 elif kind == 'subscribe':
                     self.listeners.setdefault(symbol, set()).add(ws)
                     if symbol in self.quotes:
@@ -598,6 +614,13 @@ class Market:
         bars = await fetch_history(self.client, symbol, resolution, days)
         log.info('Sent %d %s bars for %s', len(bars), resolution, symbol)
         return {'type': 'history', 'bars': bars}
+
+    async def engine_reply(self, kind, msg):
+        try:
+            data = await engine.HANDLERS[kind](self.engine, msg)
+        except engine.EngineError as err:
+            raise HelperError(str(err)) from err
+        return {'type': 'engine', 'data': data}
 
     async def calendar_reply(self):
         events, failed = await self.news.calendar()
@@ -716,8 +739,8 @@ class Market:
                 await asyncio.sleep(delay)
 
 
-async def run(client):
-    market = Market(client)
+async def run(client, sec_contact=''):
+    market = Market(client, engine_ctx=engine.EngineContext(client, sec_contact))
     try:
         server = await serve(market.handle_browser, HOST, PORT, origins=ALLOWED_ORIGINS)
     except OSError:
@@ -756,7 +779,7 @@ def main():
         asyncio=True,
     )
     try:
-        asyncio.run(run(client))
+        asyncio.run(run(client, config.get('sec_contact', '')))
     except KeyboardInterrupt:
         print('\nHelper stopped.')
 

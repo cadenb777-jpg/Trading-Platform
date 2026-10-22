@@ -12,7 +12,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The helper version this site needs. Must match HELPER_VERSION in helper/schwab_helper.py. */
-const REQUIRED_HELPER_VERSION = 4;
+const REQUIRED_HELPER_VERSION = 5;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
@@ -89,6 +89,7 @@ type HelperMessage =
   | { type: 'news'; id: number; items: NewsItem[]; failed: string[] }
   | { type: 'calendar'; id: number; events: CalendarEvent[]; failed: string[] }
   | { type: 'summary'; id: number; points: string[]; description: string; url: string; words: number }
+  | { type: 'engine'; id: number; data: unknown }
   | { type: 'error'; id: number | null; message: string }
   | { type: 'trade'; symbol: string; price: number; size: number; time: number }
   | { type: 'quote'; symbol: string; last: number | null; prevClose: number | null };
@@ -156,12 +157,12 @@ class HelperConnection {
   }
 
   /** Sends a request and waits for the helper's reply with the same id. */
-  async request(msg: Record<string, unknown>, signal?: AbortSignal): Promise<HelperMessage> {
+  async request(msg: Record<string, unknown>, signal?: AbortSignal, timeoutMs = REQUEST_TIMEOUT_MS): Promise<HelperMessage> {
     await this.connect();
     if (this.outdated) throw new Error(HELPER_OUTDATED);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {
-      const timer = setTimeout(() => finish(new Error('The Schwab helper took too long to answer. Try again.')), REQUEST_TIMEOUT_MS);
+      const timer = setTimeout(() => finish(new Error('The Schwab helper took too long to answer. Try again.')), timeoutMs);
       const finish = (err: Error | null, reply?: HelperMessage) => {
         clearTimeout(timer);
         this.pending.delete(id);
@@ -225,6 +226,7 @@ class HelperConnection {
       case 'news':
       case 'calendar':
       case 'summary':
+      case 'engine':
         this.pending.get(msg.id)?.resolve(msg);
         break;
       case 'error':
@@ -282,6 +284,16 @@ export async function loadNews(symbols: string[] = [], query = ''): Promise<{ it
   const reply = await helper.request({ type: 'news', symbols, query });
   if (reply.type !== 'news') throw new Error('Unexpected reply from the helper');
   return { items: reply.items, failed: reply.failed };
+}
+
+/**
+ * Asks the helper's analysis engine for something (fundamentals, options flow, portfolio maths...).
+ * `type` is the engine handler name, e.g. 'sec.financials'.
+ */
+export async function engineRequest<T>(type: string, params: Record<string, unknown> = {}, timeoutMs = 60000): Promise<T> {
+  const reply = await helper.request({ ...params, type }, undefined, timeoutMs);
+  if (reply.type !== 'engine') throw new Error('Unexpected reply from the helper');
+  return reply.data as T;
 }
 
 export async function loadCalendar(): Promise<{ events: CalendarEvent[]; failed: string[] }> {
