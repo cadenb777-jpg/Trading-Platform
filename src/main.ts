@@ -4,17 +4,14 @@ import { PROVIDERS, getProvider } from './data';
 import type { ConnectionStatus, ProviderId } from './data/provider';
 import { defaultColors, defaultParams, getIndicator, indicatorLabel } from './indicators/library';
 import type { IndicatorDef, IndicatorInstance } from './indicators/types';
-import { loadAlpacaKeys, loadState, saveState, type AppState } from './storage';
+import { loadState, saveState, type AppState } from './storage';
 import { TIMEFRAMES, applyTrade, type Bar, type Timeframe } from './types';
 import { formatNumber, h } from './ui/dom';
 import { openIndicatorPicker, openIndicatorSettings } from './ui/indicatorDialogs';
-import { openSettings } from './ui/settingsDialog';
 
 const SYMBOL_SUGGESTIONS: Record<ProviderId, string[]> = {
   coinbase: ['BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD', 'DOGE-USD', 'ADA-USD', 'AVAX-USD', 'LINK-USD', 'LTC-USD'],
   schwab: ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'AMD', 'SPY', 'QQQ'],
-  alpaca: ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'AMD', 'SPY', 'QQQ'],
-  demo: ['DEMO', 'TEST'],
 };
 
 const newUid = () => Math.random().toString(36).slice(2, 10);
@@ -34,6 +31,7 @@ function defaultState(): AppState {
 
 const state: AppState = { ...defaultState(), ...loadState() };
 state.indicators = state.indicators.filter((i) => getIndicator(i.defId));
+if (!PROVIDERS.some((p) => p.id === state.provider)) state.provider = 'coinbase';
 const persist = () => saveState(state);
 
 const provider = () => getProvider(state.provider);
@@ -64,7 +62,6 @@ document.querySelector('#app')!.append(
     h('span', { class: 'spacer' }),
     priceEl,
     statusEl,
-    h('button', { class: 'icon-btn', 'aria-label': 'Settings', title: 'Settings', onclick: () => openSettings(reload) }, '⚙'),
   ),
   h('main', { class: 'chart-wrap' }, chartEl, legendEl, messageEl),
 );
@@ -256,18 +253,6 @@ async function reload() {
   const tf = state.timeframe;
   document.title = `${sym} · Trading Platform`;
 
-  if (p.id === 'alpaca' && !loadAlpacaKeys()) {
-    bars = [];
-    chart.setBars(bars);
-    renderLegend();
-    setStatus('error', 'Alpaca keys missing');
-    showMessage('Stock data needs free Alpaca API keys. It takes about 2 minutes to set up.', [
-      h('button', { class: 'btn primary', onclick: () => openSettings(reload) }, 'Add Alpaca keys'),
-      h('button', { class: 'btn', onclick: () => switchProvider('demo') }, 'Use demo data'),
-    ]);
-    return;
-  }
-
   try {
     bars = await p.loadHistory(sym, tf, controller.signal);
   } catch (err) {
@@ -278,7 +263,6 @@ async function reload() {
     setStatus('error', (err as Error).message);
     showMessage(`Couldn't load ${sym}: ${(err as Error).message}`, [
       h('button', { class: 'btn primary', onclick: reload }, 'Try again'),
-      h('button', { class: 'btn', onclick: () => switchProvider('demo') }, 'Use demo data'),
     ]);
     return;
   }
@@ -302,12 +286,6 @@ async function reload() {
     },
     bars[bars.length - 1]?.close ?? 100,
   );
-}
-
-function switchProvider(id: ProviderId) {
-  state.provider = id;
-  persist();
-  reload();
 }
 
 reload();

@@ -1,6 +1,6 @@
 import type { Bar, Timeframe } from '../types';
 
-export type ProviderId = 'coinbase' | 'schwab' | 'alpaca' | 'demo';
+export type ProviderId = 'coinbase' | 'schwab';
 
 export type ConnectionStatus = 'connecting' | 'live' | 'error' | 'closed';
 

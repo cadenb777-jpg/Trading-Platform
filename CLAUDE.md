@@ -7,7 +7,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 - Vite + TypeScript, no UI framework (plain DOM via the `h()` helper in `src/ui/dom.ts`).
 - Charts: `lightweight-charts` v5 (panes API: `chart.addSeries(def, opts, paneIndex)`, `pane.addSeries`).
 - Static site, deployed to GitHub Pages by `.github/workflows/deploy.yml` on push to `main`.
-- No server backend. Browser-side keys (Alpaca) live in localStorage (`src/storage.ts`), never in the repo.
+- No server backend. The chart layout lives in localStorage (`src/storage.ts`). Market data: Coinbase (crypto,
+  public, no key) and Schwab (stocks, via the helper). Secrets never go in the repo or the browser.
 - `helper/schwab_helper.py` runs on the owner's computer (schwab-py). It serves history and live
   trades to `src/data/schwab.ts` over `ws://127.0.0.1:8765` (JSON messages: history, subscribe,
   unsubscribe, status, trade, error). Its keys and token live in `~/.trading-platform/`.

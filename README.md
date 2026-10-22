@@ -7,8 +7,6 @@ A personal, customizable charting and trading platform, like your own TradingVie
 - Real-time crypto prices from Coinbase (free, no account)
 - Real-time US stock prices from **every exchange** via your Schwab account and the
   [Schwab helper](helper/README.md) (free)
-- Real-time US stock prices from Alpaca (IEX exchange only, free account needed)
-- Demo mode with simulated prices (works offline)
 - 14 built-in indicators: Volume, SMA, EMA, WMA, VWAP, Bollinger Bands, Donchian Channels,
   RSI, MACD, Stochastic, CCI, Williams %R, ATR, OBV
 - Add, configure, recolour, hide and remove indicators; your layout is remembered
@@ -31,15 +29,6 @@ A personal, customizable charting and trading platform, like your own TradingVie
 
 Follow the [Schwab helper setup guide](helper/README.md). The helper runs on your computer
 and feeds live data to the charts.
-
-### Stock data from Alpaca (free, IEX only)
-
-1. Sign up at [alpaca.markets](https://alpaca.markets) and open your **Paper** account.
-2. Click **Generate New Keys** on the dashboard.
-3. In the app, click ⚙ (top right) and paste the Key and Secret.
-4. Pick **Stocks (Alpaca)** in the market dropdown.
-
-Your keys are stored only in your browser. Never put them in this code or share them.
 
 ### Adding indicators
 
@@ -65,9 +54,9 @@ src/
   chart/ChartView.ts      Draws candles and indicators (TradingView Lightweight Charts)
   indicators/library.ts   The indicator library — add new indicators here
   indicators/math.ts      Shared maths (SMA, EMA, RSI, …)
-  data/                   Market data sources (Coinbase, Schwab, Alpaca, Demo)
-  ui/                     Dialogs (indicator picker, indicator settings, app settings)
-  storage.ts              Saves layout and keys in the browser
+  data/                   Market data sources (Coinbase, Schwab)
+  ui/                     Dialogs (indicator picker, indicator settings)
+  storage.ts              Saves your chart layout in the browser
 helper/
   schwab_helper.py        Runs on your computer; streams Schwab data to the charts
 ```
