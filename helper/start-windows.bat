@@ -1,8 +1,9 @@
 @echo off
 rem Double-click this file to start the Schwab helper on Windows.
 cd /d "%~dp0"
+rem Use the "py" launcher if it works, otherwise "python".
 set "PY=python"
-where py >nul 2>nul && set "PY=py -3"
+py -3 -c "import sys" >nul 2>nul && set "PY=py -3"
 if not exist .venv (
   echo Setting up for the first time. This takes a minute...
   %PY% -m venv .venv || goto nopython
