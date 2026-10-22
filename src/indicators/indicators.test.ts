@@ -50,7 +50,7 @@ describe('math', () => {
 function makeBars(n: number): Bar[] {
   return Array.from({ length: n }, (_, i) => {
     const close = 100 + Math.sin(i / 5) * 10 + i * 0.1;
-    return { time: i * 60, open: close - 1, high: close + 2, low: close - 2, close, volume: 1000 + i };
+    return { time: i * 3600, open: close - 1, high: close + 2, low: close - 2, close, volume: 1000 + i };
   });
 }
 
@@ -58,12 +58,14 @@ describe('indicator library', () => {
   const bars = makeBars(300);
 
   for (const def of INDICATORS) {
-    it(`${def.name} returns one finite series per plot`, () => {
+    it(`${def.name} returns a full-length series for every plot`, () => {
       const out = def.compute(bars, defaultParams(def));
       for (const plot of def.plots) {
         expect(out[plot.key]).toHaveLength(bars.length);
-        expect(Number.isFinite(out[plot.key].at(-1))).toBe(true);
+        // Some plots are intentionally blank on some bars (e.g. SuperTrend's up/down lines).
+        expect(out[plot.key].some(Number.isFinite)).toBe(true);
       }
+      expect(def.plots.some((plot) => Number.isFinite(out[plot.key].at(-1)))).toBe(true);
     });
   }
 

@@ -5,17 +5,20 @@ A personal, customizable charting and trading platform, like your own TradingVie
 - **Home page:** greeting, live S&P 500 / Dow / Nasdaq cards, market news (Google News and
   CNBC) in sections (Top stories, Economy, Markets, Companies, Crypto, My watchlist) with
   market-impact ratings, upcoming economic events, and your watchlist
-- **Economic calendar:** Fed decisions, CPI, jobs reports and more, with impact, forecast,
-  previous and actual, plus a plain-English note on what each event means
+- **Smart summaries:** click any headline for its key takeaways inside the app
+- **Economic calendar:** list and month views; Fed decisions, CPI, jobs reports and more, with
+  impact, forecast, previous and actual, a plain-English note and related news for each event
+- **Scripts:** write your own indicators in a Pine Script v5-style language, with a built-in
+  reference and examples; they appear in the Indicators menu
 - Real-time US stock prices from **every exchange** via your Schwab account and the
   [Schwab helper](helper/README.md) (free); real-time crypto from Coinbase (free)
 - 19 timeframes from 5 seconds to 1 month; star your favourites
 - Chart types: candles, hollow candles, Heikin Ashi, OHLC bars, line, area
 - Drawing tools: trend line, ray, horizontal and vertical lines, rectangle, Fibonacci
   retracement, and long/short positions with take profit, stop loss and risk/reward
-- 14 indicators (Volume, SMA, EMA, WMA, VWAP, Bollinger Bands, Donchian Channels, RSI, MACD,
-  Stochastic, CCI, Williams %R, ATR, OBV), each with its own settings, timeframe, colours,
-  line thickness and placement (on the chart or in a pane below)
+- 41 indicators, including Ichimoku, SuperTrend, Parabolic SAR, Pivot Points, ADX/DMI, Keltner,
+  Hull MA, Stochastic RSI, MFI and more, each with its own settings, timeframe, colours, line
+  thickness and placement (on the chart or in a pane below)
 - Watchlist with live prices; your layout and drawings are remembered
 
 ## Roadmap
@@ -24,7 +27,8 @@ A personal, customizable charting and trading platform, like your own TradingVie
 |---|---|---|
 | 1 | Charts, live data, indicator library | ✅ |
 | 2 | Home page, news, watchlist, drawing tools, all timeframes, chart types | ✅ |
-| 3 | Bigger indicator library and custom indicators; multi-chart layouts | |
+| 3 | Bigger indicator library and custom indicators (Scripts) | ✅ |
+| 3a | Multi-chart layouts | |
 | 3b | Smart Money panel: COT, dark pool volume, short volume, insider and fund holdings | |
 | 4 | Trading through Webull: account, positions and orders, with confirmations | |
 | 5 | News feed and AI agents for strategies and backtesting | |
@@ -68,9 +72,12 @@ src/
   state.ts                Everything remembered between visits
   pages/homePage.ts       Greeting, index cards, news, watchlist
   pages/chartPage.ts      Chart toolbar, drawing bar, legend, live updates
+  pages/calendarPage.ts   Economic calendar (list and month views)
+  pages/scriptsPage.ts    Script editor for your own indicators
+  script/interpreter.ts   The Pine-style script language
   chart/ChartView.ts      Draws price and indicators (TradingView Lightweight Charts)
   chart/drawings.ts       Drawing tools
-  indicators/library.ts   The indicator library — add new indicators here
+  indicators/library.ts   Core indicators; indicators/more.ts has the extended library
   indicators/math.ts      Shared maths (SMA, EMA, RSI, …)
   data/                   Market data (Coinbase, Schwab), live quotes, news
   ui/                     Watchlist, timeframe picker, dialogs, icons

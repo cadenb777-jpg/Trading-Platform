@@ -6,6 +6,7 @@ import type { ProviderId } from './data/provider';
 import type { MarketRef } from './data/quotes';
 import { defaultColors, defaultParams, getIndicator } from './indicators/library';
 import type { IndicatorDef, IndicatorInstance } from './indicators/types';
+import { registerAllScripts } from './script/store';
 import { loadJson, saveJson } from './storage';
 import { DEFAULT_FAVORITE_TIMEFRAMES, TIMEFRAMES, type Timeframe } from './types';
 
@@ -62,6 +63,8 @@ function load(): AppState {
   return state;
 }
 
+// Your own scripts must be registered before the saved layout is checked, or their indicators would be dropped.
+registerAllScripts();
 export const state = load();
 
 type Listener = () => void;

@@ -1,6 +1,6 @@
 import type { Bar, Timeframe } from '../types';
 
-export type IndicatorCategory = 'Moving Averages' | 'Bands & Channels' | 'Momentum' | 'Volatility' | 'Volume';
+export type IndicatorCategory = 'Moving Averages' | 'Bands & Channels' | 'Trend' | 'Momentum' | 'Volatility' | 'Volume' | 'My scripts';
 
 export interface NumberInput {
   key: string;
@@ -30,8 +30,10 @@ export interface PlotDef {
   type: 'line' | 'histogram';
   color: string;
   lineWidth?: 1 | 2 | 3 | 4;
-  /** Histogram only: colour each bar by the sign of its value or by the candle's direction. */
-  colorBy?: 'sign' | 'candle';
+  /** Lines only: draw as dots instead of a connected line (e.g. Parabolic SAR). */
+  style?: 'line' | 'dots';
+  /** Histogram only: colour each bar by the sign of its value, the candle's direction, or whether it rose. */
+  colorBy?: 'sign' | 'candle' | 'change';
   /** Second colour used for negative values / down candles when `colorBy` is set. */
   negativeColor?: string;
 }

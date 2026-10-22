@@ -1,4 +1,4 @@
-import { INDICATORS, defaultColors, defaultParams } from '../indicators/library';
+import { allIndicators, defaultColors, defaultParams } from '../indicators/library';
 import { PRICE_SOURCES, type IndicatorDef, type IndicatorInstance } from '../indicators/types';
 import { TIMEFRAME_DEFS, TIMEFRAME_SECONDS, type Timeframe } from '../types';
 import { h, openModal, toast } from './dom';
@@ -10,7 +10,7 @@ export function openIndicatorPicker(onAdd: (def: IndicatorDef) => void) {
 
   const render = () => {
     const q = search.value.trim().toLowerCase();
-    const matches = INDICATORS.filter((d) => `${d.name} ${d.shortName} ${d.category}`.toLowerCase().includes(q));
+    const matches = allIndicators().filter((d) => `${d.name} ${d.shortName} ${d.category}`.toLowerCase().includes(q));
     list.replaceChildren();
     const categories = [...new Set(matches.map((d) => d.category))];
     for (const category of categories) {
@@ -37,7 +37,22 @@ export function openIndicatorPicker(onAdd: (def: IndicatorDef) => void) {
 
   search.addEventListener('input', render);
   render();
-  openModal('Indicators', h('div', {}, search, list), { wide: true });
+  const close = openModal(
+    'Indicators',
+    h(
+      'div',
+      {},
+      search,
+      list,
+      h(
+        'div',
+        { class: 'picker-footer' },
+        h('span', { class: 'muted small' }, 'Want something that isn\'t here?'),
+        h('button', { class: 'btn', onclick: () => ((location.hash = '#scripts'), close()) }, '✎ Write your own indicator'),
+      ),
+    ),
+    { wide: true },
+  );
 }
 
 /** Settings for one indicator on the chart. Changes apply immediately. */

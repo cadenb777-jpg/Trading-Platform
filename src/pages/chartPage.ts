@@ -416,5 +416,31 @@ export function createChartPage() {
     if (started) reload();
   }
 
-  return { el, start, open };
+  /** Adds an indicator by id, e.g. a script from the Scripts page. */
+  function addIndicatorById(defId: string) {
+    const def = getIndicator(defId);
+    if (!def) return;
+    if (started) addIndicator(def);
+    else {
+      state.indicators.push(newIndicatorInstance(def));
+      persist();
+    }
+  }
+
+  /** Redraws indicators of one type after its script was edited or deleted. */
+  function refreshIndicatorsFor(defId: string) {
+    const def = getIndicator(defId);
+    if (!def) state.indicators = state.indicators.filter((i) => i.defId !== defId);
+    persist();
+    if (!started) return;
+    for (const instance of state.indicators.filter((i) => i.defId === defId)) {
+      chart.removeIndicator(instance.uid);
+      chart.addIndicator(instance);
+    }
+    // Indicators removed because their script was deleted.
+    chart.removeMissingIndicators(new Set(state.indicators.map((i) => i.uid)));
+    renderLegend();
+  }
+
+  return { el, start, open, addIndicatorById, refreshIndicatorsFor };
 }

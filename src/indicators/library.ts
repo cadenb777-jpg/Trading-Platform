@@ -4,6 +4,7 @@
  */
 import type { Bar } from '../types';
 import { ema, highest, lowest, rma, rsi, sma, stdev, trueRange, wma } from './math';
+import { MORE_INDICATORS } from './more';
 import type { IndicatorDef, IndicatorInput, IndicatorInstance, IndicatorParams, PriceSource } from './types';
 
 function source(bars: Bar[], src: PriceSource): number[] {
@@ -42,9 +43,15 @@ export const INDICATORS: IndicatorDef[] = [
     category: 'Volume',
     description: 'Traded volume per bar, coloured by candle direction.',
     placement: 'volume',
-    inputs: [],
-    plots: [{ key: 'volume', title: 'Volume', type: 'histogram', color: UP + '80', colorBy: 'candle', negativeColor: DOWN + '80' }],
-    compute: (bars) => ({ volume: bars.map((b) => b.volume) }),
+    inputs: [{ key: 'maLength', label: 'Volume MA length', type: 'number', default: 20, min: 1, max: 500, step: 1 }],
+    plots: [
+      { key: 'volume', title: 'Volume', type: 'histogram', color: UP + '80', colorBy: 'candle', negativeColor: DOWN + '80' },
+      { key: 'ma', title: 'Volume MA', type: 'line', color: '#ff9800', lineWidth: 1 },
+    ],
+    compute: (bars, p) => {
+      const volume = bars.map((b) => b.volume);
+      return { volume, ma: sma(volume, Number(p.maLength ?? 20)) };
+    },
   },
   {
     id: 'sma',
@@ -297,8 +304,25 @@ export const INDICATORS: IndicatorDef[] = [
   },
 ];
 
+INDICATORS.push(...MORE_INDICATORS);
+
+/** Indicators the user wrote in the script editor, registered at runtime. */
+const custom = new Map<string, IndicatorDef>();
+
+export function registerCustomIndicator(def: IndicatorDef) {
+  custom.set(def.id, def);
+}
+
+export function unregisterCustomIndicator(id: string) {
+  custom.delete(id);
+}
+
+export function allIndicators(): IndicatorDef[] {
+  return [...INDICATORS, ...custom.values()];
+}
+
 export function getIndicator(id: string): IndicatorDef | undefined {
-  return INDICATORS.find((d) => d.id === id);
+  return INDICATORS.find((d) => d.id === id) ?? custom.get(id);
 }
 
 export function defaultParams(def: IndicatorDef): IndicatorParams {

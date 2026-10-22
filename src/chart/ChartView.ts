@@ -21,7 +21,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts';
-import { getIndicator } from '../indicators/library';
+import { defaultParams, getIndicator } from '../indicators/library';
 import type { IndicatorDef, IndicatorInstance, PlotDef } from '../indicators/types';
 import { TIMEFRAME_SECONDS, bucketStart, regroupBars, type Bar, type Timeframe } from '../types';
 
@@ -272,7 +272,8 @@ export class ChartView {
       const first = Object.values(r.series)[0];
       const pane = first?.getPane();
       const definition = plot.type === 'histogram' ? HistogramSeries : LineSeries;
-      const lineOptions = plot.type === 'line' ? { lineWidth: this.lineWidth(instance, plot), crosshairMarkerRadius: 3 } : {};
+      const dots = plot.style === 'dots' ? { lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2 } : {};
+      const lineOptions = plot.type === 'line' ? { lineWidth: this.lineWidth(instance, plot), crosshairMarkerRadius: 3, ...dots } : {};
       r.series[plot.key] = pane
         ? (pane.addSeries(definition as typeof LineSeries, { ...options, ...lineOptions }) as PlotSeries)
         : (this.chart.addSeries(definition as typeof LineSeries, { ...options, ...lineOptions }, paneIndex) as PlotSeries);
@@ -321,6 +322,11 @@ export class ChartView {
 
   isSeparatePane(uid: string): boolean {
     return this.indicators.get(uid)?.placement === 'separate';
+  }
+
+  /** Removes any indicator on the chart whose id isn't in `keep`. */
+  removeMissingIndicators(keep: Set<string>) {
+    for (const uid of [...this.indicators.keys()]) if (!keep.has(uid)) this.removeIndicator(uid);
   }
 
   removeIndicator(uid: string) {
@@ -419,10 +425,12 @@ export class ChartView {
    */
   private compute(r: RenderedIndicator): Record<string, number[]> {
     if (!this.bars.length) return {};
+    // Any setting missing from a saved layout (e.g. a script gained a new input) uses its default.
+    const params = { ...defaultParams(r.def), ...r.instance.params };
     const tf = r.instance.timeframe;
-    if (!tf || TIMEFRAME_SECONDS[tf] <= TIMEFRAME_SECONDS[this.timeframe]) return r.def.compute(this.bars, r.instance.params);
+    if (!tf || TIMEFRAME_SECONDS[tf] <= TIMEFRAME_SECONDS[this.timeframe]) return r.def.compute(this.bars, params);
     const higher = regroupBars(this.bars, tf);
-    const values = r.def.compute(higher, r.instance.params);
+    const values = r.def.compute(higher, params);
     const out: Record<string, number[]> = Object.fromEntries(Object.keys(values).map((k) => [k, []]));
     let j = 0;
     for (const bar of this.bars) {
@@ -446,7 +454,9 @@ export class ChartView {
     const t = time(bar.time) as Time;
     if (value === undefined || !Number.isFinite(value)) return { time: t };
     if (plot.type === 'histogram' && plot.colorBy) {
-      const positive = plot.colorBy === 'sign' ? value >= 0 : bar.close >= bar.open;
+      const prev = r.values[plot.key]?.[i - 1];
+      const positive =
+        plot.colorBy === 'sign' ? value >= 0 : plot.colorBy === 'change' ? !(prev !== undefined && value < prev) : bar.close >= bar.open;
       const color = positive ? (r.instance.colors[plot.key] ?? plot.color) : (plot.negativeColor ?? plot.color);
       return { time: t, value, color };
     }
