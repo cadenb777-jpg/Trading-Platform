@@ -54,6 +54,7 @@ export function createChartPage() {
   const chartWrap = h('main', { class: 'chart-wrap' }, chartEl, legendEl, messageEl);
   const drawBar = h('div', { class: 'draw-bar', role: 'toolbar', 'aria-label': 'Drawing tools' });
   const watchToggle = h('button', { class: 'icon-btn', title: 'Show or hide watchlist', 'aria-label': 'Toggle watchlist' }, icon('list', 22));
+  const fitBtn = h('button', { class: 'btn fit-btn', title: 'Fit the chart to the candles (F)', 'aria-label': 'Fit chart', onclick: () => chart?.fit() }, icon('fit', 18), ' Fit');
   const side = h('aside', { class: 'watch-side' });
 
   const tfPicker = createTimeframePicker({
@@ -78,6 +79,7 @@ export function createChartPage() {
       tfPicker.el,
       typeSelect,
       h('button', { class: 'btn', onclick: () => openIndicatorPicker(addIndicator) }, h('span', { class: 'fx' }, 'ƒx'), ' Indicators'),
+      fitBtn,
       h('span', { class: 'spacer' }),
       priceEl,
       statusEl,
@@ -195,6 +197,7 @@ export function createChartPage() {
   document.addEventListener('keydown', (e) => {
     if (!started || el.hidden || (e.target as HTMLElement).closest('input, select, textarea, .modal')) return;
     if (drawings.handleKey(e)) e.preventDefault();
+    else if (e.key === 'f' && !e.ctrlKey && !e.metaKey) chart.fit();
   });
 
   // ---------- Indicators ----------

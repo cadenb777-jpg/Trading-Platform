@@ -22,6 +22,7 @@ const PATHS = {
   short: '<path d="M4 4h16"/><rect x="5" y="12" width="14" height="7" rx="1"/><rect x="5" y="8" width="14" height="4" rx="1" stroke-dasharray="2 2"/>',
   calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M8 14h2M14 14h2M8 17h2"/>',
   code: '<path d="M8 7l-5 5 5 5M16 7l5 5-5 5M13.5 4l-3 16"/>',
+  fit: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><path d="M8 14l3-3 2 2 3-4"/>',
   refresh: '<path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 4v7h-7"/>',
 } as const;
 

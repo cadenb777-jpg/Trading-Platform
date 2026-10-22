@@ -131,8 +131,21 @@ export class ChartView {
     this.updateHeikin(0);
     this.main.setData(this.bars.map((_, i) => this.mainPoint(i)) as never);
     for (const r of this.indicators.values()) this.renderAll(r);
-    this.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, bars.length - 150), to: bars.length + 8 });
+    this.fit();
     this.refreshPrimitives();
+  }
+
+  /**
+   * Shows the latest ~150 bars and turns auto-scale back on for every price axis, so the y-axis
+   * (and its price steps) fit the candles. Dragging the price axis turns auto-scale off, so this
+   * runs on every new symbol or timeframe and from the toolbar's Fit button.
+   */
+  fit() {
+    const n = this.bars.length;
+    this.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 150), to: n + 8 });
+    for (const pane of this.chart.panes()) {
+      for (const series of pane.getSeries()) series.priceScale().applyOptions({ autoScale: true });
+    }
   }
 
   /**

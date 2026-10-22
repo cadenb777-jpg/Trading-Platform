@@ -183,6 +183,12 @@ a {
   background: var(--panel-2);
 }
 
+.fit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .fx {
   font-style: italic;
   font-weight: 700;
