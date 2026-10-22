@@ -96,7 +96,8 @@ export class ChartView {
       },
       grid: { vertLines: { color: THEME.grid }, horzLines: { color: THEME.grid } },
       crosshair: { mode: CrosshairMode.Normal },
-      rightPriceScale: { borderColor: THEME.border },
+      // Denser price labels (smaller steps between them) than the library's default.
+      rightPriceScale: { borderColor: THEME.border, tickMarkDensity: 1.6 },
       timeScale: { borderColor: THEME.border, timeVisible: true, secondsVisible: false, rightOffset: 8 },
     });
     this.main = this.createMainSeries('candles');
@@ -380,6 +381,8 @@ export class ChartView {
   }
 
   private applyPriceFormat() {
+    // Leave the bottom fifth for volume bars so they don't cover the candles.
+    this.main.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 } });
     const last = this.bars[this.bars.length - 1];
     const precision = last ? pricePrecision(last.close) : 2;
     this.main.applyOptions({ priceFormat: { type: 'price', precision, minMove: 10 ** -precision } });

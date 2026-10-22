@@ -3,6 +3,7 @@ import { THEME } from '../chart/ChartView';
 import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
 import { HELPER_OUTDATED, helper, loadNews, schwab, type NewsItem, type NewsSection } from '../data/schwab';
 import { createUpcomingPanel } from './calendarPage';
+import { openNewsSummary } from '../ui/newsSummary';
 import { persist, state } from '../state';
 import type { Bar } from '../types';
 import { formatPrice, h, timeAgo } from '../ui/dom';
@@ -32,13 +33,18 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
   const price = h('div', { class: 'idx-price' }, '—');
   const change = h('div', { class: 'idx-change' }, '');
   const chartBox = h('div', { class: 'idx-chart' });
+  const rangeHigh = h('span', {}, '');
+  const rangeLow = h('span', {}, '');
+  const rangePrev = h('span', {}, '');
+  const axis = h('div', { class: 'idx-axis' }, rangeHigh, rangeLow);
   const card = h(
     'button',
     { class: 'idx-card', onclick: onOpen, title: `Open ${index.name} chart` },
     h('div', { class: 'idx-head' }, h('span', { class: 'idx-name' }, index.name), h('span', { class: 'idx-sym' }, index.symbol.replace('$', ''))),
     price,
     change,
-    chartBox,
+    h('div', { class: 'idx-chart-wrap' }, chartBox, axis),
+    h('div', { class: 'idx-range' }, rangePrev),
   );
 
   let closes: number[] = [];
@@ -51,6 +57,11 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
     const up = (delta?.change ?? 0) >= 0;
     const values = quote?.last != null && closes.length ? [...closes.slice(0, -1), quote.last] : closes;
     chartBox.replaceChildren(sparkline(values, quote?.prevClose ?? null, up ? THEME.up : THEME.down));
+    if (values.length) {
+      rangeHigh.textContent = formatPrice(Math.max(...values));
+      rangeLow.textContent = formatPrice(Math.min(...values));
+    }
+    rangePrev.textContent = quote?.prevClose ? `Prev close ${formatPrice(quote.prevClose)} · Day range ${values.length ? `${formatPrice(Math.min(...values))} – ${formatPrice(Math.max(...values))}` : '—'}` : '';
   };
 
   const onQuote = (q: Quote) => {
@@ -132,8 +143,8 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
 
   function newsItem(item: NewsItem) {
     return h(
-      'a',
-      { class: `news-item impact-${item.impact}`, href: item.link, target: '_blank', rel: 'noopener noreferrer' },
+      'button',
+      { class: `news-item impact-${item.impact}`, onclick: () => openNewsSummary(item) },
       h(
         'div',
         { class: 'news-meta' },

@@ -17,11 +17,13 @@ import datetime as dt
 import email.utils
 import getpass
 import html
+import html.parser
 import json
 import logging
 import re
 import sys
 import time
+import urllib.parse
 import warnings
 import xml.etree.ElementTree as ET
 from zoneinfo import ZoneInfo
@@ -37,7 +39,7 @@ from websockets.asyncio.server import broadcast, serve  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 3
+HELPER_VERSION = 4
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -101,7 +103,7 @@ NEWS_TOPICS = [
     ('Fed', 6, 'economy', r'\b(fed|fomc|powell|federal reserve|rate cuts?|rate hikes?|interest rates?)\b'),
     ('Inflation', 5, 'economy', r'\b(inflation|cpi|pce|consumer prices|producer prices|ppi)\b'),
     ('Jobs', 4, 'economy', r'\b(jobs report|payrolls|unemployment|jobless claims|labor market)\b'),
-    ('Growth', 4, 'economy', r'\b(gdp|recession|economic growth|retail sales|consumer spending|pmi|ism)\b'),
+    ('Growth', 4, 'economy', r'\b(gdp|recession|economic growth|retail sales|consumer spending|pmi|ism|housing|home sales|home ?builders?)\b'),
     ('Trade', 4, 'economy', r'\b(tariffs?|trade war|trade deal|sanctions)\b'),
     ('Bonds', 3, 'economy', r'\b(treasur(y|ies)|bond yields?|10-year|yield curve)\b'),
     ('Earnings', 3, 'companies', r'\b(earnings|quarterly results|guidance|revenue|profit|beats?|miss(es)?|deliveries|delivery)\b'),
@@ -109,6 +111,7 @@ NEWS_TOPICS = [
     ('Deals', 2, 'companies', r'\b(mergers?|acquisitions?|acquires?|buyout|ipo|bankruptcy)\b'),
     ('Market move', 3, 'markets', r'\b(s&p 500|dow|nasdaq|sell-?off|rally|plunges?|surges?|record high|correction|volatility|vix|soars?|tumbles?|slides?|sinks?|jumps?)\b'),
     ('Oil', 3, 'markets', r'\b(oil|opec|crude|brent)\b'),
+    ('Metals', 2, 'markets', r'\b(gold|silver|copper)\b'),
     ('Crypto', 3, 'crypto', r'\b(bitcoin|crypto|ethereum|stablecoins?)\b'),
     ('Geopolitics', 2, None, r'\b(war|missiles?|invasion|election|shutdown|debt ceiling)\b'),
 ]
@@ -116,10 +119,8 @@ NEWS_TOPIC_PATTERNS = [(label, weight, section, re.compile(rx, re.I)) for label,
 STOPWORDS = set('the and for with from that this will after over into amid says said than more what about their have been stocks stock market'.split())
 
 # Economic calendar: Forex Factory's free weekly feeds (forecast, previous, and actual when published).
-CALENDAR_FEEDS = [
-    'https://nfs.faireconomy.media/ff_calendar_thisweek.json',
-    'https://nfs.faireconomy.media/ff_calendar_nextweek.json',
-]
+# Forex Factory only publishes the current week as a free feed.
+CALENDAR_FEEDS = ['https://nfs.faireconomy.media/ff_calendar_thisweek.json']
 CALENDAR_CACHE_SECONDS = 3600
 # Fed rate decision days (2:00 PM ET). Check https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
 FOMC_DECISIONS = ['2026-01-28', '2026-03-18', '2026-04-29', '2026-06-17', '2026-07-29', '2026-09-16', '2026-10-28', '2026-12-09']
@@ -273,16 +274,18 @@ def rank_news(items, now=None):
     for item in sorted(items, key=lambda i: i['published'], reverse=True):
         words = _title_words(item['title'])
         for cluster in clusters:
-            overlap = len(words & cluster[1]) / max(1, len(words | cluster[1]))
-            if overlap >= 0.4:
+            # Share of the shorter headline's key words that also appear in the other one.
+            overlap = len(words & cluster[1]) / max(1, min(len(words), len(cluster[1])))
+            if overlap >= 0.5 and len(words & cluster[1]) >= 2:
                 if item['source'] not in cluster[2] and item['source'] != cluster[0]['source']:
                     cluster[2].append(item['source'])
+                    cluster[3].append(item['link'])
                 break
         else:
-            clusters.append([item, words, []])
+            clusters.append([item, words, [], []])
 
     ranked = []
-    for lead, _words, others in clusters:
+    for lead, _words, others, other_links in clusters:
         text_title = lead['title']
         score, tags, best = 0.0, [], (0, None)
         for label, weight, section, pattern in NEWS_TOPIC_PATTERNS:
@@ -304,10 +307,85 @@ def rank_news(items, now=None):
             'section': section,
             'tags': tags[:3],
             'alsoReportedBy': others[:4],
+            'otherLinks': other_links[:4],
             'score': round(score, 1),
-            'impact': 'high' if score >= 8 else 'medium' if score >= 2.5 else 'low',
         })
+    # Impact is relative to today's news: the strongest stories are "high" even on quiet days.
+    scores = sorted((r['score'] for r in ranked), reverse=True)
+    top_cut = scores[max(0, len(scores) // 6 - 1)] if scores else 0
+    for r in ranked:
+        high = r['score'] >= 7 or (r['score'] >= 4.5 and r['score'] >= top_cut)
+        r['impact'] = 'high' if high else 'medium' if r['score'] >= 2.5 else 'low'
     return ranked
+
+
+class _ArticleParser(html.parser.HTMLParser):
+    """Collects paragraph text from an article page, skipping menus, scripts and footers."""
+    SKIP = {'script', 'style', 'nav', 'footer', 'aside', 'header', 'form', 'noscript', 'figcaption', 'button'}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.paragraphs, self.description = [], ''
+        self._skip, self._in_p, self._buf = 0, False, []
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == 'meta' and (a.get('property') == 'og:description' or a.get('name') == 'description') and not self.description:
+            self.description = _clean(a.get('content', ''), 400)
+        if tag in self.SKIP:
+            self._skip += 1
+        elif tag == 'p' and not self._skip:
+            self._in_p, self._buf = True, []
+
+    def handle_endtag(self, tag):
+        if tag in self.SKIP and self._skip:
+            self._skip -= 1
+        elif tag == 'p' and self._in_p:
+            self._in_p = False
+            text = _clean(''.join(self._buf), 2000)
+            if len(text) > 60:
+                self.paragraphs.append(text)
+
+    def handle_data(self, data):
+        if self._in_p and not self._skip:
+            self._buf.append(data)
+
+
+def parse_article(page_html):
+    parser = _ArticleParser()
+    try:
+        parser.feed(page_html)
+    except Exception:
+        pass
+    return {'paragraphs': parser.paragraphs, 'description': parser.description,
+            'words': sum(len(p.split()) for p in parser.paragraphs)}
+
+
+def summarize_text(paragraphs, title, count=4):
+    """Picks the most informative sentences: ones that share the article's most common words,
+    mention the headline's subject, or contain numbers (prices, percentages, dates)."""
+    text = ' '.join(paragraphs[:40])
+    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+(?=[A-Z0-9"\u201c])', text) if 40 <= len(s.strip()) <= 400]
+    if not sentences:
+        return []
+    freq = {}
+    for word in re.findall(r'[a-z]{4,}', text.lower()):
+        if word not in STOPWORDS:
+            freq[word] = freq.get(word, 0) + 1
+    title_words = _title_words(title)
+    scored = []
+    for i, sentence in enumerate(sentences[:60]):
+        words = re.findall(r'[a-z]{4,}', sentence.lower())
+        if not words:
+            continue
+        score = sum(freq.get(w, 0) for w in words) / len(words) ** 0.6
+        score += 2 * len(title_words & set(words))
+        if re.search(r'\d[\d,.]*\s?(%|percent|billion|million|basis points)|\$\d', sentence):
+            score += 3
+        score *= 1.2 if i < 5 else 1
+        scored.append((score, i, sentence))
+    best = sorted(scored, reverse=True)[:count]
+    return [s for _score, _i, s in sorted(best, key=lambda x: x[1])]
 
 
 class NewsFetcher:
@@ -329,10 +407,12 @@ class NewsFetcher:
         items = await self._cached(url, NEWS_CACHE_SECONDS, lambda r: parse_feed(r.text, source))
         return [{**i, 'section': section} for i in items]
 
-    async def get(self, symbols):
+    async def get(self, symbols, query=''):
         feeds = list(NEWS_FEEDS)
         tickers = [s for s in symbols if re.match(r'^[A-Z][A-Z.]{0,5}$', s)][:MAX_TICKER_FEEDS]
-        if tickers:
+        if query:
+            feeds = [('Google News', 'markets', GOOGLE_NEWS.format(query=urllib.parse.quote_plus(query[:120]) + '+when:7d'))]
+        elif tickers:
             feeds = [('Google News', 'companies', GOOGLE_NEWS.format(query=TICKER_NEWS_QUERY.format(symbol=t))) for t in tickers]
         results = await asyncio.gather(*(self._feed(*feed) for feed in feeds), return_exceptions=True)
         items, failed = [], []
@@ -344,6 +424,52 @@ class NewsFetcher:
             else:
                 items.extend(result)
         return rank_news(items)[:NEWS_LIMIT], failed
+
+    async def summary(self, links, title):
+        """Opens the article (trying each outlet that ran the story) and pulls out its key sentences."""
+        cached = self.cache.get(('summary', links[0]))
+        if cached:
+            return cached[1]
+        # Prefer direct publisher links; Google News links have to be decoded first.
+        ordered = sorted(links, key=lambda u: 'news.google.com' in u)
+        last_error = 'No link to open'
+        for link in ordered[:4]:
+            try:
+                url = await self._resolve_google(link) if 'news.google.com' in link else link
+                if not url:
+                    continue
+                response = await self.http.get(url)
+                response.raise_for_status()
+                page = parse_article(response.text)
+                points = summarize_text(page['paragraphs'], title)
+                if points or page['description']:
+                    result = {'points': points, 'description': page['description'], 'url': str(response.url), 'words': page['words']}
+                    self.cache[('summary', links[0])] = (time.time(), result)
+                    return result
+                last_error = 'The article text could not be read (it may be behind a paywall).'
+            except Exception as err:
+                last_error = str(err)
+        raise HelperError(f'Could not open the article: {last_error}')
+
+    async def _resolve_google(self, link):
+        """Google News hides the publisher's address behind its own link; ask Google for the real one."""
+        match = re.search(r'/articles/([^?/]+)', link)
+        if not match:
+            return None
+        article_id = match.group(1)
+        page = await self.http.get(f'https://news.google.com/articles/{article_id}')
+        sig = re.search(r'data-n-a-sg="([^"]+)"', page.text)
+        ts = re.search(r'data-n-a-ts="([^"]+)"', page.text)
+        if not sig or not ts:
+            return None
+        inner = ('["garturlreq",[["X","X",["X","X"],null,null,1,1,"US:en",null,1,null,null,null,null,null,0,1],'
+                 f'"X","X",1,[1,1,1],1,1,null,0,0,null,0],"{article_id}",{ts.group(1)},"{sig.group(1)}"]')
+        body = 'f.req=' + urllib.parse.quote(json.dumps([[['Fbv4je', inner, None, 'generic']]]))
+        response = await self.http.post('https://news.google.com/_/DotsSplashUi/data/batchexecute', content=body,
+                                        headers={'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'})
+        response.raise_for_status()
+        data = json.loads(response.text.split('\n\n')[1])[:-2]
+        return json.loads(data[0][2])[1]
 
     async def calendar(self):
         results = await asyncio.gather(*(self._cached(url, CALENDAR_CACHE_SECONDS, lambda r: r.json()) for url in CALENDAR_FEEDS), return_exceptions=True)
@@ -443,9 +569,12 @@ class Market:
                     asyncio.create_task(self.reply(ws, msg.get('id'), self.history_reply(symbol, msg.get('resolution'), msg.get('days'))))
                 elif kind == 'calendar':
                     asyncio.create_task(self.reply(ws, msg.get('id'), self.calendar_reply()))
+                elif kind == 'summary':
+                    links = [str(u) for u in msg.get('links') or [] if str(u).startswith(('https://', 'http://'))]
+                    asyncio.create_task(self.reply(ws, msg.get('id'), self.summary_reply(links, str(msg.get('title', '')))))
                 elif kind == 'news':
                     symbols = [str(s).upper() for s in msg.get('symbols') or [] if isinstance(s, str)]
-                    asyncio.create_task(self.reply(ws, msg.get('id'), self.news_reply(symbols)))
+                    asyncio.create_task(self.reply(ws, msg.get('id'), self.news_reply(symbols, str(msg.get('query') or ''))))
                 elif kind == 'subscribe':
                     self.listeners.setdefault(symbol, set()).add(ws)
                     if symbol in self.quotes:
@@ -474,8 +603,13 @@ class Market:
         events, failed = await self.news.calendar()
         return {'type': 'calendar', 'events': events, 'failed': failed}
 
-    async def news_reply(self, symbols):
-        items, failed = await self.news.get(symbols)
+    async def summary_reply(self, links, title):
+        if not links:
+            raise HelperError('No article link')
+        return {'type': 'summary', **(await self.news.summary(links, title))}
+
+    async def news_reply(self, symbols, query=''):
+        items, failed = await self.news.get(symbols, query)
         return {'type': 'news', 'items': items, 'failed': failed}
 
     async def reply(self, ws, request_id, work):

@@ -12,7 +12,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The helper version this site needs. Must match HELPER_VERSION in helper/schwab_helper.py. */
-const REQUIRED_HELPER_VERSION = 3;
+const REQUIRED_HELPER_VERSION = 4;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
@@ -33,8 +33,9 @@ export interface NewsItem {
   section: NewsSection;
   /** Market-moving topics found in the story, e.g. "Fed", "Earnings". */
   tags: string[];
-  /** Other outlets running the same story. */
+  /** Other outlets running the same story, and links to their versions. */
   alsoReportedBy: string[];
+  otherLinks: string[];
   /** How likely the story is to move the market (higher = more important). */
   score: number;
   impact: Impact;
@@ -87,6 +88,7 @@ type HelperMessage =
   | { type: 'history'; id: number; bars: Bar[] }
   | { type: 'news'; id: number; items: NewsItem[]; failed: string[] }
   | { type: 'calendar'; id: number; events: CalendarEvent[]; failed: string[] }
+  | { type: 'summary'; id: number; points: string[]; description: string; url: string; words: number }
   | { type: 'error'; id: number | null; message: string }
   | { type: 'trade'; symbol: string; price: number; size: number; time: number }
   | { type: 'quote'; symbol: string; last: number | null; prevClose: number | null };
@@ -222,6 +224,7 @@ class HelperConnection {
       case 'history':
       case 'news':
       case 'calendar':
+      case 'summary':
         this.pending.get(msg.id)?.resolve(msg);
         break;
       case 'error':
@@ -258,8 +261,25 @@ class HelperConnection {
 
 export const helper = new HelperConnection();
 
-export async function loadNews(symbols: string[] = []): Promise<{ items: NewsItem[]; failed: string[] }> {
-  const reply = await helper.request({ type: 'news', symbols });
+export interface ArticleSummary {
+  /** The article's most important sentences, in order. */
+  points: string[];
+  /** The publisher's own one-line description. */
+  description: string;
+  url: string;
+  words: number;
+}
+
+/** Asks the helper to open an article and pull out its key points. */
+export async function loadSummary(item: Pick<NewsItem, 'link' | 'otherLinks' | 'title'>): Promise<ArticleSummary> {
+  const reply = await helper.request({ type: 'summary', title: item.title, links: [item.link, ...(item.otherLinks ?? [])] });
+  if (reply.type !== 'summary') throw new Error('Unexpected reply from the helper');
+  return reply;
+}
+
+/** Headlines: the general market feeds, headlines for some tickers, or a search. */
+export async function loadNews(symbols: string[] = [], query = ''): Promise<{ items: NewsItem[]; failed: string[] }> {
+  const reply = await helper.request({ type: 'news', symbols, query });
   if (reply.type !== 'news') throw new Error('Unexpected reply from the helper');
   return { items: reply.items, failed: reply.failed };
 }

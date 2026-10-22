@@ -1,6 +1,8 @@
 /** Economic calendar: Fed decisions, CPI, jobs reports and more, with forecast, previous and actual. */
-import { HELPER_NOT_RUNNING, helper, loadCalendar, type CalendarEvent } from '../data/schwab';
-import { h, openModal } from '../ui/dom';
+import { HELPER_NOT_RUNNING, helper, loadCalendar, loadNews, type CalendarEvent } from '../data/schwab';
+import { h, openModal, timeAgo } from '../ui/dom';
+import { icon } from '../ui/icons';
+import { openNewsSummary } from '../ui/newsSummary';
 
 const REFRESH_MS = 10 * 60 * 1000;
 const COUNTRIES = ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'CAD', 'AUD', 'CHF', 'NZD'];
@@ -81,7 +83,7 @@ function valueCell(e: CalendarEvent) {
 export function openEventDetails(e: CalendarEvent) {
   const cmp = compareActual(e);
   const info = explainEvent(e.title);
-  const newsLink = `https://news.google.com/search?q=${encodeURIComponent(`${e.title} ${e.country}`)}`;
+  const related = h('div', { class: 'related-news' }, h('div', { class: 'muted small' }, 'Finding related headlines…'));
   const released = e.time <= Date.now() / 1000;
   const verdict = !released
     ? `Scheduled ${countdown(e.time)}.`
@@ -112,9 +114,28 @@ export function openEventDetails(e: CalendarEvent) {
       ),
       h('p', { class: `event-verdict ${cmp ?? ''}` }, verdict),
       info ? h('p', {}, info) : null,
-      h('p', { class: 'small' }, h('a', { href: newsLink, target: '_blank', rel: 'noopener' }, 'Read the news about this event →')),
+      h('div', { class: 'summary-head' }, 'Related news'),
+      related,
     ),
+    { wide: true },
   );
+  const query = `${e.title.replace(/\b[mqy]\/[mqy]\b/gi, '')} ${e.country === 'USD' ? 'US' : e.country}`;
+  loadNews([], query)
+    .then(({ items }) => {
+      related.replaceChildren(
+        ...items.slice(0, 5).map((item) =>
+          h(
+            'button',
+            { class: 'related-item', onclick: () => openNewsSummary(item) },
+            h('span', { class: 'news-source' }, item.source),
+            h('span', { class: 'muted small' }, ` ${timeAgo(item.published)}`),
+            h('div', {}, item.title),
+          ),
+        ),
+      );
+      if (!items.length) related.replaceChildren(h('div', { class: 'muted small' }, 'No recent headlines about this event.'));
+    })
+    .catch(() => related.replaceChildren(h('div', { class: 'muted small' }, 'Related news appears when the Schwab helper is running.')));
 }
 
 function eventRow(e: CalendarEvent, compact = false) {
@@ -155,9 +176,19 @@ export function createUpcomingPanel(onSeeAll: () => void) {
   return { el, refresh };
 }
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const localDay = (t: number) => {
+  const d = new Date(t * 1000);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+};
+
 export function createCalendarPage() {
   const impacts = new Set<string>(['high', 'medium']);
   let country = 'USD';
+  let view: 'list' | 'month' = 'list';
+  let month = new Date();
+  month = new Date(month.getFullYear(), month.getMonth(), 1);
+  let selectedDay: Date | null = null;
   const body = h('div', { class: 'cal-body' });
   const foot = h('div', { class: 'muted small cal-foot' });
   const countrySelect = h(
@@ -181,6 +212,26 @@ export function createCalendarPage() {
     });
     return btn;
   });
+  const viewTabs = h(
+    'div',
+    { class: 'tabs', role: 'tablist', 'aria-label': 'Calendar view' },
+    h('button', { class: 'tab active', 'data-view': 'list', onclick: () => setView('list') }, 'List'),
+    h('button', { class: 'tab', 'data-view': 'month', onclick: () => setView('month') }, 'Month'),
+  );
+
+  function setView(next: typeof view) {
+    view = next;
+    viewTabs.querySelectorAll<HTMLElement>('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === next));
+    render();
+  }
+
+  const listPanel = h(
+    'div',
+    { class: 'panel cal-panel' },
+    h('div', { class: 'cal-columns muted small' }, h('span', {}, 'Time'), h('span', {}, ''), h('span', {}, 'Impact'), h('span', {}, 'Event'), h('span', {}, 'Actual'), h('span', {}, 'Forecast'), h('span', {}, 'Previous')),
+    body,
+  );
+  const monthPanel = h('div', { class: 'month-view' });
 
   const el = h(
     'div',
@@ -189,22 +240,18 @@ export function createCalendarPage() {
       'header',
       { class: 'cal-header' },
       h('div', {}, h('h1', {}, 'Economic calendar'), h('p', { class: 'muted' }, 'Events that move the market. Click any event for details. Times are shown in your time zone.')),
-      h('div', { class: 'cal-filters' }, ...impactButtons, countrySelect),
+      h('div', { class: 'cal-filters' }, viewTabs, ...impactButtons, countrySelect),
     ),
-    h(
-      'div',
-      { class: 'panel cal-panel' },
-      h('div', { class: 'cal-columns muted small' }, h('span', {}, 'Time'), h('span', {}, ''), h('span', {}, 'Impact'), h('span', {}, 'Event'), h('span', {}, 'Actual'), h('span', {}, 'Forecast'), h('span', {}, 'Previous')),
-      body,
-    ),
+    listPanel,
+    monthPanel,
     foot,
   );
 
   let events: CalendarEvent[] = [];
+  const filtered = () => events.filter((e) => (impacts.has(e.impact) || e.impact === 'holiday') && (country === 'ALL' || e.country === country));
 
-  function render() {
+  function renderList(shown: CalendarEvent[]) {
     const now = Date.now() / 1000;
-    const shown = events.filter((e) => (impacts.has(e.impact) || e.impact === 'holiday') && (country === 'ALL' || e.country === country));
     const days = new Map<string, CalendarEvent[]>();
     for (const e of shown) days.set(dayKey(e.time), [...(days.get(dayKey(e.time)) ?? []), e]);
     const nextEvent = shown.find((e) => e.time > now);
@@ -223,17 +270,80 @@ export function createCalendarPage() {
       ),
     );
     if (!shown.length) body.append(h('div', { class: 'muted pad' }, events.length ? 'No events match these filters.' : 'Loading…'));
-    nextEvent?.time && requestAnimationFrame(() => body.querySelector('.cal-row.next')?.scrollIntoView({ block: 'center' }));
+    if (nextEvent) requestAnimationFrame(() => body.querySelector('.cal-row.next')?.scrollIntoView({ block: 'center' }));
+  }
+
+  function renderMonth(shown: CalendarEvent[]) {
+    const byDay = new Map<string, CalendarEvent[]>();
+    for (const e of shown) byDay.set(localDay(e.time), [...(byDay.get(localDay(e.time)) ?? []), e]);
+    const todayKey = localDay(Date.now() / 1000);
+    const first = new Date(month);
+    const gridStart = new Date(first.getFullYear(), first.getMonth(), 1 - first.getDay());
+    const cells: Node[] = [];
+    for (let i = 0; i < 42; i++) {
+      const day = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
+      if (i >= 35 && day.getMonth() !== first.getMonth()) break;
+      const key = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
+      const list = byDay.get(key) ?? [];
+      const top = [...list].sort((a, b) => ['high', 'medium', 'low', 'holiday'].indexOf(a.impact) - ['high', 'medium', 'low', 'holiday'].indexOf(b.impact)).slice(0, 3);
+      const selected = selectedDay && day.toDateString() === selectedDay.toDateString();
+      cells.push(
+        h(
+          'button',
+          {
+            class: `day-cell${day.getMonth() !== first.getMonth() ? ' other' : ''}${key === todayKey ? ' today' : ''}${selected ? ' selected' : ''}${list.length ? ' has-events' : ''}`,
+            'aria-label': `${day.toDateString()}: ${list.length} events`,
+            onclick: () => {
+              selectedDay = day;
+              render();
+            },
+          },
+          h('span', { class: 'day-num' }, String(day.getDate())),
+          ...top.map((e) => h('span', { class: `day-event impact-${e.impact}` }, h('i'), e.title)),
+          list.length > 3 ? h('span', { class: 'day-more muted' }, `+${list.length - 3} more`) : null,
+        ),
+      );
+    }
+    const dayList = selectedDay ? byDay.get(localDay(selectedDay.getTime() / 1000)) ?? [] : [];
+    monthPanel.replaceChildren(
+      h(
+        'div',
+        { class: 'month-head' },
+        h('button', { class: 'icon-btn', 'aria-label': 'Previous month', onclick: () => ((month = new Date(month.getFullYear(), month.getMonth() - 1, 1)), render()) }, h('span', { class: 'flip' }, icon('chevron', 22))),
+        h('h2', {}, month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })),
+        h('button', { class: 'icon-btn', 'aria-label': 'Next month', onclick: () => ((month = new Date(month.getFullYear(), month.getMonth() + 1, 1)), render()) }, h('span', { class: 'flip-right' }, icon('chevron', 22))),
+        h('span', { class: 'spacer' }),
+        h('button', { class: 'btn', onclick: () => ((month = new Date(new Date().getFullYear(), new Date().getMonth(), 1)), (selectedDay = new Date()), render()) }, 'Today'),
+      ),
+      h('div', { class: 'month-grid' }, ...WEEKDAYS.map((d) => h('div', { class: 'weekday muted small' }, d)), ...cells),
+      selectedDay
+        ? h(
+            'div',
+            { class: 'panel day-detail' },
+            h('div', { class: 'cal-day-head' }, dayKey(selectedDay.getTime() / 1000)),
+            ...(dayList.length ? dayList.map((e) => eventRow(e)) : [h('div', { class: 'muted pad' }, 'No events on this day (with the current filters).')]),
+          )
+        : h('p', { class: 'muted small' }, 'Click a day to see its events.'),
+    );
+  }
+
+  function render() {
+    listPanel.hidden = view !== 'list';
+    monthPanel.hidden = view !== 'month';
+    const shown = filtered();
+    if (view === 'list') renderList(shown);
+    else renderMonth(shown);
   }
 
   async function refresh(force = false) {
     try {
       const result = await getCalendar(force);
       events = result.events;
-      foot.textContent = `Source: Forex Factory weekly calendar (this week and next)${result.failed.length ? ' · could not reach it just now' : ''}`;
+      foot.textContent = `Detailed events (forecast, previous, actual) come from Forex Factory and cover the current week. Fed rate decisions are shown for the whole year.${result.failed.length ? ' Could not reach Forex Factory just now.' : ''}`;
       render();
     } catch (err) {
       body.replaceChildren(h('div', { class: 'muted pad' }, (err as Error).message || HELPER_NOT_RUNNING));
+      monthPanel.replaceChildren(h('div', { class: 'muted pad' }, (err as Error).message || HELPER_NOT_RUNNING));
     }
   }
 
@@ -243,6 +353,7 @@ export function createCalendarPage() {
       started = true;
       setInterval(() => !el.hidden && refresh(true), REFRESH_MS);
       helper.onAvailability((up) => up && !el.hidden && refresh());
+      render();
     }
     refresh();
   }
