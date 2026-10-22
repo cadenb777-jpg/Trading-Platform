@@ -9,9 +9,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 - Static site, deployed to GitHub Pages by `.github/workflows/deploy.yml` on push to `main`.
 - No server backend. The chart layout lives in localStorage (`src/storage.ts`). Market data: Coinbase (crypto,
   public, no key) and Schwab (stocks, via the helper). Secrets never go in the repo or the browser.
-- `helper/schwab_helper.py` runs on the owner's computer (schwab-py). It serves history and live
-  trades to `src/data/schwab.ts` over `ws://127.0.0.1:8765` (JSON messages: history, subscribe,
-  unsubscribe, status, trade, error). Its keys and token live in `~/.trading-platform/`.
+- `helper/schwab_helper.py` runs on the owner's computer (schwab-py). It talks to `src/data/schwab.ts`
+  over `ws://127.0.0.1:8765`. Requests: history {symbol, resolution (1m/5m/10m/15m/30m/1D/1W), days},
+  news {symbols}, subscribe/unsubscribe {symbol}. Pushes: status, trade, quote {last, prevClose}.
+  Replies carry the request id; failures come back as error. Keys/token live in `~/.trading-platform/`.
+  News comes from Google News RSS and CNBC RSS (Google Finance has no feed).
+  Changing the protocol means the owner must re-download the helper; say so.
   It is market-data only: never add order placement to it (the Schwab app's order limit is 0).
   Trading is planned through Webull.
 
@@ -21,7 +24,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   `compute()` returns arrays aligned with the bars, `NaN` for warm-up.
 - Data providers implement `DataProvider` (`src/data/provider.ts`): `loadHistory` returns bars,
   `subscribe` streams trades; `applyTrade` in `src/types.ts` folds trades into bars.
-- Bar `time` is UTC unix seconds.
+- Bar `time` is UTC unix seconds. Timeframes are defined in `src/types.ts`; providers fetch a native
+  bar size and `regroupBars` builds the rest. Second timeframes have no history (built from trades).
+- App state (watchlist, favourites, chart type, indicators) is in `src/state.ts`; call `persist()`
+  after changing it. Drawings are stored per `provider:symbol`.
+- Drawings are a Lightweight Charts series primitive (`src/chart/drawings.ts`), stored as time+price.
+- Check UI changes in a browser (Playwright with `executablePath: '/opt/pw-browsers/chromium'`).
 
 ## Commands
 

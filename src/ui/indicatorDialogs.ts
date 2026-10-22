@@ -1,5 +1,6 @@
 import { INDICATORS, defaultColors, defaultParams } from '../indicators/library';
 import { PRICE_SOURCES, type IndicatorDef, type IndicatorInstance } from '../indicators/types';
+import { TIMEFRAME_DEFS, TIMEFRAME_SECONDS, type Timeframe } from '../types';
 import { h, openModal, toast } from './dom';
 
 /** The searchable list of every built-in indicator. Clicking one adds it to the chart. */
@@ -43,6 +44,7 @@ export function openIndicatorPicker(onAdd: (def: IndicatorDef) => void) {
 export function openIndicatorSettings(
   def: IndicatorDef,
   instance: IndicatorInstance,
+  chartTimeframe: Timeframe,
   onChange: (updated: IndicatorInstance) => void,
   onRemove: () => void,
 ) {
@@ -76,17 +78,60 @@ export function openIndicatorSettings(
       form.append(h('label', { class: 'form-row', for: id }, h('span', {}, input.label), field));
     }
 
+    form.append(h('div', { class: 'form-section' }, 'Timeframe & placement'));
+    // Higher timeframes than the chart only; "Chart" means use the chart's own timeframe.
+    const tfOptions = TIMEFRAME_DEFS.filter((d) => d.seconds >= 60 && d.seconds > TIMEFRAME_SECONDS[chartTimeframe]);
+    const tfSelect = h(
+      'select',
+      { id: 'ind-tf', class: 'input' },
+      h('option', { value: '', selected: !current.timeframe }, `Chart (${chartTimeframe})`),
+      ...tfOptions.map((d) => h('option', { value: d.id, selected: current.timeframe === d.id }, d.label)),
+    );
+    tfSelect.addEventListener('change', () => {
+      current.timeframe = (tfSelect.value || null) as Timeframe | null;
+      emit();
+    });
+    form.append(h('label', { class: 'form-row', for: 'ind-tf' }, h('span', {}, 'Timeframe'), tfSelect));
+    if (def.placement !== 'volume') {
+      const placement = current.placement ?? def.placement;
+      const placeSelect = h(
+        'select',
+        { id: 'ind-place', class: 'input' },
+        h('option', { value: 'overlay', selected: placement === 'overlay' }, 'On the price chart'),
+        h('option', { value: 'separate', selected: placement === 'separate' }, 'In its own pane below'),
+      );
+      placeSelect.addEventListener('change', () => {
+        current.placement = placeSelect.value as 'overlay' | 'separate';
+        emit();
+      });
+      form.append(h('label', { class: 'form-row', for: 'ind-place' }, h('span', {}, 'Placement'), placeSelect));
+    }
+
     form.append(h('div', { class: 'form-section' }, 'Style'));
     for (const plot of def.plots) {
       const id = `color-${plot.key}`;
       const stored = current.colors[plot.key] ?? plot.color;
       const alpha = stored.length === 9 ? stored.slice(7) : '';
-      const field = h('input', { id, class: 'color', type: 'color', value: stored.slice(0, 7) });
+      const field = h('input', { id, class: 'color', type: 'color', value: stored.slice(0, 7), title: 'Colour' });
       field.addEventListener('input', () => {
         current.colors[plot.key] = field.value + alpha;
         emit();
       });
-      form.append(h('label', { class: 'form-row', for: id }, h('span', {}, plot.title), field));
+      const controls = h('span', { class: 'style-controls' }, field);
+      if (plot.type === 'line') {
+        const width = current.lineWidths?.[plot.key] ?? plot.lineWidth ?? 2;
+        const widthSelect = h(
+          'select',
+          { class: 'input width-select', 'aria-label': `${plot.title} thickness`, title: 'Thickness' },
+          ...[1, 2, 3, 4].map((w) => h('option', { value: w, selected: w === width }, `${w}px`)),
+        );
+        widthSelect.addEventListener('change', () => {
+          current.lineWidths = { ...current.lineWidths, [plot.key]: Number(widthSelect.value) };
+          emit();
+        });
+        controls.append(widthSelect);
+      }
+      form.append(h('label', { class: 'form-row', for: id }, h('span', {}, plot.title), controls));
     }
     const visible = h('input', { id: 'visible', type: 'checkbox', checked: current.visible });
     visible.addEventListener('change', () => {
@@ -107,7 +152,7 @@ export function openIndicatorSettings(
       {
         class: 'btn',
         onclick: () => {
-          current = { ...current, params: defaultParams(def), colors: defaultColors(def) };
+          current = { ...current, params: defaultParams(def), colors: defaultColors(def), lineWidths: undefined, placement: undefined, timeframe: null };
           render();
           emit();
         },

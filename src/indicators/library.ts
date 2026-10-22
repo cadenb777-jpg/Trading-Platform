@@ -4,7 +4,7 @@
  */
 import type { Bar } from '../types';
 import { ema, highest, lowest, rma, rsi, sma, stdev, trueRange, wma } from './math';
-import type { IndicatorDef, IndicatorInput, IndicatorParams, PriceSource } from './types';
+import type { IndicatorDef, IndicatorInput, IndicatorInstance, IndicatorParams, PriceSource } from './types';
 
 function source(bars: Bar[], src: PriceSource): number[] {
   switch (src) {
@@ -309,8 +309,9 @@ export function defaultColors(def: IndicatorDef): Record<string, string> {
   return Object.fromEntries(def.plots.map((p) => [p.key, p.color]));
 }
 
-/** Label shown in the chart legend, e.g. "RSI 14 close". */
-export function indicatorLabel(def: IndicatorDef, params: IndicatorParams): string {
-  const values = def.inputs.map((i) => params[i.key]);
-  return values.length ? `${def.shortName} ${values.join(' ')}` : def.shortName;
+/** Label shown in the chart legend, e.g. "RSI 14 close" or "RSI 14 close · 1h". */
+export function indicatorLabel(def: IndicatorDef, instance: Pick<IndicatorInstance, 'params' | 'timeframe'>): string {
+  const values = def.inputs.map((i) => instance.params[i.key]);
+  const label = values.length ? `${def.shortName} ${values.join(' ')}` : def.shortName;
+  return instance.timeframe ? `${label} · ${instance.timeframe}` : label;
 }

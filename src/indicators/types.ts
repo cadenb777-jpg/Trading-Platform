@@ -1,4 +1,4 @@
-import type { Bar } from '../types';
+import type { Bar, Timeframe } from '../types';
 
 export type IndicatorCategory = 'Moving Averages' | 'Bands & Channels' | 'Momentum' | 'Volatility' | 'Volume';
 
@@ -64,4 +64,10 @@ export interface IndicatorInstance {
   params: IndicatorParams;
   colors: Record<string, string>;
   visible: boolean;
+  /** Line thickness per plot (1-4); defaults to the plot's own width. */
+  lineWidths?: Record<string, number>;
+  /** Where to draw it; defaults to the indicator's usual place. Volume always sits under the price. */
+  placement?: 'overlay' | 'separate';
+  /** Calculate on a higher timeframe than the chart (e.g. a 1h RSI on a 5m chart). Empty = chart timeframe. */
+  timeframe?: Timeframe | null;
 }

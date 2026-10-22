@@ -1,7 +1,7 @@
 # Schwab helper
 
 A small program that runs on your computer, logs into your Schwab API app, and sends **live
-prices from every US exchange** to your charts. It only reads market data. It can't place,
+prices from every US exchange** and **market news** (Google News and CNBC) to your platform. It only reads market data. It can't place,
 change or cancel orders.
 
 Your Schwab keys stay on your computer, in a hidden `.trading-platform` folder in your home
@@ -61,6 +61,11 @@ market dropdown.
 - Use **Chrome** or **Edge**. Safari may block the connection to the helper.
 - If the browser asks to allow the site to access apps or devices on your computer or network,
   click **Allow**.
+
+## Updating the helper
+
+When the platform gets new features, you may need a new copy of the helper. Download the ZIP
+again (step 2), replace your old folder, and start it as usual. Your keys and login are kept.
 
 ## Every day
 

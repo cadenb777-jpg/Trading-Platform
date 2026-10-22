@@ -1,54 +1,110 @@
 /**
- * Live, all-exchange US stock data from Schwab, via the helper program running on this
- * computer (see helper/README.md). The browser never sees the Schwab keys; it only talks
- * to the helper over ws://127.0.0.1:8765.
+ * Live, all-exchange US stock data and market news from the helper program running on this
+ * computer (see helper/README.md). The browser never sees the Schwab keys; it only talks to
+ * the helper over ws://127.0.0.1:8765.
  */
-import type { Bar } from '../types';
-import type { ConnectionStatus, DataProvider, LiveHandlers } from './provider';
+import { regroupBars, type Bar, type Timeframe } from '../types';
+import type { ConnectionStatus, DataProvider, Trade } from './provider';
+import type { Quote } from './quotes';
 
 const HELPER_URL = 'ws://127.0.0.1:8765';
 const CONNECT_TIMEOUT_MS = 10000;
-const HISTORY_TIMEOUT_MS = 30000;
+const REQUEST_TIMEOUT_MS = 30000;
 
 export const HELPER_NOT_RUNNING =
   'The Schwab helper isn\'t running on this computer. Start it (double-click start-windows.bat or start-mac.command), then click Try again.';
 
+export interface NewsItem {
+  title: string;
+  link: string;
+  source: string;
+  /** UTC unix seconds, 0 if unknown */
+  published: number;
+  summary: string;
+}
+
+/** Which Schwab bar size to request for each timeframe, and how many days back. */
+const HISTORY_PLAN: Record<Timeframe, { resolution: string; days: number } | null> = {
+  // Schwab has no second-level history: these charts build from live trades.
+  '5s': null,
+  '10s': null,
+  '15s': null,
+  '30s': null,
+  '1m': { resolution: '1m', days: 5 },
+  '2m': { resolution: '1m', days: 10 },
+  '3m': { resolution: '1m', days: 15 },
+  '5m': { resolution: '5m', days: 20 },
+  '10m': { resolution: '10m', days: 40 },
+  '15m': { resolution: '15m', days: 60 },
+  '30m': { resolution: '30m', days: 120 },
+  '45m': { resolution: '15m', days: 180 },
+  '1h': { resolution: '30m', days: 180 },
+  '2h': { resolution: '30m', days: 270 },
+  '3h': { resolution: '30m', days: 270 },
+  '4h': { resolution: '30m', days: 270 },
+  '1D': { resolution: '1D', days: 365 * 5 },
+  '1W': { resolution: '1W', days: 365 * 15 },
+  '1M': { resolution: '1D', days: 365 * 20 },
+};
+
+export interface HelperListener {
+  onTrade?(trade: Trade): void;
+  onQuote?(quote: Quote): void;
+  onStatus?(status: ConnectionStatus, message?: string): void;
+}
+
 type HelperMessage =
   | { type: 'status'; status: ConnectionStatus; message: string }
   | { type: 'history'; id: number; bars: Bar[] }
+  | { type: 'news'; id: number; items: NewsItem[]; failed: string[] }
   | { type: 'error'; id: number | null; message: string }
-  | { type: 'trade'; symbol: string; price: number; size: number; time: number };
+  | { type: 'trade'; symbol: string; price: number; size: number; time: number }
+  | { type: 'quote'; symbol: string; last: number | null; prevClose: number | null };
 
-/** One shared connection to the helper, reused by every chart request. */
+/** One shared connection to the helper, reused by charts, the watchlist and the home page. */
 class HelperConnection {
   private ws: WebSocket | null = null;
   private opening: Promise<WebSocket> | null = null;
   private nextId = 1;
-  private readonly pending = new Map<number, { resolve: (bars: Bar[]) => void; reject: (err: Error) => void }>();
-  private readonly subscribers = new Map<string, Set<LiveHandlers>>();
+  private readonly pending = new Map<number, { resolve: (msg: HelperMessage) => void; reject: (err: Error) => void }>();
+  private readonly listeners = new Map<string, Set<HelperListener>>();
+  private readonly availability = new Set<(up: boolean) => void>();
   private helperStatus: { status: ConnectionStatus; message: string } = { status: 'connecting', message: 'Connecting' };
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+  get isConnected() {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /** Calls `fn(true)` when the helper connects and `fn(false)` when it can't be reached. */
+  onAvailability(fn: (up: boolean) => void): () => void {
+    this.availability.add(fn);
+    return () => this.availability.delete(fn);
+  }
 
   connect(): Promise<WebSocket> {
     if (this.ws?.readyState === WebSocket.OPEN) return Promise.resolve(this.ws);
     if (this.opening) return this.opening;
     this.opening = new Promise<WebSocket>((resolve, reject) => {
       const ws = new WebSocket(HELPER_URL);
+      const fail = () => {
+        clearTimeout(timer);
+        this.notify(false);
+        reject(new Error(HELPER_NOT_RUNNING));
+      };
       const timer = setTimeout(() => {
         ws.close();
-        reject(new Error(HELPER_NOT_RUNNING));
+        fail();
       }, CONNECT_TIMEOUT_MS);
       ws.onopen = () => {
         clearTimeout(timer);
         this.ws = ws;
         // Re-subscribe anything that was streaming before a reconnect.
-        for (const symbol of this.subscribers.keys()) this.send({ type: 'subscribe', symbol });
+        for (const symbol of this.listeners.keys()) this.send({ type: 'subscribe', symbol });
+        this.notify(true);
         resolve(ws);
       };
-      ws.onerror = () => {
-        clearTimeout(timer);
-        reject(new Error(HELPER_NOT_RUNNING));
-      };
+      ws.onerror = fail;
       ws.onmessage = (event) => this.onMessage(JSON.parse(event.data as string) as HelperMessage);
       ws.onclose = () => this.onClose(ws);
     }).finally(() => {
@@ -57,67 +113,76 @@ class HelperConnection {
     return this.opening;
   }
 
-  async history(symbol: string, timeframe: string, signal: AbortSignal): Promise<Bar[]> {
+  /** Sends a request and waits for the helper's reply with the same id. */
+  async request(msg: Record<string, unknown>, signal?: AbortSignal): Promise<HelperMessage> {
     await this.connect();
     const id = this.nextId++;
-    return new Promise<Bar[]>((resolve, reject) => {
-      const timer = setTimeout(() => finish(new Error('Schwab took too long to send price history. Try again.')), HISTORY_TIMEOUT_MS);
-      const finish = (err: Error | null, bars?: Bar[]) => {
+    return new Promise<HelperMessage>((resolve, reject) => {
+      const timer = setTimeout(() => finish(new Error('The Schwab helper took too long to answer. Try again.')), REQUEST_TIMEOUT_MS);
+      const finish = (err: Error | null, reply?: HelperMessage) => {
         clearTimeout(timer);
         this.pending.delete(id);
-        signal.removeEventListener('abort', onAbort);
+        signal?.removeEventListener('abort', onAbort);
         if (err) reject(err);
-        else resolve(bars!);
+        else resolve(reply!);
       };
       const onAbort = () => finish(new DOMException('Aborted', 'AbortError'));
-      signal.addEventListener('abort', onAbort);
-      this.pending.set(id, { resolve: (bars) => finish(null, bars), reject: (err) => finish(err) });
-      this.send({ type: 'history', id, symbol, timeframe });
+      signal?.addEventListener('abort', onAbort);
+      this.pending.set(id, { resolve: (reply) => finish(null, reply), reject: (err) => finish(err) });
+      this.send({ ...msg, id });
     });
   }
 
-  subscribe(symbol: string, handlers: LiveHandlers): () => void {
-    let set = this.subscribers.get(symbol);
+  /** Streams trades and quotes for a symbol. Returns a function that stops listening. */
+  listen(symbol: string, listener: HelperListener): () => void {
+    let set = this.listeners.get(symbol);
     if (!set) {
       set = new Set();
-      this.subscribers.set(symbol, set);
+      this.listeners.set(symbol, set);
       this.send({ type: 'subscribe', symbol });
     }
-    set.add(handlers);
-    handlers.onStatus(this.ws ? this.helperStatus.status : 'connecting', this.helperStatus.message);
+    set.add(listener);
+    listener.onStatus?.(this.isConnected ? this.helperStatus.status : 'connecting', this.helperStatus.message);
     this.connect().catch(() => this.scheduleRetry());
     return () => {
-      set.delete(handlers);
+      set.delete(listener);
       if (!set.size) {
-        this.subscribers.delete(symbol);
+        this.listeners.delete(symbol);
         this.send({ type: 'unsubscribe', symbol });
       }
-      handlers.onStatus('closed');
     };
+  }
+
+  private notify(up: boolean) {
+    for (const fn of this.availability) fn(up);
   }
 
   private send(msg: object) {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
   }
 
-  private allHandlers(): LiveHandlers[] {
-    return [...this.subscribers.values()].flatMap((s) => [...s]);
+  private allListeners(): HelperListener[] {
+    return [...this.listeners.values()].flatMap((s) => [...s]);
   }
 
   private onMessage(msg: HelperMessage) {
     switch (msg.type) {
       case 'status':
         this.helperStatus = { status: msg.status, message: msg.message };
-        for (const h of this.allHandlers()) h.onStatus(msg.status, msg.message);
+        for (const l of this.allListeners()) l.onStatus?.(msg.status, msg.message);
         break;
       case 'history':
-        this.pending.get(msg.id)?.resolve(msg.bars);
+      case 'news':
+        this.pending.get(msg.id)?.resolve(msg);
         break;
       case 'error':
         if (msg.id !== null) this.pending.get(msg.id)?.reject(new Error(msg.message));
         break;
       case 'trade':
-        for (const h of this.subscribers.get(msg.symbol) ?? []) h.onTrade(msg);
+        for (const l of this.listeners.get(msg.symbol) ?? []) l.onTrade?.(msg);
+        break;
+      case 'quote':
+        for (const l of this.listeners.get(msg.symbol) ?? []) l.onQuote?.(msg);
         break;
     }
   }
@@ -127,12 +192,14 @@ class HelperConnection {
     this.ws = null;
     for (const p of this.pending.values()) p.reject(new Error('Lost connection to the Schwab helper.'));
     this.pending.clear();
-    for (const h of this.allHandlers()) h.onStatus('error', 'Schwab helper stopped. Reconnecting…');
+    for (const l of this.allListeners()) l.onStatus?.('error', 'Schwab helper stopped. Reconnecting…');
+    this.notify(false);
     this.scheduleRetry();
   }
 
+  /** Keeps trying to reconnect while anything is listening, so it recovers when the helper starts. */
   private scheduleRetry() {
-    if (!this.subscribers.size || this.retryTimer) return;
+    if (!this.listeners.size || this.retryTimer) return;
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined;
       this.connect().catch(() => this.scheduleRetry());
@@ -140,7 +207,13 @@ class HelperConnection {
   }
 }
 
-const helper = new HelperConnection();
+export const helper = new HelperConnection();
+
+export async function loadNews(symbols: string[] = []): Promise<{ items: NewsItem[]; failed: string[] }> {
+  const reply = await helper.request({ type: 'news', symbols });
+  if (reply.type !== 'news') throw new Error('Unexpected reply from the helper');
+  return { items: reply.items, failed: reply.failed };
+}
 
 export const schwab: DataProvider = {
   id: 'schwab',
@@ -151,7 +224,22 @@ export const schwab: DataProvider = {
 
   normalizeSymbol: (input) => input.trim().toUpperCase(),
 
-  loadHistory: (symbol, timeframe, signal) => helper.history(symbol, timeframe, signal),
+  async loadHistory(symbol, timeframe, signal) {
+    const plan = HISTORY_PLAN[timeframe];
+    if (!plan) {
+      await helper.connect();
+      return [];
+    }
+    const reply = await helper.request({ type: 'history', symbol, resolution: plan.resolution, days: plan.days }, signal);
+    if (reply.type !== 'history') throw new Error('Unexpected reply from the helper');
+    return plan.resolution === timeframe ? reply.bars : regroupBars(reply.bars, timeframe);
+  },
 
-  subscribe: (symbol, handlers) => helper.subscribe(symbol, handlers),
+  subscribe(symbol, handlers) {
+    const stop = helper.listen(symbol, { onTrade: handlers.onTrade, onStatus: handlers.onStatus });
+    return () => {
+      stop();
+      handlers.onStatus('closed');
+    };
+  },
 };

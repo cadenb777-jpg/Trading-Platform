@@ -59,3 +59,44 @@ export function formatNumber(value: number): string {
   if (abs >= 0.01) return value.toFixed(4);
   return value.toPrecision(4);
 }
+
+/** Opens a small floating menu under `anchor`. Closes on outside click or Escape. Returns a close function. */
+export function openPopover(anchor: HTMLElement, content: Node, opts: { align?: 'left' | 'right' } = {}): () => void {
+  document.querySelector('.popover')?.dispatchEvent(new Event('close'));
+  const el = h('div', { class: 'popover', role: 'menu' }, content);
+  document.body.append(el);
+  const rect = anchor.getBoundingClientRect();
+  const width = el.offsetWidth;
+  const left = opts.align === 'right' ? rect.right - width : rect.left;
+  el.style.left = `${Math.max(8, Math.min(left, window.innerWidth - width - 8))}px`;
+  el.style.top = `${rect.bottom + 6}px`;
+  const close = () => {
+    el.remove();
+    document.removeEventListener('mousedown', onDown, true);
+    document.removeEventListener('keydown', onKey);
+  };
+  const onDown = (e: Event) => {
+    if (!el.contains(e.target as Node) && !anchor.contains(e.target as Node)) close();
+  };
+  const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+  el.addEventListener('close', close);
+  document.addEventListener('mousedown', onDown, true);
+  document.addEventListener('keydown', onKey);
+  return close;
+}
+
+export function formatPrice(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—';
+  const abs = Math.abs(value);
+  const digits = abs >= 1 ? 2 : abs >= 0.01 ? 4 : 6;
+  return value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+export function timeAgo(unixSeconds: number): string {
+  if (!unixSeconds) return '';
+  const s = Math.max(0, Date.now() / 1000 - unixSeconds);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}

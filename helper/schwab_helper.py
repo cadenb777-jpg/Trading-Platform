@@ -1,8 +1,9 @@
 """
 Schwab market-data helper for the Trading Platform.
 
-Logs into Schwab with your own API app, then serves live, all-exchange US stock data to the
-charts in your browser over a private connection on this computer (ws://127.0.0.1:8765).
+Logs into Schwab with your own API app, then serves live, all-exchange US stock data and
+market news to the charts in your browser over a private connection on this computer
+(ws://127.0.0.1:8765).
 
 It only reads market data. It contains no code that can place, change or cancel orders.
 
@@ -13,17 +14,22 @@ Run with --reset to enter new Schwab keys.
 import argparse
 import asyncio
 import datetime as dt
+import email.utils
 import getpass
+import html
 import json
 import logging
 import re
 import sys
+import time
 import warnings
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 # Libraries print harmless deprecation notices while loading; hide them so the window stays clear.
 _show_warning = warnings.showwarning
 warnings.showwarning = lambda *args, **kwargs: None
+import httpx  # noqa: E402
 from schwab.auth import easy_client  # noqa: E402
 from schwab.streaming import StreamClient  # noqa: E402
 from websockets.asyncio.server import broadcast, serve  # noqa: E402
@@ -32,7 +38,7 @@ warnings.showwarning = _show_warning
 HOST = '127.0.0.1'
 PORT = 8765
 CALLBACK_URL = 'https://127.0.0.1:8182'
-PLATFORM_URL = 'https://cadenb777-jpg.github.io/trading-platform/'
+PLATFORM_URL = 'https://cadenb777-jpg.github.io/Trading-Platform/'
 
 # Keys and login tokens live in your home folder, never inside the project folder.
 DATA_DIR = Path.home() / '.trading-platform'
@@ -50,14 +56,17 @@ ALLOWED_ORIGINS = [
 
 SYMBOL_PATTERN = re.compile(r'^[A-Z0-9.\-/$^]{1,15}$')
 
-# timeframe -> (Schwab history method, days of history, seconds to regroup bars into)
-HISTORY = {
-    '1m': ('get_price_history_every_minute', 5, None),
-    '5m': ('get_price_history_every_five_minutes', 20, None),
-    '15m': ('get_price_history_every_fifteen_minutes', 60, None),
-    '1h': ('get_price_history_every_thirty_minutes', 180, 3600),
-    '1D': ('get_price_history_every_day', 365 * 5, None),
+# Bar sizes Schwab provides directly. The charts build other timeframes (2m, 4h, 1M...) from these.
+RESOLUTIONS = {
+    '1m': 'get_price_history_every_minute',
+    '5m': 'get_price_history_every_five_minutes',
+    '10m': 'get_price_history_every_ten_minutes',
+    '15m': 'get_price_history_every_fifteen_minutes',
+    '30m': 'get_price_history_every_thirty_minutes',
+    '1D': 'get_price_history_every_day',
+    '1W': 'get_price_history_every_week',
 }
+MAX_HISTORY_DAYS = 365 * 20
 
 QUOTE_FIELDS = [
     StreamClient.LevelOneEquityFields.SYMBOL,
@@ -65,7 +74,25 @@ QUOTE_FIELDS = [
     StreamClient.LevelOneEquityFields.LAST_SIZE,
     StreamClient.LevelOneEquityFields.TOTAL_VOLUME,
     StreamClient.LevelOneEquityFields.TRADE_TIME_MILLIS,
+    StreamClient.LevelOneEquityFields.CLOSE_PRICE,
 ]
+
+# Free public news feeds. Add or remove lines to change where headlines come from.
+# Google News is where Google Finance's headlines come from; each item names its publisher.
+GOOGLE_NEWS = 'https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en'
+NEWS_FEEDS = [
+    ('Google News', GOOGLE_NEWS.format(query='stock+market+when:1d')),
+    ('Google News', GOOGLE_NEWS.format(query='wall+street+stocks+when:1d')),
+    ('CNBC', 'https://www.cnbc.com/id/100003114/device/rss/rss.html'),
+    ('CNBC', 'https://www.cnbc.com/id/20910258/device/rss/rss.html'),
+    ('CoinDesk', 'https://www.coindesk.com/arc/outboundfeeds/rss/'),
+]
+# Headlines for one ticker, e.g. from your watchlist.
+TICKER_NEWS_QUERY = '{symbol}+stock+when:3d'
+MAX_TICKER_FEEDS = 12
+NEWS_CACHE_SECONDS = 90
+NEWS_LIMIT = 80
+USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
 
 log = logging.getLogger('helper')
 
@@ -102,35 +129,22 @@ def load_config(reset):
     return config
 
 
-def regroup_bars(bars, seconds):
-    grouped = []
-    for bar in bars:
-        start = bar['time'] // seconds * seconds
-        last = grouped[-1] if grouped else None
-        if last and last['time'] == start:
-            last['high'] = max(last['high'], bar['high'])
-            last['low'] = min(last['low'], bar['low'])
-            last['close'] = bar['close']
-            last['volume'] += bar['volume']
-        else:
-            grouped.append({**bar, 'time': start})
-    return grouped
+# ---------- Price history ----------
 
 
-async def fetch_history(client, symbol, timeframe):
-    if timeframe not in HISTORY:
-        raise HelperError(f'Unsupported timeframe {timeframe}')
-    method, days, regroup = HISTORY[timeframe]
+async def fetch_history(client, symbol, resolution, days):
+    if resolution not in RESOLUTIONS:
+        raise HelperError(f'Unsupported bar size {resolution}')
+    days = max(1, min(int(days or 30), MAX_HISTORY_DAYS))
     now = dt.datetime.now(dt.timezone.utc)
     kwargs = {'start_datetime': now - dt.timedelta(days=days), 'end_datetime': now}
-    if timeframe != '1D':
+    if resolution not in ('1D', '1W'):
         kwargs['need_extended_hours_data'] = True
-    response = await getattr(client, method)(symbol, **kwargs)
+    response = await getattr(client, RESOLUTIONS[resolution])(symbol, **kwargs)
     if response.status_code == 401:
         raise HelperError('Schwab login expired. Close the helper and start it again to log in.')
     if response.status_code != 200:
         raise HelperError(f'Schwab returned {response.status_code}: {response.text[:200]}')
-    candles = response.json().get('candles', [])
     bars = [
         {
             'time': c['datetime'] // 1000,
@@ -140,25 +154,129 @@ async def fetch_history(client, symbol, timeframe):
             'close': c['close'],
             'volume': c.get('volume', 0),
         }
-        for c in candles
+        for c in response.json().get('candles', [])
     ]
-    if regroup:
-        bars = regroup_bars(bars, regroup)
     if not bars:
         raise HelperError(f'No data found for "{symbol}". Check the ticker symbol.')
     return bars
 
 
+# ---------- News ----------
+
+
+def _local(tag):
+    return tag.rsplit('}', 1)[-1]
+
+
+def _child_text(node, *names):
+    for child in node:
+        if _local(child.tag) in names and child.text and child.text.strip():
+            return child.text.strip()
+    return ''
+
+
+def _parse_date(value):
+    if not value:
+        return 0
+    try:
+        return int(email.utils.parsedate_to_datetime(value).timestamp())
+    except (TypeError, ValueError):
+        pass
+    try:
+        return int(dt.datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp())
+    except ValueError:
+        return 0
+
+
+def _clean(text, limit):
+    text = html.unescape(re.sub(r'<[^>]+>', ' ', text or ''))
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + '…'
+
+
+def parse_feed(xml_text, source):
+    """Reads headlines from an RSS or Atom feed."""
+    items = []
+    root = ET.fromstring(xml_text)
+    for node in root.iter():
+        if _local(node.tag) not in ('item', 'entry'):
+            continue
+        link = _child_text(node, 'link')
+        if not link:
+            for child in node:
+                if _local(child.tag) == 'link' and child.get('rel', 'alternate') == 'alternate' and child.get('href'):
+                    link = child.get('href')
+                    break
+        title = _clean(_child_text(node, 'title'), 200)
+        if not title or not link.startswith(('https://', 'http://')):
+            continue
+        # Google News names the original publisher and appends it to the title ("... - Reuters").
+        publisher = _clean(_child_text(node, 'source'), 60)
+        if publisher and title.endswith(f' - {publisher}'):
+            title = title[: -len(publisher) - 3]
+        items.append({
+            'title': title,
+            'link': link,
+            'source': publisher or source,
+            'published': _parse_date(_child_text(node, 'pubDate', 'published', 'updated', 'date')),
+            'summary': _clean(_child_text(node, 'description', 'summary'), 240),
+        })
+    return items
+
+
+class NewsFetcher:
+    def __init__(self):
+        self.cache = {}  # url -> (fetched_at, items)
+        self.http = httpx.AsyncClient(timeout=10, follow_redirects=True, headers={'User-Agent': USER_AGENT})
+
+    async def _feed(self, source, url):
+        cached = self.cache.get(url)
+        if cached and time.time() - cached[0] < NEWS_CACHE_SECONDS:
+            return cached[1]
+        response = await self.http.get(url)
+        response.raise_for_status()
+        items = parse_feed(response.text, source)
+        self.cache[url] = (time.time(), items)
+        return items
+
+    async def get(self, symbols):
+        feeds = list(NEWS_FEEDS)
+        tickers = [s for s in symbols if re.match(r'^[A-Z][A-Z.]{0,5}$', s)][:MAX_TICKER_FEEDS]
+        if tickers:
+            feeds = [('Google News', GOOGLE_NEWS.format(query=TICKER_NEWS_QUERY.format(symbol=t))) for t in tickers]
+        results = await asyncio.gather(*(self._feed(source, url) for source, url in feeds), return_exceptions=True)
+        items, failed = [], []
+        for (source, url), result in zip(feeds, results):
+            if isinstance(result, Exception):
+                log.warning('News from %s failed: %s', source, result)
+                if source not in failed:
+                    failed.append(source)
+            else:
+                items.extend(result)
+        seen, unique = set(), []
+        for item in sorted(items, key=lambda i: i['published'], reverse=True):
+            key = re.sub(r'\W+', '', item['title'].lower())
+            if key not in seen:
+                seen.add(key)
+                unique.append(item)
+        return unique[:NEWS_LIMIT], failed
+
+
+# ---------- Live data ----------
+
+
 class Market:
     """Shares one Schwab stream between every browser tab connected to the helper."""
 
-    def __init__(self, client, stream_factory=StreamClient):
+    def __init__(self, client, stream_factory=StreamClient, news=None):
         self.client = client
         self.stream_factory = stream_factory
+        self.news = news or NewsFetcher()
         self.browsers = set()
         self.listeners = {}  # symbol -> set of browser connections
         self.status = {'type': 'status', 'status': 'connecting', 'message': 'Connecting to Schwab'}
-        self.last_price = {}
+        self.quotes = {}  # symbol -> {'last': ..., 'prevClose': ...}
+        self.dirty_quotes = set()
         self.last_volume = {}
         self.seen = set()
 
@@ -182,9 +300,14 @@ class Market:
                 if kind in ('history', 'subscribe', 'unsubscribe') and not SYMBOL_PATTERN.match(symbol):
                     await ws.send(json.dumps({'type': 'error', 'id': msg.get('id'), 'message': f'Invalid symbol "{symbol}"'}))
                 elif kind == 'history':
-                    asyncio.create_task(self.reply_history(ws, msg.get('id'), symbol, msg.get('timeframe')))
+                    asyncio.create_task(self.reply(ws, msg.get('id'), self.history_reply(symbol, msg.get('resolution'), msg.get('days'))))
+                elif kind == 'news':
+                    symbols = [str(s).upper() for s in msg.get('symbols') or [] if isinstance(s, str)]
+                    asyncio.create_task(self.reply(ws, msg.get('id'), self.news_reply(symbols)))
                 elif kind == 'subscribe':
                     self.listeners.setdefault(symbol, set()).add(ws)
+                    if symbol in self.quotes:
+                        await ws.send(json.dumps(self.quote_message(symbol)))
                 elif kind == 'unsubscribe':
                     self.remove_listener(ws, symbol)
         finally:
@@ -200,20 +323,31 @@ class Market:
         if not listeners:
             del self.listeners[symbol]
 
-    async def reply_history(self, ws, request_id, symbol, timeframe):
+    async def history_reply(self, symbol, resolution, days):
+        bars = await fetch_history(self.client, symbol, resolution, days)
+        log.info('Sent %d %s bars for %s', len(bars), resolution, symbol)
+        return {'type': 'history', 'bars': bars}
+
+    async def news_reply(self, symbols):
+        items, failed = await self.news.get(symbols)
+        return {'type': 'news', 'items': items, 'failed': failed}
+
+    async def reply(self, ws, request_id, work):
         try:
-            bars = await fetch_history(self.client, symbol, timeframe)
-            reply = {'type': 'history', 'id': request_id, 'bars': bars}
-            log.info('Sent %d %s bars for %s', len(bars), timeframe, symbol)
+            reply = await work
         except Exception as err:  # Report every failure to the browser instead of crashing.
-            log.warning('History for %s failed: %s', symbol, err)
-            reply = {'type': 'error', 'id': request_id, 'message': str(err)}
+            log.warning('Request failed: %s', err)
+            reply = {'type': 'error', 'message': str(err)}
+        reply['id'] = request_id
         try:
             await ws.send(json.dumps(reply))
         except Exception:
             pass
 
     # ----- Schwab side -----
+
+    def quote_message(self, symbol):
+        return {'type': 'quote', 'symbol': symbol, **self.quotes[symbol]}
 
     def on_quote(self, msg):
         default_time = msg.get('timestamp')
@@ -223,8 +357,13 @@ class Market:
                 continue
             price = item.get('LAST_PRICE')
             total = item.get('TOTAL_VOLUME')
-            if price is not None:
-                self.last_price[symbol] = price
+            if price is not None or item.get('CLOSE_PRICE') is not None:
+                quote = self.quotes.setdefault(symbol, {'last': None, 'prevClose': None})
+                if price is not None:
+                    quote['last'] = price
+                if item.get('CLOSE_PRICE') is not None:
+                    quote['prevClose'] = item['CLOSE_PRICE']
+                self.dirty_quotes.add(symbol)
             size = 0
             if total is not None:
                 if symbol in self.last_volume:
@@ -236,11 +375,21 @@ class Market:
                 continue
             if price is None and size == 0:
                 continue
+            last = self.quotes.get(symbol, {}).get('last')
             trade_time = item.get('TRADE_TIME_MILLIS') or default_time
-            if symbol not in self.last_price or trade_time is None:
+            if last is None or trade_time is None:
                 continue
-            trade = {'type': 'trade', 'symbol': symbol, 'price': self.last_price[symbol], 'size': size, 'time': trade_time / 1000}
+            trade = {'type': 'trade', 'symbol': symbol, 'price': last, 'size': size, 'time': trade_time / 1000}
             broadcast(self.listeners.get(symbol, set()), json.dumps(trade))
+
+    async def send_quotes(self):
+        """Sends price changes for the watchlist and index cards a few times a second."""
+        while True:
+            await asyncio.sleep(0.3)
+            for symbol in list(self.dirty_quotes):
+                if symbol in self.quotes:
+                    broadcast(self.listeners.get(symbol, set()), json.dumps(self.quote_message(symbol)))
+            self.dirty_quotes.clear()
 
     async def run_stream(self):
         attempt = 0
@@ -273,6 +422,7 @@ class Market:
                         for symbol in to_remove:
                             self.last_volume.pop(symbol, None)
                             self.seen.discard(symbol)
+                            self.quotes.pop(symbol, None)
                     # Wait briefly for data, then loop round to pick up subscription changes.
                     try:
                         await asyncio.wait_for(stream.handle_message(), timeout=0.5)
@@ -297,12 +447,11 @@ async def run(client):
         print('=' * 64)
         print('  Schwab helper is running.')
         print(f'  Open {PLATFORM_URL}')
-        print('  and choose "Stocks (Schwab)" in the market dropdown.')
-        print('  Keep this window open while you use the charts.')
+        print('  Keep this window open while you use the platform.')
         print('  To stop the helper, press Ctrl+C or close this window.')
         print('=' * 64)
         print()
-        await market.run_stream()
+        await asyncio.gather(market.run_stream(), market.send_quotes())
 
 
 def main():

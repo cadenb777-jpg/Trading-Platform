@@ -2,23 +2,27 @@
 
 A personal, customizable charting and trading platform, like your own TradingView.
 
-**Stage 1 (done):** live candlestick charts with an indicator library.
-
-- Real-time crypto prices from Coinbase (free, no account)
+- **Home page:** greeting, live S&P 500 / Dow / Nasdaq cards, market news (Google News and
+  CNBC) and your watchlist
 - Real-time US stock prices from **every exchange** via your Schwab account and the
-  [Schwab helper](helper/README.md) (free)
-- 14 built-in indicators: Volume, SMA, EMA, WMA, VWAP, Bollinger Bands, Donchian Channels,
-  RSI, MACD, Stochastic, CCI, Williams %R, ATR, OBV
-- Add, configure, recolour, hide and remove indicators; your layout is remembered
-- Timeframes: 1m, 5m, 15m, 1h, 1D
+  [Schwab helper](helper/README.md) (free); real-time crypto from Coinbase (free)
+- 19 timeframes from 5 seconds to 1 month; star your favourites
+- Chart types: candles, hollow candles, Heikin Ashi, OHLC bars, line, area
+- Drawing tools: trend line, ray, horizontal and vertical lines, rectangle, Fibonacci
+  retracement, and long/short positions with take profit, stop loss and risk/reward
+- 14 indicators (Volume, SMA, EMA, WMA, VWAP, Bollinger Bands, Donchian Channels, RSI, MACD,
+  Stochastic, CCI, Williams %R, ATR, OBV), each with its own settings, timeframe, colours,
+  line thickness and placement (on the chart or in a pane below)
+- Watchlist with live prices; your layout and drawings are remembered
 
 ## Roadmap
 
 | Stage | Feature | Status |
 |---|---|---|
 | 1 | Charts, live data, indicator library | ✅ |
-| 2 | Drawing tools, more indicators, custom indicators, multiple saved layouts | |
-| 3 | Watchlist and multi-chart layouts | |
+| 2 | Home page, news, watchlist, drawing tools, all timeframes, chart types | ✅ |
+| 3 | Bigger indicator library and custom indicators; multi-chart layouts | |
+| 3b | Smart Money panel: COT, dark pool volume, short volume, insider and fund holdings | |
 | 4 | Trading through Webull: account, positions and orders, with confirmations | |
 | 5 | News feed and AI agents for strategies and backtesting | |
 | 6 | Login and hosting so it works from anywhere | |
@@ -35,6 +39,13 @@ and feeds live data to the charts.
 Click **ƒx Indicators**, then pick any indicator. Hover over an indicator's name on the chart
 to show buttons to hide it (👁), change its settings (⚙) or remove it (✕).
 
+### Drawing
+
+Pick a tool on the left of the chart and click on the chart (two clicks for lines). Click a
+drawing to select it, drag it or its handles to move it, and press **Delete** to remove it.
+The magnet snaps points to candle prices. For take profit and stop loss, use the **Long** or
+**Short position** tool and drag the green and red edges.
+
 ## For developers
 
 Requires [Node.js](https://nodejs.org) 20 or newer.
@@ -50,13 +61,17 @@ npm run build   # build the site into dist/
 
 ```
 src/
-  main.ts                 App startup, toolbar, legend, live-update loop
-  chart/ChartView.ts      Draws candles and indicators (TradingView Lightweight Charts)
+  main.ts                 App shell and navigation (Home / Chart)
+  state.ts                Everything remembered between visits
+  pages/homePage.ts       Greeting, index cards, news, watchlist
+  pages/chartPage.ts      Chart toolbar, drawing bar, legend, live updates
+  chart/ChartView.ts      Draws price and indicators (TradingView Lightweight Charts)
+  chart/drawings.ts       Drawing tools
   indicators/library.ts   The indicator library — add new indicators here
   indicators/math.ts      Shared maths (SMA, EMA, RSI, …)
-  data/                   Market data sources (Coinbase, Schwab)
-  ui/                     Dialogs (indicator picker, indicator settings)
-  storage.ts              Saves your chart layout in the browser
+  data/                   Market data (Coinbase, Schwab), live quotes, news
+  ui/                     Watchlist, timeframe picker, dialogs, icons
+  storage.ts              Saves to the browser
 helper/
   schwab_helper.py        Runs on your computer; streams Schwab data to the charts
 ```
