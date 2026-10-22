@@ -18,7 +18,7 @@ Download it from **https://www.python.org/downloads/** and run the installer.
 
 ### 2. Download the project
 
-1. Go to https://github.com/cadenb777-jpg/trading-platform
+1. Go to https://github.com/cadenb777-jpg/Trading-Platform
 2. Click the green **Code** button, then **Download ZIP**.
 3. Unzip it. On Windows: right-click the file, then **Extract All**. On Mac: double-click it.
 4. Open the unzipped folder, then the **helper** folder inside it.
@@ -36,8 +36,10 @@ The first start takes a minute while it installs what it needs.
 
 Find them at developer.schwab.com, under **Dashboard**, then **Apps**, then your app.
 
-- Paste the **App Key** and press Enter.
-- Paste the **Secret** and press Enter. It stays invisible while you paste; that's normal.
+- Paste the **Client ID** (the helper may also call it the App Key) and press Enter.
+- Paste the **Client Secret** and press Enter. It stays invisible while you paste; that's normal.
+
+In the black window, **right-click** to paste. Ctrl+V doesn't always work there.
 
 ### 5. Log in to Schwab
 

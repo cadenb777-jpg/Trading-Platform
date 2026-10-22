@@ -81,12 +81,13 @@ def load_config(reset):
     print()
     print('First-time setup: enter your Schwab app details.')
     print('Find them at developer.schwab.com > Dashboard > Apps > your app.')
+    print('Tip: in this window, right-click to paste.')
     print()
-    app_key = input('Paste your App Key and press Enter: ').strip()
-    print('Paste your Secret and press Enter. (It stays hidden while you paste. That is normal.)')
-    app_secret = getpass.getpass('Secret: ').strip()
+    app_key = input('Paste your Client ID (also called App Key) and press Enter: ').strip()
+    print('Paste your Client Secret and press Enter. (It stays hidden while you paste. That is normal.)')
+    app_secret = getpass.getpass('Client Secret: ').strip()
     if not app_key or not app_secret:
-        sys.exit('Both the App Key and Secret are needed. Run the helper again to retry.')
+        sys.exit('Both the Client ID and Client Secret are needed. Run the helper again to retry.')
 
     DATA_DIR.mkdir(exist_ok=True)
     config = {'app_key': app_key, 'app_secret': app_secret, 'callback_url': CALLBACK_URL}
