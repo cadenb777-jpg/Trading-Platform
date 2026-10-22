@@ -1,7 +1,8 @@
 /** The start screen: greeting, the three main US indexes, market news and the watchlist. */
 import { THEME } from '../chart/ChartView';
 import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
-import { HELPER_OUTDATED, helper, loadNews, schwab, type NewsItem } from '../data/schwab';
+import { HELPER_OUTDATED, helper, loadNews, schwab, type NewsItem, type NewsSection } from '../data/schwab';
+import { createUpcomingPanel } from './calendarPage';
 import { persist, state } from '../state';
 import type { Bar } from '../types';
 import { formatPrice, h, timeAgo } from '../ui/dom';
@@ -75,7 +76,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
   return { card, onQuote, loadSparkline };
 }
 
-export function createHomePage(onOpenChart: (ref: MarketRef) => void) {
+export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCalendar: () => void) {
   const greetingEl = h('h1', { class: 'greeting' });
   const dateEl = h('span', { class: 'muted' });
   const marketPill = h('span', { class: 'market-pill' });
@@ -94,51 +95,103 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void) {
 
   // ---------- News ----------
 
-  let newsTab: 'top' | 'watchlist' = 'top';
+  type NewsTab = 'top' | NewsSection | 'watchlist';
+  const TABS: [NewsTab, string][] = [
+    ['top', 'Top stories'],
+    ['economy', 'Economy'],
+    ['markets', 'Markets'],
+    ['companies', 'Companies'],
+    ['crypto', 'Crypto'],
+    ['watchlist', 'My watchlist'],
+  ];
+  let newsTab: NewsTab = 'top';
+  let importantOnly = true;
+  let general: { items: NewsItem[]; failed: string[] } | null = null;
   const newsList = h('div', { class: 'news-list', 'aria-live': 'polite' });
   const newsFooter = h('div', { class: 'news-foot muted small' });
-  const tabButton = (id: typeof newsTab, label: string) =>
-    h('button', { class: `tab${newsTab === id ? ' active' : ''}`, 'data-tab': id, onclick: () => setTab(id) }, label);
-  const tabs = h('div', { class: 'tabs', role: 'tablist' }, tabButton('top', 'Top stories'), tabButton('watchlist', 'My watchlist'));
-  const refreshBtn = h('button', { class: 'icon-btn', title: 'Refresh news', 'aria-label': 'Refresh news', onclick: () => refreshNews() }, icon('refresh', 16));
+  const tabs = h(
+    'div',
+    { class: 'tabs news-tabs', role: 'tablist' },
+    ...TABS.map(([id, label]) => h('button', { class: `tab${newsTab === id ? ' active' : ''}`, role: 'tab', 'data-tab': id, onclick: () => setTab(id) }, label)),
+  );
+  const importantToggle = h('input', { type: 'checkbox', checked: importantOnly });
+  importantToggle.addEventListener('change', () => {
+    importantOnly = importantToggle.checked;
+    showNews();
+  });
+  const refreshBtn = h('button', { class: 'icon-btn', title: 'Refresh news', 'aria-label': 'Refresh news', onclick: () => refreshNews(true) }, icon('refresh', 18));
 
-  function setTab(id: typeof newsTab) {
+  function setTab(id: NewsTab) {
     newsTab = id;
     tabs.querySelectorAll<HTMLElement>('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === id));
-    refreshNews();
+    if (id === 'watchlist') refreshNews();
+    else showNews();
+  }
+
+  const IMPACT_LABEL = { high: 'High impact', medium: 'Medium', low: '' } as const;
+
+  function newsItem(item: NewsItem) {
+    return h(
+      'a',
+      { class: `news-item impact-${item.impact}`, href: item.link, target: '_blank', rel: 'noopener noreferrer' },
+      h(
+        'div',
+        { class: 'news-meta' },
+        item.impact !== 'low' ? h('span', { class: `impact-badge ${item.impact}` }, IMPACT_LABEL[item.impact]) : null,
+        h('span', { class: 'news-source' }, item.source),
+        h('span', { class: 'muted' }, timeAgo(item.published)),
+        item.alsoReportedBy.length ? h('span', { class: 'muted', title: `Also reported by ${item.alsoReportedBy.join(', ')}` }, `+${item.alsoReportedBy.length} sources`) : null,
+        ...item.tags.map((t) => h('span', { class: 'news-tag' }, t)),
+      ),
+      h('div', { class: 'news-title' }, item.title),
+      item.summary && item.summary !== item.title ? h('div', { class: 'news-summary' }, item.summary) : null,
+    );
+  }
+
+  /** Picks and orders headlines for the current tab. "Top stories" ranks by market impact. */
+  function visibleNews(items: NewsItem[]): NewsItem[] {
+    let list = newsTab === 'top' || newsTab === 'watchlist' ? items : items.filter((i) => i.section === newsTab);
+    if (importantOnly) list = list.filter((i) => i.impact !== 'low');
+    if (newsTab === 'top') list = [...list].sort((a, b) => b.score - a.score);
+    return list.slice(0, 40);
   }
 
   function renderNews(items: NewsItem[], failed: string[]) {
-    newsList.replaceChildren(
-      ...items.map((item) =>
-        h(
-          'a',
-          { class: 'news-item', href: item.link, target: '_blank', rel: 'noopener noreferrer' },
-          h('div', { class: 'news-meta' }, h('span', { class: 'news-source' }, item.source), h('span', { class: 'muted' }, timeAgo(item.published))),
-          h('div', { class: 'news-title' }, item.title),
-          item.summary ? h('div', { class: 'news-summary' }, item.summary) : null,
-        ),
-      ),
-    );
-    if (!items.length) newsList.append(h('div', { class: 'muted pad' }, 'No headlines right now.'));
+    const list = visibleNews(items);
+    newsList.replaceChildren(...list.map(newsItem));
+    if (!list.length) {
+      newsList.append(h('div', { class: 'muted pad' }, importantOnly && items.length ? 'No market-moving headlines here right now. Untick "Important only" to see everything.' : 'No headlines right now.'));
+    }
     const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    newsFooter.textContent = `Updated ${time}${failed.length ? ` · couldn't reach ${failed.join(', ')}` : ''}`;
+    newsFooter.textContent = `Updated ${time} · Google News and CNBC${failed.length ? ` · couldn't reach ${failed.join(', ')}` : ''}`;
+  }
+
+  let watchNews: { items: NewsItem[]; failed: string[] } | null = null;
+  function showNews() {
+    const data = newsTab === 'watchlist' ? watchNews : general;
+    if (data) renderNews(data.items, data.failed);
   }
 
   let newsRequest = 0;
-  async function refreshNews() {
+  async function refreshNews(force = false) {
     const request = ++newsRequest;
-    if (!newsList.childElementCount) newsList.append(h('div', { class: 'muted pad' }, 'Loading headlines…'));
-    const symbols = newsTab === 'watchlist' ? state.watchlist.filter((r) => r.provider === 'schwab').map((r) => r.symbol) : [];
+    const wantWatchlist = newsTab === 'watchlist';
+    if (!force && (wantWatchlist ? watchNews : general)) showNews();
+    else if (!newsList.childElementCount) newsList.append(h('div', { class: 'muted pad' }, 'Loading headlines…'));
+    const symbols = state.watchlist.filter((r) => r.provider === 'schwab' && !r.symbol.startsWith('$')).map((r) => r.symbol);
     try {
-      const { items, failed } = await loadNews(newsTab === 'watchlist' ? symbols.concat(symbols.length ? [] : ['SPY']) : []);
-      if (request === newsRequest) renderNews(items, failed);
+      const result = await loadNews(wantWatchlist ? (symbols.length ? symbols : ['SPY']) : []);
+      if (wantWatchlist) watchNews = result;
+      else general = result;
+      if (request === newsRequest) showNews();
     } catch {
       if (request !== newsRequest) return;
-      newsList.replaceChildren(h('div', { class: 'muted pad' }, 'News appears here when the Schwab helper is running.'));
+      newsList.replaceChildren(h('div', { class: 'muted pad' }, helper.outdated ? HELPER_OUTDATED : 'News appears here when the Schwab helper is running.'));
       newsFooter.textContent = '';
     }
   }
+
+  const upcoming = createUpcomingPanel(onOpenCalendar);
 
   const watchlist = createWatchlist({ onSelect: onOpenChart });
 
@@ -159,11 +212,19 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void) {
       h(
         'section',
         { class: 'panel news-panel' },
-        h('div', { class: 'panel-head' }, h('h3', {}, icon('news', 18), ' Market news'), h('span', { class: 'spacer' }), tabs, refreshBtn),
+        h(
+          'div',
+          { class: 'panel-head' },
+          h('h3', {}, icon('news', 20), ' Market news'),
+          h('span', { class: 'spacer' }),
+          h('label', { class: 'toggle', title: 'Show only stories likely to move the market' }, importantToggle, ' Important only'),
+          refreshBtn,
+        ),
+        tabs,
         newsList,
         newsFooter,
       ),
-      h('div', { class: 'panel watch-panel' }, watchlist.el),
+      h('div', { class: 'home-side' }, upcoming.el, h('div', { class: 'panel watch-panel' }, watchlist.el)),
     ),
   );
 
@@ -203,11 +264,13 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void) {
     helper.onAvailability((up) => {
       showBanner(up);
       if (up && !helper.outdated) {
-        refreshNews();
+        refreshNews(true);
+        upcoming.refresh();
         for (const c of cards) c.loadSparkline();
       }
     });
-    setInterval(() => !el.hidden && helper.isConnected && refreshNews(), NEWS_REFRESH_MS);
+    setInterval(() => !el.hidden && helper.isConnected && refreshNews(true), NEWS_REFRESH_MS);
+    setInterval(() => !el.hidden && helper.isConnected && upcoming.refresh(), 5 * 60 * 1000);
     setInterval(() => helper.isConnected && cards.forEach((c) => c.loadSparkline()), 5 * 60 * 1000);
     refreshNews();
   }

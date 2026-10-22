@@ -1,3 +1,4 @@
 schwab-py>=1.5,<2
 websockets>=14
 httpx>=0.25
+tzdata

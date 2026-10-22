@@ -12,7 +12,7 @@ export function createTimeframePicker(opts: {
   onFavoritesChange: (favorites: Timeframe[]) => void;
 }) {
   const buttons = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Timeframe' });
-  const moreBtn = h('button', { class: 'icon-btn tf-more', title: 'All timeframes', 'aria-label': 'All timeframes' }, icon('chevron', 16));
+  const moreBtn = h('button', { class: 'icon-btn tf-more', title: 'All timeframes', 'aria-label': 'All timeframes' }, icon('chevron', 20));
   const el = h('div', { class: 'tf-picker' }, buttons, moreBtn);
   const ordered = (list: Timeframe[]) => TIMEFRAME_DEFS.map((d) => d.id).filter((id) => list.includes(id));
 
@@ -52,7 +52,7 @@ export function createTimeframePicker(opts: {
                     render();
                   },
                 },
-                icon('star', 15),
+                icon('star', 17),
               ),
             );
           }),

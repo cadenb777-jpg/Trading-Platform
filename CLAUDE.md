@@ -11,9 +11,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   public, no key) and Schwab (stocks, via the helper). Secrets never go in the repo or the browser.
 - `helper/schwab_helper.py` runs on the owner's computer (schwab-py). It talks to `src/data/schwab.ts`
   over `ws://127.0.0.1:8765`. Requests: history {symbol, resolution (1m/5m/10m/15m/30m/1D/1W), days},
-  news {symbols}, subscribe/unsubscribe {symbol}. Pushes: status, trade, quote {last, prevClose}.
+  news {symbols}, calendar, subscribe/unsubscribe {symbol}. Pushes: status (with version), trade,
+  quote {last, prevClose}. HELPER_VERSION in the helper must match REQUIRED_HELPER_VERSION in schwab.ts.
   Replies carry the request id; failures come back as error. Keys/token live in `~/.trading-platform/`.
-  News comes from Google News RSS and CNBC RSS (Google Finance has no feed).
+  News comes from Google News RSS and CNBC RSS (Google Finance has no feed); `rank_news` groups
+  duplicate stories, assigns a section and scores market impact with keyword weights (free, no AI).
+  Calendar: Forex Factory weekly JSON (nfs.faireconomy.media) plus hard-coded FOMC dates.
   Changing the protocol means the owner must re-download the helper; say so.
   It is market-data only: never add order placement to it (the Schwab app's order limit is 0).
   Trading is planned through Webull.

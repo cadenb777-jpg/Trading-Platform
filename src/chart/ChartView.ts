@@ -90,6 +90,7 @@ export class ChartView {
       layout: {
         background: { type: ColorType.Solid, color: THEME.background },
         textColor: THEME.text,
+        fontSize: 13,
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
         panes: { separatorColor: THEME.border, separatorHoverColor: '#2962ff55', enableResize: true },
       },

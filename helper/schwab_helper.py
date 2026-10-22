@@ -24,6 +24,7 @@ import sys
 import time
 import warnings
 import xml.etree.ElementTree as ET
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 # Libraries print harmless deprecation notices while loading; hide them so the window stays clear.
@@ -36,7 +37,7 @@ from websockets.asyncio.server import broadcast, serve  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 2
+HELPER_VERSION = 3
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -83,13 +84,46 @@ QUOTE_FIELDS = [
 # Free public news feeds. Add or remove lines to change where headlines come from.
 # Google News is where Google Finance's headlines come from; each item names its publisher.
 GOOGLE_NEWS = 'https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en'
+# (source, section, url). Sections: economy, markets, companies, crypto.
 NEWS_FEEDS = [
-    ('Google News', GOOGLE_NEWS.format(query='stock+market+when:1d')),
-    ('Google News', GOOGLE_NEWS.format(query='wall+street+stocks+when:1d')),
-    ('CNBC', 'https://www.cnbc.com/id/100003114/device/rss/rss.html'),
-    ('CNBC', 'https://www.cnbc.com/id/20910258/device/rss/rss.html'),
-    ('CoinDesk', 'https://www.coindesk.com/arc/outboundfeeds/rss/'),
+    ('Google News', 'markets', GOOGLE_NEWS.format(query='stock+market+when:1d')),
+    ('Google News', 'economy', GOOGLE_NEWS.format(query='economy+OR+inflation+OR+%22federal+reserve%22+OR+%22jobs+report%22+when:1d')),
+    ('Google News', 'companies', GOOGLE_NEWS.format(query='earnings+OR+guidance+OR+%22shares+of%22+when:1d')),
+    ('CNBC', 'markets', 'https://www.cnbc.com/id/100003114/device/rss/rss.html'),
+    ('CNBC', 'economy', 'https://www.cnbc.com/id/20910258/device/rss/rss.html'),
+    ('CNBC', 'markets', 'https://www.cnbc.com/id/10000664/device/rss/rss.html'),
+    ('CoinDesk', 'crypto', 'https://www.coindesk.com/arc/outboundfeeds/rss/'),
 ]
+
+# Market-moving topics: (label, importance, section, pattern). Headlines matching heavier topics,
+# and stories covered by several outlets at once, rank higher in "Top stories".
+NEWS_TOPICS = [
+    ('Fed', 6, 'economy', r'\b(fed|fomc|powell|federal reserve|rate cuts?|rate hikes?|interest rates?)\b'),
+    ('Inflation', 5, 'economy', r'\b(inflation|cpi|pce|consumer prices|producer prices|ppi)\b'),
+    ('Jobs', 4, 'economy', r'\b(jobs report|payrolls|unemployment|jobless claims|labor market)\b'),
+    ('Growth', 4, 'economy', r'\b(gdp|recession|economic growth|retail sales|consumer spending|pmi|ism)\b'),
+    ('Trade', 4, 'economy', r'\b(tariffs?|trade war|trade deal|sanctions)\b'),
+    ('Bonds', 3, 'economy', r'\b(treasur(y|ies)|bond yields?|10-year|yield curve)\b'),
+    ('Earnings', 3, 'companies', r'\b(earnings|quarterly results|guidance|revenue|profit|beats?|miss(es)?|deliveries|delivery)\b'),
+    ('Mega-cap', 3, 'companies', r'\b(apple|microsoft|nvidia|amazon|alphabet|google|meta|tesla|broadcom|berkshire|jpmorgan)\b'),
+    ('Deals', 2, 'companies', r'\b(mergers?|acquisitions?|acquires?|buyout|ipo|bankruptcy)\b'),
+    ('Market move', 3, 'markets', r'\b(s&p 500|dow|nasdaq|sell-?off|rally|plunges?|surges?|record high|correction|volatility|vix|soars?|tumbles?|slides?|sinks?|jumps?)\b'),
+    ('Oil', 3, 'markets', r'\b(oil|opec|crude|brent)\b'),
+    ('Crypto', 3, 'crypto', r'\b(bitcoin|crypto|ethereum|stablecoins?)\b'),
+    ('Geopolitics', 2, None, r'\b(war|missiles?|invasion|election|shutdown|debt ceiling)\b'),
+]
+NEWS_TOPIC_PATTERNS = [(label, weight, section, re.compile(rx, re.I)) for label, weight, section, rx in NEWS_TOPICS]
+STOPWORDS = set('the and for with from that this will after over into amid says said than more what about their have been stocks stock market'.split())
+
+# Economic calendar: Forex Factory's free weekly feeds (forecast, previous, and actual when published).
+CALENDAR_FEEDS = [
+    'https://nfs.faireconomy.media/ff_calendar_thisweek.json',
+    'https://nfs.faireconomy.media/ff_calendar_nextweek.json',
+]
+CALENDAR_CACHE_SECONDS = 3600
+# Fed rate decision days (2:00 PM ET). Check https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+FOMC_DECISIONS = ['2026-01-28', '2026-03-18', '2026-04-29', '2026-06-17', '2026-07-29', '2026-09-16', '2026-10-28', '2026-12-09']
+EASTERN = ZoneInfo('America/New_York')
 # Headlines for one ticker, e.g. from your watchlist.
 TICKER_NEWS_QUERY = '{symbol}+stock+when:3d'
 MAX_TICKER_FEEDS = 12
@@ -227,42 +261,145 @@ def parse_feed(xml_text, source):
     return items
 
 
+def _title_words(title):
+    return {w for w in re.findall(r'[a-z0-9&]+', title.lower()) if len(w) > 3 and w not in STOPWORDS}
+
+
+def rank_news(items, now=None):
+    """Groups the same story from different outlets, sorts each into a section, and scores how
+    likely it is to move the market (topic importance + how many outlets cover it + freshness)."""
+    now = now or time.time()
+    clusters = []  # [lead item, words, [other sources]]
+    for item in sorted(items, key=lambda i: i['published'], reverse=True):
+        words = _title_words(item['title'])
+        for cluster in clusters:
+            overlap = len(words & cluster[1]) / max(1, len(words | cluster[1]))
+            if overlap >= 0.4:
+                if item['source'] not in cluster[2] and item['source'] != cluster[0]['source']:
+                    cluster[2].append(item['source'])
+                break
+        else:
+            clusters.append([item, words, []])
+
+    ranked = []
+    for lead, _words, others in clusters:
+        text_title = lead['title']
+        score, tags, best = 0.0, [], (0, None)
+        for label, weight, section, pattern in NEWS_TOPIC_PATTERNS:
+            if pattern.search(text_title):
+                score += weight
+            elif pattern.search(lead['summary']):
+                score += weight / 2
+            else:
+                continue
+            tags.append(label)
+            if section and weight > best[0]:
+                best = (weight, section)
+        score += min(6, 2 * len(others))
+        if lead['published']:
+            score -= 0.15 * max(0, now - lead['published']) / 3600
+        section = 'crypto' if lead.get('section') == 'crypto' else (best[1] or lead.get('section') or 'markets')
+        ranked.append({
+            **lead,
+            'section': section,
+            'tags': tags[:3],
+            'alsoReportedBy': others[:4],
+            'score': round(score, 1),
+            'impact': 'high' if score >= 8 else 'medium' if score >= 2.5 else 'low',
+        })
+    return ranked
+
+
 class NewsFetcher:
     def __init__(self):
-        self.cache = {}  # url -> (fetched_at, items)
+        self.cache = {}  # url -> (fetched_at, data)
         self.http = httpx.AsyncClient(timeout=10, follow_redirects=True, headers={'User-Agent': USER_AGENT})
 
-    async def _feed(self, source, url):
+    async def _cached(self, url, max_age, parse):
         cached = self.cache.get(url)
-        if cached and time.time() - cached[0] < NEWS_CACHE_SECONDS:
+        if cached and time.time() - cached[0] < max_age:
             return cached[1]
         response = await self.http.get(url)
         response.raise_for_status()
-        items = parse_feed(response.text, source)
-        self.cache[url] = (time.time(), items)
-        return items
+        data = parse(response)
+        self.cache[url] = (time.time(), data)
+        return data
+
+    async def _feed(self, source, section, url):
+        items = await self._cached(url, NEWS_CACHE_SECONDS, lambda r: parse_feed(r.text, source))
+        return [{**i, 'section': section} for i in items]
 
     async def get(self, symbols):
         feeds = list(NEWS_FEEDS)
         tickers = [s for s in symbols if re.match(r'^[A-Z][A-Z.]{0,5}$', s)][:MAX_TICKER_FEEDS]
         if tickers:
-            feeds = [('Google News', GOOGLE_NEWS.format(query=TICKER_NEWS_QUERY.format(symbol=t))) for t in tickers]
-        results = await asyncio.gather(*(self._feed(source, url) for source, url in feeds), return_exceptions=True)
+            feeds = [('Google News', 'companies', GOOGLE_NEWS.format(query=TICKER_NEWS_QUERY.format(symbol=t))) for t in tickers]
+        results = await asyncio.gather(*(self._feed(*feed) for feed in feeds), return_exceptions=True)
         items, failed = [], []
-        for (source, url), result in zip(feeds, results):
+        for (source, _section, _url), result in zip(feeds, results):
             if isinstance(result, Exception):
                 log.warning('News from %s failed: %s', source, result)
                 if source not in failed:
                     failed.append(source)
             else:
                 items.extend(result)
-        seen, unique = set(), []
-        for item in sorted(items, key=lambda i: i['published'], reverse=True):
-            key = re.sub(r'\W+', '', item['title'].lower())
-            if key not in seen:
-                seen.add(key)
-                unique.append(item)
-        return unique[:NEWS_LIMIT], failed
+        return rank_news(items)[:NEWS_LIMIT], failed
+
+    async def calendar(self):
+        results = await asyncio.gather(*(self._cached(url, CALENDAR_CACHE_SECONDS, lambda r: r.json()) for url in CALENDAR_FEEDS), return_exceptions=True)
+        events, failed = [], []
+        for url, result in zip(CALENDAR_FEEDS, results):
+            if isinstance(result, Exception):
+                log.warning('Calendar feed failed: %s', result)
+                failed.append('Forex Factory')
+            else:
+                events.extend(parse_calendar(result))
+        return merge_fomc(events), sorted(set(failed))
+
+
+def _text(value):
+    return str(value).strip() if value not in (None, '') else ''
+
+
+def parse_calendar(rows):
+    """Reads Forex Factory calendar rows into simple events."""
+    events = []
+    for row in rows if isinstance(rows, list) else []:
+        try:
+            when = dt.datetime.fromisoformat(str(row['date']).replace('Z', '+00:00'))
+        except (KeyError, ValueError):
+            continue
+        impact = _text(row.get('impact')).lower()
+        events.append({
+            'title': _text(row.get('title')),
+            'country': _text(row.get('country')).upper(),
+            'time': int(when.timestamp()),
+            'impact': impact if impact in ('high', 'medium', 'low', 'holiday') else 'low',
+            'forecast': _text(row.get('forecast')),
+            'previous': _text(row.get('previous')),
+            'actual': _text(row.get('actual')),
+        })
+    return events
+
+
+def merge_fomc(events):
+    """Adds Fed rate decision days the weekly feeds don't reach yet."""
+    out = list(events)
+    covered = {dt.datetime.fromtimestamp(e['time'], EASTERN).date() for e in events if e['country'] == 'USD' and 'federal funds' in e['title'].lower()}
+    now = time.time()
+    for day in FOMC_DECISIONS:
+        when = dt.datetime.fromisoformat(f'{day}T14:00:00').replace(tzinfo=EASTERN)
+        if when.date() in covered or when.timestamp() < now - 86400 * 7:
+            continue
+        out.append({'title': 'FOMC Rate Decision (Federal Funds Rate)', 'country': 'USD', 'time': int(when.timestamp()),
+                    'impact': 'high', 'forecast': '', 'previous': '', 'actual': ''})
+    seen, unique = set(), []
+    for e in sorted(out, key=lambda e: e['time']):
+        key = (e['title'], e['country'], e['time'])
+        if key not in seen:
+            seen.add(key)
+            unique.append(e)
+    return unique
 
 
 # ---------- Live data ----------
@@ -304,6 +441,8 @@ class Market:
                     await ws.send(json.dumps({'type': 'error', 'id': msg.get('id'), 'message': f'Invalid symbol "{symbol}"'}))
                 elif kind == 'history':
                     asyncio.create_task(self.reply(ws, msg.get('id'), self.history_reply(symbol, msg.get('resolution'), msg.get('days'))))
+                elif kind == 'calendar':
+                    asyncio.create_task(self.reply(ws, msg.get('id'), self.calendar_reply()))
                 elif kind == 'news':
                     symbols = [str(s).upper() for s in msg.get('symbols') or [] if isinstance(s, str)]
                     asyncio.create_task(self.reply(ws, msg.get('id'), self.news_reply(symbols)))
@@ -330,6 +469,10 @@ class Market:
         bars = await fetch_history(self.client, symbol, resolution, days)
         log.info('Sent %d %s bars for %s', len(bars), resolution, symbol)
         return {'type': 'history', 'bars': bars}
+
+    async def calendar_reply(self):
+        events, failed = await self.news.calendar()
+        return {'type': 'calendar', 'events': events, 'failed': failed}
 
     async def news_reply(self, symbols):
         items, failed = await self.news.get(symbols)

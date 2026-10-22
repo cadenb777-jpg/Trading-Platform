@@ -53,7 +53,7 @@ export function createChartPage() {
   const messageEl = h('div', { class: 'chart-message', hidden: true });
   const chartWrap = h('main', { class: 'chart-wrap' }, chartEl, legendEl, messageEl);
   const drawBar = h('div', { class: 'draw-bar', role: 'toolbar', 'aria-label': 'Drawing tools' });
-  const watchToggle = h('button', { class: 'icon-btn', title: 'Show or hide watchlist', 'aria-label': 'Toggle watchlist' }, icon('list'));
+  const watchToggle = h('button', { class: 'icon-btn', title: 'Show or hide watchlist', 'aria-label': 'Toggle watchlist' }, icon('list', 22));
   const side = h('aside', { class: 'watch-side' });
 
   const tfPicker = createTimeframePicker({
@@ -157,7 +157,7 @@ export function createChartPage() {
             'aria-pressed': drawings.tool === t.id,
             onclick: () => drawings.setTool(drawings.tool === t.id ? 'cursor' : t.id),
           },
-          icon(TOOL_ICONS[t.id], 20),
+          icon(TOOL_ICONS[t.id], 24),
         ),
       ),
       h('span', { class: 'tool-sep' }),
@@ -173,7 +173,7 @@ export function createChartPage() {
             renderDrawBar();
           },
         },
-        icon('magnet', 20),
+        icon('magnet', 24),
       ),
       h(
         'button',
@@ -187,7 +187,7 @@ export function createChartPage() {
             if (confirm(`Remove all ${drawings.drawings.length} drawings from ${displaySymbol(symbol())}?`)) drawings.clearAll();
           },
         },
-        icon('trash', 20),
+        icon('trash', 24),
       ),
     );
   }

@@ -20,6 +20,7 @@ const PATHS = {
   news: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/>',
   long: '<path d="M4 20h16"/><rect x="5" y="5" width="14" height="7" rx="1"/><rect x="5" y="12" width="14" height="4" rx="1" stroke-dasharray="2 2"/>',
   short: '<path d="M4 4h16"/><rect x="5" y="12" width="14" height="7" rx="1"/><rect x="5" y="8" width="14" height="4" rx="1" stroke-dasharray="2 2"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="M8 14h2M14 14h2M8 17h2"/>',
   refresh: '<path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 4v7h-7"/>',
 } as const;
 

@@ -12,13 +12,16 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The helper version this site needs. Must match HELPER_VERSION in helper/schwab_helper.py. */
-const REQUIRED_HELPER_VERSION = 2;
+const REQUIRED_HELPER_VERSION = 3;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
 
 export const HELPER_NOT_RUNNING =
   'The Schwab helper isn\'t running on this computer. Start it (double-click start-windows.bat or start-mac.command), then click Try again.';
+
+export type NewsSection = 'economy' | 'markets' | 'companies' | 'crypto';
+export type Impact = 'high' | 'medium' | 'low';
 
 export interface NewsItem {
   title: string;
@@ -27,6 +30,26 @@ export interface NewsItem {
   /** UTC unix seconds, 0 if unknown */
   published: number;
   summary: string;
+  section: NewsSection;
+  /** Market-moving topics found in the story, e.g. "Fed", "Earnings". */
+  tags: string[];
+  /** Other outlets running the same story. */
+  alsoReportedBy: string[];
+  /** How likely the story is to move the market (higher = more important). */
+  score: number;
+  impact: Impact;
+}
+
+export interface CalendarEvent {
+  title: string;
+  /** Currency code, e.g. USD */
+  country: string;
+  /** UTC unix seconds */
+  time: number;
+  impact: Impact | 'holiday';
+  forecast: string;
+  previous: string;
+  actual: string;
 }
 
 /** Which Schwab bar size to request for each timeframe, and how many days back. */
@@ -63,6 +86,7 @@ type HelperMessage =
   | { type: 'status'; status: ConnectionStatus; message: string; version?: number }
   | { type: 'history'; id: number; bars: Bar[] }
   | { type: 'news'; id: number; items: NewsItem[]; failed: string[] }
+  | { type: 'calendar'; id: number; events: CalendarEvent[]; failed: string[] }
   | { type: 'error'; id: number | null; message: string }
   | { type: 'trade'; symbol: string; price: number; size: number; time: number }
   | { type: 'quote'; symbol: string; last: number | null; prevClose: number | null };
@@ -197,6 +221,7 @@ class HelperConnection {
       }
       case 'history':
       case 'news':
+      case 'calendar':
         this.pending.get(msg.id)?.resolve(msg);
         break;
       case 'error':
@@ -237,6 +262,12 @@ export async function loadNews(symbols: string[] = []): Promise<{ items: NewsIte
   const reply = await helper.request({ type: 'news', symbols });
   if (reply.type !== 'news') throw new Error('Unexpected reply from the helper');
   return { items: reply.items, failed: reply.failed };
+}
+
+export async function loadCalendar(): Promise<{ events: CalendarEvent[]; failed: string[] }> {
+  const reply = await helper.request({ type: 'calendar' });
+  if (reply.type !== 'calendar') throw new Error('Unexpected reply from the helper');
+  return { events: reply.events, failed: reply.failed };
 }
 
 export const schwab: DataProvider = {

@@ -3,7 +3,10 @@
 A personal, customizable charting and trading platform, like your own TradingView.
 
 - **Home page:** greeting, live S&P 500 / Dow / Nasdaq cards, market news (Google News and
-  CNBC) and your watchlist
+  CNBC) in sections (Top stories, Economy, Markets, Companies, Crypto, My watchlist) with
+  market-impact ratings, upcoming economic events, and your watchlist
+- **Economic calendar:** Fed decisions, CPI, jobs reports and more, with impact, forecast,
+  previous and actual, plus a plain-English note on what each event means
 - Real-time US stock prices from **every exchange** via your Schwab account and the
   [Schwab helper](helper/README.md) (free); real-time crypto from Coinbase (free)
 - 19 timeframes from 5 seconds to 1 month; star your favourites

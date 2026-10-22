@@ -17,7 +17,7 @@ export const displaySymbol = (symbol: string) => symbol.replace(/^\$/, '');
 export function createWatchlist(opts: { onSelect: (ref: MarketRef) => void; isActive?: (ref: MarketRef) => boolean; title?: string }) {
   const list = h('div', { class: 'wl-list', role: 'list' });
   const input = h('input', { class: 'input wl-input', placeholder: 'Add symbol, e.g. AMD or BTC', 'aria-label': 'Add symbol', spellcheck: false, autocomplete: 'off' });
-  const form = h('form', { class: 'wl-add' }, input, h('button', { class: 'icon-btn', type: 'submit', title: 'Add', 'aria-label': 'Add symbol' }, icon('plus', 16)));
+  const form = h('form', { class: 'wl-add' }, input, h('button', { class: 'icon-btn', type: 'submit', title: 'Add', 'aria-label': 'Add symbol' }, icon('plus', 20)));
   const el = h(
     'section',
     { class: 'watchlist' },
@@ -82,7 +82,7 @@ export function createWatchlist(opts: { onSelect: (ref: MarketRef) => void; isAc
                   persist();
                 },
               },
-              icon('close', 13),
+              icon('close', 15),
             ),
           );
           row.addEventListener('click', () => opts.onSelect(ref));
