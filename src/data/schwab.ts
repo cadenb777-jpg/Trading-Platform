@@ -11,6 +11,12 @@ const HELPER_URL = 'ws://127.0.0.1:8765';
 const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
+/** The helper version this site needs. Must match HELPER_VERSION in helper/schwab_helper.py. */
+const REQUIRED_HELPER_VERSION = 2;
+
+export const HELPER_OUTDATED =
+  'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
+
 export const HELPER_NOT_RUNNING =
   'The Schwab helper isn\'t running on this computer. Start it (double-click start-windows.bat or start-mac.command), then click Try again.';
 
@@ -54,7 +60,7 @@ export interface HelperListener {
 }
 
 type HelperMessage =
-  | { type: 'status'; status: ConnectionStatus; message: string }
+  | { type: 'status'; status: ConnectionStatus; message: string; version?: number }
   | { type: 'history'; id: number; bars: Bar[] }
   | { type: 'news'; id: number; items: NewsItem[]; failed: string[] }
   | { type: 'error'; id: number | null; message: string }
@@ -71,6 +77,10 @@ class HelperConnection {
   private readonly availability = new Set<(up: boolean) => void>();
   private helperStatus: { status: ConnectionStatus; message: string } = { status: 'connecting', message: 'Connecting' };
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
+  /** True when the running helper is older than this site needs. */
+  outdated = false;
+  /** Finishes connecting once the helper's first status message (with its version) arrives. */
+  private onReady: (() => void) | null = null;
 
   get isConnected() {
     return this.ws?.readyState === WebSocket.OPEN;
@@ -101,8 +111,14 @@ class HelperConnection {
         this.ws = ws;
         // Re-subscribe anything that was streaming before a reconnect.
         for (const symbol of this.listeners.keys()) this.send({ type: 'subscribe', symbol });
-        this.notify(true);
-        resolve(ws);
+        const ready = () => {
+          clearTimeout(readyTimer);
+          this.onReady = null;
+          this.notify(true);
+          resolve(ws);
+        };
+        const readyTimer = setTimeout(ready, 2000);
+        this.onReady = ready;
       };
       ws.onerror = fail;
       ws.onmessage = (event) => this.onMessage(JSON.parse(event.data as string) as HelperMessage);
@@ -116,6 +132,7 @@ class HelperConnection {
   /** Sends a request and waits for the helper's reply with the same id. */
   async request(msg: Record<string, unknown>, signal?: AbortSignal): Promise<HelperMessage> {
     await this.connect();
+    if (this.outdated) throw new Error(HELPER_OUTDATED);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {
       const timer = setTimeout(() => finish(new Error('The Schwab helper took too long to answer. Try again.')), REQUEST_TIMEOUT_MS);
@@ -167,10 +184,17 @@ class HelperConnection {
 
   private onMessage(msg: HelperMessage) {
     switch (msg.type) {
-      case 'status':
+      case 'status': {
+        const outdated = (msg.version ?? 1) < REQUIRED_HELPER_VERSION;
+        if (outdated !== this.outdated) {
+          this.outdated = outdated;
+          if (!this.onReady) this.notify(true);
+        }
+        this.onReady?.();
         this.helperStatus = { status: msg.status, message: msg.message };
         for (const l of this.allListeners()) l.onStatus?.(msg.status, msg.message);
         break;
+      }
       case 'history':
       case 'news':
         this.pending.get(msg.id)?.resolve(msg);

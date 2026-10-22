@@ -1,7 +1,7 @@
 /** The start screen: greeting, the three main US indexes, market news and the watchlist. */
 import { THEME } from '../chart/ChartView';
 import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
-import { helper, loadNews, schwab, type NewsItem } from '../data/schwab';
+import { HELPER_OUTDATED, helper, loadNews, schwab, type NewsItem } from '../data/schwab';
 import { persist, state } from '../state';
 import type { Bar } from '../types';
 import { formatPrice, h, timeAgo } from '../ui/dom';
@@ -79,13 +79,16 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void) {
   const greetingEl = h('h1', { class: 'greeting' });
   const dateEl = h('span', { class: 'muted' });
   const marketPill = h('span', { class: 'market-pill' });
-  const banner = h(
-    'div',
-    { class: 'helper-banner', hidden: true },
-    h('b', {}, 'Live stock prices and news need the Schwab helper.'),
-    h('span', {}, ' Start it on this computer and this page connects automatically. '),
-    h('a', { href: HELPER_GUIDE, target: '_blank', rel: 'noopener' }, 'How to start it'),
-  );
+  const bannerText = h('span', {});
+  const banner = h('div', { class: 'helper-banner', hidden: true }, bannerText, ' ', h('a', { href: HELPER_GUIDE, target: '_blank', rel: 'noopener' }, 'Helper guide'));
+  const showBanner = (up: boolean) => {
+    banner.hidden = up && !helper.outdated;
+    bannerText.replaceChildren(
+      helper.outdated
+        ? h('b', {}, HELPER_OUTDATED)
+        : h('span', {}, h('b', {}, 'Live stock prices and news need the Schwab helper.'), ' Start it on this computer and this page connects automatically.'),
+    );
+  };
 
   const cards = INDEXES.map((index) => indexCard(index, () => onOpenChart({ provider: 'schwab', symbol: index.symbol })));
 
@@ -198,8 +201,8 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void) {
     setInterval(renderClock, 30000);
     for (const [i, index] of INDEXES.entries()) subscribeQuote({ provider: 'schwab', symbol: index.symbol }, cards[i].onQuote);
     helper.onAvailability((up) => {
-      banner.hidden = up;
-      if (up) {
+      showBanner(up);
+      if (up && !helper.outdated) {
         refreshNews();
         for (const c of cards) c.loadSparkline();
       }

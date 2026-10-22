@@ -35,6 +35,9 @@ from schwab.streaming import StreamClient  # noqa: E402
 from websockets.asyncio.server import broadcast, serve  # noqa: E402
 warnings.showwarning = _show_warning
 
+# Bump when the browser needs new helper features, so it can ask you to download the new copy.
+HELPER_VERSION = 2
+
 HOST = '127.0.0.1'
 PORT = 8765
 CALLBACK_URL = 'https://127.0.0.1:8182'
@@ -274,14 +277,14 @@ class Market:
         self.news = news or NewsFetcher()
         self.browsers = set()
         self.listeners = {}  # symbol -> set of browser connections
-        self.status = {'type': 'status', 'status': 'connecting', 'message': 'Connecting to Schwab'}
+        self.status = {'type': 'status', 'status': 'connecting', 'message': 'Connecting to Schwab', 'version': HELPER_VERSION}
         self.quotes = {}  # symbol -> {'last': ..., 'prevClose': ...}
         self.dirty_quotes = set()
         self.last_volume = {}
         self.seen = set()
 
     def set_status(self, status, message):
-        self.status = {'type': 'status', 'status': status, 'message': message}
+        self.status = {'type': 'status', 'status': status, 'message': message, 'version': HELPER_VERSION}
         broadcast(self.browsers, json.dumps(self.status))
 
     # ----- Browser side -----
@@ -445,7 +448,7 @@ async def run(client):
     async with server:
         print()
         print('=' * 64)
-        print('  Schwab helper is running.')
+        print(f'  Schwab helper (version {HELPER_VERSION}) is running.')
         print(f'  Open {PLATFORM_URL}')
         print('  Keep this window open while you use the platform.')
         print('  To stop the helper, press Ctrl+C or close this window.')
@@ -460,6 +463,7 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s  %(message)s', datefmt='%H:%M:%S')
     logging.getLogger('httpx').setLevel(logging.WARNING)
+    logging.getLogger('websockets').setLevel(logging.WARNING)
 
     config = load_config(args.reset)
     print()
