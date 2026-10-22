@@ -379,7 +379,7 @@ export interface ScriptRunResult {
   warnings: string[];
 }
 
-const IGNORED_CALLS = new Set(['plotshape', 'plotchar', 'plotarrow', 'plotcandle', 'plotbar', 'bgcolor', 'barcolor', 'fill', 'alertcondition', 'alert', 'label.new', 'line.new', 'box.new', 'table.new', 'runtime.error', 'log.info']);
+const IGNORED_CALLS = new Set(['plotarrow', 'plotcandle', 'plotbar', 'bgcolor', 'barcolor', 'fill', 'alertcondition', 'alert', 'label.new', 'line.new', 'box.new', 'table.new', 'runtime.error', 'log.info']);
 
 /** Runs a parsed script over the bars. `params` overrides input values (keyed in0, in1, ...). */
 function run(program: Stmt[], bars: Bar[], params: Record<string, number | string>): ScriptRunResult {
@@ -407,6 +407,8 @@ function run(program: Stmt[], bars: Bar[], params: Record<string, number | strin
   for (const [name, hex] of Object.entries(COLORS)) builtins[`color.${name}`] = () => hex;
   for (const style of ['line', 'linebr', 'stepline', 'histogram', 'columns', 'circles', 'cross', 'area', 'areabr']) builtins[`plot.style_${style}`] = () => style;
   for (const style of ['solid', 'dashed', 'dotted']) builtins[`hline.style_${style}`] = () => style;
+  for (const shape of ['triangleup', 'triangledown', 'arrowup', 'arrowdown', 'labelup', 'labeldown', 'circle', 'square', 'diamond', 'cross', 'xcross', 'flag']) builtins[`shape.${shape}`] = () => shape;
+  for (const loc of ['abovebar', 'belowbar', 'top', 'bottom', 'absolute']) builtins[`location.${loc}`] = () => loc;
 
   const env = new Map<string, Value>();
   const funcs = new Map<string, { params: string[]; body: Node }>();
@@ -674,6 +676,29 @@ function run(program: Stmt[], bars: Bar[], params: Record<string, number | strin
         color: colorOf(arg(2, 'color')) ?? ['#2962ff', '#ff6d00', '#26a69a', '#e91e63', '#9c27b0'][index % 5],
         lineWidth: Math.min(4, Math.max(1, width)) as 1 | 2 | 3 | 4,
         values,
+      });
+      return values;
+    }
+    if (name === 'plotshape' || name === 'plotchar') {
+      // Signals: drawn as arrows/dots on the candles wherever the series is true (non-zero).
+      const values = series(arg(0, 'series') ?? NaN, node.line);
+      const index = result.plots.length;
+      const style = name === 'plotchar' ? 'circle' : text(arg(2, 'style'), 'circle');
+      const location = text(arg(3, 'location'), name === 'plotchar' ? 'abovebar' : 'abovebar');
+      const label = name === 'plotchar' ? text(arg(2, 'char'), '') : text(node.named.text ? evalNode(node.named.text) : arg(6, 'text'), '');
+      const up = /up/.test(style);
+      const down = /down/.test(style);
+      result.plots.push({
+        key: `p${index}`,
+        title: text(arg(1, 'title'), `Signal ${index + 1}`),
+        type: 'marker',
+        marker: {
+          shape: up ? 'arrowUp' : down ? 'arrowDown' : style === 'square' || style === 'diamond' ? 'square' : 'circle',
+          position: location === 'belowbar' || location === 'bottom' ? 'belowBar' : location === 'absolute' ? 'inBar' : 'aboveBar',
+          text: label,
+        },
+        color: colorOf(arg(4, 'color')) ?? (down ? '#ef5350' : '#26a69a'),
+        values: values.map((v) => (truthy(v) ? 1 : 0)),
       });
       return values;
     }

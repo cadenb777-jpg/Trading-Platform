@@ -27,7 +27,9 @@ export const PRICE_SOURCES: PriceSource[] = ['close', 'open', 'high', 'low', 'hl
 export interface PlotDef {
   key: string;
   title: string;
-  type: 'line' | 'histogram';
+  /** 'marker' draws a signal (arrow, dot...) on the price chart on every bar where the value is non-zero. */
+  type: 'line' | 'histogram' | 'marker';
+  marker?: { shape: 'arrowUp' | 'arrowDown' | 'circle' | 'square'; position: 'aboveBar' | 'belowBar' | 'inBar'; text?: string };
   color: string;
   lineWidth?: 1 | 2 | 3 | 4;
   /** Lines only: draw as dots instead of a connected line (e.g. Parabolic SAR). */

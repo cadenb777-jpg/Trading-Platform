@@ -697,3 +697,141 @@ export const MORE_INDICATORS: IndicatorDef[] = [
     },
   },
 ];
+
+/** Quant overlays and signal indicators (stage 4). */
+export const QUANT_INDICATORS: IndicatorDef[] = [
+  {
+    id: 'vwapbands',
+    name: 'VWAP with Std Dev Bands',
+    shortName: 'VWAP±',
+    category: 'Volume',
+    description: 'Daily VWAP with bands 1, 2 and 3 volume-weighted standard deviations away. Price far outside the bands is stretched.',
+    placement: 'overlay',
+    inputs: [numberInput('m1', 'Band 1 (std devs)', 1, 0.1, 0.1, 10), numberInput('m2', 'Band 2', 2, 0.1, 0.1, 10), numberInput('m3', 'Band 3', 3, 0.1, 0.1, 10)],
+    plots: [
+      { key: 'vwap', title: 'VWAP', type: 'line', color: '#e91e63', lineWidth: 2 },
+      { key: 'u1', title: '+1', type: 'line', color: '#42a5f5', lineWidth: 1 },
+      { key: 'l1', title: '−1', type: 'line', color: '#42a5f5', lineWidth: 1 },
+      { key: 'u2', title: '+2', type: 'line', color: '#7e57c2', lineWidth: 1 },
+      { key: 'l2', title: '−2', type: 'line', color: '#7e57c2', lineWidth: 1 },
+      { key: 'u3', title: '+3', type: 'line', color: '#ef5350', lineWidth: 1 },
+      { key: 'l3', title: '−3', type: 'line', color: '#26a69a', lineWidth: 1 },
+    ],
+    compute: (bars, p) => {
+      const out: Record<string, number[]> = Object.fromEntries(['vwap', 'u1', 'l1', 'u2', 'l2', 'u3', 'l3'].map((k) => [k, NaNs(bars.length)]));
+      let day = -1;
+      let pv = 0;
+      let pv2 = 0;
+      let vol = 0;
+      bars.forEach((b, i) => {
+        const d = Math.floor(b.time / 86400);
+        const newSession = d !== day;
+        if (newSession) {
+          day = d;
+          pv = pv2 = vol = 0;
+        }
+        const tp = (b.high + b.low + b.close) / 3;
+        pv += tp * b.volume;
+        pv2 += tp * tp * b.volume;
+        vol += b.volume;
+        const vwap = vol ? pv / vol : tp;
+        const sd = vol ? Math.sqrt(Math.max(0, pv2 / vol - vwap * vwap)) : 0;
+        // Leave a gap where a new day starts so the lines don't jump vertically.
+        if (newSession && i > 0) return;
+        out.vwap[i] = vwap;
+        (['1', '2', '3'] as const).forEach((n) => {
+          const m = num(p, `m${n}`);
+          out[`u${n}`][i] = vwap + m * sd;
+          out[`l${n}`][i] = vwap - m * sd;
+        });
+      });
+      return out;
+    },
+  },
+  {
+    id: 'zscore',
+    name: 'Z-Score',
+    shortName: 'Z',
+    category: 'Volatility',
+    description: 'How many standard deviations price is from its average. Beyond ±2 is statistically stretched.',
+    placement: 'separate',
+    inputs: [length(20), sourceInput],
+    plots: [{ key: 'z', title: 'Z-Score', type: 'line', color: '#26c6da', lineWidth: 2 }],
+    levels: [2, 0, -2],
+    compute: (bars, p) => {
+      const s = src(bars, p);
+      const mean = sma(s, num(p, 'length'));
+      const sd = stdev(s, num(p, 'length'));
+      return { z: s.map((v, i) => (sd[i] ? (v - mean[i]) / sd[i] : NaN)) };
+    },
+  },
+  {
+    id: 'zchannel',
+    name: 'Z-Score Channels',
+    shortName: 'ZCh',
+    category: 'Bands & Channels',
+    description: 'Moving average with channels at ±1, ±2 and ±3 standard deviations (a multi-level Bollinger Band).',
+    placement: 'overlay',
+    inputs: [length(50), sourceInput],
+    plots: [
+      { key: 'mid', title: 'Mean', type: 'line', color: '#ff9800', lineWidth: 1 },
+      { key: 'u1', title: '+1σ', type: 'line', color: '#42a5f580', lineWidth: 1 },
+      { key: 'l1', title: '−1σ', type: 'line', color: '#42a5f580', lineWidth: 1 },
+      { key: 'u2', title: '+2σ', type: 'line', color: '#7e57c2', lineWidth: 1 },
+      { key: 'l2', title: '−2σ', type: 'line', color: '#7e57c2', lineWidth: 1 },
+      { key: 'u3', title: '+3σ', type: 'line', color: '#ef5350', lineWidth: 1 },
+      { key: 'l3', title: '−3σ', type: 'line', color: '#26a69a', lineWidth: 1 },
+    ],
+    compute: (bars, p) => {
+      const s = src(bars, p);
+      const mid = sma(s, num(p, 'length'));
+      const sd = stdev(s, num(p, 'length'));
+      const band = (k: number) => mid.map((m, i) => m + k * sd[i]);
+      return { mid, u1: band(1), l1: band(-1), u2: band(2), l2: band(-2), u3: band(3), l3: band(-3) };
+    },
+  },
+  {
+    id: 'macross',
+    name: 'MA Cross Signals',
+    shortName: 'MA×',
+    category: 'Trend',
+    description: 'Buy arrow when the fast EMA crosses above the slow EMA, sell arrow when it crosses below.',
+    placement: 'overlay',
+    inputs: [numberInput('fast', 'Fast EMA', 9, 1, 1, 500), numberInput('slow', 'Slow EMA', 21, 1, 1, 500)],
+    plots: [
+      { key: 'buy', title: 'Buy', type: 'marker', color: UP, marker: { shape: 'arrowUp', position: 'belowBar', text: 'Buy' } },
+      { key: 'sell', title: 'Sell', type: 'marker', color: DOWN, marker: { shape: 'arrowDown', position: 'aboveBar', text: 'Sell' } },
+    ],
+    compute: (bars, p) => {
+      const c = closes(bars);
+      const f = ema(c, num(p, 'fast'));
+      const s = ema(c, num(p, 'slow'));
+      return {
+        buy: f.map((v, i) => (i && v > s[i] && f[i - 1] <= s[i - 1] ? 1 : 0)),
+        sell: f.map((v, i) => (i && v < s[i] && f[i - 1] >= s[i - 1] ? 1 : 0)),
+      };
+    },
+  },
+  {
+    id: 'rsisignals',
+    name: 'RSI Signals',
+    shortName: 'RSI sig',
+    category: 'Momentum',
+    description: 'Buy dot when RSI climbs back above the oversold level, sell dot when it drops back below overbought.',
+    placement: 'overlay',
+    inputs: [length(14), numberInput('lower', 'Oversold', 30, 1, 1, 99), numberInput('upper', 'Overbought', 70, 1, 1, 99)],
+    plots: [
+      { key: 'buy', title: 'Oversold exit', type: 'marker', color: UP, marker: { shape: 'circle', position: 'belowBar' } },
+      { key: 'sell', title: 'Overbought exit', type: 'marker', color: DOWN, marker: { shape: 'circle', position: 'aboveBar' } },
+    ],
+    compute: (bars, p) => {
+      const r = rsi(closes(bars), num(p, 'length'));
+      const lo = num(p, 'lower');
+      const hi = num(p, 'upper');
+      return {
+        buy: r.map((v, i) => (i && v > lo && r[i - 1] <= lo ? 1 : 0)),
+        sell: r.map((v, i) => (i && v < hi && r[i - 1] >= hi ? 1 : 0)),
+      };
+    },
+  },
+];

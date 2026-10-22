@@ -1,17 +1,19 @@
 /** The full chart screen: toolbar, drawing tools, chart with indicators, and watchlist. */
 import { CHART_TYPES, ChartView, THEME, type ChartType } from '../chart/ChartView';
 import { DRAWING_TOOLS, DrawingManager, type Tool } from '../chart/drawings';
+import { VolumeProfile } from '../chart/volumeProfile';
 import { PROVIDERS, getProvider } from '../data';
 import type { ConnectionStatus, ProviderId } from '../data/provider';
 import { refKey, type MarketRef } from '../data/quotes';
 import { getIndicator, indicatorLabel } from '../indicators/library';
 import type { IndicatorDef } from '../indicators/types';
-import { loadDrawings, newIndicatorInstance, persist, saveDrawings, state } from '../state';
+import { loadDrawings, newIndicatorInstance, onStateChange, persist, saveDrawings, state } from '../state';
 import { TIMEFRAME_SECONDS, applyTrade, type Bar, type Timeframe } from '../types';
 import { formatNumber, h, toast } from '../ui/dom';
 import { icon, type IconName } from '../ui/icons';
 import { openIndicatorPicker, openIndicatorSettings } from '../ui/indicatorDialogs';
 import { createTimeframePicker } from '../ui/timeframePicker';
+import { activeAlertCount, openAlertsDialog } from '../ui/alerts';
 import { createWatchlist, displaySymbol } from '../ui/watchlist';
 
 const SYMBOL_SUGGESTIONS: Record<ProviderId, string[]> = {
@@ -54,6 +56,14 @@ export function createChartPage() {
   const chartWrap = h('main', { class: 'chart-wrap' }, chartEl, legendEl, messageEl);
   const drawBar = h('div', { class: 'draw-bar', role: 'toolbar', 'aria-label': 'Drawing tools' });
   const watchToggle = h('button', { class: 'icon-btn', title: 'Show or hide watchlist', 'aria-label': 'Toggle watchlist' }, icon('list', 22));
+  const profileBtn = h('button', { class: 'btn fit-btn', title: 'Volume profile: volume traded at each price', 'aria-label': 'Volume profile' }, icon('profile', 18));
+  const alertBtn = h('button', { class: 'btn fit-btn', title: 'Price alerts', 'aria-label': 'Price alerts' }, icon('bell', 18), h('span', { class: 'alert-count' }));
+  const updateAlertCount = () => {
+    const alerts = activeAlertCount(currentRef());
+    alertBtn.querySelector('.alert-count')!.textContent = alerts ? ` ${alerts}` : '';
+  };
+  onStateChange(updateAlertCount);
+  alertBtn.addEventListener('click', () => openAlertsDialog(currentRef(), bars[bars.length - 1]?.close ?? null));
   const fitBtn = h('button', { class: 'btn fit-btn', title: 'Fit the chart to the candles (F)', 'aria-label': 'Fit chart', onclick: () => chart?.fit() }, icon('fit', 18), ' Fit');
   const side = h('aside', { class: 'watch-side' });
 
@@ -79,6 +89,8 @@ export function createChartPage() {
       tfPicker.el,
       typeSelect,
       h('button', { class: 'btn', onclick: () => openIndicatorPicker(addIndicator) }, h('span', { class: 'fx' }, 'ƒx'), ' Indicators'),
+      profileBtn,
+      alertBtn,
       fitBtn,
       h('span', { class: 'spacer' }),
       priceEl,
@@ -90,6 +102,7 @@ export function createChartPage() {
 
   let chart: ChartView;
   let drawings: DrawingManager;
+  let profile: VolumeProfile;
   let started = false;
 
   // ---------- Toolbar ----------
@@ -102,6 +115,7 @@ export function createChartPage() {
     typeSelect.value = state.chartType;
     tfPicker.render();
     el.classList.toggle('watch-open', state.watchlistOpen);
+    updateAlertCount();
   }
 
   marketSelect.addEventListener('change', () => {
@@ -399,6 +413,15 @@ export function createChartPage() {
     chart = new ChartView(chartEl);
     chart.setChartType(state.chartType);
     drawings = new DrawingManager(chart, chartWrap);
+    profile = new VolumeProfile(chart);
+    profile.setEnabled(state.volumeProfile);
+    profileBtn.classList.toggle('on', state.volumeProfile);
+    profileBtn.addEventListener('click', () => {
+      state.volumeProfile = !state.volumeProfile;
+      persist();
+      profile.setEnabled(state.volumeProfile);
+      profileBtn.classList.toggle('on', state.volumeProfile);
+    });
     drawings.onToolChange = renderDrawBar;
     renderDrawBar();
     for (const instance of state.indicators) chart.addIndicator(instance);

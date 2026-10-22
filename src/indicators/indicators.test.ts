@@ -161,3 +161,16 @@ describe('position tool', () => {
     expect(stats.stopPct).toBeCloseTo(-5);
   });
 });
+
+describe('volume profile', () => {
+  it('finds the busiest price and a value area around it', async () => {
+    const { computeProfile } = await import('../chart/volumeProfile');
+    const bars: Bar[] = Array.from({ length: 50 }, (_, i) => ({ time: i, open: 100, high: i < 40 ? 101 : 110, low: i < 40 ? 99 : 108, close: 100, volume: 1000 }));
+    const p = computeProfile(bars, 20)!;
+    const poc = p.rows[p.poc];
+    expect(poc.low).toBeLessThan(101);
+    expect(poc.high).toBeGreaterThan(99);
+    const inside = p.rows.slice(p.valueLow, p.valueHigh + 1).reduce((s, r) => s + r.volume, 0);
+    expect(inside / p.rows.reduce((s, r) => s + r.volume, 0)).toBeGreaterThanOrEqual(0.7);
+  });
+});

@@ -12,6 +12,9 @@ import {
   LineSeries,
   LineStyle,
   createChart,
+  createSeriesMarkers,
+  type ISeriesMarkersPluginApi,
+  type SeriesMarker,
   type IChartApi,
   type IPriceLine,
   type ISeriesApi,
@@ -77,6 +80,7 @@ export class ChartView {
   private readonly timeIndex = new Map<number, number>();
   private readonly indicators = new Map<string, RenderedIndicator>();
   private readonly primitives: ISeriesPrimitive<Time>[] = [];
+  private markersApi: ISeriesMarkersPluginApi<Time> | null = null;
   private readonly paneObserver: ResizeObserver;
 
   /** Called with the bar index under the mouse (or the latest bar when the mouse leaves). */
@@ -110,6 +114,13 @@ export class ChartView {
 
   get barCount() {
     return this.bars.length;
+  }
+
+  /** The bars currently scrolled into view. */
+  visibleBars(): Bar[] {
+    const range = this.chart.timeScale().getVisibleLogicalRange();
+    if (!range) return this.bars;
+    return this.bars.slice(Math.max(0, Math.floor(range.from)), Math.max(0, Math.ceil(range.to) + 1));
   }
 
   barAt(index: number): Bar | undefined {
@@ -161,9 +172,10 @@ export class ChartView {
       this.timeIndex.set(this.bars[i].time, i);
       this.main.update(this.mainPoint(i) as never);
       for (const r of this.indicators.values()) {
-        for (const plot of r.def.plots) r.series[plot.key].update(this.point(r, plot, i));
+        for (const plot of r.def.plots) r.series[plot.key]?.update(this.point(r, plot, i));
       }
     }
+    this.refreshMarkers();
   }
 
   setChartType(type: ChartType) {
@@ -171,6 +183,8 @@ export class ChartView {
     this.chartType = type;
     const old = this.main;
     // Add the new series before removing the old one so the price pane is never empty.
+    this.markersApi?.detach();
+    this.markersApi = null;
     this.main = this.createMainSeries(type);
     this.applyPriceFormat();
     this.main.setData(this.bars.map((_, i) => this.mainPoint(i)) as never);
@@ -179,6 +193,7 @@ export class ChartView {
       this.main.attachPrimitive(p);
     }
     this.chart.removeSeries(old);
+    this.refreshMarkers();
   }
 
   // ---------- Drawing-tool support ----------
@@ -267,12 +282,13 @@ export class ChartView {
   addIndicator(instance: IndicatorInstance) {
     const def = getIndicator(instance.defId);
     if (!def) return;
-    const placement: Placement = def.placement === 'volume' ? 'volume' : (instance.placement ?? def.placement);
+    const markersOnly = def.plots.every((p) => p.type === 'marker');
+    const placement: Placement = def.placement === 'volume' ? 'volume' : markersOnly ? 'overlay' : (instance.placement ?? def.placement);
     const r: RenderedIndicator = { instance, def, placement, series: {}, values: {}, levels: [] };
     const paneIndex = placement === 'separate' ? this.chart.panes().length : 0;
     // An oscillator moved onto the price chart gets its own invisible scale so it doesn't squash the candles.
     const ownScale = placement === 'overlay' && def.placement === 'separate';
-    for (const plot of def.plots) {
+    for (const plot of def.plots.filter((p) => p.type !== 'marker')) {
       const options = {
         color: instance.colors[plot.key] ?? plot.color,
         visible: instance.visible,
@@ -292,6 +308,12 @@ export class ChartView {
         : (this.chart.addSeries(definition as typeof LineSeries, { ...options, ...lineOptions }, paneIndex) as PlotSeries);
     }
     const firstSeries = Object.values(r.series)[0];
+    if (!firstSeries) {
+      // Signals only (markers on the candles): nothing else to set up.
+      this.indicators.set(instance.uid, r);
+      this.renderAll(r);
+      return;
+    }
     if (placement === 'volume') {
       firstSeries.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     }
@@ -324,7 +346,7 @@ export class ChartView {
     }
     r.instance = instance;
     for (const plot of r.def.plots) {
-      r.series[plot.key].applyOptions({
+      r.series[plot.key]?.applyOptions({
         color: instance.colors[plot.key] ?? plot.color,
         visible: instance.visible,
         ...(plot.type === 'line' ? { lineWidth: this.lineWidth(instance, plot) } : {}),
@@ -347,6 +369,7 @@ export class ChartView {
     if (!r) return;
     for (const s of Object.values(r.series)) this.chart.removeSeries(s);
     this.indicators.delete(uid);
+    this.refreshMarkers();
     this.observePanes();
   }
 
@@ -354,7 +377,7 @@ export class ChartView {
   valuesAt(uid: string, index: number): { title: string; value: number; color: string }[] {
     const r = this.indicators.get(uid);
     if (!r) return [];
-    return r.def.plots.map((p) => ({
+    return r.def.plots.filter((p) => p.type !== 'marker').map((p) => ({
       title: p.title,
       value: r.values[p.key]?.[index] ?? NaN,
       color: r.instance.colors[p.key] ?? p.color,
@@ -457,8 +480,9 @@ export class ChartView {
   private renderAll(r: RenderedIndicator) {
     r.values = this.compute(r);
     for (const plot of r.def.plots) {
-      r.series[plot.key].setData(this.bars.map((_, i) => this.point(r, plot, i)) as never);
+      r.series[plot.key]?.setData(this.bars.map((_, i) => this.point(r, plot, i)) as never);
     }
+    this.refreshMarkers();
   }
 
   private point(r: RenderedIndicator, plot: PlotDef, i: number) {
@@ -474,6 +498,26 @@ export class ChartView {
       return { time: t, value, color };
     }
     return { time: t, value };
+  }
+
+  /** Collects every visible indicator's signals into arrows/dots on the candles. */
+  private refreshMarkers() {
+    const list: SeriesMarker<Time>[] = [];
+    for (const r of this.indicators.values()) {
+      if (!r.instance.visible) continue;
+      for (const plot of r.def.plots) {
+        if (plot.type !== 'marker') continue;
+        const color = r.instance.colors[plot.key] ?? plot.color;
+        r.values[plot.key]?.forEach((v, i) => {
+          const bar = this.bars[i];
+          if (!bar || !Number.isFinite(v) || v === 0) return;
+          list.push({ time: time(bar.time), position: plot.marker?.position ?? 'aboveBar', shape: plot.marker?.shape ?? 'circle', color, text: plot.marker?.text ?? '' });
+        });
+      }
+    }
+    list.sort((a, b) => (a.time as number) - (b.time as number));
+    if (this.markersApi) this.markersApi.setMarkers(list);
+    else if (list.length) this.markersApi = createSeriesMarkers(this.main, list);
   }
 
   private observePanes() {

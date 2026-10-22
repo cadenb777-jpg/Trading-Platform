@@ -183,6 +183,12 @@ a {
   background: var(--panel-2);
 }
 
+.fit-btn.on {
+  border-color: var(--accent);
+  color: #8fb4ff;
+  background: var(--accent-soft);
+}
+
 .fit-btn {
   display: inline-flex;
   align-items: center;
@@ -654,7 +660,7 @@ a {
 }
 
 .chart-type {
-  width: 156px;
+  width: 138px;
 }
 
 .tf-picker {
@@ -1924,4 +1930,116 @@ button.news-item {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
+}
+
+.alert-add {
+  display: grid;
+  grid-template-columns: 130px 1fr auto;
+  gap: 8px;
+}
+
+.alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.alert-row {
+  display: grid;
+  grid-template-columns: 80px 110px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+
+.alert-row.done {
+  opacity: 0.55;
+}
+
+.alert-count {
+  color: #f7b955;
+  font-weight: 700;
+}
+
+/* ---------- Multi-chart ---------- */
+
+.multi-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mc-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 1px;
+  background: var(--border);
+}
+
+.mc-grid.layout-2h {
+  grid-template-columns: 1fr 1fr;
+}
+
+.mc-grid.layout-2v {
+  grid-template-rows: 1fr 1fr;
+}
+
+.mc-grid.layout-4 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+.mc-cell {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-chart);
+}
+
+.mc-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.mc-symbol {
+  width: 110px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 5px 8px;
+}
+
+.mc-tf {
+  width: 76px;
+  padding: 5px 6px;
+}
+
+.mc-price {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mc-cell .chart-wrap {
+  flex: 1;
+}
+
+.rail {
+  overflow-y: auto;
+}
+
+@media (max-width: 700px) {
+  .mc-grid.layout-2h,
+  .mc-grid.layout-4 {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    grid-auto-rows: minmax(260px, 1fr);
+    overflow-y: auto;
+  }
 }

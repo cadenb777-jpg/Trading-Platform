@@ -34,6 +34,8 @@ export const REFERENCE: { title: string; items: RefItem[] }[] = [
     items: [
       { sig: 'plot(series, title, color, linewidth, style)', desc: 'style can be plot.style_line, plot.style_histogram, plot.style_columns or plot.style_circles.' },
       { sig: 'hline(70, "Overbought")', desc: 'Horizontal reference line, e.g. RSI levels.' },
+      { sig: 'plotshape(cond, "Buy", style=shape.arrowup, location=location.belowbar, color=color.green, text="Buy")', desc: 'Draw a signal (arrow, circle, square) on the candles wherever cond is true.' },
+      { sig: 'plotchar(cond, "Signal", "★", location.abovebar)', desc: 'Like plotshape, with a text character.' },
       { sig: 'color.red · color.new(color.red, 50) · #ff9800 · color.rgb(255, 0, 0)', desc: 'Colours. color.new adds transparency (0 = solid, 100 = invisible).' },
     ],
   },
@@ -101,7 +103,7 @@ export const REFERENCE: { title: string; items: RefItem[] }[] = [
     items: [
       { sig: 'if / for / while / switch blocks', desc: 'Use ? : instead, or ask Claude to convert the script.' },
       { sig: 'strategy(), strategy.entry()', desc: 'Coming with backtesting.' },
-      { sig: 'fill, plotshape, bgcolor, label, line, table', desc: 'Skipped for now; the rest of the script still runs.' },
+      { sig: 'fill, bgcolor, label, line, table', desc: 'Skipped for now; the rest of the script still runs.' },
       { sig: 'request.security (other symbols / timeframes)', desc: 'Use the indicator\'s Timeframe setting instead.' },
     ],
   },
@@ -164,6 +166,18 @@ atrLen = input.int(10, "ATR length")
 [st, dir] = ta.supertrend(factor, atrLen)
 plot(dir < 0 ? st : na, "Up", color=color.green, linewidth=2)
 plot(dir > 0 ? st : na, "Down", color=color.red, linewidth=2)
+`,
+  },
+  {
+    name: 'Crossover signals',
+    source: `//@version=5
+indicator("EMA Cross Signals", overlay=true)
+fast = ta.ema(close, input.int(9, "Fast"))
+slow = ta.ema(close, input.int(21, "Slow"))
+plot(fast, "Fast", color=color.teal)
+plot(slow, "Slow", color=color.orange)
+plotshape(ta.crossover(fast, slow), "Buy", style=shape.arrowup, location=location.belowbar, color=color.green, text="Buy")
+plotshape(ta.crossunder(fast, slow), "Sell", style=shape.arrowdown, location=location.abovebar, color=color.red, text="Sell")
 `,
   },
   {

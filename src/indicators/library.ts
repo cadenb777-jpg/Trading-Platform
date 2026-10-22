@@ -4,7 +4,7 @@
  */
 import type { Bar } from '../types';
 import { ema, highest, lowest, rma, rsi, sma, stdev, trueRange, wma } from './math';
-import { MORE_INDICATORS } from './more';
+import { MORE_INDICATORS, QUANT_INDICATORS } from './more';
 import type { IndicatorDef, IndicatorInput, IndicatorInstance, IndicatorParams, PriceSource } from './types';
 
 function source(bars: Bar[], src: PriceSource): number[] {
@@ -99,9 +99,10 @@ export const INDICATORS: IndicatorDef[] = [
       let day = -1;
       let pv = 0;
       let vol = 0;
-      const out = bars.map((b) => {
+      const out = bars.map((b, i) => {
         const d = Math.floor(b.time / 86400);
-        if (d !== day) {
+        const newSession = d !== day;
+        if (newSession) {
           day = d;
           pv = 0;
           vol = 0;
@@ -109,6 +110,8 @@ export const INDICATORS: IndicatorDef[] = [
         const tp = (b.high + b.low + b.close) / 3;
         pv += tp * b.volume;
         vol += b.volume;
+        // A gap where a new day starts keeps the line from jumping vertically.
+        if (newSession && i > 0) return NaN;
         return vol === 0 ? tp : pv / vol;
       });
       return { vwap: out };
@@ -304,7 +307,7 @@ export const INDICATORS: IndicatorDef[] = [
   },
 ];
 
-INDICATORS.push(...MORE_INDICATORS);
+INDICATORS.push(...MORE_INDICATORS, ...QUANT_INDICATORS);
 
 /** Indicators the user wrote in the script editor, registered at runtime. */
 const custom = new Map<string, IndicatorDef>();
@@ -335,7 +338,7 @@ export function defaultColors(def: IndicatorDef): Record<string, string> {
 
 /** Label shown in the chart legend, e.g. "RSI 14 close" or "RSI 14 close · 1h". */
 export function indicatorLabel(def: IndicatorDef, instance: Pick<IndicatorInstance, 'params' | 'timeframe'>): string {
-  const values = def.inputs.map((i) => instance.params[i.key]);
+  const values = def.inputs.map((i) => instance.params[i.key] ?? i.default);
   const label = values.length ? `${def.shortName} ${values.join(' ')}` : def.shortName;
   return instance.timeframe ? `${label} · ${instance.timeframe}` : label;
 }

@@ -57,6 +57,14 @@ plot(crossUp, style=plot.style_histogram)`);
     expect(() => compileScript('indicator("x")\nx = 1')).toThrow(/doesn't plot anything/);
   });
 
+  it('turns plotshape into chart signals', () => {
+    const script = compileScript(`indicator("Sig", overlay=true)
+plot(close)
+plotshape(ta.crossover(ta.sma(close, 5), ta.sma(close, 20)), "Buy", style=shape.arrowup, location=location.belowbar, color=color.green, text="Buy")`);
+    expect(script.plots[1]).toMatchObject({ type: 'marker', marker: { shape: 'arrowUp', position: 'belowBar', text: 'Buy' }, color: '#4caf50' });
+    expect(script.run(bars, {}).p1.some((v) => v === 1)).toBe(true);
+  });
+
   it('handles colours and multi-line calls', () => {
     const script = compileScript(`indicator("Colors")
 plot(close,

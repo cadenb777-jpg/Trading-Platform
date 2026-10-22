@@ -2,66 +2,68 @@ import './style.css';
 import { createCalendarPage } from './pages/calendarPage';
 import { createChartPage } from './pages/chartPage';
 import { createHomePage } from './pages/homePage';
+import { createMultiChartPage } from './pages/multiChartPage';
 import { createScriptsPage } from './pages/scriptsPage';
+import type { MarketRef } from './data/quotes';
+import { startAlertWatcher } from './ui/alerts';
 import { h } from './ui/dom';
-import { icon } from './ui/icons';
+import { icon, type IconName } from './ui/icons';
 
-type Route = 'home' | 'chart' | 'calendar' | 'scripts';
+interface Page {
+  el: HTMLElement;
+  start(): void;
+  stop?(): void;
+}
+
+const openChart = (ref: MarketRef) => {
+  chartPage.open(ref);
+  location.hash = '#chart';
+};
 
 const chartPage = createChartPage();
-const calendarPage = createCalendarPage();
-const scriptsPage = createScriptsPage({
-  onAddToChart: (defId) => {
-    chartPage.addIndicatorById(defId);
-    location.hash = '#chart';
+const pages: { route: string; label: string; icon: IconName; title: string; page: Page }[] = [
+  { route: 'home', label: 'Home', icon: 'home', title: 'Trading Platform', page: createHomePage(openChart, () => (location.hash = '#calendar')) },
+  { route: 'chart', label: 'Chart', icon: 'chart', title: '', page: chartPage },
+  { route: 'multi', label: 'Multi', icon: 'grid', title: 'Multi-chart', page: createMultiChartPage(openChart) },
+  { route: 'calendar', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', page: createCalendarPage() },
+  {
+    route: 'scripts',
+    label: 'Scripts',
+    icon: 'code',
+    title: 'Scripts',
+    page: createScriptsPage({
+      onAddToChart: (defId) => {
+        chartPage.addIndicatorById(defId);
+        location.hash = '#chart';
+      },
+      onScriptSaved: (defId) => chartPage.refreshIndicatorsFor(defId),
+    }),
   },
-  onScriptSaved: (defId) => chartPage.refreshIndicatorsFor(defId),
-});
-const homePage = createHomePage(
-  (ref) => {
-    chartPage.open(ref);
-    location.hash = '#chart';
-  },
-  () => (location.hash = '#calendar'),
-);
+];
 
-const navButton = (route: Route, label: string, iconName: 'home' | 'chart' | 'calendar' | 'code') =>
-  h('a', { class: 'nav-btn', href: `#${route}`, 'data-route': route, title: label, 'aria-label': label }, icon(iconName, 26), h('span', { class: 'nav-label' }, label));
-
-const views = h('div', { class: 'views' }, homePage.el, chartPage.el, calendarPage.el, scriptsPage.el);
 document.querySelector('#app')!.append(
   h(
     'nav',
     { class: 'rail', 'aria-label': 'Main' },
     h('div', { class: 'brand', title: 'Trading Platform' }, '◆'),
-    navButton('home', 'Home', 'home'),
-    navButton('chart', 'Chart', 'chart'),
-    navButton('calendar', 'Calendar', 'calendar'),
-    navButton('scripts', 'Scripts', 'code'),
+    ...pages.map((p) =>
+      h('a', { class: 'nav-btn', href: `#${p.route}`, 'data-route': p.route, title: p.label, 'aria-label': p.label }, icon(p.icon, 24), h('span', { class: 'nav-label' }, p.label)),
+    ),
   ),
-  views,
+  h('div', { class: 'views' }, ...pages.map((p) => p.page.el)),
 );
 
 function route() {
-  const routes: Route[] = ['chart', 'calendar', 'scripts'];
-  const current: Route = routes.find((r) => location.hash === `#${r}`) ?? 'home';
-  homePage.el.hidden = current !== 'home';
-  chartPage.el.hidden = current !== 'chart';
-  calendarPage.el.hidden = current !== 'calendar';
-  scriptsPage.el.hidden = current !== 'scripts';
-  document.querySelectorAll<HTMLElement>('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.route === current));
-  if (current === 'chart') chartPage.start();
-  else if (current === 'scripts') {
-    scriptsPage.start();
-    document.title = 'Scripts · Trading Platform';
-  } else if (current === 'calendar') {
-    calendarPage.start();
-    document.title = 'Economic calendar · Trading Platform';
-  } else {
-    homePage.start();
-    document.title = 'Trading Platform';
+  const current = pages.find((p) => location.hash === `#${p.route}`) ?? pages[0];
+  for (const p of pages) {
+    p.page.el.hidden = p !== current;
+    if (p !== current) p.page.stop?.();
   }
+  document.querySelectorAll<HTMLElement>('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.route === current.route));
+  current.page.start();
+  if (current.title) document.title = current.title === 'Trading Platform' ? current.title : `${current.title} · Trading Platform`;
 }
 
 window.addEventListener('hashchange', route);
 route();
+startAlertWatcher();
