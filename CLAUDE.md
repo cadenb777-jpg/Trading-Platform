@@ -46,6 +46,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 
 ## Planned
 
+The full plan (a personal Bloomberg, including client reporting) is in ROADMAP.md. Follow its stage
+order and architecture rules; update its Status table when a stage is done.
+
 Later stages (trading via Webull, AI agents) will need a small backend so secrets are
 not exposed in the browser. Real-money trading must stay behind explicit confirmation, and
 paper trading comes first.

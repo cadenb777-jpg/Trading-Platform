@@ -23,16 +23,8 @@ A personal, customizable charting and trading platform, like your own TradingVie
 
 ## Roadmap
 
-| Stage | Feature | Status |
-|---|---|---|
-| 1 | Charts, live data, indicator library | ✅ |
-| 2 | Home page, news, watchlist, drawing tools, all timeframes, chart types | ✅ |
-| 3 | Bigger indicator library and custom indicators (Scripts) | ✅ |
-| 3a | Multi-chart layouts | |
-| 3b | Smart Money panel: COT, dark pool volume, short volume, insider and fund holdings | |
-| 4 | Trading through Webull: account, positions and orders, with confirmations | |
-| 5 | News feed and AI agents for strategies and backtesting | |
-| 6 | Login and hosting so it works from anywhere | |
+See [ROADMAP.md](ROADMAP.md): the plan for a personal Bloomberg-style workstation, from smart-money
+flow and fundamentals to portfolio risk, client reporting, an AI copilot and trading.
 
 ## Using it
 
