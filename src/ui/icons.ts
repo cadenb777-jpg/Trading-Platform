@@ -26,6 +26,7 @@ const PATHS = {
   profile: '<path d="M4 3v18"/><path d="M4 6h9M4 10h14M4 14h11M4 18h6"/>',
   bell: '<path d="M6 16V11a6 6 0 0112 0v5l2 2H4z"/><path d="M10 21h4"/>',
   grid: '<rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1"/><rect x="13" y="13" width="7.5" height="7.5" rx="1"/>',
+  flow: '<path d="M3 7h11l-3-3M21 17H10l3 3"/><path d="M3 12h6M15 12h6"/>',
   refresh: '<path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 4v7h-7"/>',
 } as const;
 

@@ -1,6 +1,7 @@
 import './style.css';
 import { createCalendarPage } from './pages/calendarPage';
 import { createChartPage } from './pages/chartPage';
+import { createFlowPage } from './pages/flowPage';
 import { createHomePage } from './pages/homePage';
 import { createMultiChartPage } from './pages/multiChartPage';
 import { createScriptsPage } from './pages/scriptsPage';
@@ -25,6 +26,7 @@ const pages: { route: string; label: string; icon: IconName; title: string; page
   { route: 'home', label: 'Home', icon: 'home', title: 'Trading Platform', page: createHomePage(openChart, () => (location.hash = '#calendar')) },
   { route: 'chart', label: 'Chart', icon: 'chart', title: '', page: chartPage },
   { route: 'multi', label: 'Multi', icon: 'grid', title: 'Multi-chart', page: createMultiChartPage(openChart) },
+  { route: 'flow', label: 'Flow', icon: 'flow', title: 'Flow', page: createFlowPage() },
   { route: 'calendar', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', page: createCalendarPage() },
   {
     route: 'scripts',
