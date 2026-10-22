@@ -7,7 +7,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 - Vite + TypeScript, no UI framework (plain DOM via the `h()` helper in `src/ui/dom.ts`).
 - Charts: `lightweight-charts` v5 (panes API: `chart.addSeries(def, opts, paneIndex)`, `pane.addSeries`).
 - Static site, deployed to GitHub Pages by `.github/workflows/deploy.yml` on push to `main`.
-- No backend yet. API keys live in the browser's localStorage (`src/storage.ts`), never in the repo.
+- No server backend. Browser-side keys (Alpaca) live in localStorage (`src/storage.ts`), never in the repo.
+- `helper/schwab_helper.py` runs on the owner's computer (schwab-py). It serves history and live
+  trades to `src/data/schwab.ts` over `ws://127.0.0.1:8765` (JSON messages: history, subscribe,
+  unsubscribe, status, trade, error). Its keys and token live in `~/.trading-platform/`.
+  It is market-data only: never add order placement to it (the Schwab app's order limit is 0).
+  Trading is planned through Webull.
 
 ## Conventions
 
@@ -24,6 +29,6 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 
 ## Planned
 
-Later stages (trading via Webull/Alpaca, AI agents) will need a small backend so secrets are
+Later stages (trading via Webull, AI agents) will need a small backend so secrets are
 not exposed in the browser. Real-money trading must stay behind explicit confirmation, and
 paper trading comes first.

@@ -5,7 +5,9 @@ A personal, customizable charting and trading platform, like your own TradingVie
 **Stage 1 (done):** live candlestick charts with an indicator library.
 
 - Real-time crypto prices from Coinbase (free, no account)
-- Real-time US stock prices from Alpaca (free account needed)
+- Real-time US stock prices from **every exchange** via your Schwab account and the
+  [Schwab helper](helper/README.md) (free)
+- Real-time US stock prices from Alpaca (IEX exchange only, free account needed)
 - Demo mode with simulated prices (works offline)
 - 14 built-in indicators: Volume, SMA, EMA, WMA, VWAP, Bollinger Bands, Donchian Channels,
   RSI, MACD, Stochastic, CCI, Williams %R, ATR, OBV
@@ -19,13 +21,18 @@ A personal, customizable charting and trading platform, like your own TradingVie
 | 1 | Charts, live data, indicator library | ✅ |
 | 2 | Drawing tools, more indicators, custom indicators, multiple saved layouts | |
 | 3 | Watchlist and multi-chart layouts | |
-| 4 | Trading: account, positions and orders (paper trading first) via Alpaca / Webull | |
+| 4 | Trading through Webull: account, positions and orders, with confirmations | |
 | 5 | News feed and AI agents for strategies and backtesting | |
 | 6 | Login and hosting so it works from anywhere | |
 
 ## Using it
 
-### Stock data (free)
+### Stock data from Schwab (free, all exchanges)
+
+Follow the [Schwab helper setup guide](helper/README.md). The helper runs on your computer
+and feeds live data to the charts.
+
+### Stock data from Alpaca (free, IEX only)
 
 1. Sign up at [alpaca.markets](https://alpaca.markets) and open your **Paper** account.
 2. Click **Generate New Keys** on the dashboard.
@@ -58,9 +65,11 @@ src/
   chart/ChartView.ts      Draws candles and indicators (TradingView Lightweight Charts)
   indicators/library.ts   The indicator library — add new indicators here
   indicators/math.ts      Shared maths (SMA, EMA, RSI, …)
-  data/                   Market data sources (Coinbase, Alpaca, Demo)
+  data/                   Market data sources (Coinbase, Schwab, Alpaca, Demo)
   ui/                     Dialogs (indicator picker, indicator settings, app settings)
   storage.ts              Saves layout and keys in the browser
+helper/
+  schwab_helper.py        Runs on your computer; streams Schwab data to the charts
 ```
 
 ### Adding an indicator

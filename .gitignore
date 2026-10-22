@@ -3,3 +3,5 @@ dist/
 test-results/
 *.log
 .DS_Store
+helper/.venv/
+__pycache__/

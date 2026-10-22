@@ -12,6 +12,7 @@ import { openSettings } from './ui/settingsDialog';
 
 const SYMBOL_SUGGESTIONS: Record<ProviderId, string[]> = {
   coinbase: ['BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD', 'DOGE-USD', 'ADA-USD', 'AVAX-USD', 'LINK-USD', 'LTC-USD'],
+  schwab: ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'AMD', 'SPY', 'QQQ'],
   alpaca: ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN', 'GOOGL', 'META', 'AMD', 'SPY', 'QQQ'],
   demo: ['DEMO', 'TEST'],
 };
