@@ -17,7 +17,7 @@ export function createLineChart(container: HTMLElement, opts: { percent?: boolea
   if (opts.height) container.style.height = `${opts.height}px`;
   const chart: IChartApi = createChart(container, {
     autoSize: true,
-    layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text, fontFamily: "'Inter', sans-serif", fontSize: 12 },
+    layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text, fontFamily: "'Inter', sans-serif", fontSize: 12, attributionLogo: false },
     grid: { vertLines: { visible: false }, horzLines: { color: THEME.grid } },
     rightPriceScale: { borderColor: THEME.border },
     timeScale: { borderColor: THEME.border },
@@ -120,4 +120,33 @@ export function pageFrame(title: string, subtitle: string, controls: Node[]) {
       body.replaceChildren(h('div', { class: 'ap-error' }, (err as Error).message || String(err)));
     },
   };
+}
+
+type Cell = Node | string | { v: Node | string; cls?: string };
+
+/** A scrolling table. Cells can be text, elements, or { v, cls } to add a class (e.g. 'up', 'label'). */
+export function dataTable(headers: string[], rows: Cell[][], rowClass?: (i: number) => string) {
+  const cell = (c: Cell, tag: 'td' | 'th' = 'td') =>
+    typeof c === 'object' && c !== null && 'v' in c ? h(tag, { class: c.cls ?? '' }, c.v) : h(tag, {}, c as Node | string);
+  return h(
+    'div',
+    { class: 'table-wrap' },
+    h(
+      'table',
+      { class: 'data-table' },
+      h('thead', {}, h('tr', {}, ...headers.map((t) => h('th', {}, t)))),
+      h('tbody', {}, ...rows.map((r, i) => h('tr', { class: rowClass?.(i) ?? '' }, ...r.map((c) => cell(c))))),
+    ),
+  );
+}
+
+/** A labelled number input. Percent inputs show 8 for 0.08. */
+export function numberField(label: string, value: number, onChange: (v: number) => void, opts: { percent?: boolean; step?: number; hint?: string } = {}) {
+  const shown = opts.percent ? +(value * 100).toFixed(2) : +value.toFixed(Math.abs(value) >= 1000 ? 0 : 4);
+  const input = h('input', { class: 'input', type: 'number', step: opts.step ?? (opts.percent ? 0.1 : 1), value: Number.isFinite(shown) ? shown : '' });
+  input.addEventListener('input', () => {
+    const v = parseFloat(input.value);
+    if (Number.isFinite(v)) onChange(opts.percent ? v / 100 : v);
+  });
+  return h('label', { class: 'field', title: opts.hint ?? '' }, h('span', { class: 'muted small' }, label), h('span', { class: 'field-input' }, input, opts.percent ? h('span', { class: 'muted' }, '%') : null));
 }

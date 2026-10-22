@@ -2348,3 +2348,110 @@ button.news-item {
     padding: 16px;
   }
 }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.field-input .input {
+  width: 100%;
+  min-width: 0;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.big-value {
+  font-size: 34px;
+  font-weight: 700;
+}
+
+.profile-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+
+.data-table td.hl {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+
+.ap-note {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 8px 0 0;
+}
+
+.group-title {
+  font-size: 18px;
+  margin: 8px 0 10px;
+}
+
+.macro-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.macro-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.macro-card .line-legend {
+  display: none;
+}
+
+.macro-value {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.macro-value b {
+  font-size: 24px;
+}
+
+.macro-changes {
+  display: flex;
+  gap: 12px;
+}
+
+.curve-wrap {
+  position: relative;
+  max-width: 900px;
+}
+
+.line-legend.static {
+  position: static;
+  margin-bottom: 4px;
+}
+
+.curve-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.curve-grid {
+  stroke: var(--border);
+}
+
+.curve-label {
+  fill: var(--muted);
+  font-size: 11px;
+}
