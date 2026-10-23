@@ -15,6 +15,7 @@ import { tradeGuideBody } from '../home/tradeGuide';
 import type { Timeframe } from '../types';
 import { pageFrame, pct as fmtPct } from '../ui/charts';
 import { formatPrice, h, timeAgo, toast } from '../ui/dom';
+import { infoTip, termLabel } from '../ui/glossary';
 import { THEME, followTheme } from '../ui/theme';
 
 type Horizon = 'short' | 'swing' | 'position';
@@ -95,6 +96,45 @@ function beep() {
   }
 }
 
+/** A plain label for how much the backtest says about a strategy. */
+function evidenceStrength(st: StrategyInfo): { label: string; tone: 'up' | 'down' | 'warn' | ''; plain: string } {
+  const s = st.stats;
+  if (!s.trades) return { label: 'no trades yet', tone: '', plain: 'Its rules never triggered in the history available, so there is nothing to judge yet.' };
+  if ((s.expectancy ?? 0) <= 0) return { label: 'loses money', tone: 'down', plain: `Its ${s.trades} past trades lost money on average after costs, so its signals are never graded above C here.` };
+  const t = s.tStat ?? 0;
+  const p = st.randomEntry?.p ?? 1;
+  if (t >= 3 && p <= 0.05) return { label: 'strong evidence', tone: 'up', plain: `Made money over ${s.trades} trades and clearly beat random entries. Its A setups are the ones to take.` };
+  if (t >= 2 && p <= 0.1) return { label: 'good evidence', tone: 'up', plain: `Made money over ${s.trades} trades and beat random entries, though not by a wide margin.` };
+  return { label: 'weak evidence', tone: 'warn', plain: `Made money over ${s.trades} trades, but not clearly more than luck would. Treat its setups as B at best.` };
+}
+
+/** "≤5 days", "≤21 hrs", "≤6 wks". */
+function holdShort(s: Setup) {
+  const n = s.plan.maxHold;
+  const u = s.unit ?? 'day';
+  return `≤${n} ${u === 'hour' ? 'hrs' : u === 'week' ? 'wks' : 'days'}`;
+}
+
+/** How to use the page every trading day, step by step. */
+function dailyRoutine() {
+  const step = (when: string, ...what: (Node | string)[]) => h('li', {}, h('b', {}, when), ' ', ...what);
+  return h(
+    'details',
+    { class: 'sp-fold' },
+    h('summary', {}, 'How to use this every day (5 minutes)'),
+    h(
+      'ol',
+      { class: 'sp-routine small' },
+      step('Before the open (around 9:00 AM New York).', 'Pick a time frame: Swing for trades lasting about a week, Short swing for 1-3 days, Position for weeks. Look at "trades worth a look". Click one to read its summary and steps.'),
+      step('Decide and size it.', 'Only A (normal size) and B (half size). Use the "How much to buy" calculator: risk 0.5-1% of your account per trade. Star ☆ the ones you want, or tick "Alert me on A & B entries".'),
+      step('Place the orders at your broker.', 'For a "buy above" entry use a buy-stop order at the entry price, with a stop-loss at the stop price (many brokers let you attach both at once as a bracket order, with the target as the take-profit). This platform never places orders.'),
+      step('During the day.', 'Leave this tab open: you\'ll hear an alert when price gets close to or reaches an entry. If it says "Too far to chase", don\'t buy: wait for a pullback or skip it.'),
+      step('Managing an open trade.', 'Keep the stop where it is. For the COT pullback, move the stop up to your entry once the trade is up by its risk. Take profit at the target, or close it by the "Out by" date, whichever comes first.'),
+      step('After 4 PM.', 'New setups appear (marked New) once the day\'s bar closes. Repeat tomorrow. Hourly setups appear through the day; weekly ones after Friday\'s close.'),
+    ),
+  );
+}
+
 export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   const prefs = load(PREFS_KEY, { horizon: 'swing' as Horizon, strategy: 'all' as StrategyKey | 'all', grade: 'ab' as 'ab' | 'all', side: 'all' as 'all' | 'buy' | 'sell', sort: 'grade' as 'grade' | 'rr' | 'mc' | 'new', autoAlert: true });
   let data: Scan | null = null;
@@ -111,12 +151,15 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   const notifyBtn = h('button', { class: 'btn', title: 'Let the platform show desktop notifications for entry alerts', onclick: askNotify }, 'Enable alerts');
   const refreshBtn = h('button', { class: 'btn', title: 'Scan again now', onclick: () => refresh(true) }, 'Scan now');
   const frame = pageFrame('Setups', 'Nasdaq-100 trade setups on three time frames, each tested with 1,000 simulations and checked against COT positioning.', [horizonTabs, notifyBtn, refreshBtn]);
-  const evidence = h('section', { class: 'sp-evidence' });
+  const today = h('section', { class: 'sp-today' });
+  const howTo = dailyRoutine();
+  const evidenceBody = h('div', { class: 'sp-evidence' });
+  const evidence = h('details', { class: 'sp-fold' }, h('summary', {}, 'Strategy report card: how each strategy has done, and whether COT helps', infoTip('trades')), evidenceBody);
   const filters = h('div', { class: 'sp-filters' });
   const list = h('div', { class: 'sp-list' });
   const detail = h('div', { class: 'sp-detail' }, h('p', { class: 'muted pad' }, 'Pick a setup on the left to see its live entry status, chart and step-by-step guide.'));
   const alertLog = h('div', { class: 'sp-alerts' });
-  frame.body.replaceChildren(status, evidence, filters, h('div', { class: 'sp-main' }, h('div', { class: 'sp-left' }, list, alertLog), detail));
+  frame.body.replaceChildren(status, today, howTo, evidence, filters, h('div', { class: 'sp-main' }, h('div', { class: 'sp-left' }, list, alertLog), detail));
 
   function setPref<K extends keyof typeof prefs>(k: K, v: (typeof prefs)[K]) {
     prefs[k] = v;
@@ -173,6 +216,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       r.vix != null ? h('span', {}, `VIX ${r.vix.toFixed(1)}`) : '',
       h('span', {}, hr ? `${hr.scanned} stocks · scanned ${timeAgo(hr.updated)}` : 'this time frame is still loading…', data.scanning ? ' · scanning now…' : data.nextScan ? ` · next scan in ${Math.max(1, Math.round((data.nextScan - Date.now() / 1000) / 60))} min` : ''),
     );
+    renderToday(hr);
     renderEvidence(hr);
     renderFilters();
     renderList(hr);
@@ -181,32 +225,33 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   }
 
   function renderEvidence(hr: HorizonResult | undefined) {
-    if (!hr) return evidence.replaceChildren(h('div', { class: 'skeleton', style: 'height:90px' }));
+    if (!hr) return evidenceBody.replaceChildren(h('div', { class: 'skeleton', style: 'height:90px' }));
     const cards = (Object.keys(STRATEGY_LABEL) as StrategyKey[]).map((k) => {
       const st = hr.strategies[k];
       if (!st) return '';
       const s = st.stats;
       const re = st.randomEntry;
       const mc = st.monteCarlo;
-      const verdict = !s.trades ? 'no trades yet' : (s.expectancy ?? 0) <= 0 ? 'loses money' : re?.verdict === 'edge' ? 'beats random entries' : re?.verdict === 'maybe' ? 'maybe better than random' : 'not proven vs random';
-      const tone = !s.trades || (s.expectancy ?? 0) <= 0 ? 'down' : re?.verdict === 'edge' ? 'up' : 'warn';
+      const ev = evidenceStrength(st);
+      const verdict = ev.label;
+      const tone = ev.tone;
       return h(
         'div',
         { class: `sp-card${prefs.strategy === k ? ' on' : ''}`, onclick: () => setPref('strategy', prefs.strategy === k ? 'all' : k), title: 'Show only this strategy' },
         h('div', { class: 'sp-card-head' }, h('b', {}, st.short || STRATEGY_LABEL[k]), h('span', { class: `sp-verdict ${tone}` }, verdict)),
+        h('p', { class: 'small' }, ev.plain),
         h('div', { class: 'sp-card-stats small' },
-          h('span', {}, h('span', { class: 'muted' }, 'Trades '), String(s.trades)),
-          h('span', {}, h('span', { class: 'muted' }, 'Win '), s.winRate != null ? `${Math.round(s.winRate * 100)}%` : '—'),
-          h('span', {}, h('span', { class: 'muted' }, 'Avg '), pct(s.expectancy, 2)),
-          h('span', {}, h('span', { class: 'muted' }, 'PF '), s.profitFactor != null ? String(s.profitFactor) : '—'),
+          h('span', {}, termLabel('Trades', 'trades'), ` ${s.trades}`),
+          h('span', {}, termLabel('Win', 'winrate'), ` ${s.winRate != null ? `${Math.round(s.winRate * 100)}%` : '—'}`),
+          h('span', {}, termLabel('Avg', 'avg'), ` ${pct(s.expectancy, 2)}`),
+          h('span', {}, termLabel('PF', 'pf'), ` ${s.profitFactor != null ? String(s.profitFactor) : '—'}`),
         ),
-        s.tStat != null
-          ? h('div', { class: 'tiny' }, `t = ${s.tStat.toFixed(1)}${s.tradesNeeded ? ` · an average this size needs about ${s.tradesNeeded.toLocaleString()} trades to be clearly real (has ${s.trades.toLocaleString()})` : ''}`)
-          : '',
-        h('div', { class: 'muted tiny' },
-          re ? `Random-entry test (${(re.runs ?? 1000).toLocaleString()} runs): p = ${re.p.toFixed(3)}. ` : '',
-          mc ? `Next ${mc.horizon} trades (${mc.runs.toLocaleString()} block-bootstrap runs): ${Math.round(mc.profitable * 100)}% end ahead, typical ${pct(mc.median)}, bad case ${pct(mc.bad)}. ` : '',
-          st.recent?.trades ? h('span', { class: (st.recent.expectancy ?? 0) > 0 ? 'up' : 'down' }, `Recent 30% of history only: ${st.recent.trades} trades, ${pct(st.recent.expectancy, 2)} per trade${(st.recent.expectancy ?? 0) > 0 !== (s.expectancy ?? 0) > 0 ? ' (different from the full test: treat with care)' : ''}.`) : ''),
+        h('details', { class: 'guide-more inline' }, h('summary', {}, 'Test details'),
+          s.tStat != null ? h('p', { class: 'tiny' }, termLabel('t', 'tstat'), ` = ${s.tStat.toFixed(1)}`, s.tradesNeeded ? h('span', {}, ' · ', termLabel('trades needed', 'needed'), ` ≈ ${s.tradesNeeded.toLocaleString()} (has ${s.trades.toLocaleString()})`) : '') : '',
+          re ? h('p', { class: 'tiny' }, termLabel('Random-entry test', 'randomentry'), ` (${(re.runs ?? 1000).toLocaleString()} runs): p = ${re.p.toFixed(3)}`) : '',
+          mc ? h('p', { class: 'tiny' }, termLabel('Monte Carlo', 'montecarlo'), `: next ${mc.horizon} trades end ahead in ${Math.round(mc.profitable * 100)}% of ${mc.runs.toLocaleString()} runs; typical ${pct(mc.median)}, bad case ${pct(mc.bad)}`) : '',
+          st.recent?.trades ? h('p', { class: `tiny ${(st.recent.expectancy ?? 0) > 0 ? 'up' : 'down'}` }, termLabel('Recent 30% of history', 'outofsample'), `: ${st.recent.trades} trades, ${pct(st.recent.expectancy, 2)} per trade${(st.recent.expectancy ?? 0) > 0 !== (s.expectancy ?? 0) > 0 ? ' (differs from the full test: treat with care)' : ''}`) : '',
+        ),
       );
     });
     const e = hr.edge;
@@ -218,26 +263,54 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     const edge = h(
       'div',
       { class: 'sp-edge' },
-      h('div', { class: 'sp-card-head' }, h('b', {}, 'COT + z-score edge study'), e?.test ? h('span', { class: `sp-verdict ${e.test.verdict === 'COT adds an edge' ? 'up' : e.test.verdict === 'COT may help' ? 'warn' : ''}` }, e.test.verdict) : h('span', { class: 'muted tiny' }, e ? 'not enough history yet' : '—')),
+      h('div', { class: 'sp-card-head' }, h('b', {}, termLabel('COT + z-score edge study', 'edge')), e?.test ? h('span', { class: `sp-verdict ${e.test.verdict === 'COT adds an edge' ? 'up' : e.test.verdict === 'COT may help' ? 'warn' : ''}` }, e.test.verdict) : h('span', { class: 'muted tiny' }, e ? 'not enough history yet' : '—')),
       h('p', { class: 'muted tiny' }, 'Every past time a stock stretched beyond its own z-score band in the trend\'s direction and turned back, split by what commercial hedgers were doing, with the return over the holding period after costs.'),
       e && Object.keys(e.groups).length
         ? h('table', { class: 'sp-edge-table small' }, h('thead', {}, h('tr', {}, h('th', {}, 'Commercials'), h('th', {}, 'Times'), h('th', {}, 'Avg'), h('th', {}, 'Win'))), h('tbody', {}, row('agree', 'Agreed'), row('neutral', 'Neutral'), row('against', 'Against'), row('none', 'No COT data')))
         : '',
       e?.test ? h('p', { class: 'tiny' }, `Agreed minus against: ${pct(e.test.gap, 2)} per trade; ${e.test.runs.toLocaleString()}-run permutation p = ${e.test.p.toFixed(3)}.`) : '',
     );
-    evidence.replaceChildren(h('div', { class: 'sp-cards' }, ...cards, edge));
+    evidenceBody.replaceChildren(
+      h('p', { class: 'muted small' }, 'How each strategy\'s rules would have done on every Nasdaq-100 stock in this time frame\'s history. "Trades" are real past signals; each result is then tested with 1,000 random simulations. Click a card to show only that strategy\'s setups.'),
+      h('div', { class: 'sp-cards' }, ...cards, edge),
+    );
+  }
+
+  /** The plain answer first: what's worth a look on this time frame today, and how the market leans. */
+  function renderToday(hr: HorizonResult | undefined) {
+    if (!hr || hr.error) return today.replaceChildren();
+    const r = data!.regime;
+    const good = visibleAll(hr).filter((s) => (s.tier === 'A' || s.tier === 'B') && s.status !== 'forming');
+    const live = good.map((s) => ({ s, z: entryZone(s, prices.get(s.symbol) ?? s.price) })).filter((x) => ['waiting', 'approaching', 'entry'].includes(x.z.zone) || x.s.trade);
+    const lean = r.qqqWeekly === 1 ? 'The Nasdaq-100 is in a weekly uptrend: buys go with it, sells against it.' : r.qqqWeekly === -1 ? 'The Nasdaq-100 is in a weekly downtrend: sells go with it, buys against it (use smaller size on buys).' : 'The Nasdaq-100 has no clear weekly trend: be pickier and use smaller size.';
+    const info = HORIZONS.find((x) => x.key === prefs.horizon)!;
+    today.replaceChildren(
+      h('div', { class: 'sp-today-head' }, h('b', {}, live.length ? `${live.length} trade${live.length === 1 ? '' : 's'} worth a look on the ${info.label.toLowerCase()} time frame` : `Nothing to act on in ${info.label.toLowerCase()} right now`)),
+      live.length
+        ? h('ul', { class: 'sp-today-list small' }, ...live.slice(0, 5).map(({ s, z }) => h('li', {}, h('a', { href: '#setups', onclick: (e: Event) => (e.preventDefault(), (selected = idOf(s)), render()) },
+            h('b', {}, s.symbol), ' ', h('span', { class: s.direction > 0 ? 'up' : 'down' }, s.direction > 0 ? 'BUY' : 'SELL'), ' ', h('i', { class: `tier tier-${s.tier}` }, s.tier!), h('span', { class: z.tone }, ` ${z.label}`),
+            h('span', { class: 'muted' }, s.trade ? ` · in since ${s.trade.filled}` : ` · ${s.direction > 0 ? 'above' : 'below'} ${usd(s.plan.trigger)}, stop ${usd(s.plan.stop)}`)))))
+        : h('p', { class: 'small muted' }, hr.setups.length ? 'No A or B setup is waiting for an entry. That\'s normal: good setups don\'t appear every day. Check the other time frames, or come back after the next close.' : 'No stock has every condition lined up. Sitting out is a position.'),
+      h('p', { class: 'small' }, lean),
+    );
   }
 
   function renderFilters() {
     const seg = <T extends string>(key: 'grade' | 'side' | 'sort', options: [T, string][]) =>
       h('div', { class: 'segmented small' }, ...options.map(([v, label]) => h('button', { class: prefs[key] === v ? 'active' : '', onclick: () => setPref(key, v as never) }, label)));
     filters.replaceChildren(
+      h('span', { class: 'sp-legend small' }, termLabel('Grades', 'grade'), ' ', h('i', { class: 'tier tier-A' }, 'A'), ' take it ', h('i', { class: 'tier tier-B' }, 'B'), ' half size ', h('i', { class: 'tier tier-C' }, 'C'), ' watch only'),
       seg('grade', [['ab', 'A & B only'], ['all', 'All grades']]),
       seg('side', [['all', 'Buys & sells'], ['buy', 'Buys'], ['sell', 'Sells']]),
       h('label', { class: 'small muted' }, 'Sort ', h('select', { class: 'input small-select', onchange: (e: Event) => setPref('sort', (e.target as HTMLSelectElement).value as never) }, ...([['grade', 'Best grade'], ['rr', 'Reward:risk'], ['mc', 'Monte Carlo % ahead'], ['new', 'Newest']] as const).map(([v, l]) => h('option', { value: v, selected: prefs.sort === v }, l)))),
       h('label', { class: 'small sp-auto', title: 'Watch every A and B setup automatically and alert when one reaches its entry' }, h('input', { type: 'checkbox', checked: prefs.autoAlert, onchange: (e: Event) => (setPref('autoAlert', (e.target as HTMLInputElement).checked), syncWatches()) }), ' Alert me on A & B entries'),
-      prefs.strategy !== 'all' ? h('button', { class: 'btn small', onclick: () => setPref('strategy', 'all') }, `${STRATEGY_LABEL[prefs.strategy]} only ✕`) : '',
+      prefs.strategy !== 'all' ? h('button', { class: 'btn small', onclick: () => setPref('strategy', 'all') }, `${horizon()?.strategies[prefs.strategy]?.short ?? STRATEGY_LABEL[prefs.strategy]} only ✕`) : '',
     );
+  }
+
+  /** Every setup of this time frame for the chosen strategy (ignoring the grade and side filters). */
+  function visibleAll(hr: HorizonResult): Setup[] {
+    return hr.setups.filter((s) => prefs.strategy === 'all' || s.strategy === prefs.strategy);
   }
 
   function visible(hr: HorizonResult): Setup[] {
@@ -272,7 +345,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     if (!selected || !rows.some((s) => idOf(s) === selected)) selected = idOf(rows[0]);
     list.replaceChildren(
       h('table', { class: 'sp-table' },
-        h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'Stock'), h('th', {}, 'Grade'), h('th', {}, 'Status'), h('th', { class: 'num' }, 'Entry'), h('th', { class: 'num' }, 'Stop'), h('th', { class: 'num' }, 'Target'), h('th', { class: 'num' }, 'R:R'), h('th', { class: 'num' }, 'MC ahead'))),
+        h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'Stock'), h('th', {}, termLabel('Grade', 'grade')), h('th', {}, termLabel('Right now', 'entryzone')), h('th', { class: 'num' }, 'Entry'), h('th', { class: 'num' }, termLabel('Stop', 'stop')), h('th', { class: 'num' }, 'Target'), h('th', { class: 'num' }, 'Hold'))),
         h('tbody', {}, ...rows.map(row)),
       ),
       h('p', { class: 'muted tiny' }, `${rows.length} shown of ${hr.setups.length}. Signals come from finished ${HORIZONS.find((x) => x.key === prefs.horizon)!.bars.split(',')[0]}; the 5-minute scans update prices, triggers and grades.`),
@@ -287,14 +360,13 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       'tr',
       { class: `${id === selected ? 'sel' : ''}`, onclick: () => ((selected = id), render()) },
       h('td', {}, h('button', { class: `sp-star${watched.has(id) ? ' on' : ''}`, title: watched.has(id) ? 'Stop watching' : 'Watch: alert me when it\'s time to enter', onclick: (e: Event) => (e.stopPropagation(), toggleWatch(s)) }, watched.has(id) ? '★' : '☆')),
-      h('td', {}, h('b', {}, s.symbol), ' ', h('span', { class: `sp-side ${long ? 'up' : 'down'}` }, long ? 'BUY' : 'SELL'), s.new ? h('span', { class: 'new-chip' }, 'New') : '', s.conflict ? h('span', { class: 'sp-warn', title: `${s.conflict.strategy} says the opposite` }, ' ⚠') : '', h('div', { class: 'muted tiny' }, STRATEGY_LABEL[s.strategy as StrategyKey] ?? s.strategyName)),
+      h('td', {}, h('b', {}, s.symbol), ' ', h('span', { class: `sp-side ${long ? 'up' : 'down'}` }, long ? 'BUY' : 'SELL'), s.new ? h('span', { class: 'new-chip' }, 'New') : '', s.conflict ? h('span', { class: 'sp-warn', title: `${s.conflict.strategy} says the opposite` }, ' ⚠') : '', h('div', { class: 'muted tiny' }, s.strategyName.split(' (')[0])),
       h('td', {}, s.tier ? h('i', { class: `tier tier-${s.tier}` }, s.tier) : ''),
       h('td', { class: z.tone }, z.label),
       h('td', { class: 'num' }, usd(s.trade?.entry ?? s.plan.trigger)),
       h('td', { class: 'num down' }, usd(s.plan.stop)),
       h('td', { class: 'num up' }, s.plan.target != null ? usd(s.plan.target) : 'trail'),
-      h('td', { class: 'num' }, s.plan.riskReward != null ? `${s.plan.riskReward.toFixed(1)}x` : '—'),
-      h('td', { class: 'num' }, s.monteCarlo ? `${Math.round(s.monteCarlo.profitable * 100)}%` : '—'),
+      h('td', { class: 'num muted' }, holdShort(s)),
     );
   }
 
@@ -323,24 +395,11 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       h('div', { class: 'sp-detail-head' }, h('h2', {}, s.symbol), h('span', { class: 'muted' }, `${s.strategyName} · ${HORIZONS.find((x) => x.key === prefs.horizon)!.label} · ${s.plan.holdText ?? s.plan.horizon}`), h('span', { class: 'spacer' }), watchBtn, h('button', { class: 'btn small', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, 'Open chart')),
       live,
       chartBox,
-      evidenceLine(s),
-      tradeGuideBody(s, strat, onOpenChart),
+      tradeGuideBody(s, strat, onOpenChart, data?.regime.qqqWeekly),
     );
     updateLive(s);
     drawChart(chartBox, s);
     if (!quoteStops.has(s.symbol)) watchQuote(s.symbol);
-  }
-
-  function evidenceLine(s: Setup) {
-    const rw = s.randomWalk;
-    const parts: (Node | string)[] = [];
-    if (rw && 'pending' in rw) parts.push(`Random-walk test: running ${rw.runs.toLocaleString()} shuffled histories…`);
-    else if (rw) {
-      const q = (rw as { q?: number; tests?: number }).q;
-      parts.push(`Random-walk test (${rw.runs.toLocaleString()} runs): p = ${rw.p.toFixed(3)}${q != null ? `, q = ${q.toFixed(3)} after correcting for ${(rw as { tests?: number }).tests} stocks tested at once` : ''}. `);
-    }
-    if (s.darkPool) parts.push(`Dark pool short volume: ${Math.round(s.darkPool.avg5 * 100)}% (5-day) vs ${Math.round(s.darkPool.avg40 * 100)}% (40-day). `);
-    return parts.length ? h('p', { class: 'small sp-evidence-line' }, ...parts) : '';
   }
 
   function updateLive(s: Setup) {

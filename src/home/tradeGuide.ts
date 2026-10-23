@@ -6,14 +6,16 @@
 import type { MarketRef } from '../data/quotes';
 import { pct as fmtPct } from '../ui/charts';
 import { formatPrice, h, openModal } from '../ui/dom';
+import { infoTip, termLabel } from '../ui/glossary';
 import type { Setup, StrategyInfo } from './setupsPanel';
+import { readTrade } from './tradeRead';
 
 const pct = (v: number | null | undefined, d = 1) => fmtPct(v, d);
 const shortDate = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 const SIZE_KEY = 'tp-guide-size';
 const usd = (v: number) => `$${formatPrice(v)}`;
 /** The exit rule without the entry sentence some strategies start it with. */
-const exitOnly = (rule: string) => rule.replace(/^Enter at the next open\.\s*/, '');
+const exitOnly = (rule: string) => rule.replace(/^Enter at the next [^.]*open\.\s*/, '');
 
 function readSize(): { account: number; risk: number } {
   try {
@@ -64,6 +66,27 @@ const READING_HELP: Record<string, string> = {
   adx: 'ADX: trend strength. Above 20-25 means the stock is trending, not drifting.',
 };
 
+/** A folded section: the basics stay visible, the detail opens on a click. */
+function more(title: string, ...children: (Node | string)[]) {
+  return h('details', { class: 'guide-more' }, h('summary', {}, title), h('div', { class: 'guide-more-body' }, ...children));
+}
+
+/** "The read": the holistic summary and one chip per factor. */
+function readBox(r: ReturnType<typeof readTrade>, v: ReturnType<typeof verdict>) {
+  const icon = { for: '✓', against: '✗', neutral: '•' } as const;
+  return h(
+    'div',
+    { class: `guide-read ${v.tone}` },
+    h('div', { class: 'guide-read-head' }, h('b', {}, v.title), infoTip('conviction')),
+    h('div', { class: 'muted small' }, r.headline),
+    h('div', { class: 'guide-factors' }, ...r.factors.map((f) => h('span', { class: `factor ${f.stance}`, title: f.text }, h('i', {}, icon[f.stance]), f.label, f.term ? infoTip(f.term) : ''))),
+    h('p', { class: 'small' }, h('b', { class: 'up' }, 'For it: '), r.forText, '.'),
+    h('p', { class: 'small' }, h('b', { class: 'down' }, 'Against it: '), r.againstText, '.'),
+    h('p', { class: 'guide-action' }, h('b', {}, 'What to do: '), r.action),
+    h('details', { class: 'guide-more inline' }, h('summary', {}, 'More on this verdict'), h('p', { class: 'small' }, v.text)),
+  );
+}
+
 export function openTradeGuide(s: Setup, strat: StrategyInfo | undefined, onOpenChart: (ref: MarketRef) => void) {
   let close = () => {};
   const body = tradeGuideBody(s, strat, (ref) => (close(), onOpenChart(ref)));
@@ -71,7 +94,7 @@ export function openTradeGuide(s: Setup, strat: StrategyInfo | undefined, onOpen
 }
 
 /** The guide itself (also shown inline on the Setups page). */
-export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpenChart: (ref: MarketRef) => void): HTMLElement {
+export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpenChart: (ref: MarketRef) => void, marketTrend?: number | null): HTMLElement {
   const long = s.direction > 0;
   const p = s.plan;
   const entry = s.trade?.entry ?? (p.entryType === 'stop' ? p.trigger : s.price);
@@ -107,8 +130,8 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
       s.trade
         ? `You're already in at ${usd(s.trade.entry)} (filled ${shortDate(s.trade.filled)}). It is ${pct(s.trade.pnl)} so far, ${s.unit ?? 'day'} ${s.trade.daysHeld} of ${p.maxHold}.`
         : p.entryType === 'stop'
-          ? `Place a ${long ? 'buy-stop' : 'sell-stop'} order at ${usd(p.trigger)}, ${long ? 'just above' : 'just below'} the signal day's ${long ? 'high' : 'low'}. It only fills if the price ${long ? 'rises' : 'falls'} through that level, which shows ${long ? 'buyers' : 'sellers'} have taken over. It's good until ${shortDate(p.validUntil)}; if it hasn't filled by then, cancel it: the moment has passed.`
-          : `${long ? 'Buy' : 'Sell short'} at the next market open (around ${usd(s.price)}). This strategy doesn't wait for confirmation because snap-backs happen fast.`,
+          ? `Place a ${long ? 'buy-stop' : 'sell-stop'} order at ${usd(p.trigger)}, ${long ? 'just above' : 'just below'} the signal ${s.unit ?? 'day'}'s ${long ? 'high' : 'low'}. It only fills if the price ${long ? 'rises' : 'falls'} through that level, which shows ${long ? 'buyers' : 'sellers'} have taken over. It's good until ${shortDate(p.validUntil)}; if it hasn't filled by then, cancel it: the moment has passed.`
+          : `${long ? 'Buy' : 'Sell short'} at the next ${s.unit === 'hour' ? 'hour\'s' : s.unit === 'week' ? 'week\'s (Monday\'s)' : 'day\'s'} open (around ${usd(s.price)}). This strategy doesn't wait for confirmation because snap-backs happen fast.`,
     ],
     [
       'Where you\'re wrong (the stop)',
@@ -178,12 +201,12 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
       h('span', { class: 'strategy-chip' }, s.strategyName),
       h('span', { class: 'muted small' }, `${usd(s.price)} now · ${p.horizon}`),
     ),
-    h('div', { class: `guide-verdict ${v.tone}` }, h('b', {}, v.title), h('p', {}, v.text)),
+    readBox(readTrade(s, strat, marketTrend), v),
     h(
       'div',
       { class: 'guide-levels' },
-      h('div', {}, h('span', { class: 'muted tiny' }, s.trade ? 'Entered' : long ? 'Buy above' : 'Sell below'), h('b', {}, usd(entry))),
-      h('div', {}, h('span', { class: 'muted tiny' }, 'Stop'), h('b', { class: 'down' }, usd(p.stop))),
+      h('div', {}, h('span', { class: 'muted tiny' }, s.trade ? 'Entered' : p.entryType === 'open' ? `${long ? 'Buy' : 'Sell'} at the open, about` : long ? 'Buy above' : 'Sell below'), h('b', {}, usd(entry))),
+      h('div', {}, termLabel('Stop', 'stop'), h('b', { class: 'down' }, usd(p.stop))),
       h('div', {}, h('span', { class: 'muted tiny' }, 'Target'), h('b', { class: 'up' }, p.target != null ? usd(p.target) : 'trailing')),
       h('div', {}, h('span', { class: 'muted tiny' }, 'Out by'), h('b', {}, shortDate(p.exitBy))),
     ),
@@ -191,53 +214,51 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
     h('h3', {}, 'The trade, step by step'),
     h('ol', { class: 'guide-steps' }, ...steps.map(([t, d]) => h('li', {}, h('b', {}, t), typeof d === 'string' ? h('p', {}, d) : d))),
 
-    h('h3', {}, `Why it's ${s.tier ? `a ${s.tier}-grade` : 'filtered out'}`),
-    h(
-      'p',
-      { class: 'small' },
-      s.tier === 'A'
-        ? 'Every test passed.'
-        : s.tier === 'B'
-          ? 'B means the strategy makes money overall and none of this setup\'s own checks is against it. It isn\'t an A because:'
-          : 'C means at least one important thing is against it:',
+    more(
+      `Why it's ${s.tier ? `a ${s.tier}-grade` : 'filtered out'}`,
+      h('p', { class: 'small' }, termLabel('How grades work', 'grade'), ' ',
+        s.tier === 'A' ? 'Every test passed.' : s.tier === 'B' ? 'B means the strategy makes money overall and none of this setup\'s own checks is against it. It isn\'t an A because:' : 'C means at least one important thing is against it:'),
+      s.why?.length ? h('ul', { class: 'guide-why' }, ...s.why.map((w) => h('li', {}, w))) : '',
+      checks,
+      h('h4', {}, 'Why the scanner picked it'),
+      h('ul', { class: 'small' }, ...s.reasons.map((r) => h('li', {}, r))),
     ),
-    s.why?.length ? h('ul', { class: 'guide-why' }, ...s.why.map((w) => h('li', {}, w))) : '',
-    checks,
 
-    h('h3', {}, 'Why the scanner picked it'),
-    h('ul', { class: 'small' }, ...s.reasons.map((r) => h('li', {}, r))),
-
-    h('h3', {}, 'How it has worked before'),
-    st.trades
-      ? h('p', {}, `On ${s.symbol}: ${st.trades} past trades in its backtest, ${Math.round((st.winRate ?? 0) * 100)}% winners, ${pct(st.expectancy, 2)} per trade after costs, held ${st.avgBars?.toFixed(1) ?? '—'} ${s.unit ?? 'day'}s on average (${st.grade}).`)
-      : h('p', { class: 'muted' }, `No past trades on ${s.symbol} with this strategy, so the record below is for all Nasdaq-100 stocks.`),
-    strat ? h('p', {}, `Across ${strat.stocks} Nasdaq-100 stocks: ${strat.stats.trades} trades, ${Math.round((strat.stats.winRate ?? 0) * 100)}% winners, ${pct(strat.stats.expectancy, 2)} per trade, profit factor ${strat.stats.profitFactor ?? '—'}.`) : '',
-    re
-      ? h('p', {}, `Random-entry test (${re.runs?.toLocaleString() ?? '1,000'} sets of random trades in the same stocks): `, h('b', { class: re.verdict === 'edge' ? 'up' : re.verdict === 'maybe' ? 'warn' : 'down' }, re.verdict === 'edge' ? 'the strategy beat chance' : re.verdict === 'maybe' ? 'inconclusive' : 'not clearly better than chance'), ` (p = ${re.p.toFixed(2)}: the share of random sets that did as well).`)
-      : '',
-    rw && 'pending' in rw
-      ? h('p', { class: 'muted' }, `Random-walk test on ${s.symbol}: running ${rw.runs.toLocaleString()} shuffled histories in the background. It appears here within a minute or two.`)
-      : rw
-        ? h('p', {}, `Random-walk test on ${s.symbol} (${rw.runs.toLocaleString()} shuffled versions of its history): `, h('b', { class: rw.verdict === 'edge' ? 'up' : rw.verdict === 'maybe' ? 'warn' : 'down' }, rw.verdict === 'edge' ? 'likely a real edge' : rw.verdict === 'maybe' ? 'inconclusive' : 'could be luck'), ` (p = ${rw.p.toFixed(3)}).`)
+    more(
+      'The statistics behind it',
+      st.trades
+        ? h('p', {}, `On ${s.symbol}: ${st.trades} past trades in its backtest, ${Math.round((st.winRate ?? 0) * 100)}% winners, ${pct(st.expectancy, 2)} per trade after costs, held ${st.avgBars?.toFixed(1) ?? '—'} ${s.unit ?? 'day'}s on average (${st.grade}).`)
+        : h('p', { class: 'muted' }, `No past trades on ${s.symbol} with this strategy, so the record below is for all Nasdaq-100 stocks.`),
+      strat ? h('p', {}, termLabel('Across the Nasdaq-100', 'trades'), `: ${strat.stats.trades} trades, ${Math.round((strat.stats.winRate ?? 0) * 100)}% winners, ${pct(strat.stats.expectancy, 2)} per trade, profit factor ${strat.stats.profitFactor ?? '—'}.`) : '',
+      re
+        ? h('p', {}, termLabel('Random-entry test', 'randomentry'), ` (${re.runs?.toLocaleString() ?? '1,000'} runs): `, h('b', { class: re.verdict === 'edge' ? 'up' : re.verdict === 'maybe' ? 'warn' : 'down' }, re.verdict === 'edge' ? 'the strategy beat chance' : re.verdict === 'maybe' ? 'inconclusive' : 'not clearly better than chance'), ` (p = ${re.p.toFixed(2)}).`)
         : '',
-    mc ? mcLine(mc, `This stock`) : '',
-    smc ? mcLine(smc, 'The strategy on all stocks') : '',
-    h('p', { class: 'muted tiny' }, 'p is the chance a result this good happens by luck: under 0.05 is strong evidence, 0.05-0.20 is a maybe, above 0.20 could easily be luck.'),
+      rw && 'pending' in rw
+        ? h('p', { class: 'muted' }, termLabel('Random-walk test', 'randomwalk'), `: running ${rw.runs.toLocaleString()} shuffled histories in the background.`)
+        : rw
+          ? h('p', {}, termLabel('Random-walk test', 'randomwalk'), ` (${rw.runs.toLocaleString()} runs): `, h('b', { class: rw.verdict === 'edge' ? 'up' : rw.verdict === 'maybe' ? 'warn' : 'down' }, rw.verdict === 'edge' ? 'likely a real edge' : rw.verdict === 'maybe' ? 'inconclusive' : 'could be luck'), ` (p = ${rw.p.toFixed(3)}${(rw as { q?: number }).q != null ? `, q = ${(rw as { q?: number }).q!.toFixed(3)}` : ''}).`)
+          : '',
+      mc ? mcLine(mc, 'This stock') : '',
+      smc ? mcLine(smc, 'The strategy on all stocks') : '',
+      h('p', { class: 'muted tiny' }, termLabel('Reading p', 'pvalue'), ' Under 0.05 is strong evidence, 0.05-0.20 a maybe, above 0.20 could easily be luck.'),
+    ),
 
-    readings.length ? h('h3', {}, 'The readings, explained') : '',
-    readings.length ? h('dl', { class: 'guide-readings' }, ...readings.flatMap(([k, label, val]) => [h('dt', {}, label, ' ', h('b', {}, val)), h('dd', { class: 'muted small' }, READING_HELP[k])])) : '',
+    readings.length
+      ? more('The indicator readings, explained', h('dl', { class: 'guide-readings' }, ...readings.flatMap(([k, label, val]) => [h('dt', {}, label, ' ', h('b', {}, val)), h('dd', { class: 'muted small' }, READING_HELP[k])])))
+      : '',
 
-    s.levels.supports.length || s.levels.resistances.length
-      ? h(
-          'div',
-          {},
-          h('h3', {}, 'Support and resistance'),
-          h('p', { class: 'muted small' }, 'Prices where the stock turned before. Resistance can cap a rally; support can stop a fall.'),
-          h('div', { class: 'setup-sr small' }, h('div', {}, h('b', {}, 'Resistance'), ...s.levels.resistances.map((x) => h('div', {}, `${usd(x.price)} · ${x.label}`))), h('div', {}, h('b', {}, 'Support'), ...s.levels.supports.map((x) => h('div', {}, `${usd(x.price)} · ${x.label}`)))),
+    s.levels.supports.length || s.levels.resistances.length || s.smartMoney?.length || s.news || s.darkPool
+      ? more(
+          'Levels, news and big-money flow',
+          s.levels.supports.length || s.levels.resistances.length
+            ? h('div', {}, h('p', { class: 'muted small' }, 'Prices where the stock turned before. Resistance can cap a rally; support can stop a fall.'),
+                h('div', { class: 'setup-sr small' }, h('div', {}, h('b', {}, 'Resistance'), ...s.levels.resistances.map((x) => h('div', {}, `${usd(x.price)} · ${x.label}`))), h('div', {}, h('b', {}, 'Support'), ...s.levels.supports.map((x) => h('div', {}, `${usd(x.price)} · ${x.label}`)))))
+            : '',
+          s.darkPool ? h('p', { class: 'small' }, termLabel('Dark pool short volume', 'darkpool'), `: ${Math.round(s.darkPool.avg5 * 100)}% over 5 days vs ${Math.round(s.darkPool.avg40 * 100)}% normally.`) : '',
+          ...(s.smartMoney ?? []).map((t) => h('p', { class: 'small' }, t.text)),
+          s.news ? h('p', { class: 'small' }, 'News: ', s.news.link ? h('a', { href: s.news.link, target: '_blank', rel: 'noopener' }, s.news.headline) : s.news.headline, h('span', { class: 'muted' }, ` · ${s.news.source ?? ''}`)) : '',
         )
       : '',
-    s.smartMoney?.length ? h('div', {}, h('h3', {}, 'Big-money activity'), ...s.smartMoney.map((t) => h('p', { class: 'small' }, t.text))) : '',
-    s.news ? h('div', {}, h('h3', {}, 'News'), h('p', { class: 'small' }, s.news.link ? h('a', { href: s.news.link, target: '_blank', rel: 'noopener' }, s.news.headline) : s.news.headline, h('span', { class: 'muted' }, ` · ${s.news.source ?? ''}`))) : '',
 
     h(
       'div',

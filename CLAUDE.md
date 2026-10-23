@@ -100,7 +100,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Setups page (src/pages/setupsPage.ts, route #setups): time-frame tabs, strategy evidence cards, edge study, sortable
   list, detail with live entry zone (src/home/entryZone.ts: waiting/approaching/entry/extended/target/invalid/expired,
   chase limit 0.25R), chart with entry/stop/target and the trade guide (tradeGuideBody). Watched setups (and A/B when
-  "Alert me" is on) follow live quotes and alert with a sound/notification. Home shows a small teaser
+  "Alert me" is on) follow live quotes and alert with a sound/notification. Layout is basics first: a "Today" summary,
+  a folded daily routine and strategy report card (evidence strength label), a simple list; the guide opens with "The
+  read" (src/home/tradeRead.ts: for/against factors, conviction capped by grade, what to do) and folds the grade
+  reasons, statistics, readings and levels. Terms have an "i" tooltip (src/ui/glossary.ts TERMS / infoTip). Home shows a small teaser
   (src/home/setupsTeaser.ts); src/home/setupsPanel.ts now only provides types and the old card helpers.
   AI summary buttons (`insightButton`) are on Home, Flow, Research, Macro, Bonds, Investments boards, fund detail
   and Backtest; not on the Chart page or Portfolios (owner's choice).
