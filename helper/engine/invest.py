@@ -116,6 +116,22 @@ def performance(rows, price=None):
     }
 
 
+def session_change(row, rows):
+    """Outside market hours Schwab often reports "unchanged". Like the WSJ, show the latest session's move instead:
+    the last price against the close of the trading day before it (from the daily closes), marked as at-close."""
+    price, change = row.get('price'), row.get('change')
+    if not price or len(rows) < 2 or (change is not None and abs(change) > 1e-9):
+        return
+    last_t, last_c = rows[-1]
+    # If the newest daily close is the current price, it is the latest session: compare with the day before.
+    matched = abs(last_c - price) <= price * 1e-4
+    prev = rows[-2][1] if matched else last_c
+    if not prev or abs(prev - price) <= price * 1e-6 or abs(prev / price - 1) > 0.5:
+        return
+    row['change'] = price / prev - 1
+    row['atClose'] = row.get('atClose') or (last_t if matched else None) or time.time()
+
+
 @handler('invest.board')
 async def board(ctx, msg):
     """Quotes and performance for a list of symbols (one market section of the Investments page)."""
@@ -134,9 +150,11 @@ async def board(ctx, msg):
     for s in symbols:
         row = q.get(s) or {'symbol': s, 'name': '', 'price': None, 'change': None}
         if s in hist:
-            row.update(performance(hist[s], row.get('price')))
             if row.get('price') is None and hist[s]:
                 row['price'] = hist[s][-1][1]
+                row['atClose'] = hist[s][-1][0]
+            row.update(performance(hist[s], row.get('price')))
+            session_change(row, hist[s])
         rows.append(row)
     return {'rows': rows, 'asOf': time.time()}
 

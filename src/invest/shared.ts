@@ -24,7 +24,11 @@ export interface BoardRow {
   low52?: number | null;
   divYield?: number | null;
   peRatio?: number | null;
+  /** Set (unix seconds) when price/change are the latest session's close because the market is closed. */
+  atClose?: number | null;
 }
+
+const closeDate = (t: number) => new Date(t * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
 
 export interface InvestContext {
   openChart(ref: MarketRef): void;
@@ -71,7 +75,7 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
               'tr',
               { class: 'clickable', tabindex: 0, onclick: () => onPick(symbol, label), onkeydown: (e: Event) => (e as KeyboardEvent).key === 'Enter' && onPick(symbol, label) },
               h('td', { class: 'label' }, h('div', { class: 'inv-name' }, h('b', {}, label), h('span', { class: 'muted small' }, showSymbol(symbol)))),
-              h('td', {}, r?.price != null ? formatPrice(r.price) : '—'),
+              h('td', {}, r?.price != null ? formatPrice(r.price) : h('span', { class: 'muted small', title: 'Schwab has no price for this right now' }, 'No quote'), r?.atClose ? h('div', { class: 'muted tiny' }, `At close ${closeDate(r.atClose)}`) : ''),
               pctCell(r?.change),
               pctCell(r?.m1),
               pctCell(r?.ytd),

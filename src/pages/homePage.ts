@@ -67,7 +67,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
       rangeHigh.textContent = formatPrice(Math.max(...values));
       rangeLow.textContent = formatPrice(Math.min(...values));
     }
-    rangePrev.textContent = quote?.prevClose ? `${usingLastSession ? 'Last session · ' : ''}Prev close ${formatPrice(quote.prevClose)} · Day range ${values.length ? `${formatPrice(Math.min(...values))} – ${formatPrice(Math.max(...values))}` : '—'}` : '';
+    rangePrev.textContent = quote?.prevClose ? `${usingLastSession ? 'At close · ' : ''}Prev close ${formatPrice(quote.prevClose)} · Day range ${values.length ? `${formatPrice(Math.min(...values))} – ${formatPrice(Math.max(...values))}` : '—'}` : '';
   };
 
   const onQuote = (incoming: Quote) => {
