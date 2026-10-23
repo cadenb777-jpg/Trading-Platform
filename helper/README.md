@@ -67,6 +67,12 @@ market dropdown.
 When the platform gets new features, you may need a new copy of the helper. Download the ZIP
 again (step 2), replace your old folder, and start it as usual. Your keys and login are kept.
 
+Tip: to make updates start faster, copy the new files *into* your existing helper folder (choose
+"Replace the files" when Windows asks) instead of deleting the folder. That keeps the hidden `.venv`
+folder with the parts already installed, so the helper doesn't have to download them again. A fresh
+folder downloads everything once (about 150 MB), which takes a few minutes; the start window shows
+progress for each step.
+
 Version 6 added the AI assistant and stock positioning; version 7 is a bug-fix update. If an optional part
 (the AI or portfolio maths) fails to install, the helper still starts and charts and prices keep working; the
 platform's Settings window shows what's unavailable, and the helper writes a log to `~/.trading-platform/helper.log`. The first start after updating installs a few
