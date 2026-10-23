@@ -88,6 +88,8 @@ export class ChartView {
 
   /** Called with the bar index under the mouse (or the latest bar when the mouse leaves). */
   onHover: (index: number) => void = () => {};
+  /** Called when the chart can't draw its data (with the reason), so the page can say so instead of staying blank. */
+  onDataError: (message: string) => void = (message) => console.error(message);
   /** Called when panes are added, removed or resized, so legends can be repositioned. */
   onLayout: () => void = () => {};
 
@@ -134,7 +136,7 @@ export class ChartView {
     return this.timeframe;
   }
 
-  setBars(bars: Bar[], timeframe: Timeframe) {
+  setBars(bars: Bar[], timeframe: Timeframe, refit = true) {
     this.bars = bars;
     this.timeframe = timeframe;
     this.timeIndex.clear();
@@ -143,9 +145,19 @@ export class ChartView {
     this.applyPriceFormat();
     this.heikin = [];
     this.updateHeikin(0);
-    this.main.setData(this.bars.map((_, i) => this.mainPoint(i)) as never);
-    for (const r of this.indicators.values()) this.renderAll(r);
-    this.fit();
+    try {
+      this.main.setData(this.bars.map((_, i) => this.mainPoint(i)) as never);
+    } catch (err) {
+      this.onDataError(`The chart couldn't draw this data: ${(err as Error).message}`);
+    }
+    for (const r of this.indicators.values()) {
+      try {
+        this.renderAll(r);
+      } catch (err) {
+        console.error(`Indicator ${r.def.name} failed`, err);
+      }
+    }
+    if (refit) this.fit();
     this.refreshPrimitives();
   }
 
@@ -167,6 +179,16 @@ export class ChartView {
    * appended new ones to the array passed to setBars.
    */
   updateFrom(startIndex: number) {
+    try {
+      this.updateRange(startIndex);
+    } catch (err) {
+      // A live update the chart rejected (e.g. out of order): redraw everything from the bars instead.
+      console.warn('Live update failed, redrawing the chart', err);
+      this.setBars(this.bars, this.timeframe, false);
+    }
+  }
+
+  private updateRange(startIndex: number) {
     const start = Math.max(0, startIndex);
     if (start === 0 && this.bars.length === 1) this.applyPriceFormat();
     this.updateHeikin(start);
@@ -243,6 +265,11 @@ export class ChartView {
   xToTime(x: number): number | null {
     const logical = this.chart.timeScale().coordinateToLogical(x);
     return logical === null ? null : this.logicalToTime(logical);
+  }
+
+  /** Pixels between bars at the current zoom. */
+  barSpacing(): number {
+    return this.chart.timeScale().options().barSpacing;
   }
 
   priceToY(price: number): number | null {

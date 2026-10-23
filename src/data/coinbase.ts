@@ -3,7 +3,7 @@
  * REST docs: https://docs.cdp.coinbase.com/exchange/reference/exchangerestapi_getproductcandles
  * WebSocket docs: https://docs.cdp.coinbase.com/exchange/docs/websocket-channels
  */
-import { TIMEFRAME_SECONDS, applyTrade, regroupBars, type Bar, type Timeframe } from '../types';
+import { TIMEFRAME_SECONDS, applyTrade, cleanBars, regroupBars, type Bar, type Timeframe } from '../types';
 import { fetchJson, reconnectingSocket, type DataProvider } from './provider';
 import type { Quote } from './quotes';
 
@@ -48,7 +48,7 @@ async function loadCandles(symbol: string, timeframe: Timeframe, signal: AbortSi
     if (!Array.isArray(page)) throw new Error(page.message || 'Unexpected response from Coinbase');
     for (const [time, low, high, open, close, volume] of page) byTime.set(time, { time, open, high, low, close, volume });
   }
-  const bars = [...byTime.values()].sort((a, b) => a.time - b.time);
+  const bars = cleanBars([...byTime.values()]);
   return granularity === target ? bars : regroupBars(bars, timeframe);
 }
 

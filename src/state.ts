@@ -23,6 +23,8 @@ export interface AppState {
   watchlist: MarketRef[];
   watchlistOpen: boolean;
   volumeProfile: boolean;
+  /** Show pre-market and after-hours bars on intraday stock charts. */
+  extendedHours: boolean;
   alerts: PriceAlert[];
   multi: { layout: MultiLayout; cells: MultiCell[] };
   userName: string;
@@ -51,6 +53,7 @@ function defaultState(): AppState {
     ],
     watchlistOpen: true,
     volumeProfile: false,
+    extendedHours: true,
     alerts: [],
     multi: {
       layout: '4',

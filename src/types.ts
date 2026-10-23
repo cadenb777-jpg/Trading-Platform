@@ -69,6 +69,27 @@ export function bucketStart(time: number, timeframe: Timeframe): number {
 }
 
 /** Combines smaller bars (e.g. 1-minute) into bars of a larger timeframe (e.g. 3-minute). */
+/**
+ * Makes bars safe to draw: drops bars with missing or invalid prices, puts them in time order and merges
+ * bars that share a time. The chart refuses a whole data set if even one bar breaks these rules.
+ */
+export function cleanBars(bars: Bar[]): Bar[] {
+  const valid = bars.filter((b) => b && Number.isFinite(b.time) && b.time > 0 && [b.open, b.high, b.low, b.close].every((v) => typeof v === 'number' && Number.isFinite(v)));
+  valid.sort((a, b) => a.time - b.time);
+  const out: Bar[] = [];
+  for (const b of valid) {
+    const bar = { time: Math.floor(b.time), open: b.open, high: Math.max(b.high, b.open, b.close), low: Math.min(b.low, b.open, b.close), close: b.close, volume: Number.isFinite(b.volume) ? b.volume : 0 };
+    const last = out[out.length - 1];
+    if (last && last.time === bar.time) {
+      last.high = Math.max(last.high, bar.high);
+      last.low = Math.min(last.low, bar.low);
+      last.close = bar.close;
+      last.volume += bar.volume;
+    } else out.push(bar);
+  }
+  return out;
+}
+
 export function regroupBars(bars: Bar[], timeframe: Timeframe): Bar[] {
   const out: Bar[] = [];
   for (const bar of bars) {

@@ -1,6 +1,7 @@
 /** The full chart screen: toolbar, drawing tools, chart with indicators, and watchlist. */
 import { CHART_TYPES, ChartView, THEME, type ChartType } from '../chart/ChartView';
 import { DRAWING_TOOLS, DrawingManager, type Tool } from '../chart/drawings';
+import { SessionShading, isRegularHours, regularHoursOnly } from '../chart/session';
 import { VolumeProfile } from '../chart/volumeProfile';
 import { PROVIDERS, getProvider } from '../data';
 import type { ConnectionStatus, ProviderId } from '../data/provider';
@@ -66,6 +67,7 @@ export function createChartPage() {
   };
   onStateChange(updateAlertCount);
   alertBtn.addEventListener('click', () => openAlertsDialog(currentRef(), bars[bars.length - 1]?.close ?? null));
+  const extBtn = h('button', { class: 'btn fit-btn ext-btn', title: 'Extended hours: show pre-market (4:00-9:30 am ET) and after-hours (4-8 pm ET) trading on intraday stock charts. Shaded areas are outside regular hours.', 'aria-label': 'Extended hours' }, 'Ext');
   const fitBtn = h('button', { class: 'btn fit-btn', title: 'Fit the chart to the candles (F)', 'aria-label': 'Fit chart', onclick: () => chart?.fit() }, icon('fit', 18), ' Fit');
   const side = h('aside', { class: 'watch-side' });
 
@@ -93,6 +95,7 @@ export function createChartPage() {
       h('button', { class: 'btn', onclick: () => openIndicatorPicker(addIndicator) }, h('span', { class: 'fx' }, 'ƒx'), ' Indicators'),
       profileBtn,
       alertBtn,
+      extBtn,
       fitBtn,
       h('span', { class: 'spacer' }),
       priceEl,
@@ -105,6 +108,9 @@ export function createChartPage() {
   let chart: ChartView;
   let drawings: DrawingManager;
   let profile: VolumeProfile;
+  let shading: SessionShading;
+  /** Extended hours apply to intraday stock charts (Schwab), not crypto or daily bars. */
+  const extendedApplies = () => provider().id === 'schwab' && TIMEFRAME_SECONDS[state.timeframe] < 86400;
   let started = false;
 
   // ---------- Toolbar ----------
@@ -381,6 +387,11 @@ export function createChartPage() {
       return;
     }
     if (controller.signal.aborted) return;
+    const ext = extendedApplies();
+    if (ext && !state.extendedHours) bars = regularHoursOnly(bars);
+    extBtn.hidden = !ext;
+    extBtn.classList.toggle('on', state.extendedHours);
+    shading.setEnabled(ext && state.extendedHours);
 
     chart.setBars(bars, tf);
     drawings.setDrawings(loadDrawings(drawingsKey));
@@ -396,6 +407,7 @@ export function createChartPage() {
       sym,
       {
         onTrade: (trade) => {
+          if (extendedApplies() && !state.extendedHours && !isRegularHours(trade.time)) return;
           const result = applyTrade(bars, tf, trade.price, trade.size, trade.time);
           if (!result) return;
           const index = bars.length - 1;
@@ -427,6 +439,12 @@ export function createChartPage() {
     chart.setChartType(state.chartType);
     drawings = new DrawingManager(chart, chartWrap);
     profile = new VolumeProfile(chart);
+    shading = new SessionShading(chart);
+    extBtn.addEventListener('click', () => {
+      state.extendedHours = !state.extendedHours;
+      persist();
+      reload();
+    });
     profile.setEnabled(state.volumeProfile);
     profileBtn.classList.toggle('on', state.volumeProfile);
     profileBtn.addEventListener('click', () => {
@@ -443,6 +461,7 @@ export function createChartPage() {
       renderLegend();
     };
     chart.onLayout = renderLegend;
+    chart.onDataError = (message) => showMessage(message, [h('button', { class: 'btn primary', onclick: reload }, 'Try again')]);
     reload();
   }
 

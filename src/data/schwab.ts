@@ -3,7 +3,7 @@
  * computer (see helper/README.md). The browser never sees the Schwab keys; it only talks to
  * the helper over ws://127.0.0.1:8765.
  */
-import { regroupBars, type Bar, type Timeframe } from '../types';
+import { cleanBars, regroupBars, type Bar, type Timeframe } from '../types';
 import type { ConnectionStatus, DataProvider, Trade } from './provider';
 import type { Quote } from './quotes';
 
@@ -368,7 +368,9 @@ export const schwab: DataProvider = {
     }
     const reply = await helper.request({ type: 'history', symbol, resolution: plan.resolution, days: plan.days }, signal);
     if (reply.type !== 'history') throw new Error('Unexpected reply from the helper');
-    return plan.resolution === timeframe ? reply.bars : regroupBars(reply.bars, timeframe);
+    const bars = cleanBars(reply.bars);
+    if (!bars.length) throw new Error(`Schwab sent no usable price data for ${symbol}.`);
+    return plan.resolution === timeframe ? bars : regroupBars(bars, timeframe);
   },
 
   subscribe(symbol, handlers) {

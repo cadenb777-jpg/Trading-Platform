@@ -1,11 +1,12 @@
 /** Several live charts side by side, each with its own symbol and timeframe. */
 import { ChartView } from '../chart/ChartView';
+import { SessionShading, isRegularHours, regularHoursOnly } from '../chart/session';
 import { getProvider } from '../data';
 import type { ProviderId } from '../data/provider';
 import { guessMarket, type MarketRef } from '../data/quotes';
 import { getIndicator } from '../indicators/library';
 import { newIndicatorInstance, persist, state } from '../state';
-import { TIMEFRAMES, applyTrade, type Bar, type Timeframe } from '../types';
+import { TIMEFRAMES, TIMEFRAME_SECONDS, applyTrade, type Bar, type Timeframe } from '../types';
 import { formatNumber, h } from '../ui/dom';
 import { icon } from '../ui/icons';
 import { displaySymbol } from '../ui/watchlist';
@@ -45,6 +46,7 @@ function createCell(index: number, onOpen: (ref: MarketRef) => void) {
   );
 
   let chart: ChartView | null = null;
+  let shading: SessionShading | null = null;
   let bars: Bar[] = [];
   let stopLive = () => {};
   let controller: AbortController | null = null;
@@ -62,7 +64,12 @@ function createCell(index: number, onOpen: (ref: MarketRef) => void) {
     status.className = 'status connecting';
     chart ??= (() => {
       const view = new ChartView(chartEl);
+      view.onDataError = (text) => {
+        message.hidden = false;
+        message.replaceChildren(h('p', {}, text));
+      };
       view.addIndicator(newIndicatorInstance(getIndicator('volume')!));
+      shading = new SessionShading(view);
       return view;
     })();
     chart.symbol = symbol;
@@ -78,12 +85,17 @@ function createCell(index: number, onOpen: (ref: MarketRef) => void) {
       return;
     }
     if (ctl.signal.aborted) return;
+    // Same extended-hours setting as the main chart.
+    const ext = provider === 'schwab' && TIMEFRAME_SECONDS[timeframe] < 86400;
+    if (ext && !state.extendedHours) bars = regularHoursOnly(bars);
+    shading?.setEnabled(ext && state.extendedHours);
     chart.setBars(bars, timeframe);
     price.textContent = bars.length ? formatNumber(bars[bars.length - 1].close) : '';
     stopLive = getProvider(provider).subscribe(
       symbol,
       {
         onTrade: (t) => {
+          if (ext && !state.extendedHours && !isRegularHours(t.time)) return;
           if (!applyTrade(bars, timeframe, t.price, t.size, t.time)) return;
           const i = bars.length - 1;
           if (pendingFrom === null)

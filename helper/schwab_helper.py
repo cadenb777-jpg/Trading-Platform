@@ -178,6 +178,34 @@ def load_config(reset):
 # ---------- Price history ----------
 
 
+def _price(value):
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return v if v == v and v not in (float('inf'), float('-inf')) else None
+
+
+def clean_candles(candles):
+    """Schwab candles -> chart bars in time order, one per time, without missing prices. Returns (bars, skipped)."""
+    by_time = {}
+    skipped = 0
+    for c in candles:
+        o, h, l, cl = (_price(c.get(k)) for k in ('open', 'high', 'low', 'close'))
+        t = c.get('datetime')
+        if None in (o, h, l, cl) or not isinstance(t, (int, float)) or t <= 0:
+            skipped += 1
+            continue
+        time_s = int(t // 1000)
+        bar = {'time': time_s, 'open': o, 'high': max(h, o, cl), 'low': min(l, o, cl), 'close': cl, 'volume': _price(c.get('volume')) or 0}
+        if time_s in by_time:
+            skipped += 1
+            prev = by_time[time_s]
+            bar = {**prev, 'high': max(prev['high'], bar['high']), 'low': min(prev['low'], bar['low']), 'close': cl, 'volume': prev['volume'] + bar['volume']}
+        by_time[time_s] = bar
+    return [by_time[t] for t in sorted(by_time)], skipped
+
+
 async def fetch_history(client, symbol, resolution, days):
     if resolution not in RESOLUTIONS:
         raise HelperError(f'Unsupported bar size {resolution}')
@@ -191,17 +219,9 @@ async def fetch_history(client, symbol, resolution, days):
         raise HelperError('Schwab login expired. Close the helper and start it again to log in.')
     if response.status_code != 200:
         raise HelperError(f'Schwab returned {response.status_code}: {response.text[:200]}')
-    bars = [
-        {
-            'time': c['datetime'] // 1000,
-            'open': c['open'],
-            'high': c['high'],
-            'low': c['low'],
-            'close': c['close'],
-            'volume': c.get('volume', 0),
-        }
-        for c in response.json().get('candles', [])
-    ]
+    bars, dropped = clean_candles(response.json().get('candles', []))
+    if dropped:
+        log.warning('%s %s: skipped %d unusable candle(s) from Schwab (missing prices or duplicates)', symbol, resolution, dropped)
     if not bars:
         raise HelperError(f'No data found for "{symbol}". Check the ticker symbol.')
     return bars
