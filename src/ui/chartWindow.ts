@@ -38,25 +38,28 @@ export function toUnix(t: string | number | Time): number {
 }
 
 /** A readable date (and time for intraday points). */
-/** Daily bars are stamped at midnight New York time (or midnight UTC); anything else is an intraday time. */
-function isDailyStamp(u: number): boolean {
-  if (u % DAY === 0) return true;
-  const hm = new Date(u * 1000).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York' });
-  return hm === '00:00' || hm === '24:00';
+/** True when points are a day or more apart (daily, weekly, monthly data): show dates without a clock time.
+ * Daily bars are stamped at midnight in some US time zone (04:00-07:00 UTC), so their UTC date is the right day. */
+export function isDailySeries(times: number[]): boolean {
+  if (times.length < 2) return times.length === 1 && times[0] % DAY === 0;
+  const gaps: number[] = [];
+  for (let i = 1; i < Math.min(times.length, 60); i++) gaps.push(times[i] - times[i - 1]);
+  gaps.sort((a, b) => a - b);
+  return gaps[Math.floor(gaps.length / 2)] >= 20 * 3600;
 }
 
-export function formatTime(t: string | number | Time): string {
-  const u = toUnix(t);
-  const d = new Date(u * 1000);
-  if (typeof t === 'number' && !isDailyStamp(u)) return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: u % DAY === 0 ? 'UTC' : 'America/New_York' });
+export function formatTime(t: string | number | Time, daily = typeof t !== 'number'): string {
+  const d = new Date(toUnix(t) * 1000);
+  if (!daily) return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
 
-const csvDate = (t: number) =>
-  isDailyStamp(t) ? (t % DAY === 0 ? new Date(t * 1000).toISOString().slice(0, 10) : new Date(t * 1000).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })) : new Date(t * 1000).toISOString().slice(0, 16);
+const csvDate = (t: number, daily: boolean) => new Date(t * 1000).toISOString().slice(0, daily ? 10 : 16);
+
+const lineTimes = (data: { time: string | number | Time }[]) => data.map((p) => toUnix(p.time));
 
 /** Shows the date and each line's value under the crosshair in a small box that follows the mouse. */
-export function attachTooltip(chart: IChartApi, container: HTMLElement, getSeries: () => { series: ISeriesApi<'Line'>; name: string; color: string }[], format: (v: number) => string) {
+export function attachTooltip(chart: IChartApi, container: HTMLElement, getSeries: () => { series: ISeriesApi<'Line'>; name: string; color: string }[], format: (v: number) => string, isDaily: () => boolean = () => false) {
   const tip = h('div', { class: 'chart-tip', hidden: true });
   container.append(tip);
   chart.subscribeCrosshairMove((param: MouseEventParams) => {
@@ -74,7 +77,7 @@ export function attachTooltip(chart: IChartApi, container: HTMLElement, getSerie
       tip.hidden = true;
       return;
     }
-    tip.replaceChildren(h('div', { class: 'chart-tip-date' }, formatTime(param.time)), ...rows);
+    tip.replaceChildren(h('div', { class: 'chart-tip-date' }, formatTime(param.time, typeof param.time !== 'number' || isDaily())), ...rows);
     tip.hidden = false;
     const w = container.clientWidth;
     const left = param.point.x + 16 + tip.offsetWidth > w ? param.point.x - tip.offsetWidth - 16 : param.point.x + 16;
@@ -143,7 +146,9 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
     s.setData(dedupe(l.data) as never);
     return { series: s, name: l.name, color: l.color, line: l, visible: true };
   });
-  attachTooltip(chart, box, () => series.filter((s) => s.visible), format);
+  const daily = isDailySeries(lineTimes(lines[0]?.data ?? []));
+  const when = (t: string | number | Time) => formatTime(t, daily);
+  attachTooltip(chart, box, () => series.filter((s) => s.visible), format, () => daily);
 
   // ----- Controls -----
   const last = Math.max(...lines.map((l) => toUnix(l.data[l.data.length - 1].time)));
@@ -222,12 +227,12 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
     const tone = diff >= 0 ? 'up' : 'down';
     const item = (label: string, value: string, cls = '') => h('span', {}, h('span', { class: 'muted' }, label), ' ', h('b', { class: cls }, value));
     stats.replaceChildren(
-      item(`${s.name || 'Value'}:`, `${formatTime(a.time)} → ${formatTime(b.time)}`),
+      item(`${s.name || 'Value'}:`, `${when(a.time)} → ${when(b.time)}`),
       item('Start', format(a.value)),
       item('End', format(b.value)),
       item('Change', `${diffText}${pctChange != null ? ` (${pctChange >= 0 ? '+' : ''}${(pctChange * 100).toFixed(2)}%)` : ''}`, tone),
-      item('High', `${format(hi.value)} · ${formatTime(hi.time)}`),
-      item('Low', `${format(lo.value)} · ${formatTime(lo.time)}`),
+      item('High', `${format(hi.value)} · ${when(hi.time)}`),
+      item('Low', `${format(lo.value)} · ${when(lo.time)}`),
     );
   }
   chart.timeScale().subscribeVisibleTimeRangeChange(() => requestAnimationFrame(updateStats));
@@ -256,7 +261,8 @@ function dedupe(data: { time: string | number; value: number }[]) {
 function downloadCsv(title: string, lines: WindowLine[]) {
   const times = [...new Set(lines.flatMap((l) => l.data.map((p) => toUnix(p.time))))].sort((a, b) => a - b);
   const maps = lines.map((l) => new Map(l.data.map((p) => [toUnix(p.time), p.value])));
-  const rows = [['Date', ...lines.map((l) => l.name || 'Value')].join(','), ...times.map((t) => [csvDate(t), ...maps.map((m) => m.get(t) ?? '')].join(','))];
+  const daily = isDailySeries(times);
+  const rows = [['Date', ...lines.map((l) => l.name || 'Value')].join(','), ...times.map((t) => [csvDate(t, daily), ...maps.map((m) => m.get(t) ?? '')].join(','))];
   const a = h('a', { href: URL.createObjectURL(new Blob([rows.join('\n')], { type: 'text/csv' })), download: `${title.replace(/[^\w\- ]+/g, '').trim() || 'chart'}.csv` });
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);

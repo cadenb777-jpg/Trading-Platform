@@ -432,7 +432,7 @@ export function createBacktestPage() {
       statCards([
         { label: 'Strategy return', value: pct(s.totalReturn, 1), hint: s.cagr != null ? `${pct(s.cagr, 1)} a year` : '', tone: tone(s.totalReturn) },
         { label: 'Buy and hold', value: pct(s.buyHoldReturn, 1), tone: tone(s.buyHoldReturn) },
-        { label: 'Max drawdown', value: pct(s.maxDrawdown, 1), hint: `Longest underwater stretch ${d.longestDrawdownDays} days`, tone: 'down' },
+        { label: 'Max drawdown', value: pctU(s.maxDrawdown, 1), hint: `Longest underwater stretch ${d.longestDrawdownDays} days`, tone: 'down' },
         { label: 'Sharpe ratio', value: ratio(s.sharpe), hint: `Sortino ${ratio(d.sortino)} · Calmar ${ratio(d.calmar)}` },
         { label: 'Trades', value: String(s.trades), hint: `In the market ${(s.exposure * 100).toFixed(0)}% of the time · avg ${d.avgBars?.toFixed(1) ?? '—'} bars` },
         { label: 'Win rate', value: s.winRate == null ? '—' : `${(s.winRate * 100).toFixed(0)}%`, hint: `Max ${d.maxConsecutiveLosses} losses in a row` },
@@ -459,7 +459,7 @@ export function createBacktestPage() {
         { label: 'Bad case (5th percentile)', value: pct(mc.finalReturn.p5, 1), tone: tone(mc.finalReturn.p5) },
         { label: 'Good case (95th percentile)', value: pct(mc.finalReturn.p95, 1), tone: tone(mc.finalReturn.p95) },
         { label: 'Chance of losing money', value: pctU(mc.lossChance, 0), tone: mc.lossChance > 0.2 ? 'down' : '' },
-        { label: 'Typical max drawdown', value: pct(mc.maxDrawdown.p50, 1), tone: 'down', hint: `1 in 20 runs worse than ${pct(mc.maxDrawdown.p95, 1)}` },
+        { label: 'Typical max drawdown', value: pctU(mc.maxDrawdown.p50, 1), tone: 'down', hint: `1 in 20 runs worse than ${pctU(mc.maxDrawdown.p95, 1)}` },
         { label: 'Chance of a deeper drawdown than the backtest', value: pctU(mc.worseDrawdownChance, 0), hint: 'Plan for drawdowns bigger than the one you saw' },
       ]),
       h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Account value by trade number'), h('span', { class: 'muted small' }, 'The fan of possible paths')), fanChart(mc.bands)),
@@ -468,6 +468,7 @@ export function createBacktestPage() {
   }
 
   function randomWalkView(bars: Bar[], r: BacktestResult): Node[] {
+    if (!r.trades.length) return [h('p', { class: 'muted' }, 'The strategy made no trades on this history, so there is nothing to test against random walks. Try a longer history or different settings.')];
     const out = h('div', { class: 'ap-body' }, h('div', { class: 'muted pad' }, `Running the strategy on ${research.rwRuns} random walks…`));
     setTimeout(() => {
       const test = randomWalkTest(bars, (fake) => backtest(fake, signalsFor(fake), backtestOpts()).stats.totalReturn, r.stats.totalReturn, research.rwRuns);
@@ -522,7 +523,10 @@ export function createBacktestPage() {
       const m = metric.value as 'totalReturn' | 'sharpe' | 'maxDrawdown';
       const xs = [...new Set(cells.map((c) => c.x))];
       const ys = [...new Set(cells.map((c) => c.y))];
-      const vals = cells.map((c) => c[m] ?? NaN).filter(Number.isFinite);
+      // Settings that never traded have no result to compare: leave them out of the colours and the "best".
+      const traded = cells.filter((c) => c.trades > 0);
+      if (!traded.length) return out.replaceChildren(h('p', { class: 'muted' }, 'None of these settings produced a single trade on this history. Try a longer history, a faster timeframe or shorter settings.'));
+      const vals = traded.map((c) => c[m] ?? NaN).filter(Number.isFinite);
       const lo = Math.min(...vals);
       const hi = Math.max(...vals);
       const color = (v: number | null) => {
@@ -530,8 +534,8 @@ export function createBacktestPage() {
         const t = hi > lo ? (v - lo) / (hi - lo) : 0.5;
         return `background:rgba(${Math.round(239 - 201 * t)},${Math.round(83 + 83 * t)},${Math.round(80 + 74 * t)},0.35)`;
       };
-      const fmt = (v: number | null) => (m === 'sharpe' ? ratio(v) : pct(v, 1));
-      const best = cells.reduce((a, c) => ((c[m] ?? -Infinity) > (a[m] ?? -Infinity) ? c : a), cells[0]);
+      const fmt = (v: number | null) => (m === 'sharpe' ? ratio(v) : m === 'maxDrawdown' ? pctU(v, 1) : pct(v, 1));
+      const best = traded.reduce((a, c) => ((c[m] ?? -Infinity) > (a[m] ?? -Infinity) ? c : a), traded[0]);
       const xLabel = choices[Number(xSel.value)].label;
       const yLabel = Number(ySel.value) >= 0 ? choices[Number(ySel.value)].label : '';
       out.replaceChildren(
@@ -553,7 +557,8 @@ export function createBacktestPage() {
                   h('td', { class: 'label' }, y == null ? m : String(y)),
                   ...xs.map((x) => {
                     const c = cells.find((k) => k.x === x && k.y === y);
-                    return h('td', { style: color(c?.[m] ?? null), title: c ? `${c.trades} trades · return ${pct(c.totalReturn, 1)} · Sharpe ${ratio(c.sharpe)} · max DD ${pct(c.maxDrawdown, 1)}` : '' }, c ? fmt(c[m]) : '—');
+                    if (c && !c.trades) return h('td', { class: 'muted small', title: 'This setting never traded on this history (e.g. the average is longer than the data)' }, 'no trades');
+                    return h('td', { style: color(c?.[m] ?? null), title: c ? `${c.trades} trades · return ${pct(c.totalReturn, 1)} · Sharpe ${ratio(c.sharpe)} · max DD ${pctU(c.maxDrawdown, 1)}` : '' }, c ? fmt(c[m]) : '—');
                   }),
                 ),
               ),

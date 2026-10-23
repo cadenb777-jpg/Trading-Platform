@@ -1,7 +1,7 @@
 /** Small reusable charts for analysis pages: date line charts (Lightweight Charts) and bar lists. */
 import { ColorType, LineSeries, createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { THEME } from '../chart/ChartView';
-import { attachTooltip, openChartWindow } from './chartWindow';
+import { attachTooltip, isDailySeries, openChartWindow, toUnix } from './chartWindow';
 import { h } from './dom';
 
 export interface LineSpec {
@@ -34,7 +34,7 @@ export function createLineChart(container: HTMLElement, opts: { percent?: boolea
   let current: LineSpec[] = [];
   const legend = h('div', { class: 'line-legend' });
   container.append(legend);
-  attachTooltip(chart, container, () => series, format);
+  attachTooltip(chart, container, () => series, format, () => isDailySeries((current[0]?.data ?? []).map((p) => toUnix(p.time as never))));
   if (opts.expand !== false) {
     container.append(
       h(
