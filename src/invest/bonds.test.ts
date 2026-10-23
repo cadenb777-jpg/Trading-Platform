@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accruedInterest, analyze, buildLadder, interpolateCurve, labelYears, priceChangeEstimate, priceFromYield, taxEquivalentYield, yieldFromPrice } from './bonds';
+import { accruedInterest, analyze, buildLadder, calculatorProblems, isRealisticYield, ladderProblem, interpolateCurve, labelYears, priceChangeEstimate, priceFromYield, taxEquivalentYield, yieldFromPrice } from './bonds';
 
 describe('bond maths', () => {
   it('prices a bond at par when the coupon equals the yield', () => {
@@ -52,5 +52,37 @@ describe('bond maths', () => {
     expect(ladder).toHaveLength(5);
     expect(ladder[0].amount).toBe(20000);
     expect(ladder[2].yield).toBeCloseTo(0.03833, 4);
+  });
+});
+
+describe('bond input checks', () => {
+  const ok = { coupon: 0.045, years: 10, mode: 'price' as const, price: 98, yield: 0.047 };
+  it('accepts normal inputs', () => {
+    expect(calculatorProblems(ok)).toEqual([]);
+  });
+  it('rejects impossible years, prices and coupons', () => {
+    expect(calculatorProblems({ ...ok, years: 0 })).toHaveLength(1);
+    expect(calculatorProblems({ ...ok, years: -1 })).toHaveLength(1);
+    expect(calculatorProblems({ ...ok, price: 0 })).toHaveLength(1);
+    expect(calculatorProblems({ ...ok, price: 1e6 })).toHaveLength(1);
+    expect(calculatorProblems({ ...ok, coupon: 10 })).toHaveLength(1);
+    expect(calculatorProblems({ ...ok, coupon: -0.01 })).toHaveLength(1);
+    expect(calculatorProblems({ ...ok, years: NaN })).toHaveLength(1);
+  });
+  it('only checks the field the user is solving from', () => {
+    expect(calculatorProblems({ ...ok, mode: 'yield', price: 0 })).toEqual([]);
+    expect(calculatorProblems({ ...ok, mode: 'yield', yield: 2 })).toHaveLength(1);
+  });
+  it('treats the solver limits as not a real yield', () => {
+    expect(isRealisticYield(0.05)).toBe(true);
+    expect(isRealisticYield(2)).toBe(false);
+    expect(isRealisticYield(-0.73)).toBe(false);
+    expect(isRealisticYield(NaN)).toBe(false);
+  });
+  it('explains bad ladder plans', () => {
+    expect(ladderProblem(100000, 1, 5)).toBe('');
+    expect(ladderProblem(-1000, 1, 5)).toMatch(/amount/);
+    expect(ladderProblem(100000, 10, 5)).toMatch(/earlier/);
+    expect(ladderProblem(100000, 1, 40)).toMatch(/30 years/);
   });
 });

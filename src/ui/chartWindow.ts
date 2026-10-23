@@ -125,9 +125,34 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
     const up = () => {
       bar.removeEventListener('pointermove', move);
       bar.removeEventListener('pointerup', up);
+      bar.removeEventListener('pointercancel', up);
     };
     bar.addEventListener('pointermove', move);
     bar.addEventListener('pointerup', up);
+    bar.addEventListener('pointercancel', up);
+  });
+
+  // Corner handle for resizing with a finger (CSS resize only works with a mouse).
+  const grip = h('div', { class: 'chart-window-grip', title: 'Drag to resize', 'aria-hidden': 'true' });
+  grip.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = win.offsetWidth;
+    const startH = win.offsetHeight;
+    grip.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      win.style.width = `${Math.max(280, Math.min(innerWidth - win.offsetLeft - 4, startW + ev.clientX - startX))}px`;
+      win.style.height = `${Math.max(260, Math.min(innerHeight - win.offsetTop - 4, startH + ev.clientY - startY))}px`;
+    };
+    const up = () => {
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      grip.removeEventListener('pointercancel', up);
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+    grip.addEventListener('pointercancel', up);
   });
 
   // ----- Chart -----
@@ -237,7 +262,7 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
   }
   chart.timeScale().subscribeVisibleTimeRangeChange(() => requestAnimationFrame(updateStats));
 
-  win.append(bar, tools, box, stats, h('div', { class: 'chart-window-hint muted small' }, 'Scroll to zoom · drag to pan · drag the title bar to move · drag the corner to resize'));
+  win.append(bar, tools, box, stats, h('div', { class: 'chart-window-hint muted small' }, 'Scroll or pinch to zoom · drag to pan · drag the title bar to move · drag the corner to resize'), grip);
   document.body.append(win);
   chart.timeScale().fitContent();
   requestAnimationFrame(updateStats);

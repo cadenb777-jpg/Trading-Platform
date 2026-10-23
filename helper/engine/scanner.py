@@ -20,7 +20,7 @@ import time
 from zoneinfo import ZoneInfo
 
 from . import flow, positioning, sec
-from .core import EngineError, handler
+from .core import EngineError, handler, market_session
 
 log = logging.getLogger('engine.scanner')
 EASTERN = ZoneInfo('America/New_York')
@@ -28,8 +28,27 @@ EASTERN = ZoneInfo('America/New_York')
 UNIVERSE = ['SPY', 'QQQ', 'IWM', 'NVDA', 'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'META', 'TSLA', 'AVGO', 'AMD', 'NFLX', 'JPM',
             'LLY', 'XOM', 'COST', 'PLTR', 'UBER', 'CRM', 'ORCL', 'MU', 'COIN', 'BA', 'DIS', 'V', 'UNH', 'WMT', 'GS', 'SMH']
 MAX_SYMBOLS = 45
-_slots = asyncio.Semaphore(3)
-_state = {'result': None, 'running': None, 'extra': set()}
+# Schwab allows about 120 requests a minute for the whole app, and the charts share it: the scanner sends one
+# request at a time, at most one every 0.7 s (about 85 a minute), so the owner's own charts always have room.
+REQUEST_GAP = 0.7
+_pace = asyncio.Lock()
+_last_request = [0.0]
+_state = {'result': None, 'running': None, 'extra': set(), 'bad': set()}
+
+
+class SymbolError(Exception):
+    """Schwab couldn't give history for one symbol (unknown, delisted, futures): skip it, keep scanning."""
+
+
+async def _paced(call):
+    async with _pace:
+        wait = _last_request[0] + REQUEST_GAP - time.monotonic()
+        if wait > 0:
+            await asyncio.sleep(wait)
+        try:
+            return await call()
+        finally:
+            _last_request[0] = time.monotonic()
 
 POSITIVE_WORDS = ('beat', 'beats', 'upgrade', 'upgraded', 'raises', 'raised', 'record', 'surge', 'surges', 'soar', 'jumps', 'rally', 'buyback', 'approval', 'wins', 'strong')
 NEGATIVE_WORDS = ('miss', 'misses', 'downgrade', 'downgraded', 'cuts', 'cut', 'plunge', 'plunges', 'falls', 'slides', 'probe', 'lawsuit', 'recall', 'weak', 'warning', 'tumbles', 'sinks')
@@ -216,15 +235,59 @@ def signal_history(ind, direction, days=5, lookback=250):
     return {'count': n, 'winRate': hits / n if n else None, 'avgReturn': total / n if n else None, 'days': days}
 
 
-STOP_ATR, TARGET_ATR, MAX_HOLD = 1.5, 2.5, 15
+STOP_ATR, MAX_HOLD, FILL_WINDOW, COSTS = 1.5, 15, 3, 0.001
 
 
-def backtest_signal(ind, direction, atrs, lookback=None):
-    """Replays the entry rule on this stock's history as real trades: enter at the next open when the score first
-    crosses the threshold, exit at the stop (1.5 ATR), the target (2.5 ATR) or after 15 days. Costs 0.05% a side."""
+def simulate_plan(bars, i, plan, direction):
+    """Trades the plan the card shows, from the bar after the signal: fills only if price breaks the trigger
+    within 3 days (at the trigger, or the open if it gaps past), takes half at target 1 and moves the stop on the
+    rest to break-even, exits the rest at target 2, the stop, or after 15 days. Stops are filled at the open when
+    price gaps through them, and when a stop and a target fall in the same bar the stop is assumed first."""
+    trigger, stop, t1, t2 = plan['trigger'], plan['stop'], plan['target1'], plan['target2']
+    d = direction
+    fill_i = entry = None
+    for j in range(i + 1, min(len(bars), i + 1 + FILL_WINDOW)):
+        b = bars[j]
+        if (b['high'] >= trigger) if d > 0 else (b['low'] <= trigger):
+            fill_i, entry = j, (max(b['open'], trigger) if d > 0 else min(b['open'], trigger))
+            break
+    if fill_i is None:
+        return None
+    risk = (entry - stop) * d
+    if risk <= 0:
+        return None
+    half_done, realised, current_stop, exit_i, reason = False, 0.0, stop, None, 'time'
+    last = min(len(bars) - 1, fill_i + MAX_HOLD)
+    for j in range(fill_i, last + 1):
+        b = bars[j]
+        lo, hi = (b['low'], b['high'])
+        gap_open = b['open'] if j > fill_i else entry
+        hit_stop = (lo <= current_stop) if d > 0 else (hi >= current_stop)
+        if hit_stop:
+            through = (gap_open < current_stop) if d > 0 else (gap_open > current_stop)
+            price = gap_open if through and j > fill_i else current_stop
+            realised += (0.5 if half_done else 1.0) * (price - entry) * d
+            exit_i, reason = j, ('break-even' if half_done else 'stop')
+            break
+        if not half_done and ((hi >= t1) if d > 0 else (lo <= t1)):
+            realised += 0.5 * (t1 - entry) * d
+            half_done, current_stop = True, entry
+        if half_done and ((hi >= t2) if d > 0 else (lo <= t2)):
+            realised += 0.5 * (t2 - entry) * d
+            exit_i, reason = j, 'target'
+            break
+    if exit_i is None:
+        exit_i = last
+        realised += (0.5 if half_done else 1.0) * (bars[last]['close'] - entry) * d
+    return {'ret': realised / entry - COSTS, 'r': realised / risk, 'reason': reason, 'bars': exit_i - fill_i, 'exit': exit_i}
+
+
+def signal_trades(ind, direction, atrs):
+    """Each time the score first crosses the threshold, builds the same plan the card shows (trigger, level-based
+    stop and targets, from data up to that day only) and trades it with simulate_plan. One trade at a time."""
     bars = ind['bars']
     trades = []
-    i = 211 if lookback is None else max(211, len(bars) - lookback)
+    i = 211
     prev = daily_score(ind, i - 1)[0]
     while i < len(bars) - 1:
         s, _ = daily_score(ind, i)
@@ -233,28 +296,21 @@ def backtest_signal(ind, direction, atrs, lookback=None):
         if not crossed or not atrs[i]:
             i += 1
             continue
-        entry = bars[i + 1]['open']
-        risk = STOP_ATR * atrs[i]
-        stop, target = entry - risk * direction, entry + TARGET_ATR * atrs[i] * direction
-        exit_price, exit_i, reason = None, None, 'time'
-        for j in range(i + 1, min(len(bars), i + 1 + MAX_HOLD)):
-            b = bars[j]
-            hit_stop = b['low'] <= stop if direction > 0 else b['high'] >= stop
-            hit_target = b['high'] >= target if direction > 0 else b['low'] <= target
-            if hit_stop:  # assume the worse outcome when both happen in one bar
-                gapped = j > i + 1 and (b['open'] < stop if direction > 0 else b['open'] > stop)
-                exit_price, exit_i, reason = (b['open'] if gapped else stop), j, 'stop'  # a gap through the stop fills at the open
-                break
-            if hit_target:
-                exit_price, exit_i, reason = target, j, 'target'
-                break
-        if exit_price is None:
-            exit_i = min(len(bars) - 1, i + MAX_HOLD)
-            exit_price = bars[exit_i]['close']
-        ret = (exit_price / entry - 1) * direction - 0.001
-        trades.append({'ret': ret, 'r': (exit_price - entry) * direction / risk, 'reason': reason, 'bars': exit_i - i})
-        i = exit_i + 1
+        plan = trade_plan(key_levels(ind, atrs[i], i), bars[i]['close'], atrs[i], direction, bars[i])
+        t = simulate_plan(bars, i, plan, direction)
+        if t is None:
+            i += 1
+            continue
+        trades.append(t)
+        i = t['exit'] + 1
         prev = daily_score(ind, i - 1)[0] if i - 1 < len(bars) else prev
+    return trades
+
+
+def backtest_signal(ind, direction, atrs):
+    """The setup's track record on this stock (signal_trades), graded. Costs 0.1% a round trip."""
+    bars = ind['bars']
+    trades = signal_trades(ind, direction, atrs)
     wins = [t for t in trades if t['ret'] > 0]
     losses = [t for t in trades if t['ret'] <= 0]
     gross_win, gross_loss = sum(t['ret'] for t in wins), -sum(t['ret'] for t in losses)
@@ -276,7 +332,8 @@ def backtest_signal(ind, direction, atrs, lookback=None):
             'expectancy': exp, 'avgR': sum(t['r'] for t in trades) / n if n else None, 'avgBars': sum(t['bars'] for t in trades) / n if n else None,
             'targets': sum(1 for t in trades if t['reason'] == 'target'), 'stops': sum(1 for t in trades if t['reason'] == 'stop'),
             'maxLosingStreak': worst, 'total': sum(t['ret'] for t in trades), 'grade': grade,
-            'rules': f'Enter next open on the signal, stop {STOP_ATR} ATR, target {TARGET_ATR} ATR, exit after {MAX_HOLD} days, 0.1% costs'}
+            'from': bars[211]['time'] if len(bars) > 211 else None, 'to': bars[-1]['time'],
+            'rules': f'Same plan as the card: enter only on a break of the trigger within {FILL_WINDOW} days, stop and targets from support and resistance, half off at target 1 with the stop moved to break-even, the rest at target 2 or after {MAX_HOLD} days; {COSTS * 100:.1f}% costs'}
 
 
 def swing_levels(bars, atr_now, lookback=180, width=3):
@@ -300,9 +357,11 @@ def swing_levels(bars, atr_now, lookback=180, width=3):
     return [{'price': sum(c['prices']) / len(c['prices']), 'touches': len(c['prices']), 'last': c['last'], 'kind': 'swing'} for c in clusters]
 
 
-def key_levels(ind, atr_now):
-    """Every level that matters, tagged by source: swing clusters, floor pivots, 52-week range, 50/200-day averages."""
-    bars = ind['bars']
+def key_levels(ind, atr_now, end=None):
+    """Every level that matters as of bar `end` (default: the latest), tagged by source: swing clusters, floor
+    pivots, 52-week range, 50/200-day averages. Only uses bars up to `end`, so the backtest can replay it."""
+    end = len(ind['bars']) - 1 if end is None else end
+    bars = ind['bars'][:end + 1]
     prev = bars[-2] if len(bars) > 1 else bars[-1]
     p = (prev['high'] + prev['low'] + prev['close']) / 3
     year = bars[-252:]
@@ -314,8 +373,8 @@ def key_levels(ind, atr_now):
         {'price': p - (prev['high'] - prev['low']), 'kind': 'pivot', 'label': 'S2'},
         {'price': max(b['high'] for b in year), 'kind': '52w', 'label': '52-week high'},
         {'price': min(b['low'] for b in year), 'kind': '52w', 'label': '52-week low'},
-        {'price': ind['e50'][-1], 'kind': 'ma', 'label': '50-day average'},
-        {'price': ind['e200'][-1], 'kind': 'ma', 'label': '200-day average'},
+        {'price': ind['e50'][end], 'kind': 'ma', 'label': '50-day average'},
+        {'price': ind['e200'][end], 'kind': 'ma', 'label': '200-day average'},
     ]
     for lv in levels:
         n = lv.get('touches', 1)
@@ -421,26 +480,15 @@ def headline_tone(items):
 async def _history(ctx, symbol, method, days, key, max_age):
     async def load():
         now = dt.datetime.now(dt.timezone.utc)
-        async with _slots:
-            response = await getattr(ctx.schwab, method)(symbol, start_datetime=now - dt.timedelta(days=days), end_datetime=now)
-            await asyncio.sleep(0.35)  # stay well under Schwab's 120 requests a minute
+        response = await _paced(lambda: getattr(ctx.schwab, method)(symbol, start_datetime=now - dt.timedelta(days=days), end_datetime=now))
+        if response.status_code == 401:
+            raise EngineError('Schwab login expired. Close the helper and start it again to log in.')
         if response.status_code != 200:
-            raise EngineError(f'Schwab returned {response.status_code} for {symbol}')
+            raise SymbolError(f'Schwab returned {response.status_code} for {symbol}')
         return [{'time': c['datetime'] // 1000, 'open': c['open'], 'high': c['high'], 'low': c['low'], 'close': c['close'], 'volume': c.get('volume', 0)}
                 for c in response.json().get('candles', []) if c.get('close')]
-    return await ctx.cached((key, symbol), max_age, load, persist=True, stale_ok=True)
-
-
-def market_session(now=None):
-    now = now or dt.datetime.now(EASTERN)
-    if now.weekday() >= 5:
-        return 'closed'
-    minutes = now.hour * 60 + now.minute
-    if 570 <= minutes < 960:
-        return 'open'
-    if 240 <= minutes < 1200:
-        return 'extended'
-    return 'closed'
+    # No stale_ok: signals must use fresh bars (a stale hit would also start uncounted background requests).
+    return await ctx.cached((key, symbol), max_age, load, persist=True)
 
 
 def daily_age(session):
@@ -477,7 +525,8 @@ async def analyse(ctx, symbol, spy_closes, session):
     tested = await asyncio.to_thread(backtest_signal, ind, direction, atrs) if direction else None
     history = signal_history(ind, direction) if direction else None
     if not direction and a:
-        plan = {'supports': trade_plan(levels, c, a, 1, daily[-1])['supports'], 'resistances': trade_plan(levels, c, a, 1, daily[-1])['resistances'], 'atr': a}
+        both = trade_plan(levels, c, a, 1, daily[-1])
+        plan = {'supports': both['supports'], 'resistances': both['resistances'], 'atr': a}
     week = c / daily[-6]['close'] - 1 if len(daily) > 6 else None
     return {'symbol': symbol, 'price': c, 'asOf': daily[-1]['time'], 'score': score, 'direction': direction,
             'reasons': sorted(reasons, key=lambda r: -abs(r['points'])), 'levels': plan, 'backtest': tested, 'history': history, 'bias': bias,
@@ -486,19 +535,22 @@ async def analyse(ctx, symbol, spy_closes, session):
 
 async def scan(ctx, news=None):
     session = market_session()
-    symbols = list(dict.fromkeys(UNIVERSE + sorted(_state['extra'])))[:MAX_SYMBOLS]
+    symbols = list(dict.fromkeys(UNIVERSE + sorted(_state['extra'] - _state['bad'])))[:MAX_SYMBOLS]
     spy = await _history(ctx, 'SPY', 'get_price_history_every_day', 1100, 'scan-daily3y', daily_age(session))
     spy_closes = [(b['time'], b['close']) for b in spy]
-    results = []
+    results, skipped = [], []
     for sym in symbols:
         try:
             r = await analyse(ctx, sym, spy_closes, session)
             if r:
                 results.append(r)
         except EngineError:
-            raise
+            raise  # expired login: nothing else will work either
         except Exception as err:
             log.info('Scanner skipped %s: %s', sym, err)
+            skipped.append(sym)
+            if isinstance(err, SymbolError) and sym in _state['extra']:
+                _state['bad'].add(sym)  # a watchlist symbol Schwab has no history for: stop asking every scan
     if not results:
         raise EngineError('The scanner could not load price history from Schwab.')
     ranked = sorted([r for r in results if r['direction']], key=lambda r: -abs(r['score']))
@@ -549,10 +601,11 @@ async def scan(ctx, news=None):
     ranked = sorted([r for r in candidates if (r.get('backtest') or {}).get('grade') != 'failed'], key=lambda r: -rank(r))
     return {
         'filteredOut': [{'symbol': r['symbol'], 'direction': r['direction'], 'backtest': r['backtest']} for r in candidates if (r.get('backtest') or {}).get('grade') == 'failed'],
-        'method': {'stopAtr': STOP_ATR, 'targetAtr': TARGET_ATR, 'maxHold': MAX_HOLD, 'threshold': 3},
+        'method': {'fallbackStopAtr': STOP_ATR, 'maxHold': MAX_HOLD, 'fillWindow': FILL_WINDOW, 'threshold': 3},
         'updated': time.time(),
         'session': session,
         'scanned': len(results),
+        'skipped': skipped,
         'regime': {'spyScore': spy_row['score'] if spy_row else None, 'spyWeek': spy_row['week'] if spy_row else None, 'vix': vix,
                    'uptrendShare': above50 / len(results)},
         'setups': ranked[:12],
@@ -653,7 +706,7 @@ def grade_setup(r):
 SCAN_EVERY = 600  # the owner wants a fresh scan every 10 minutes (cached daily bars keep quiet hours cheap)
 
 
-def next_interval(session):
+def next_interval():
     return SCAN_EVERY
 
 
@@ -665,7 +718,7 @@ async def background(ctx, news=None, first_delay=15):
             await run_once(ctx, news)
         except Exception as err:
             log.info('Background scan failed: %s', err)
-        wait = next_interval(market_session())
+        wait = next_interval()
         _state['next'] = time.time() + wait
         await asyncio.sleep(wait)
 

@@ -6,6 +6,7 @@ import logging
 import sqlite3
 import time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -16,6 +17,20 @@ HANDLERS = {}
 
 BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
 
+
+
+def market_session(now=None):
+    """US stock market session in New York time: 'open' (9:30-16:00), 'extended' (4:00-20:00) or 'closed'.
+    Holidays are not known here, so a holiday reads as a normal weekday."""
+    now = now or dt.datetime.now(ZoneInfo('America/New_York'))
+    if now.weekday() >= 5:
+        return 'closed'
+    minutes = now.hour * 60 + now.minute
+    if 570 <= minutes < 960:
+        return 'open'
+    if 240 <= minutes < 1200:
+        return 'extended'
+    return 'closed'
 
 class EngineError(Exception):
     """A problem worth showing to the user as-is (e.g. "No data for XYZ")."""

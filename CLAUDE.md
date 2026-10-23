@@ -62,8 +62,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   The stream's CLOSE_PRICE is only a fallback (after the session it becomes today's close, which read as 0%).
   Scanner (engine/scanner.py, helper v10): a background task (`market_scanner` in the helper) scans UNIVERSE plus
   the watchlist every 10 minutes (the owner asked for it; daily bars are cached so quiet hours are cheap): daily score from trend/breakout/RS/RSI/
-  MACD/volume/Williams A/D/CMF/ADX, 30-minute agreement, support/resistance plan, a trade backtest of the same
-  signal on that stock (grade proven/mixed/unproven/failed; failed is filtered out), options, COT, insiders, news.
+  MACD/volume/Williams A/D/CMF/ADX, 30-minute agreement, support/resistance plan (all measured from the entry
+  trigger), and a backtest that trades that same plan on the stock's history (signal_trades/simulate_plan: fill on a
+  break of the trigger, half off at target 1 then break-even; grade proven/mixed/unproven/failed; failed is filtered
+  out), options, COT, insiders, news. Schwab requests are paced (one at a time, 0.7 s apart); a watchlist symbol
+  with no history is skipped, never fatal (only an expired login stops a scan).
   Tier A = proven + R:R >= 1.5 + score >= 5. Live quotes mark plans stale. Home shows it (src/home/setupsPanel.ts).
   AI summary buttons (`insightButton`) are on Home, Flow, Research, Macro, Bonds, Investments boards, fund detail
   and Backtest; not on the Chart page or Portfolios (owner's choice).
@@ -94,6 +97,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 
 - `npm test` runs vitest (indicator maths against reference values).
 - `npm run build` type-checks and builds to `dist/`.
+- `python -m unittest discover helper/tests` tests the helper's trading maths (standard library only; run it with
+  the helper's Python environment so its packages import).
 
 ## Planned
 

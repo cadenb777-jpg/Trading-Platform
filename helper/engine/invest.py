@@ -11,7 +11,7 @@ import re
 import time
 
 from . import macro
-from .core import EngineError, handler
+from .core import EngineError, handler, market_session
 
 FISCAL = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/'
 SYMBOL = re.compile(r'^[A-Z0-9.\-/$^]{1,15}$')
@@ -122,8 +122,11 @@ def session_change(row, rows):
     price, change = row.get('price'), row.get('change')
     if not price or len(rows) < 2 or (change is not None and abs(change) > 1e-9):
         return
+    if market_session() == 'open' and change is not None:
+        return  # in regular hours an unchanged quote is a real 0% (the browser's quotes.ts follows the same rule)
     last_t, last_c = rows[-1]
     # If the newest daily close is the current price, it is the latest session: compare with the day before.
+    # Mirrors sessionPrevClose in src/data/quotes.ts (same 1e-4 / 1e-6 tolerances); change both together.
     matched = abs(last_c - price) <= price * 1e-4
     prev = rows[-2][1] if matched else last_c
     if not prev or abs(prev - price) <= price * 1e-6 or abs(prev / price - 1) > 0.5:
@@ -363,11 +366,11 @@ async def cusip_lookup(ctx, msg):
         maturity = maturity or a['maturityDate'][:10] or None
         description = description or f"US Treasury {a['type']} {a['term']}".strip()
     price = _num((found or {}).get('bondPrice'))
-    price_source = 'Schwab' if price is not None else None
+    price_source = {'source': 'schwab'} if price is not None else None
     if price is None and auctions_found and auctions_found[0].get('price') is not None:
         # No market price from Schwab: show the latest auction price, clearly labelled with its date.
         price = auctions_found[0]['price']
-        price_source = f"auction {auctions_found[0]['auctionDate'][:10]}"
+        price_source = {'source': 'auction', 'date': auctions_found[0]['auctionDate'][:10]}
     return {
         'cusip': cusip,
         'description': description,

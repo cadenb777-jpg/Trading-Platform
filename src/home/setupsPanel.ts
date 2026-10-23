@@ -7,6 +7,7 @@ import { insightButton } from '../ai/insight';
 import type { MarketRef } from '../data/quotes';
 import { engineRequest, helper } from '../data/schwab';
 import { state } from '../state';
+import { pct as fmtPct } from '../ui/charts';
 import { formatPrice, h, timeAgo } from '../ui/dom';
 import { icon } from '../ui/icons';
 
@@ -40,7 +41,7 @@ export interface Setup {
     supports: Level[];
     resistances: Level[];
   } | null;
-  backtest: { trades: number; winRate: number | null; profitFactor: number | null; expectancy: number | null; avgR: number | null; avgBars: number | null; maxLosingStreak: number; grade: string; rules: string } | null;
+  backtest: { from?: number | null; to?: number; trades: number; winRate: number | null; profitFactor: number | null; expectancy: number | null; avgR: number | null; avgBars: number | null; maxLosingStreak: number; grade: string; rules: string } | null;
   bias: { direction: 'up' | 'down' | 'flat'; winRate: number | null; samples: number; asOf: number } | null;
   week: number | null;
   day: number | null;
@@ -55,15 +56,17 @@ interface ScanResult {
   updated: number;
   session: 'open' | 'extended' | 'closed';
   scanned: number;
+  skipped?: string[];
   regime: { spyScore: number | null; spyWeek: number | null; vix: number | null; uptrendShare: number };
   setups: Setup[];
   filteredOut: { symbol: string }[];
-  method: { stopAtr: number; targetAtr: number; maxHold: number };
+  method: Record<string, number>;
   nextScan?: number | null;
   scanning?: boolean;
 }
 
-const pct = (v: number | null | undefined, d = 1) => (v == null || !Number.isFinite(v) ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(d)}%`);
+const pct = (v: number | null | undefined, d = 1) => fmtPct(v, d);
+const monthYear = (t: number) => new Date(t * 1000).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 // The helper rescans every 10 minutes; checking for its newest result every minute keeps the box current.
 const REFRESH_MS = 60 * 1000;
 const TIER_RANK: Record<string, number> = { A: 0, B: 1, C: 2 };
@@ -141,7 +144,10 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
       body.replaceChildren(h('div', { class: 'setups-empty' }, h('b', {}, 'No clear setups right now.'), h('span', { class: 'muted small' }, ` None of the ${data.scanned} stocks scanned has enough signals lined up. Sitting out is a position; the next scan is in a few minutes.`)));
       return;
     }
-    body.replaceChildren(note, h('div', { class: 'setups-grid' }, ...shown.map(card)), data.filteredOut.length ? h('p', { class: 'muted tiny' }, `Filtered out ${data.filteredOut.length} signal${data.filteredOut.length === 1 ? '' : 's'} that lost money when tested on that stock: ${data.filteredOut.map((f) => f.symbol).join(', ')}.`) : '');
+    body.replaceChildren(
+      note,
+      h('div', { class: 'setups-grid' }, ...shown.map(card)),
+      data.skipped?.length ? h('p', { class: 'muted tiny' }, `Couldn't get price history for ${data.skipped.join(', ')} from Schwab (unknown, delisted or futures symbols), so they were skipped.`) : '', data.filteredOut.length ? h('p', { class: 'muted tiny' }, `Filtered out ${data.filteredOut.length} signal${data.filteredOut.length === 1 ? '' : 's'} that lost money when tested on that stock: ${data.filteredOut.map((f) => f.symbol).join(', ')}.`) : '');
   }
 
   function card(s: Setup) {
@@ -159,7 +165,13 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
         h('span', { class: `setup-side ${long ? 'bull' : 'bear'}` }, long ? '▲ BUY' : '▼ SELL'),
         s.tier ? h('i', { class: `tier tier-${s.tier}`, title: TIER_TEXT[s.tier] }, `${s.tier}-grade`) : '',
         h('span', { class: 'spacer' }),
-        h('span', { class: 'setup-price' }, formatPrice(s.price), h('span', { class: (s.day ?? 0) >= 0 ? 'up' : 'down' }, ` ${pct(s.day)}`)),
+        h(
+          'span',
+          { class: 'setup-price' },
+          formatPrice(s.price),
+          h('span', { class: (s.day ?? 0) >= 0 ? 'up' : 'down', title: 'Today' }, ` ${pct(s.day)}`),
+          s.week != null ? h('span', { class: `muted small`, title: 'Past 5 trading days' }, ' · week ', h('span', { class: s.week >= 0 ? 'up' : 'down' }, pct(s.week))) : '',
+        ),
       ),
       strength(s),
       h('div', { class: 'setup-why' }, s.summary),
@@ -177,7 +189,7 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
         ? h(
             'div',
             { class: 'setup-track small' },
-            h('span', { class: 'muted' }, 'Tested 3 yrs: '),
+            h('span', { class: 'muted' }, bt.from ? `Tested since ${monthYear(bt.from)}: ` : 'Tested: '),
             h('b', { class: (bt.winRate ?? 0) >= 0.5 ? 'up' : 'down' }, `won ${Math.round((bt.winRate ?? 0) * 100)}%`),
             ` of ${bt.trades} trades · `,
             h('b', { class: (bt.expectancy ?? 0) > 0 ? 'up' : 'down' }, `${pct(bt.expectancy, 2)} avg/trade`),

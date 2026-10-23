@@ -156,3 +156,34 @@ export function buildLadder(total: number, firstYear: number, lastYear: number, 
     return { year, amount: each, yield: y, income: each * y };
   });
 }
+
+// ----- Input checks (the calculator would otherwise return its search limit as if it were an answer) -----
+
+export interface CalculatorInputs {
+  coupon: number;
+  years: number;
+  mode: 'price' | 'yield';
+  price: number;
+  yield: number;
+}
+
+/** Plain-language problems with the bond calculator inputs (empty when they are usable). */
+export function calculatorProblems(c: CalculatorInputs): string[] {
+  const out: string[] = [];
+  if (!(c.coupon >= 0 && c.coupon <= 0.5)) out.push('the coupon must be between 0% and 50%');
+  if (!(c.years >= 0.1 && c.years <= 100)) out.push('years to maturity must be between 0.1 and 100');
+  if (c.mode === 'price' && !(c.price > 1 && c.price < 1000)) out.push('the price must be between $1 and $1,000 per $100 of face value');
+  if (c.mode === 'yield' && !(c.yield > -0.05 && c.yield < 0.5)) out.push('the yield must be between -5% and 50%');
+  return out;
+}
+
+/** A solved yield inside the range real bonds trade at (the solver's search limits are outside it). */
+export const isRealisticYield = (y: number) => y > -0.1 && y < 0.99;
+
+/** What's wrong with a ladder plan, or '' when it can be built. Maturities are whole years, 1-30. */
+export function ladderProblem(amount: number, first: number, last: number): string {
+  if (!(amount > 0)) return 'Enter the amount you want to invest (more than $0).';
+  if (!(first >= 1 && first <= 30) || !(last >= 1 && last <= 30)) return 'Maturities must be between 1 and 30 years (the longest Treasury is 30 years).';
+  if (first > last) return 'The first maturity must be the same as or earlier than the last one.';
+  return '';
+}

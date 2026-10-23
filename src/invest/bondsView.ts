@@ -9,7 +9,7 @@ import { h } from '../ui/dom';
 import { sparkline } from '../ui/sparkline';
 import { openFredWindow } from '../ui/fredWindow';
 import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
-import { analyze, buildLadder, labelYears, priceChangeEstimate, priceFromYield, taxEquivalentYield, yearsUntil, yieldFromPrice, type BondInputs } from './bonds';
+import { analyze, buildLadder, calculatorProblems, isRealisticYield, ladderProblem, labelYears, priceChangeEstimate, priceFromYield, taxEquivalentYield, yearsUntil, yieldFromPrice, type BondInputs } from './bonds';
 import { BOARDS } from './catalog';
 import { boardTable, errorBox, loadBoard, openSymbolDetail, skeletonBoard, type BoardRow, type InvestContext } from './shared';
 
@@ -54,7 +54,7 @@ interface CusipResult {
   description: string;
   assetType: string;
   price: number | null;
-  priceSource?: string | null;
+  priceSource?: { source: 'schwab' | 'auction'; date?: string } | null;
   coupon: number | null;
   maturity: string | null;
   auctions: Auction[];
@@ -241,7 +241,7 @@ export function createBondsView(ctx: InvestContext) {
       { class: 'panel' },
       h('div', { class: 'panel-head' }, h('h3', {}, r.description || r.cusip), h('span', { class: 'muted small' }, `CUSIP ${r.cusip}${r.assetType ? ` · ${r.assetType}` : ''}`)),
       statCards([
-        { label: 'Price (per $100)', value: r.price ? r.price.toFixed(3) : '—', hint: r.price ? (r.priceSource && r.priceSource !== 'Schwab' ? `Latest ${r.priceSource} (Schwab has no live price)` : 'From Schwab') : 'Schwab has no price for this bond' },
+        { label: 'Price (per $100)', value: r.price ? r.price.toFixed(3) : '—', hint: r.price ? (r.priceSource?.source === 'auction' ? `Latest auction price, ${r.priceSource.date} (Schwab has no live price)` : 'From Schwab') : 'Schwab has no price for this bond' },
         { label: 'Coupon', value: r.coupon != null ? `${r.coupon.toFixed(3)}%` : bill ? 'None (bill)' : '—', hint: bill ? 'Bills are sold at a discount and pay $100 at maturity' : '' },
         { label: 'Matures', value: r.maturity ?? '—', hint: years != null ? `${years.toFixed(1)} years` : '' },
         { label: 'Yield to maturity', value: ytm != null ? pctU(ytm, 3) : '—', hint: 'Calculated from the price' },
@@ -278,15 +278,10 @@ export function createBondsView(ctx: InvestContext) {
     const tey = h('div');
     const update = () => {
       // Check the inputs first: the solver would otherwise return its search limit as if it were an answer.
-      const problems = [
-        !(calc.coupon >= 0 && calc.coupon <= 0.5) && 'the coupon must be between 0% and 50%',
-        !(calc.years >= 0.1 && calc.years <= 100) && 'years to maturity must be between 0.1 and 100',
-        calc.mode === 'price' && !(calc.price > 1 && calc.price < 1000) && 'the price must be between $1 and $1,000 per $100 of face value',
-        calc.mode === 'yield' && !(calc.yield > -0.05 && calc.yield < 0.5) && 'the yield must be between -5% and 50%',
-      ].filter(Boolean);
+      const problems = calculatorProblems(calc);
       const bond: BondInputs = { coupon: calc.coupon, years: calc.years, frequency: calc.frequency };
       const y = problems.length ? NaN : calc.mode === 'price' ? yieldFromPrice(bond, calc.price) : calc.yield;
-      if (!problems.length && !(y > -0.1 && y < 0.99)) problems.push('no realistic yield matches that price, coupon and maturity');
+      if (!problems.length && !isRealisticYield(y)) problems.push('no realistic yield matches that price, coupon and maturity');
       if (problems.length) {
         const msg = h('div', { class: 'setups-banner' }, h('b', {}, 'Check your inputs: '), `${problems.join('; ')}.`);
         out.replaceChildren(msg);
@@ -375,13 +370,7 @@ export function createBondsView(ctx: InvestContext) {
       out.classList.remove('skeleton');
       const first = Math.round(plan.first);
       const last = Math.round(plan.last);
-      const problem = !(plan.amount > 0)
-        ? 'Enter the amount you want to invest (more than $0).'
-        : !(first >= 1 && first <= 30) || !(last >= 1 && last <= 30)
-          ? 'Maturities must be between 1 and 30 years (the longest Treasury is 30 years).'
-          : first > last
-            ? 'The first maturity must be the same as or earlier than the last one.'
-            : '';
+      const problem = ladderProblem(plan.amount, first, last);
       if (problem) return out.replaceChildren(h('div', { class: 'setups-banner' }, h('b', {}, 'Check your inputs: '), problem));
       const rungs = buildLadder(plan.amount, Math.round(plan.first), Math.round(plan.last), points);
       const income = rungs.reduce((s, r) => s + r.income, 0);
