@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 
-from . import flow, macro, positioning, quant, research, sec, settings, store
+from . import alts, flow, invest, macro, positioning, quant, research, sec, settings, store
 from .core import EngineError, handler
 
 EASTERN = ZoneInfo('America/New_York')
@@ -29,8 +29,9 @@ answers well organised: short paragraphs, bullet points, and small tables for nu
 
 You have tools for live data from the platform: real-time quotes and price history (Charles Schwab), market news \
 (Google News and CNBC), options flow, SEC insider trades and financial statements, macro data (FRED), futures \
-positioning (CFTC Commitment of Traders) and stock positioning (FINRA short volume), plus the owner's saved \
-portfolios and clients. Always use tools for anything that depends on current data instead of answering from \
+positioning (CFTC Commitment of Traders) and stock positioning (FINRA short volume), the bond market (yields, \
+spreads, Treasury auctions), evergreen and private funds from SEC filings (NAV, holdings, Form D), plus the owner's \
+saved portfolios, clients and alternative investments. Always use tools for anything that depends on current data instead of answering from \
 memory, and say when the data is from (for example "as of 2:41 pm ET"). Use web search for recent events the \
 news tool doesn't cover. When explaining why something moved, combine the price action with the news and \
 positioning and say how confident you are.
@@ -102,6 +103,29 @@ TOOLS = [
         'input_schema': {'type': 'object', 'properties': {'symbol': {'type': 'string'}}, 'required': ['symbol']},
     },
     {
+        'name': 'get_private_fund',
+        'description': 'SEC data on an evergreen or private fund (non-traded REITs and BDCs like BREIT, BCRED, Blue Owl OCIC; interval and tender-offer funds; any Form D private fund): NAV per share history, net assets, total return, distributions, latest NAV announcements, N-PORT holdings and monthly returns, Form D raise details, recent filings.',
+        'input_schema': {'type': 'object', 'properties': {
+            'name': {'type': 'string', 'description': 'Full fund name, e.g. "Blackstone Real Estate Income Trust"'},
+            'cik': {'type': 'integer', 'description': 'SEC CIK number if known (from search_private_funds)'},
+        }},
+    },
+    {
+        'name': 'search_private_funds',
+        'description': 'Search every Form D filed with the SEC (private funds and feeder funds, e.g. by manager or placement agent such as iCapital). Returns names, CIKs and latest filing dates.',
+        'input_schema': {'type': 'object', 'properties': {'query': {'type': 'string'}}, 'required': ['query']},
+    },
+    {
+        'name': 'get_bond_market',
+        'description': 'The bond market now: Treasury yields, corporate yields and credit spreads, TIPS real yield, breakeven inflation, fed funds and mortgage rates (FRED, with 1-month and 1-year changes), plus recent and upcoming Treasury auctions.',
+        'input_schema': {'type': 'object', 'properties': {}},
+    },
+    {
+        'name': 'get_my_alternatives',
+        'description': "The owner's own alternative investments (private funds, e.g. held through iCapital) with commitments, paid-in capital, distributions, value, unfunded amounts, TVPI and DPI.",
+        'input_schema': {'type': 'object', 'properties': {}},
+    },
+    {
         'name': 'list_portfolios',
         'description': "The owner's saved portfolios with holdings and settings.",
         'input_schema': {'type': 'object', 'properties': {}},
@@ -155,7 +179,7 @@ TOOLS = [
     },
     {
         'name': 'ui_action',
-        'description': 'Do something in the platform window: open_chart (symbol, optional timeframe like 5m/1h/1D), open_page (page: home, chart, multi, flow, research, macro, portfolio, clients, backtest, calendar, scripts), add_indicator (indicator name, e.g. "RSI" or "VWAP bands"), or create_alert (symbol, price, direction above/below, optional note).',
+        'description': 'Do something in the platform window: open_chart (symbol, optional timeframe like 5m/1h/1D), open_page (page: home, chart, multi, invest, flow, research, macro, portfolio, clients, backtest, calendar, scripts), add_indicator (indicator name, e.g. "RSI" or "VWAP bands"), or create_alert (symbol, price, direction above/below, optional note).',
         'input_schema': {'type': 'object', 'properties': {
             'action': {'type': 'string', 'enum': ['open_chart', 'open_page', 'add_indicator', 'create_alert']},
             'symbol': {'type': 'string'}, 'timeframe': {'type': 'string'}, 'page': {'type': 'string'},
@@ -170,7 +194,8 @@ TOOL_LABELS = {
     'get_quotes': 'Getting live quotes', 'get_price_history': 'Reading price history', 'get_news': 'Reading the news',
     'get_options_flow': 'Checking options flow', 'get_insider_trades': 'Checking insider trades',
     'get_company_financials': 'Reading SEC financials', 'get_macro_snapshot': 'Checking the economy',
-    'get_positioning': 'Checking positioning', 'list_portfolios': 'Looking at your portfolios', 'save_portfolio': 'Saving the portfolio',
+    'get_positioning': 'Checking positioning', 'get_private_fund': 'Reading the fund\'s SEC filings',
+    'search_private_funds': 'Searching private funds', 'get_bond_market': 'Checking the bond market', 'get_my_alternatives': 'Looking at your alternatives', 'list_portfolios': 'Looking at your portfolios', 'save_portfolio': 'Saving the portfolio',
     'analyze_portfolio': 'Analysing the portfolio', 'optimize_portfolio': 'Optimising weights', 'list_clients': 'Looking at your clients',
     'save_client': 'Saving the client', 'ui_action': 'Updating the platform', 'web_search': 'Searching the web',
 }
@@ -311,6 +336,47 @@ async def t_get_positioning(ctx, args, actions):
     return d
 
 
+async def t_get_private_fund(ctx, args, actions):
+    if not args.get('name') and not args.get('cik'):
+        raise EngineError('Give the fund name or CIK')
+    d = await alts.fund(ctx, {'name': args.get('name') or '', 'cik': args.get('cik')})
+    facts = d.get('facts') or {}
+    out = {k: d.get(k) for k in ('cik', 'secName', 'navNotes', 'formD', 'schwab', 'errors')}
+    out['facts'] = {k: v[-8:] for k, v in facts.items() if v}
+    if d.get('nport'):
+        n = d['nport']
+        out['nport'] = {**{k: n[k] for k in ('date', 'netAssets', 'totalAssets', 'returns', 'holdingsCount', 'mix')}, 'topHoldings': n['topHoldings'][:8]}
+    out['recentFilings'] = [{k: f[k] for k in ('form', 'filed', 'reportDate', 'url')} for f in d.get('filings', [])[:10]]
+    return out
+
+
+async def t_search_private_funds(ctx, args, actions):
+    return (await alts.search_private(ctx, {'query': _str(args.get('query'), 'query')}))['results'][:25]
+
+
+async def t_get_bond_market(ctx, args, actions):
+    market, auctions = await asyncio.gather(invest.bond_market(ctx, {}), invest.auctions(ctx, {}), return_exceptions=True)
+    out = {}
+    if not isinstance(market, Exception):
+        out['rates'] = [{k: s[k] for k in ('name', 'value', 'date', 'monthAgo', 'yearAgo')} for s in market['series']]
+    if not isinstance(auctions, Exception):
+        out['recentAuctions'] = auctions['results'][:12]
+        out['upcomingAuctions'] = auctions['upcoming'][:10]
+    if not out:
+        raise EngineError(f'Bond data unavailable: {market}')
+    return out
+
+
+async def t_get_my_alternatives(ctx, args, actions):
+    rows = []
+    for d in store.list_docs('alt_holdings'):
+        paid, dist, value, commit = d.get('contributed'), d.get('distributed') or 0, d.get('value'), d.get('commitment')
+        rows.append({**{k: d.get(k) for k in ('fund', 'manager', 'strategy', 'account', 'commitment', 'contributed', 'distributed', 'value', 'valueDate')},
+                     'unfunded': max(0, commit - paid) if commit is not None and paid is not None else None,
+                     'tvpi': (dist + (value or 0)) / paid if paid else None, 'dpi': dist / paid if paid else None})
+    return rows or {'note': 'No alternative investments saved yet (Investments > Alternatives > My alternatives).'}
+
+
 async def t_list_portfolios(ctx, args, actions):
     return [{k: p.get(k) for k in ('id', 'name', 'benchmark', 'rebalance', 'holdings', 'inception')} for p in store.list_docs('portfolios')]
 
@@ -408,7 +474,8 @@ async def t_ui_action(ctx, args, actions):
 TOOL_FUNCS = {
     'get_quotes': t_get_quotes, 'get_price_history': t_get_price_history, 'get_news': t_get_news, 'get_options_flow': t_get_options_flow,
     'get_insider_trades': t_get_insider_trades, 'get_company_financials': t_get_company_financials, 'get_macro_snapshot': t_get_macro_snapshot,
-    'get_positioning': t_get_positioning, 'list_portfolios': t_list_portfolios, 'save_portfolio': t_save_portfolio,
+    'get_positioning': t_get_positioning, 'get_private_fund': t_get_private_fund, 'search_private_funds': t_search_private_funds,
+    'get_bond_market': t_get_bond_market, 'get_my_alternatives': t_get_my_alternatives, 'list_portfolios': t_list_portfolios, 'save_portfolio': t_save_portfolio,
     'analyze_portfolio': t_analyze_portfolio, 'optimize_portfolio': t_optimize_portfolio, 'list_clients': t_list_clients,
     'save_client': t_save_client, 'ui_action': t_ui_action,
 }

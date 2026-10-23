@@ -60,6 +60,7 @@ helper/
 | 7 | Portfolios: total-return analytics, risk, stress tests, Monte Carlo, optimisation; backtester | ✅ |
 | 8 | Clients and white-label PDF reports (branding, batch printing) | ✅ |
 | 9 | AI assistant: chat with live data and actions, pop-out, file uploads, AI analysis buttons | ✅ (morning brief and agents later) |
+| 9b | Investments: market boards (stocks, ETFs, bonds, alts, crypto, commodities), bond suite (yields, Treasury auctions, CUSIP lookup, calculator, ladder), private funds from SEC filings (NAV, N-PORT, Form D), own alternatives tracker with iCapital import | ✅ |
 | 10 | Trading through Webull (paper first) & alerts | ⏸ on hold |
 | 11 | Cloud engine, login, phone access | ⏸ on hold (last, by choice) |
 

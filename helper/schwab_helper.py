@@ -21,6 +21,7 @@ import html.parser
 import json
 import logging
 import logging.handlers
+import os
 import re
 import sys
 import time
@@ -32,6 +33,9 @@ from pathlib import Path
 
 # Libraries print harmless deprecation notices while loading; hide them so the window stays clear.
 _show_warning = warnings.showwarning
+if os.environ.get('TP_SPLASH'):
+    # Started from the launcher's start screen: keep start-up notices off the screen (main() logs them to the file).
+    logging.getLogger().addHandler(logging.NullHandler())
 warnings.showwarning = lambda *args, **kwargs: None
 import httpx  # noqa: E402
 from schwab.auth import easy_client  # noqa: E402
@@ -41,7 +45,7 @@ import engine  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 7
+HELPER_VERSION = 8
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -136,6 +140,10 @@ NEWS_LIMIT = 80
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
 
 log = logging.getLogger('helper')
+
+# The start screen (splash.py) when the launcher started us: it keeps the banner up and shows one live status
+# line instead of log messages. None when run directly, which keeps the plain text output.
+SCREEN = None
 
 
 class HelperError(Exception):
@@ -595,11 +603,15 @@ class Market:
     def set_status(self, status, message):
         self.status = self._status(status, message)
         broadcast(self.browsers, json.dumps(self.status))
+        if SCREEN:
+            SCREEN.status(status, message)
 
     # ----- Browser side -----
 
     async def handle_browser(self, ws):
         self.browsers.add(ws)
+        if SCREEN:
+            SCREEN.status(browsers=len(self.browsers))
         await ws.send(json.dumps(self.status))
         try:
             async for raw in ws:
@@ -634,6 +646,8 @@ class Market:
                     await ws.send(json.dumps({'type': 'error', 'id': msg.get('id'), 'message': unknown_request_message(kind)}))
         finally:
             self.browsers.discard(ws)
+            if SCREEN:
+                SCREEN.status(browsers=len(self.browsers))
             for symbol in list(self.listeners):
                 self.remove_listener(ws, symbol)
 
@@ -783,14 +797,36 @@ class Market:
                 await asyncio.sleep(delay)
 
 
+async def screen_clock():
+    """Keeps the start screen's status line ticking (clock and live dot)."""
+    while True:
+        await asyncio.sleep(1)
+        SCREEN.tick()
+
+
+def needs_login():
+    """True when Schwab will ask you to log in in the browser (no saved login, or it's about to expire)."""
+    try:
+        saved = json.loads(TOKEN_PATH.read_text())
+        return time.time() - float(saved.get('creation_timestamp', 0)) > 6.5 * 86400
+    except (OSError, ValueError, TypeError):
+        return True
+
+
 async def run(client, sec_contact=''):
     market = Market(client, engine_ctx=engine.EngineContext(client, sec_contact))
     try:
         # Room for files attached to AI questions (spreadsheets, PDFs, images).
         server = await serve(market.handle_browser, HOST, PORT, origins=ALLOWED_ORIGINS, max_size=40 * 2**20)
     except OSError:
+        if SCREEN:
+            SCREEN.pause()
         sys.exit(f'Port {PORT} is already in use. Is the helper already running in another window?')
     async with server:
+        if SCREEN:
+            SCREEN.ready(PLATFORM_URL, LOG_PATH, os.environ.get('TP_LAUNCH_WARNING', ''))
+            await asyncio.gather(market.run_stream(), market.send_quotes(), screen_clock())
+            return
         print()
         print('=' * 64)
         print(f'  Schwab helper (version {HELPER_VERSION}) is running.')
@@ -802,11 +838,30 @@ async def run(client, sec_contact=''):
         await asyncio.gather(market.run_stream(), market.send_quotes())
 
 
+def start_screen():
+    """Uses the launcher's start screen when it started us (TP_SPLASH holds the screen's random seed)."""
+    global SCREEN
+    seed = os.environ.get('TP_SPLASH')
+    if not seed:
+        return
+    try:
+        import splash
+        SCREEN = splash.HelperScreen(int(seed), splash.take_over_screen())
+    except Exception:
+        SCREEN = None
+
+
 def main():
     parser = argparse.ArgumentParser(description='Serve Schwab market data to the Trading Platform charts.')
     parser.add_argument('--reset', action='store_true', help='enter new Schwab keys and log in again')
     args = parser.parse_args()
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s  %(message)s', datefmt='%H:%M:%S')
+    start_screen()
+    if SCREEN:
+        # Messages go to the log file only; the start screen shows what matters.
+        logging.getLogger().setLevel(logging.INFO)
+        logging.captureWarnings(True)
+    else:
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s  %(message)s', datefmt='%H:%M:%S')
     # Also keep a log file, so problems can be looked at after the window is closed.
     try:
         DATA_DIR.mkdir(exist_ok=True)
@@ -820,13 +875,41 @@ def main():
         log.warning('Feature unavailable: %s (%s)', name, err)
     logging.getLogger('httpx').setLevel(logging.WARNING)
     logging.getLogger('websockets').setLevel(logging.WARNING)
+    try:
+        serve_forever(args)
+    except KeyboardInterrupt:
+        if SCREEN:
+            SCREEN.close('Helper stopped.')
+        else:
+            print('\nHelper stopped.')
+    except SystemExit:
+        if SCREEN:
+            SCREEN.pause()
+        raise
+    except Exception as err:
+        log.exception('The helper stopped because of an error')
+        if SCREEN:
+            SCREEN.pause()
+        sys.exit(f'The helper stopped because of an error: {err}\nDetails are in {LOG_PATH}')
 
+
+def serve_forever(args):
+    if SCREEN:
+        SCREEN.step('Loading the analysis engine...', 91, 0.5)
+        if args.reset or not CONFIG_PATH.exists():
+            SCREEN.pause()  # first-time setup asks for your Schwab keys
     config = load_config(args.reset)
-    print()
-    print('Logging in to Schwab...')
-    print('If a browser opens: log in, approve access, and if you see a "connection is not private"')
-    print('warning, click Advanced, then Proceed. That warning is expected for this local login.')
-    print()
+    login = needs_login()
+    if SCREEN and login:
+        SCREEN.pause()
+    if not SCREEN or login:
+        print()
+        print('Logging in to Schwab...')
+        print('If a browser opens: log in, approve access, and if you see a "connection is not private"')
+        print('warning, click Advanced, then Proceed. That warning is expected for this local login.')
+        print()
+    else:
+        SCREEN.step('Logging in to Schwab...', 96, 2)
     client = easy_client(
         config['app_key'],
         config['app_secret'],
@@ -834,10 +917,10 @@ def main():
         str(TOKEN_PATH),
         asyncio=True,
     )
-    try:
-        asyncio.run(run(client, config.get('sec_contact', '')))
-    except KeyboardInterrupt:
-        print('\nHelper stopped.')
+    if SCREEN:
+        SCREEN.resume()  # puts the start screen back after the login steps
+        SCREEN.step('Starting the live data server...', 99, 1)
+    asyncio.run(run(client, config.get('sec_contact', '')))
 
 
 if __name__ == '__main__':

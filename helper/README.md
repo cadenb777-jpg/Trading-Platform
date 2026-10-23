@@ -30,7 +30,9 @@ Download it from **https://www.python.org/downloads/** and run the installer.
 - **Mac:** right-click **start-mac.command**, choose **Open**, then **Open** again.
   You only need to right-click the first time; after that, double-click works.
 
-The first start takes a minute while it installs what it needs.
+The first start takes a few minutes while it installs what it needs. The window shows a start screen
+(your name, a random creature and colour theme) with one loading bar from 0 to 100%; the install
+messages are kept out of sight in `~/.trading-platform/launcher.log`.
 
 ### 4. Enter your Schwab keys (first time only)
 
@@ -51,7 +53,9 @@ Press Enter when asked and a browser window opens.
    finishes on your own computer, which doesn't have a public security certificate.
    Click **Advanced**, then **Proceed to 127.0.0.1**.
 
-The helper window then says **"Schwab helper is running."**
+The helper window then goes back to the start screen, finishes the loading bar and shows a live
+status line at the bottom (for example **"● LIVE Streaming from Schwab · 1 platform tab connected"**).
+Behind-the-scenes messages go to `~/.trading-platform/helper.log` instead of filling the window.
 
 ### 6. Use it
 
@@ -73,7 +77,8 @@ folder with the parts already installed, so the helper doesn't have to download 
 folder downloads everything once (about 150 MB), which takes a few minutes; the start window shows
 progress for each step.
 
-Version 6 added the AI assistant and stock positioning; version 7 is a bug-fix update. If an optional part
+Version 6 added the AI assistant and stock positioning; version 7 is a bug-fix update; version 8 adds the
+Investments page (market boards, bonds, alternatives and private funds) and the new start screen. If an optional part
 (the AI or portfolio maths) fails to install, the helper still starts and charts and prices keep working; the
 platform's Settings window shows what's unavailable, and the helper writes a log to `~/.trading-platform/helper.log`. The first start after updating installs a few
 more parts, so it takes a couple of minutes. Keys and emails are no longer typed into this window:
@@ -99,6 +104,7 @@ automatically when it's needed. Just repeat step 5.
 |---|---|
 | Chart says "The Schwab helper isn't running" | Start the helper, wait for "running", then click **Try again** |
 | "Python was not found" | Install Python (step 1). On Windows, tick "Add python.exe to PATH" |
+| Something went wrong but the window only shows the start screen | Open `~/.trading-platform/helper.log` (or `launcher.log` if it happened while installing) |
 | "Port 8765 is already in use" | The helper is already open in another window. Use that one |
 | Login fails or "invalid client" | Your app may still be pending at Schwab, or the keys are wrong. Run the start file with `--reset`, or delete the `.trading-platform` folder in your home folder and start again |
 | "Schwab login expired" | Close the helper and start it again to log in |

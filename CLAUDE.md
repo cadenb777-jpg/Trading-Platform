@@ -35,6 +35,17 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   ~/.trading-platform/settings.json; keys are never stored in or sent back to the browser.
   AI (engine/ai.py): official `anthropic` SDK, default model claude-opus-5-5 with server-side fallbacks, tools over
   engine data plus `ui_action` (browser carries out open_chart/add_indicator/create_alert). It must never trade.
+  Investments page (src/pages/investmentsPage.ts, src/invest/): boards via invest.board (quotes + 1m/3m/YTD/1y from
+  daily closes), invest.history/movers/search; bonds.market (FRED yields/spreads), bonds.auctions (Treasury Fiscal Data),
+  bonds.cusip (Schwab get_instrument_by_cusip); alts.fund (SEC: XBRL NAV per share, N-PORT, Form D, NAV sentences from
+  424B3/8-K), alts.search_private (EDGAR full-text search of Form D), alts.latest_private (latest Form D feed).
+  The private fund directory is src/invest/catalog.ts (names only; data is live from the SEC). Bond maths is
+  src/invest/bonds.ts. The owner's own alternatives are store collection alt_holdings (iCapital has no public API:
+  they import a CSV/Excel export, src/invest/holdings.ts).
+  Launcher: start files run `splash.py run`, which shows the start screen, runs pip with hidden output behind one
+  0-100% bar and starts the helper with TP_SPLASH (seed) and TP_HANDOFF; the helper then continues the bar
+  (splash.HelperScreen), logs only to the file and shows one live status line. Interactive steps (Schwab keys,
+  login) pause the screen. Keep splash.py standard-library only.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).
   Indicators can load outside data via `IndicatorDef.external` (COT for the related futures market, FINRA short volume).
   It is market-data only: never add order placement to it (the Schwab app's order limit is 0).

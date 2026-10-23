@@ -12,12 +12,15 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 7;
+export const LATEST_HELPER_VERSION = 8;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
 const ENGINE_HELPER_VERSION = 6;
 const CORE_REQUESTS = new Set(['history', 'news', 'calendar', 'summary']);
+/** The Investments page (markets, bonds, private funds) needs at least this version. */
+const INVEST_HELPER_VERSION = 8;
+const INVEST_REQUEST = /^(invest|bonds|alts)\./;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
@@ -189,6 +192,7 @@ class HelperConnection {
     if (this.tooOld) throw new Error(HELPER_OUTDATED);
     // Older helpers simply ignore requests they don't know, so stop here with a clear message instead of waiting.
     if (!CORE_REQUESTS.has(type) && (this.version ?? 0) < ENGINE_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if ((INVEST_REQUEST.test(type) || msg.collection === 'alt_holdings') && (this.version ?? 0) < INVEST_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout>;

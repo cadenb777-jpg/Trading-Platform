@@ -7,7 +7,7 @@ import logging
 
 from .core import HANDLERS, EngineContext, EngineError, handler
 
-MODULES = ('store', 'settings', 'sec', 'flow', 'research', 'macro', 'quant', 'positioning', 'ai')
+MODULES = ('store', 'settings', 'sec', 'flow', 'research', 'macro', 'quant', 'positioning', 'invest', 'alts', 'ai')
 #: module name -> why it couldn't load
 LOAD_ERRORS = {}
 

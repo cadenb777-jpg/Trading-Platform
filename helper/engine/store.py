@@ -11,7 +11,8 @@ from pathlib import Path
 from .core import EngineError, handler
 
 DB_PATH = Path.home() / '.trading-platform' / 'platform.db'
-COLLECTIONS = {'portfolios', 'clients', 'branding'}
+# alt_holdings: your private/alternative investments (e.g. from iCapital statements), entered or imported by you.
+COLLECTIONS = {'portfolios', 'clients', 'branding', 'alt_holdings'}
 
 _db = None
 

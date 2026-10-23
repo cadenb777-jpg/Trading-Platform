@@ -38,6 +38,14 @@ const openChart = (ref: MarketRef) => {
   location.hash = '#chart';
 };
 
+/** Opens the Research page on a company (from the Investments page, for example). */
+const openResearch = (symbol: string) => {
+  const entry = pages.find((p) => p.route === 'research');
+  if (!entry) return;
+  location.hash = '#research';
+  ensurePage(entry).then((page) => (page as Page & { open?(symbol: string): void }).open?.(symbol));
+};
+
 /**
  * Each page is built the first time it's opened (and its code downloaded then), so the platform starts
  * quickly instead of building all 13 pages at launch.
@@ -56,6 +64,13 @@ const pages: PageEntry[] = [
   { route: 'home', label: 'Home', icon: 'home', title: 'Trading Platform', create: () => createHomePage(openChart, () => (location.hash = '#calendar')) },
   { route: 'chart', label: 'Chart', icon: 'chart', title: '', create: () => getChartPage() },
   { route: 'multi', label: 'Multi', icon: 'grid', title: 'Multi-chart', create: async () => (await import('./pages/multiChartPage')).createMultiChartPage(openChart) },
+  {
+    route: 'invest',
+    label: 'Invest',
+    icon: 'invest',
+    title: 'Investments',
+    create: async () => (await import('./pages/investmentsPage')).createInvestmentsPage({ openChart, openResearch }),
+  },
   { route: 'flow', label: 'Flow', icon: 'flow', title: 'Flow', create: async () => (await import('./pages/flowPage')).createFlowPage() },
   { route: 'research', label: 'Research', icon: 'research', title: 'Research', create: async () => (await import('./pages/researchPage')).createResearchPage() },
   { route: 'macro', label: 'Macro', icon: 'macro', title: 'Macro', create: async () => (await import('./pages/macroPage')).createMacroPage() },
@@ -156,7 +171,7 @@ if (isAiWindow) {
     updateBanner.hidden = bannerDismissed || v == null || !helper.outdated;
     if (updateBanner.hidden || v == null) return;
     updateBanner.replaceChildren(
-      h('span', {}, h('b', {}, `Helper update available (you have version ${v}, newest is ${LATEST_HELPER_VERSION}). `), v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Clients and the AI need the update. ' : 'It includes bug fixes. '),
+      h('span', {}, h('b', {}, `Helper update available (you have version ${v}, newest is ${LATEST_HELPER_VERSION}). `), v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Clients, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : 'It includes bug fixes. '),
       h('a', { href: 'https://github.com/cadenb777-jpg/Trading-Platform', target: '_blank', rel: 'noopener' }, 'Get it: Code → Download ZIP, replace your helper folder, restart it'),
       h('button', { class: 'icon-btn', 'aria-label': 'Dismiss', title: 'Dismiss', onclick: () => ((bannerDismissed = true), showUpdateBanner()) }, '✕'),
     );
