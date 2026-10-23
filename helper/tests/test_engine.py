@@ -355,7 +355,8 @@ class FakeCtx:
 class ScanErrors(unittest.TestCase):
     def setUp(self):
         self.patches = [mock.patch.object(scanner, 'UNIVERSE', ['SPY', 'AAA']), mock.patch.object(scanner, 'REQUEST_GAP', 0),
-                        mock.patch.object(scanner, 'market_session', return_value='closed')]
+                        mock.patch.object(scanner, 'market_session', return_value='closed'),
+                        mock.patch.object(scanner, '_run_lab', new=mock.AsyncMock())]  # the lab has its own tests
         for p in self.patches:
             p.start()
         scanner._state.update({'result': None, 'running': None, 'extra': set(), 'bad': {}})
@@ -525,6 +526,15 @@ class Grading(unittest.TestCase):
         self.assertTrue(any('risk' in w for w in c['why']))
         self.assertIn('rr', c['whyCodes'])
         self.assertEqual(len(c['why']), len(c['whyCodes']))
+        # Buys and sells are judged on their own records: good longs don't excuse losing shorts.
+        both = {**self.strat(), 'sides': {'long': self.strat(), 'short': self.strat(exp=-0.003, pf=0.7)}}
+        long_s, short_s = self.setup(), {**self.setup(cot=30), 'direction': -1}
+        short_s['indicators'] = {**short_s['indicators'], 'cotView': 'agree', 'z': 1.5}
+        scanner.grade(long_s, stock, both, {})
+        scanner.grade(short_s, stock, both, {})
+        self.assertEqual(long_s['tier'], 'A')
+        self.assertEqual(short_s['tier'], 'C')
+        self.assertIn("sells lost money", short_s['why'][0])
         losing = self.setup()
         scanner.grade(losing, stock, self.strat(exp=-0.001, pf=0.9), {})
         self.assertEqual(losing['tier'], 'C')
@@ -746,6 +756,71 @@ class TimeFrames(unittest.TestCase):
                 finally:
                     del strategies.STRATEGIES[key + '_t'], cfg['valid'][key + '_t'], cfg['maxHold'][key + '_t']
                 self.assertEqual(len(out['setups']), 1, (h, key))
+
+
+
+def _lab_series(n, seed, revert):
+    r = random.Random(seed)
+    p, out, prev = 100.0, [], 0.0
+    for i in range(n):
+        ret = r.gauss(0.0004, 0.015) - (0.3 * prev if revert else 0)
+        prev = ret
+        o = p * (1 + r.gauss(0, 0.002))
+        p = o * math.exp(ret)
+        out.append(bar(1_500_000_000 + i * 86400, o, max(o, p) * (1 + abs(r.gauss(0, 0.004))), min(o, p) * (1 - abs(r.gauss(0, 0.004))), p, r.randint(800_000, 1_500_000)))
+    return out
+
+
+class StrategyLab(unittest.TestCase):
+    """The lab keeps only combinations that hold up on data they were not chosen on."""
+
+    def setUp(self):
+        from engine import lab, strategies
+        self.lab, self.st = lab, strategies
+
+    def test_finds_a_real_edge_on_unseen_data(self):
+        inds = {f'S{k}': self.st.prepare(_lab_series(700, k, True), None) for k in range(25)}
+        res = self.lab.run(inds)
+        self.assertGreater(res['validated'], 0)
+        self.assertLessEqual(res['pbo'], 0.5)
+        self.assertGreater(res['embargo'], 0)
+        best = next(r for r in res['results'] if r['validated'])
+        self.assertEqual(self.lab.TRIGGERS[best['trigger']]['family'], 'reversal')  # the planted edge is a reversal
+        self.assertGreater(best['test']['expectancy'], 0)
+
+    def test_rejects_luck(self):
+        inds = {f'S{k}': self.st.prepare(_lab_series(700, 500 + k, False), None) for k in range(25)}
+        self.assertEqual(self.lab.run(inds)['validated'], 0)
+
+    def test_variance_ratio_reads_regimes(self):
+        trend = [100 * 1.001 ** i * (1 + 0.002 * math.sin(i / 7)) for i in range(400)]
+        alt = [100 + (1 if i % 2 else -1) for i in range(400)]  # reverses every bar
+        self.assertGreater(self.lab.variance_ratio(trend)[-1], 1)
+        self.assertLess(self.lab.variance_ratio(alt)[-1], 0.5)
+
+    def test_market_trend_uses_only_the_previous_day(self):
+        bars = [bar(1_600_000_000 + i * 86400, 100, 101, 99, 100 + (i if i < 60 else -i)) for i in range(80)]
+        m = scanner.market_trend_by_date(bars)
+        day60 = scanner.bar_day(bars[60]['time'])
+        self.assertEqual(m[day60], 1)  # bar 60's own drop is not known yet
+
+    def test_holm_and_candidate_count(self):
+        self.assertEqual(len(self.lab.candidates()), len(self.lab.TRIGGERS) * (1 + len(self.lab.FILTERS) + len(self.lab.FILTERS) * (len(self.lab.FILTERS) - 1) // 2) * 2)
+        adj = self.lab.holm([0.01, 0.04, 0.03])
+        self.assertAlmostEqual(adj[0], 0.03)
+        self.assertAlmostEqual(adj[2], 0.06)
+        self.assertAlmostEqual(adj[1], 0.06)
+
+    def test_registered_strategies_belong_to_one_time_frame(self):
+        fake = {'results': [{'validated': True, 'trigger': 'rsi2', 'filters': ['trend'], 'direction': 1, 'name': 'Lab: RSI(2) + trend (buys)', 'description': 'x'}]}
+        try:
+            keys = self.lab.register('swing', fake)
+            self.assertEqual(keys, ['lab_swing_0'])
+            self.assertEqual(self.st.STRATEGIES['lab_swing_0']['horizon_only'], 'swing')
+            self.lab.register('swing', {'results': []})
+            self.assertNotIn('lab_swing_0', self.st.STRATEGIES)
+        finally:
+            self.lab.register('swing', {'results': []})
 
 
 if __name__ == '__main__':

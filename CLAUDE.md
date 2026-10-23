@@ -96,6 +96,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Thresholds fit each stock: z-score and RSI(2) bands are the stock's own rolling percentiles (rolling_quantile,
   causal), stops/targets in ATR. Monte Carlo uses the stationary bootstrap; per-stock random-walk p-values get
   Benjamini-Hochberg q-values; `edge` = COT + z-score edge study (cot_z_events/edge_summary, 1,000-run permutation).
+  Buys and sells have separate records (`strategies[k].sides.long/short`, v20); setups are graded on their own side.
+  Strategy lab (engine/lab.py, v20): 11 theory triggers x up to 2 of 11 filters x side (~1,474 combinations), walk-forward
+  over 3 windows with an embargo, kept if chosen in 2+ windows, profitable on unseen trades (30+), Holm-corrected
+  random-entry p <= 0.10 and PBO <= 50%; deflated Sharpe reported. Re-runs when the time frame has a new finished bar
+  (scanner._run_lab, stamp = newest bar); survivors register as `lab_<horizon>_<n>` strategies judged only on their
+  unseen period (`oos_from`); rejects go to ~/.trading-platform/lab_graveyard.json. Market filter = QQQ vs its 50-day
+  average as of the previous day (market_trend_by_date).
   Statistics rationale and sources: docs/research/setups-statistics.md.
   Setups page (src/pages/setupsPage.ts, route #setups): time-frame tabs, strategy evidence cards, edge study, sortable
   list, detail with live entry zone (src/home/entryZone.ts: waiting/approaching/entry/extended/target/invalid/expired,

@@ -112,6 +112,23 @@ export interface StrategyInfo {
   monteCarlo?: MonteCarlo | null;
   /** The same rules on only the last 30% of each stock's history (out-of-sample check, helper v19+). */
   recent?: Stats;
+  /** Separate records for buys and sells (helper v20+): setups are graded on their own side. */
+  sides?: { long: SideRecord; short: SideRecord };
+  /** Found by the strategy lab and judged only on data it was not chosen on (helper v20+). */
+  lab?: boolean;
+  description?: string | null;
+}
+
+export interface SideRecord {
+  stats: Stats;
+  randomEntry: StrategyInfo['randomEntry'];
+  monteCarlo?: MonteCarlo | null;
+  recent?: Stats;
+}
+
+/** The record that applies to a setup: its own side's when the helper sends one. */
+export function sideRecord(st: StrategyInfo | undefined, direction: number): SideRecord | undefined {
+  return st ? (st.sides?.[direction > 0 ? 'long' : 'short'] ?? st) : undefined;
 }
 
 interface ScanResult {

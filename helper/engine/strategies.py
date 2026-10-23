@@ -568,7 +568,7 @@ def random_entry_test(trades_by_symbol, closes_by_symbol, opens_by_symbol, runs=
         for sym, t in pool:
             closes, opens = closes_by_symbol[sym], opens_by_symbol[sym]
             hold = t['bars']
-            start = rnd.randrange(210, max(211, len(closes) - hold))
+            start = 210 + int(rnd.random() * (max(211, len(closes) - hold) - 210))  # faster than randrange, same spread
             total += (closes[start + hold - 1] / opens[start] - 1) * t['dir'] - COSTS
         if total / len(pool) >= actual:
             better += 1

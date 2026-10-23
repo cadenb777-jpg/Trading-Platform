@@ -13,11 +13,13 @@ earnings dates inside the holding period, news, insider buying and big options t
 import asyncio
 import math
 import datetime as dt
+import json
+from pathlib import Path
 import logging
 import time
 from zoneinfo import ZoneInfo
 
-from . import flow, positioning, sec
+from . import flow, lab, positioning, sec
 from . import strategies as st
 from .core import EngineError, handler, market_session
 
@@ -476,7 +478,7 @@ def analyse_symbol(symbol, done, live, cot, strategy_keys, horizon='swing'):
         # The newest signal whose trade is still waiting to trigger or still open. Trades last a while (weekly swing
         # up to 7 sessions, breakout about a month), so look back far enough not to drop one that is still on.
         H = st.HORIZONS[horizon]
-        lookback = H['valid'].get(key, 2) + H['maxHold'].get(key, SIGNAL_LOOKBACK) + 1 if key in H['valid'] else SIGNAL_LOOKBACK
+        lookback = strat.get('lookback') or (H['valid'].get(key, 2) + H['maxHold'].get(key, SIGNAL_LOOKBACK) + 1 if key in H['valid'] else SIGNAL_LOOKBACK)
         for s in range(n - 1, max(0, n - 1 - lookback), -1):
             if picked:
                 break
@@ -568,28 +570,43 @@ def levels_around(ind, price):
 _random_entry_cache = {}
 
 
+def _record(key, horizon, by_sym, closes, opens, per_symbol, tag):
+    """One strategy's pooled record (all trades, or one side): stats, 1,000-run random-entry test (cached for the
+    day), Monte Carlo and the recent-history check."""
+    pooled = [t for ts in by_sym.values() for t in ts]
+    ck = (key, horizon, tag, str(ny_today()), len(pooled), round(sum(t['ret'] for t in pooled), 6))
+    if ck not in _random_entry_cache:
+        if len(_random_entry_cache) > 200:
+            _random_entry_cache.clear()
+        _random_entry_cache[ck] = st.random_entry_test({k: v for k, v in by_sym.items() if k in closes}, closes, opens)
+    length = {r['symbol']: len(r['closes']) for r in per_symbol if r.get('closes')}
+    # Out-of-sample check: the same rules on only the last 30% of each stock's history.
+    recent = [t for sym, ts in by_sym.items() for t in ts if sym in length and t['signal'] >= 0.7 * length[sym]]
+    return {'stats': st.summarise(pooled), 'recent': st.summarise(recent), 'randomEntry': _random_entry_cache[ck], 'monteCarlo': st.monte_carlo(pooled)}
+
+
 def strategy_stats(per_symbol, horizon='swing'):
-    """Each strategy's pooled record across all scanned stocks, with the random-entry test."""
+    """Each strategy's pooled record across all scanned stocks, overall and separately for buys and sells: stocks
+    drift upward over time, so short trades face a headwind long trades don't, and lumping them together would
+    hide a strategy that works on one side only. Setups are graded on their own side's record."""
     out = {}
     H = st.HORIZONS[horizon]
+    closes = {r['symbol']: r['closes'] for r in per_symbol if r.get('closes')}
+    opens = {r['symbol']: r['opens'] for r in per_symbol if r.get('opens')}
     for key, strat in st.STRATEGIES.items():
+        if strat.get('horizon_only') not in (None, horizon):
+            continue
         by_sym = {r['symbol']: r['trades'].get(key, []) for r in per_symbol if r.get('trades')}
-        pooled = [t for ts in by_sym.values() for t in ts]
-        closes = {r['symbol']: r['closes'] for r in per_symbol if r.get('closes')}
-        opens = {r['symbol']: r['opens'] for r in per_symbol if r.get('opens')}
-        # 1,000 random-entry sets take a few seconds; the past trades only change once a day, so reuse the answer.
-        ck = (key, horizon, str(ny_today()), len(pooled), round(sum(t['ret'] for t in pooled), 6))
-        if ck not in _random_entry_cache:
-            if len(_random_entry_cache) > 50:
-                _random_entry_cache.clear()
-            _random_entry_cache[ck] = st.random_entry_test({k: v for k, v in by_sym.items() if k in closes}, closes, opens)
-        test = _random_entry_cache[ck]
-        # Out-of-sample check: the same rules on only the last 30% of each stock's history. A strategy that only
-        # worked long ago shows up here.
-        recent = [t for r in per_symbol if r.get('closes') for t in r['trades'].get(key, []) if t['signal'] >= 0.7 * len(r['closes'])]
-        out[key] = {'name': H['names'].get(key, strat['name']), 'short': H['names'].get(key, strat['name']).split(' (')[0], 'horizon': H['hold'], 'stats': st.summarise(pooled),
-                    'recent': st.summarise(recent),
-                    'randomEntry': test, 'monteCarlo': st.monte_carlo(pooled), 'stocks': len(by_sym)}
+        if strat.get('oos_from'):  # a lab strategy: judged only on the period that played no part in choosing it
+            by_sym = {k: [t for t in v if t['signal'] >= strat['oos_from'] * len(closes.get(k, []))] for k, v in by_sym.items()}
+        sides = {}
+        for side, d in (('long', 1), ('short', -1)):
+            side_sym = {k: [t for t in v if t['dir'] == d] for k, v in by_sym.items()}
+            sides[side] = _record(key, horizon, side_sym, closes, opens, per_symbol, side)
+        name = H['names'].get(key, strat['name'])
+        out[key] = {'name': name, 'short': name if strat.get('lab') else name.split(' (')[0], 'horizon': H['hold'], 'stocks': len(by_sym), 'sides': sides,
+                    'lab': bool(strat.get('lab')), 'description': strat.get('description'),
+                    **_record(key, horizon, by_sym, closes, opens, per_symbol, 'all')}
     return out
 
 
@@ -599,7 +616,9 @@ def grade(setup, stock, strat, earnings):
     weekly swing) the target is at least 1.5x the risk. B: the strategy makes money and none of this setup's checks is
     against it (only the strict random-entry test may be unproven). C: the rest; `why` says in plain words what's missing."""
     s, d = setup, setup['direction']
-    ps, re = strat['stats'], strat['randomEntry'] or {}
+    side = (strat.get('sides') or {}).get('long' if d > 0 else 'short') or strat  # judged on its own side's record
+    ps, re = side['stats'], side['randomEntry'] or {}
+    word = 'buys' if d > 0 else 'sells'
     edge = (ps['expectancy'] or 0) > 0 and (ps['profitFactor'] or 0) >= 1.2 and (re.get('p') or 1) <= 0.10
     positive = (ps['expectancy'] or 0) > 0
     stock_ok = stock['grade'] != 'failed'
@@ -610,7 +629,7 @@ def grade(setup, stock, strat, earnings):
     s['earnings'] = {'date': e['date'], 'time': e.get('time', ''), 'inWindow': in_window} if e else ({'unknown': True} if earnings is None else None)
     z = s['indicators']['z']
     checks = [
-        {'label': 'Strategy edge on the Nasdaq-100', 'ok': edge if ps['trades'] else None,
+        {'label': f'Strategy edge on Nasdaq-100 {word}', 'ok': edge if ps['trades'] else None,
          'detail': (f"{ps['trades']} past trades, {round((ps['winRate'] or 0) * 100)}% winners, profit factor {ps['profitFactor']}, "
                     f"random-entry p = {re['p']:.2f}" if re else f"{ps['trades']} past trades (too few for the random test)") if ps['trades'] else 'No past trades to judge'},
         {'label': "This stock's record", 'ok': None if stock['grade'] == 'unproven' else stock_ok,
@@ -634,11 +653,11 @@ def grade(setup, stock, strat, earnings):
         why.append(text)
         why_codes.append(code)
     if not ps['trades']:
-        add('untested', 'This strategy has no past trades yet to prove it works')
+        add('untested', f"This strategy's {word} have no past trades yet to prove they work")
     elif not positive:
-        add('losing', f"This strategy lost money in its Nasdaq-100 backtest ({(ps['expectancy'] or 0) * 100:+.2f}% per trade after costs)")
+        add('losing', f"This strategy's {word} lost money in its Nasdaq-100 backtest ({(ps['expectancy'] or 0) * 100:+.2f}% per trade after costs)")
     elif not edge:
-        add('unproven', f"This strategy's past results don't clearly beat random entries (profit factor {ps['profitFactor']}, "
+        add('unproven', f"This strategy's {word} don't clearly beat random entries yet (profit factor {ps['profitFactor']}, "
                    f"p = {re['p']:.2f})" if re.get('p') is not None else "Too few past trades to test against random entries")
     if not cot_ok:
         add('cot', f"Commercial hedgers (COT) lean against this direction (index {s['indicators']['cot']:.0f}/100)")
@@ -664,12 +683,13 @@ def grade(setup, stock, strat, earnings):
     else:
         s['tier'] = 'C'
     s['stock'] = stock
-    s['strategyStats'] = {'trades': ps['trades'], 'winRate': ps['winRate'], 'profitFactor': ps['profitFactor'],
+    s['strategyStats'] = {'side': 'long' if d > 0 else 'short', 'trades': ps['trades'], 'winRate': ps['winRate'], 'profitFactor': ps['profitFactor'],
                           'expectancy': ps['expectancy'], 'randomEntryP': re.get('p')}
 
 
 def compute(rows, strategy_keys, earnings, horizon='swing'):
     """CPU part of a scan for one time frame: analyse every stock, pool the backtests, grade the setups."""
+    strategy_keys = [k for k in strategy_keys if k in st.STRATEGIES and st.STRATEGIES[k].get('horizon_only') in (None, horizon)]
     per_symbol = [analyse_symbol(sym, done, live, cot, strategy_keys, horizon) for sym, done, live, cot in rows]
     stats = strategy_stats(per_symbol, horizon)
     events = [e for r in per_symbol for e in r.get('edge', [])]
@@ -680,7 +700,7 @@ def compute(rows, strategy_keys, earnings, horizon='swing'):
     setups, filtered = [], []
     for r in per_symbol:
         for s in r['setups']:
-            past = r['trades'].get(s['strategy'], [])
+            past = [t for t in r['trades'].get(s['strategy'], []) if t['dir'] == s['direction']]  # this side only
             stock = st.summarise(past)
             grade(s, stock, stats[s['strategy']], earnings)
             s['monteCarlo'] = st.monte_carlo(past)
@@ -739,7 +759,69 @@ async def _run_rw_jobs():
 SCAN_EVERY = 300  # the owner wants a fresh scan every 5 minutes
 
 
-HORIZON_ORDER = ('swing', 'position', 'short')  # daily data is fetched first, so the swing results come first
+HORIZON_ORDER = ('swing', 'position', 'short')
+_lab = {}  # horizon -> {'stamp', 'result', 'running', 'task'}
+GRAVEYARD_PATH = Path.home() / '.trading-platform' / 'lab_graveyard.json'
+
+
+def market_trend_by_date(qqq_bars):
+    """The Nasdaq-100's trend for each date, known before that date's session: +1 if the PREVIOUS close was above
+    its 50-day average, -1 if below (so hourly bars of a day never see that day's close)."""
+    closes = [b['close'] for b in qqq_bars]
+    sma = st.sma(closes, 50)
+    out = {}
+    for i in range(1, len(qqq_bars)):
+        if sma[i - 1] is not None:
+            out[bar_day(qqq_bars[i]['time'])] = 1 if closes[i - 1] > sma[i - 1] else -1
+    return out
+
+
+def _save_graveyard(horizon, result):
+    """Keeps every rejected hypothesis (latest verdict per rule combination) so the record of what was tried and
+    failed survives restarts."""
+    try:
+        data = json.loads(GRAVEYARD_PATH.read_text()) if GRAVEYARD_PATH.exists() else {}
+        dead = data.setdefault(horizon, {})
+        for r in result['results']:
+            if not r['validated']:
+                dead[r['id']] = {'name': r['name'], 'date': str(ny_today()), 'reasons': r['rejected'], 'test': r['test']['expectancy'], 'p': r['pAdjusted']}
+        if len(dead) > 500:
+            for k in sorted(dead, key=lambda k: dead[k]['date'])[: len(dead) - 500]:
+                del dead[k]
+        GRAVEYARD_PATH.parent.mkdir(parents=True, exist_ok=True)
+        GRAVEYARD_PATH.write_text(json.dumps(data))
+        return len(dead)
+    except Exception as err:
+        log.info('Lab graveyard not saved: %s', err)
+        return None
+
+
+async def _run_lab(horizon, rows, stamp, market):
+    """The strategy lab for one time frame, re-run whenever that time frame has a new finished bar (hourly for short
+    swing, after each close for swing, weekly for position), in the background. Validated strategies join the
+    scanner at once; the result is also put on the latest scan so the page shows it without waiting."""
+    state = _lab.setdefault(horizon, {})
+    try:
+        def work():
+            inds = {sym: st.prepare(done, cot, horizon) for sym, done, _, cot in rows if len(done) >= 260}
+            return lab.run(inds, market)
+        result = await asyncio.to_thread(work)
+        lab.register(horizon, result)
+        H = st.HORIZONS[horizon]
+        for strat in st.STRATEGIES.values():
+            if strat.get('lab') and strat.get('horizon_only') == horizon:
+                strat['lookback'] = max(H['valid'].values()) + max(H['maxHold'].values()) + 1
+        result['graveyard'] = _save_graveyard(horizon, result)
+        result['ran'] = time.time()
+        state.update(stamp=stamp, result=result)
+        latest = (_state.get('result') or {}).get('horizons', {}).get(horizon)
+        if latest is not None:
+            latest['lab'], latest['labRunning'] = result, False
+    except Exception as err:
+        log.info('Strategy lab (%s) failed: %s', horizon, err)
+        state['stamp'] = stamp  # don't retry until the next new bar
+    finally:
+        state['running'] = False
 
 
 async def _horizon_rows(ctx, horizon, symbols, histories, quotes, cot_of):
@@ -884,7 +966,14 @@ async def scan(ctx, news=None, publish=None):
         for s, q in zip(tested, st.bh_qvalues([s['randomWalk']['p'] for s in tested])):
             s['randomWalk'] = {**s['randomWalk'], 'q': q, 'tests': len(tested)}
         edge = stats.pop('_edge', None)
+        ls = _lab.setdefault(horizon, {})
+        stamp = max((r[1][-1]['time'] for r in rows if r[1]), default=None)  # newest finished bar of this time frame
+        if stamp and ls.get('stamp') != stamp and not ls.get('running'):
+            ls['running'] = True
+            market = market_trend_by_date(histories['QQQ']) if 'QQQ' in histories else {}
+            ls['task'] = asyncio.ensure_future(_run_lab(horizon, rows, stamp, market))  # keep a reference
         horizons[horizon] = {
+            'lab': ls.get('result'), 'labRunning': bool(ls.get('running')),
             'scanned': len(rows), 'updated': time.time(), 'strategies': stats, 'setups': setups[:60], 'edge': edge,
             'filteredOut': [{'symbol': s['symbol'], 'strategy': s['strategy'], 'stock': s['stock']} for s in filtered][:30],
         }

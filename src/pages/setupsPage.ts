@@ -10,7 +10,7 @@ import { subscribeQuote } from '../data/quotes';
 import { engineRequest, helper, schwab } from '../data/schwab';
 import type { MarketRef } from '../data/quotes';
 import { entryZone, type Zone } from '../home/entryZone';
-import type { Setup, StrategyInfo } from '../home/setupsPanel';
+import type { SideRecord, Setup, StrategyInfo } from '../home/setupsPanel';
 import { tradeGuideBody } from '../home/tradeGuide';
 import type { Timeframe } from '../types';
 import { pageFrame, pct as fmtPct } from '../ui/charts';
@@ -35,6 +35,24 @@ interface HorizonResult {
   filteredOut: { symbol: string }[];
   edge?: EdgeStudy | null;
   error?: string;
+  lab?: LabResult | null;
+  labRunning?: boolean;
+}
+
+interface LabResult {
+  tried: number;
+  trainShare: number;
+  forward: number;
+  validated: number;
+  folds?: number;
+  embargo?: number;
+  pbo?: number | null;
+  effectiveTrials?: number;
+  graveyard?: number | null;
+  ran?: number;
+  results: { id: string; name: string; description: string; direction: number; validated: boolean; p: number; pAdjusted: number;
+    theory?: string; folds?: number; dsr?: number | null; rejected?: string[];
+    train: { trades: number; expectancy: number | null; tStat: number | null }; test: { trades: number; expectancy: number | null; winRate: number | null; tStat: number | null } }[];
 }
 
 interface Scan {
@@ -97,7 +115,7 @@ function beep() {
 }
 
 /** A plain label for how much the backtest says about a strategy. */
-function evidenceStrength(st: StrategyInfo): { label: string; tone: 'up' | 'down' | 'warn' | ''; plain: string } {
+function evidenceStrength(st: SideRecord): { label: string; tone: 'up' | 'down' | 'warn' | ''; plain: string } {
   const s = st.stats;
   if (!s.trades) return { label: 'no trades yet', tone: '', plain: 'Its rules never triggered in the history available, so there is nothing to judge yet.' };
   if ((s.expectancy ?? 0) <= 0) return { label: 'loses money', tone: 'down', plain: `Its ${s.trades} past trades lost money on average after costs, so its signals are never graded above C here.` };
@@ -226,20 +244,28 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
 
   function renderEvidence(hr: HorizonResult | undefined) {
     if (!hr) return evidenceBody.replaceChildren(h('div', { class: 'skeleton', style: 'height:90px' }));
-    const cards = (Object.keys(STRATEGY_LABEL) as StrategyKey[]).map((k) => {
+    const cards = (Object.keys(hr.strategies) as StrategyKey[]).filter((k) => !hr.strategies[k].lab).map((k) => {
       const st = hr.strategies[k];
       if (!st) return '';
+      const sideLine = (side: 'long' | 'short') => {
+        const rec = st.sides?.[side];
+        if (!rec) return '';
+        const e = evidenceStrength(rec);
+        return h('div', { class: 'sp-side-line small', title: e.plain }, h('span', { class: 'muted' }, side === 'long' ? 'Buys ' : 'Sells '), h('span', { class: `sp-verdict ${e.tone}` }, e.label), h('span', { class: 'muted tiny' }, ` ${rec.stats.trades} trades, ${pct(rec.stats.expectancy, 2)} each`));
+      };
       const s = st.stats;
       const re = st.randomEntry;
       const mc = st.monteCarlo;
-      const ev = evidenceStrength(st);
-      const verdict = ev.label;
+      // Headline: the stronger side (buys or sells), since setups are graded side by side.
+      const best = st.sides ? ([st.sides.long, st.sides.short].sort((a, b) => (b.stats.expectancy ?? -1) - (a.stats.expectancy ?? -1))[0]) : st;
+      const ev = evidenceStrength(best);
+      const verdict = st.sides ? `best: ${ev.label}` : ev.label;
       const tone = ev.tone;
       return h(
         'div',
         { class: `sp-card${prefs.strategy === k ? ' on' : ''}`, onclick: () => setPref('strategy', prefs.strategy === k ? 'all' : k), title: 'Show only this strategy' },
         h('div', { class: 'sp-card-head' }, h('b', {}, st.short || STRATEGY_LABEL[k]), h('span', { class: `sp-verdict ${tone}` }, verdict)),
-        h('p', { class: 'small' }, ev.plain),
+        st.sides ? h('div', {}, sideLine('long'), sideLine('short'), h('p', { class: 'muted tiny' }, termLabel('Why buys and sells are separate', 'sides'))) : h('p', { class: 'small' }, ev.plain),
         h('div', { class: 'sp-card-stats small' },
           h('span', {}, termLabel('Trades', 'trades'), ` ${s.trades}`),
           h('span', {}, termLabel('Win', 'winrate'), ` ${s.winRate != null ? `${Math.round(s.winRate * 100)}%` : '—'}`),
@@ -273,6 +299,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     evidenceBody.replaceChildren(
       h('p', { class: 'muted small' }, 'How each strategy\'s rules would have done on every Nasdaq-100 stock in this time frame\'s history. "Trades" are real past signals; each result is then tested with 1,000 random simulations. Click a card to show only that strategy\'s setups.'),
       h('div', { class: 'sp-cards' }, ...cards, edge),
+      labPanel(hr),
     );
   }
 
@@ -292,6 +319,38 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
             h('span', { class: 'muted' }, s.trade ? ` · in since ${s.trade.filled}` : ` · ${s.direction > 0 ? 'above' : 'below'} ${usd(s.plan.trigger)}, stop ${usd(s.plan.stop)}`)))))
         : h('p', { class: 'small muted' }, hr.setups.length ? 'No A or B setup is waiting for an entry. That\'s normal: good setups don\'t appear every day. Check the other time frames, or come back after the next close.' : 'No stock has every condition lined up. Sitting out is a position.'),
       h('p', { class: 'small' }, lean),
+    );
+  }
+
+  /** What the strategy lab tried today, what went forward and what survived the unseen-data test. */
+  function labPanel(hr: HorizonResult) {
+    const L = hr.lab;
+    if (!L) return h('div', { class: 'sp-lab muted small' }, termLabel('Strategy lab', 'lab'), hr.labRunning ? ': testing rule combinations in the background (a minute or two)…' : ': runs whenever this time frame has a new finished bar.');
+    const unseen = `${Math.round((1 - L.trainShare) * 100)}%`;
+    return h(
+      'div',
+      { class: 'sp-lab' },
+      h('div', { class: 'sp-card-head' }, h('b', {}, termLabel('Strategy lab', 'lab')), h('span', { class: `sp-verdict ${L.validated ? 'up' : ''}` }, L.validated ? `${L.validated} passed` : 'nothing passed')),
+      h('p', { class: 'small' },
+        `Tried ${L.tried.toLocaleString()} rule combinations from ${11} trading theories. ${L.folds ? `Walk-forward: each combination was picked on older data and judged on ${L.folds} later windows it had never seen (the newest ${unseen} of history), with a ${L.embargo}-bar gap so no trade crosses the line.` : ''} `,
+        L.validated ? 'Passing ones now appear in the list as "Lab: …" setups, graded on their unseen-data record.' : 'None held up on unseen data, so none are traded: that is the lab protecting you from luck.'),
+      h('div', { class: 'sp-lab-stats small' },
+        L.pbo != null ? h('span', {}, termLabel('Overfitting risk (PBO)', 'pbo'), ` ${Math.round(L.pbo * 100)}%`) : '',
+        L.effectiveTrials ? h('span', {}, termLabel('Independent ideas tried', 'efftrials'), ` ${L.effectiveTrials}`) : '',
+        L.graveyard != null ? h('span', {}, termLabel('Graveyard', 'graveyard'), ` ${L.graveyard} rejected so far`) : '',
+        L.ran ? h('span', { class: 'muted' }, `ran ${timeAgo(L.ran)}`) : ''),
+      L.results.length
+        ? h('table', { class: 'sp-edge-table small' },
+            h('thead', {}, h('tr', {}, h('th', {}, 'Rule combination'), h('th', {}, 'Older data'), h('th', {}, 'Unseen data'), h('th', {}, termLabel('p', 'qvalue')), h('th', {}, termLabel('DSR', 'dsr')), h('th', {}, ''))),
+            h('tbody', {}, ...L.results.map((r) => h('tr', { title: `${r.description}${r.theory ? `\nTheory: ${r.theory}` : ''}${r.rejected?.length ? `\nRejected: ${r.rejected.join('; ')}` : ''}` },
+              h('td', {}, r.name.replace('Lab: ', ''), r.folds != null ? h('span', { class: 'muted tiny' }, ` · ${r.folds}/${L.folds ?? 1} windows`) : ''),
+              h('td', {}, `${pct(r.train.expectancy, 2)} · ${r.train.trades}`),
+              h('td', { class: (r.test.expectancy ?? 0) > 0 ? 'up' : 'down' }, `${pct(r.test.expectancy, 2)} · ${r.test.trades}`),
+              h('td', {}, r.pAdjusted.toFixed(3)),
+              h('td', {}, r.dsr != null ? r.dsr.toFixed(2) : '—'),
+              h('td', { class: r.validated ? 'up' : 'muted' }, r.validated ? '✓ passed' : h('span', { title: r.rejected?.join('; ') }, `✗ ${r.rejected?.[0] ?? ''}`))))))
+        : h('p', { class: 'muted tiny' }, 'No combination had enough profitable trades on the older data to go forward.'),
+      h('p', { class: 'muted tiny' }, 'Each cell: average per trade after costs · number of trades. Hover a row for the rule, its theory and why it was rejected.'),
     );
   }
 

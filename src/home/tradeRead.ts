@@ -3,7 +3,7 @@
  * it through: what lines up for the trade, what is against it, how much conviction that adds up to (never more
  * than the grade allows) and what to do. Each factor is a simple for / against / neutral call.
  */
-import type { Setup, StrategyInfo } from './setupsPanel';
+import { sideRecord, type Setup, type StrategyInfo } from './setupsPanel';
 
 export type Stance = 'for' | 'against' | 'neutral';
 
@@ -52,12 +52,14 @@ export function readTrade(s: Setup, strat?: StrategyInfo, marketTrend?: number |
   if (i.wadRising != null) add('flow', 'Money flow', i.wadRising === d > 0 ? 'for' : 'against', i.wadRising ? 'money flowing in' : 'money flowing out', 'wad');
 
   // Evidence
-  const ps = strat?.stats;
+  const rec = sideRecord(strat, d);
+  const ps = rec?.stats;
+  const sideWord = d > 0 ? 'buys' : 'sells';
   if (ps?.trades) {
-    const re = strat?.randomEntry;
+    const re = rec?.randomEntry;
     const exp = ps.expectancy ?? 0;
     add('record', 'Strategy record', exp <= 0 ? 'against' : re?.verdict === 'edge' ? 'for' : 'neutral',
-      exp <= 0 ? 'the strategy lost money in its backtest' : re?.verdict === 'edge' ? 'the strategy beat random entries' : 'profitable, but not proven better than random', 'randomentry');
+      exp <= 0 ? `the strategy's ${sideWord} lost money in its backtest` : re?.verdict === 'edge' ? `the strategy's ${sideWord} beat random entries` : `its ${sideWord} are profitable, but not proven better than random`, 'randomentry');
   }
   if (s.stock.trades) add('stock', `Record on ${s.symbol}`, s.stock.grade === 'failed' ? 'against' : s.stock.grade === 'proven' || s.stock.grade === 'mixed' ? 'for' : 'neutral', `${s.stock.trades} past trades, ${Math.round((s.stock.winRate ?? 0) * 100)}% winners`, 'winrate');
   if (s.plan.riskReward != null && s.strategy !== 'mean_reversion') add('rr', 'Reward:risk', s.plan.riskReward >= 1.5 ? 'for' : s.plan.riskReward < 1 ? 'against' : 'neutral', `${s.plan.riskReward.toFixed(1)}x to the target`, 'rr');

@@ -97,7 +97,9 @@ month and names the main reason when no setup beats a C-grade. Version 18 keeps 
 until they end, marks new setups and warns when two strategies disagree on a stock. Version 19 adds the Setups page:
 short-swing (hourly), swing (daily) and position (weekly) trades, each stock judged against its own normal range,
 a COT + z-score edge study, live entry alerts and an out-of-sample check. The first scan after starting takes a few
-minutes longer while it downloads hourly and weekly history. If an optional part
+minutes longer while it downloads hourly and weekly history. Version 20 judges buys and sells separately and adds
+the strategy lab, which searches about 1,500 rule combinations for ones that keep working on data they were not
+chosen on. If an optional part
 (the AI or portfolio maths) fails to install, the helper still starts and charts and prices keep working; the
 platform's Settings window shows what's unavailable, and the helper writes a log to `~/.trading-platform/helper.log`. The first start after updating installs a few
 more parts, so it takes a couple of minutes. Keys and emails are no longer typed into this window:

@@ -75,3 +75,42 @@ Fixed thresholds treat a utility and a high-flying chip stock the same. The scan
 
 Past results and simulations describe the past. The Nasdaq-100 list is today's (survivorship bias), costs are a
 flat 0.1% round trip, and there is no slippage model for fast markets. Treat grades as evidence, not certainty.
+
+## 8. Buys and sells are judged separately (helper v20)
+
+Stocks drift upward over time (the equity risk premium), so a short trade fights the tide that a long trade rides.
+In testing on drifting random prices, the same rules made money on buys and lost on sells; lumping them together
+made every strategy look weak. Each strategy now has a separate record per side, and a setup is graded on its own
+side's record.
+
+## 9. The strategy lab: searching without fooling yourself (helper v20)
+
+The lab (helper/engine/lab.py) searches combinations of rules from 11 published market ideas (short-term reversal,
+overreaction, gap fades and gap-and-go, volume climaxes, Williams %R swings, moving-average pullbacks, Donchian /
+time-series momentum, 52-week-high momentum, volatility squeezes) and 11 filters (trend, 200-bar average, money
+flow, COT hedging pressure, ADX, volume, calm volatility, turn of the month, mean-reverting and trending regimes
+from Lo & MacKinlay's variance ratio, and the Nasdaq-100's own trend, known from the previous day).
+
+Safeguards, in the order they apply:
+
+- **Walk-forward with an embargo**: three test windows (55-70%, 70-85%, 85-100% of history). Each combination is
+  chosen only on data before a window, with a gap as long as the longest holding period so no trade straddles the
+  line (the "purging/embargo" idea of Lopez de Prado).
+- **Stability**: a combination must be chosen in at least 2 of the 3 windows.
+- **Unseen-data test**: its pooled unseen trades must be profitable, numerous enough (30+) and beat 1,000 random
+  entries in those windows, with a Holm correction for everything taken forward.
+- **Probability of backtest overfitting (PBO)**: how often the search's in-sample winner lands in the bottom half
+  out of sample. Above 50% means the search is mostly finding luck, and nothing passes.
+- **Deflated Sharpe ratio** (Bailey & Lopez de Prado), with near-identical combinations clustered into families so
+  the number of independent tries isn't overstated. Reported, not used as a gate: in testing it could not tell
+  planted edges from luck, while the unseen-data test could.
+- **Graveyard**: every rejected combination is saved with its reasons (~/.trading-platform/lab_graveyard.json).
+
+Validation on synthetic data (tests in helper/tests): with a planted reversal edge the lab found it in 4 of 4 data
+sets; on pure random walks with upward drift it validated nothing in 4 of 4, even though the best in-sample
+combinations had t-statistics around 3.5. The lab re-runs whenever its time frame has a new finished bar (hourly
+for short swing, after each close for swing, weekly for position); repeating it more often on the same data would
+only repeat the same answer.
+
+What is deliberately not done: the AI does not invent rules or numbers, and the platform never places orders.
+FINRA dark-pool data is shown per setup but not searched, because years of daily files would be needed.

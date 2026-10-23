@@ -7,7 +7,7 @@ import type { MarketRef } from '../data/quotes';
 import { pct as fmtPct } from '../ui/charts';
 import { formatPrice, h, openModal } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
-import type { Setup, StrategyInfo } from './setupsPanel';
+import { sideRecord, type Setup, type StrategyInfo } from './setupsPanel';
 import { readTrade } from './tradeRead';
 
 const pct = (v: number | null | undefined, d = 1) => fmtPct(v, d);
@@ -165,8 +165,9 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
 
   const st = s.stock;
   const mc = s.monteCarlo;
-  const smc = strat?.monteCarlo;
-  const re = strat?.randomEntry;
+  const rec = sideRecord(strat, s.direction);
+  const smc = rec?.monteCarlo;
+  const re = rec?.randomEntry;
   const rw = s.randomWalk;
   const mcLine = (m: NonNullable<Setup['monteCarlo']>, who: string) =>
     h(
@@ -229,7 +230,7 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
       st.trades
         ? h('p', {}, `On ${s.symbol}: ${st.trades} past trades in its backtest, ${Math.round((st.winRate ?? 0) * 100)}% winners, ${pct(st.expectancy, 2)} per trade after costs, held ${st.avgBars?.toFixed(1) ?? '—'} ${s.unit ?? 'day'}s on average (${st.grade}).`)
         : h('p', { class: 'muted' }, `No past trades on ${s.symbol} with this strategy, so the record below is for all Nasdaq-100 stocks.`),
-      strat ? h('p', {}, termLabel('Across the Nasdaq-100', 'trades'), `: ${strat.stats.trades} trades, ${Math.round((strat.stats.winRate ?? 0) * 100)}% winners, ${pct(strat.stats.expectancy, 2)} per trade, profit factor ${strat.stats.profitFactor ?? '—'}.`) : '',
+      rec ? h('p', {}, termLabel(`Across the Nasdaq-100 (${long ? 'buys' : 'sells'} only${strat?.lab ? ', unseen period' : ''})`, strat?.lab ? 'lab' : 'trades'), `: ${rec.stats.trades} trades, ${Math.round((rec.stats.winRate ?? 0) * 100)}% winners, ${pct(rec.stats.expectancy, 2)} per trade, profit factor ${rec.stats.profitFactor ?? '—'}.`) : '',
       re
         ? h('p', {}, termLabel('Random-entry test', 'randomentry'), ` (${re.runs?.toLocaleString() ?? '1,000'} runs): `, h('b', { class: re.verdict === 'edge' ? 'up' : re.verdict === 'maybe' ? 'warn' : 'down' }, re.verdict === 'edge' ? 'the strategy beat chance' : re.verdict === 'maybe' ? 'inconclusive' : 'not clearly better than chance'), ` (p = ${re.p.toFixed(2)}).`)
         : '',
