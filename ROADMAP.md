@@ -54,14 +54,14 @@ helper/
 | 1 | Live charts, Schwab + Coinbase data, 19 timeframes, chart types | ✅ |
 | 2 | Home page, news with impact ranking and summaries, watchlist, economic calendar, drawing tools (incl. TP/SL) | ✅ |
 | 3 | 41 indicators with per-indicator timeframe; Pine-style script editor | ✅ |
-| 4 | Quant charting upgrades | ⬜ next options |
-| 5 | Smart money & flow | ⬜ |
-| 6 | Fundamentals, filings & valuation | ⬜ |
-| 7 | Portfolio analytics, risk & optimisation; backtesting | ⬜ |
-| 8 | Client portfolios & white-label reporting | ⬜ |
-| 9 | AI market copilot | ⬜ |
-| 10 | Trading through Webull (paper first) & alerts | ⬜ |
-| 11 | Cloud engine, login, phone access | ⬜ last, by choice |
+| 4 | Quant charting: VWAP bands, Z-score, signal markers, volume profile, price alerts, multi-chart | ✅ |
+| 5 | Flow: options activity, max pain, gamma, insider trades, COT (dark pool on hold) | ✅ |
+| 6 | Research (SEC financials, ratios, DCF, filings) and Macro (FRED, yield curve) | ✅ |
+| 7 | Portfolios: total-return analytics, risk, stress tests, Monte Carlo, optimisation; backtester | ✅ |
+| 8 | Clients and white-label PDF reports (branding, batch printing) | ✅ |
+| 9 | AI market copilot | ⏸ on hold |
+| 10 | Trading through Webull (paper first) & alerts | ⏸ on hold |
+| 11 | Cloud engine, login, phone access | ⏸ on hold (last, by choice) |
 
 ## Stage 4: Quant charting upgrades (Module 1, finishing)
 

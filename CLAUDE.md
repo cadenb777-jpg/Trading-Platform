@@ -20,6 +20,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Summaries: the helper fetches the article (decoding Google News links via batchexecute) and
   extracts key sentences (`summarize_text`); no paid AI.
   Changing the protocol means the owner must re-download the helper; say so.
+  Engine (helper/engine/): `@handler('name')` registers request types (flow.*, research.company, macro.*,
+  portfolio.analyze/optimize, store.*); the browser calls them with `engineRequest()` and replies come back as
+  type engine. Uses numpy/scipy, SEC EDGAR (contact email asked once), FRED CSV, CFTC, Yahoo dividends (total
+  return). Clients, portfolios and branding live in SQLite ~/.trading-platform/platform.db, never the browser.
+  Client firm branding (logo etc.) is imported from a file; never commit a real firm's branding to the repo.
   It is market-data only: never add order placement to it (the Schwab app's order limit is 0).
   Trading is planned through Webull.
 

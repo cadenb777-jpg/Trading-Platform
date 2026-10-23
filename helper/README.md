@@ -67,6 +67,15 @@ market dropdown.
 When the platform gets new features, you may need a new copy of the helper. Download the ZIP
 again (step 2), replace your old folder, and start it as usual. Your keys and login are kept.
 
+Version 5 adds the analysis engine (Flow, Research, Macro, Portfolios, Clients). The first start
+installs a few more parts, so it takes a couple of minutes. It also asks once for an **email
+address**: the SEC asks tools that download its filings to include a contact email. It is only sent
+to the SEC.
+
+Your portfolios, clients and report branding are saved on your computer in
+`~/.trading-platform/platform.db` (in your user folder), not in the browser or online.
+Back up that file if the data matters to you.
+
 ## Every day
 
 Double-click the start file and keep its window open while you use the charts.

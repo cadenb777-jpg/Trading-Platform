@@ -20,6 +20,17 @@ A personal, customizable charting and trading platform, like your own TradingVie
   Hull MA, Stochastic RSI, MFI and more, each with its own settings, timeframe, colours, line
   thickness and placement (on the chart or in a pane below)
 - Watchlist with live prices; your layout and drawings are remembered
+- **Quant charting:** VWAP bands, Z-score channels, buy/sell signal markers, volume profile,
+  price alerts and a 2- or 4-chart layout
+- **Flow:** unusual options activity, put/call ratios, max pain and gamma exposure; insider
+  trades from SEC Form 4; futures positioning from the CFTC's Commitment of Traders report
+- **Research:** financial statements from SEC filings, key ratios, a DCF valuation calculator
+  and the filings list. **Macro:** rates, inflation, jobs, growth and the yield curve from FRED
+- **Portfolios:** total-return history (dividends included), risk statistics, stress tests,
+  Monte Carlo and weight optimisation (max Sharpe, minimum risk, risk parity, Black-Litterman)
+- **Backtest:** try strategies on history with commissions, slippage, stops and targets
+- **Clients & reports:** client accounts and white-label PDF performance reports with your
+  logo, colours and disclosures (1, 3, 5, 10-year and since-inception returns)
 
 ## Roadmap
 
@@ -60,12 +71,16 @@ npm run build   # build the site into dist/
 
 ```
 src/
-  main.ts                 App shell and navigation (Home / Chart)
+  main.ts                 App shell and navigation (one entry per page)
   state.ts                Everything remembered between visits
   pages/homePage.ts       Greeting, index cards, news, watchlist
   pages/chartPage.ts      Chart toolbar, drawing bar, legend, live updates
   pages/calendarPage.ts   Economic calendar (list and month views)
   pages/scriptsPage.ts    Script editor for your own indicators
+  pages/                  Also multi-chart, flow, research, macro, portfolio, backtest, clients
+  backtest/               Backtesting engine and ready-made strategies
+  research/dcf.ts         DCF and WACC maths
+  reports/                White-label client report builder (print to PDF)
   script/interpreter.ts   The Pine-style script language
   chart/ChartView.ts      Draws price and indicators (TradingView Lightweight Charts)
   chart/drawings.ts       Drawing tools
@@ -76,6 +91,8 @@ src/
   storage.ts              Saves to the browser
 helper/
   schwab_helper.py        Runs on your computer; streams Schwab data to the charts
+  engine/                 Analysis engine in the helper: flow, SEC, FRED, portfolio maths,
+                          and a small database (~/.trading-platform/platform.db) for clients
 ```
 
 ### Adding an indicator
