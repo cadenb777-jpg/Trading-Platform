@@ -83,7 +83,9 @@ progress for each step.
 
 Version 6 added the AI assistant and stock positioning; version 7 is a bug-fix update; version 8 adds the
 Investments page (market boards, bonds, alternatives and private funds) and the new start screen; version 9
-starts faster and opens the platform in Chrome when it's ready. If an optional part
+starts faster and opens the platform in Chrome when it's ready; version 10 adds the background market scanner
+(the "Best setups" panel on Home), more accurate daily changes (from Schwab's official quotes), deeper options
+put/call data and AI summaries on more pages. If an optional part
 (the AI or portfolio maths) fails to install, the helper still starts and charts and prices keep working; the
 platform's Settings window shows what's unavailable, and the helper writes a log to `~/.trading-platform/helper.log`. The first start after updating installs a few
 more parts, so it takes a couple of minutes. Keys and emails are no longer typed into this window:

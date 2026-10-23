@@ -3,6 +3,7 @@ import { insightButton, type InsightRequest } from '../ai/insight';
 import { engineRequest } from '../data/schwab';
 import { barList, compact, createLineChart, dataTable, money, pageFrame, pct, statCards } from '../ui/charts';
 import { formatPrice, h } from '../ui/dom';
+import { xySvg } from '../ui/xyChart';
 
 interface Contract {
   type: 'call' | 'put';
@@ -20,13 +21,38 @@ interface Contract {
   side: string;
 }
 
+/** Put/call figures for a group of contracts (all, one expiration, or a days-to-expiry bucket). */
+interface FlowStats {
+  callVolume: number;
+  putVolume: number;
+  putCallVolume: number | null;
+  callOi: number;
+  putOi: number;
+  putCallOi: number | null;
+  callPremium?: number;
+  putPremium?: number;
+  putCallPremium?: number | null;
+  otmCallVolume?: number;
+  otmPutVolume?: number;
+  putCallOtm?: number | null;
+  contracts?: number;
+}
+
+interface ExpectedMove {
+  strike: number;
+  amount: number;
+  percent: number | null;
+}
+
 interface OptionsData {
   symbol: string;
   spot: number;
   expirations: string[];
   expiration: string;
-  summary: { callVolume: number; putVolume: number; putCallVolume: number | null; callOi: number; putOi: number; putCallOi: number | null; maxPain: number | null; atmIv: number | null; netGex: number };
-  strikes: { strike: number; callVolume: number; putVolume: number; callOi: number; putOi: number }[];
+  summary: FlowStats & { maxPain: number | null; atmIv: number | null; netGex: number; expectedMove?: ExpectedMove | null; strikesPerExpiration?: number };
+  byExpiration?: (FlowStats & { expiration: string; dte: number; maxPain: number | null; atmIv: number | null; expectedMove: ExpectedMove | null })[];
+  byDte?: (FlowStats & { label: string })[];
+  strikes: { strike: number; callVolume: number; putVolume: number; callOi: number; putOi: number; callIv?: number | null; putIv?: number | null }[];
   gex: { strike: number; gex: number }[];
   unusual: Contract[];
 }
@@ -81,6 +107,11 @@ interface PositioningData {
 
 type Tab = 'positioning' | 'options' | 'insiders' | 'cot';
 const TAB_LABELS: Record<Tab, string> = { positioning: 'Stock positioning', options: 'Options flow', insiders: 'Insider trades', cot: 'Futures positioning (COT)' };
+
+const ratioText = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(2));
+const pcTone = (v: number | null | undefined) => (v == null ? '' : v > 1 ? 'down' : v < 0.7 ? 'up' : '');
+/** A plain-language reading of a put/call ratio for a single stock (index products normally run higher). */
+const pcReading = (v: number | null | undefined) => (v == null ? 'No volume yet' : v < 0.5 ? 'Strongly bullish' : v < 0.7 ? 'Bullish lean' : v <= 1 ? 'Neutral' : v <= 1.5 ? 'Bearish lean' : 'Strongly bearish');
 
 export function createFlowPage() {
   let tab: Tab = 'positioning';
@@ -161,16 +192,40 @@ export function createFlowPage() {
     const expSelect = h('select', { class: 'input' }, ...d.expirations.map((e) => h('option', { value: e, selected: e === d.expiration }, e)));
     expSelect.addEventListener('change', () => load(expSelect.value));
     const nearSpot = d.strikes.reduce((best, r) => (Math.abs(r.strike - d.spot) < Math.abs(best - d.spot) ? r.strike : best), d.strikes[0]?.strike ?? 0);
-    const pcTone = (v: number | null) => (v == null ? '' : v > 1 ? 'down' : 'up');
+    const noVolume = s.callVolume + s.putVolume === 0;
+    const em = s.expectedMove;
     frame.body.replaceChildren(
+      noVolume ? h('div', { class: 'ap-note' }, 'No options have traded yet today (Schwab resets volume each morning), so volume-based ratios are blank. Open interest is from the last session.') : '',
       statCards([
         { label: `${d.symbol} price`, value: formatPrice(d.spot) },
-        { label: 'Put/call volume', value: s.putCallVolume?.toFixed(2) ?? '—', hint: 'Above 1 = more puts than calls traded today (bearish tilt)', tone: pcTone(s.putCallVolume) },
-        { label: 'Put/call open interest', value: s.putCallOi?.toFixed(2) ?? '—', tone: pcTone(s.putCallOi) },
+        { label: 'Put/call volume', value: ratioText(s.putCallVolume), hint: `${compact(s.putVolume)} puts vs ${compact(s.callVolume)} calls traded today · ${pcReading(s.putCallVolume)}`, tone: pcTone(s.putCallVolume) },
+        { label: 'Put/call by premium ($)', value: ratioText(s.putCallPremium), hint: s.callPremium != null ? `${money(s.putPremium ?? 0)} in puts vs ${money(s.callPremium)} in calls · money-weighted, so big trades count more` : '', tone: pcTone(s.putCallPremium) },
+        { label: 'Put/call, out-of-the-money', value: ratioText(s.putCallOtm), hint: 'Bets on a move: OTM puts (downside) vs OTM calls (upside)', tone: pcTone(s.putCallOtm) },
+        { label: 'Put/call open interest', value: ratioText(s.putCallOi), hint: `${compact(s.putOi)} puts vs ${compact(s.callOi)} calls held open · slower-moving positioning`, tone: pcTone(s.putCallOi) },
+        { label: `Expected move (${d.expiration})`, value: em ? `±${formatPrice(em.amount)}` : '—', hint: em && em.percent != null ? `±${(em.percent * 100).toFixed(1)}% · range ${formatPrice(d.spot - em.amount)} – ${formatPrice(d.spot + em.amount)} (at-the-money straddle)` : 'From the at-the-money straddle price' },
         { label: `Max pain (${d.expiration})`, value: s.maxPain != null ? formatPrice(s.maxPain) : '—', hint: 'Price where the most options expire worthless; prices often drift toward it near expiry' },
-        { label: 'At-the-money IV', value: s.atmIv != null ? `${s.atmIv.toFixed(1)}%` : '—', hint: 'Implied volatility: how big a move options are pricing in' },
+        { label: 'At-the-money IV', value: s.atmIv != null ? `${s.atmIv.toFixed(1)}%` : '—', hint: 'Implied volatility: how big a move options are pricing in (yearly)' },
         { label: 'Net gamma exposure', value: money(s.netGex), hint: 'Positive: dealers tend to dampen moves. Negative: moves can accelerate.', tone: s.netGex >= 0 ? 'up' : 'down' },
       ]),
+      d.byDte?.length || d.byExpiration?.length
+        ? h(
+            'section',
+            { class: 'panel' },
+            h('div', { class: 'panel-head' }, h('h3', {}, 'Put/call breakdown'), h('span', { class: 'muted small' }, `Covers the ${s.strikesPerExpiration ?? 'nearest'} strikes around the price for every expiration${s.contracts ? ` (${s.contracts.toLocaleString('en-US')} contracts)` : ''}. For single stocks, below ~0.7 leans bullish and above ~1.0 leans bearish; index ETFs normally run higher because puts are used as insurance.`)),
+            d.byDte?.length ? h('div', {}, h('h4', {}, 'By time to expiry'), flowTable(d.byDte.map((b) => ({ label: b.label, stats: b })))) : null,
+            d.byExpiration?.length
+              ? h(
+                  'div',
+                  {},
+                  h('h4', {}, 'By expiration'),
+                  flowTable(
+                    d.byExpiration.slice(0, 16).map((e) => ({ label: `${e.expiration} (${e.dte}d)`, stats: e, extra: [e.expectedMove ? `±${formatPrice(e.expectedMove.amount)}` : '—', e.maxPain != null ? formatPrice(e.maxPain) : '—', e.atmIv != null ? `${e.atmIv.toFixed(1)}%` : '—'] })),
+                    ['Expected move', 'Max pain', 'ATM IV'],
+                  ),
+                )
+              : null,
+          )
+        : '',
       h(
         'section',
         { class: 'panel' },
@@ -215,8 +270,26 @@ export function createFlowPage() {
           'section',
           { class: 'panel' },
           h('div', { class: 'panel-head' }, h('h3', {}, 'Open interest by strike'), h('span', { class: 'spacer' }), expSelect),
-          h('p', { class: 'muted small' }, 'Puts to the left (red), calls to the right (green). Big clusters often act as support or resistance.'),
+          h('p', { class: 'muted small' }, 'Puts to the left (red), calls to the right (green). Big clusters often act as support or resistance. Hover a row for exact numbers.'),
           oiBars(d, nearSpot),
+        ),
+        h(
+          'section',
+          { class: 'panel' },
+          h('div', { class: 'panel-head' }, h('h3', {}, `Volume by strike (${d.expiration})`)),
+          h('p', { class: 'muted small' }, 'Where today’s trading is concentrated. Hover a row for exact numbers.'),
+          volumeBars(d, nearSpot),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'two-col' },
+        h(
+          'section',
+          { class: 'panel' },
+          h('div', { class: 'panel-head' }, h('h3', {}, `Volatility smile (${d.expiration})`)),
+          h('p', { class: 'muted small' }, 'Implied volatility by strike. A steeper left side (puts) means traders pay up for crash protection.'),
+          ivSmile(d),
         ),
         h(
           'section',
@@ -232,6 +305,57 @@ export function createFlowPage() {
     );
   }
 
+  /** Put/call table rows: volume, open interest, premium and OTM ratios with a plain-language reading. */
+  function flowTable(rows: { label: string; stats: FlowStats; extra?: string[] }[], extraHead: string[] = []) {
+    return dataTable(
+      ['', 'Call vol', 'Put vol', 'P/C vol', 'P/C premium', 'P/C OTM', 'Call OI', 'Put OI', 'P/C OI', 'Reading', ...extraHead],
+      rows.map(({ label, stats: x, extra = [] }) => [
+        { v: label, cls: 'label' },
+        compact(x.callVolume),
+        compact(x.putVolume),
+        { v: ratioText(x.putCallVolume), cls: pcTone(x.putCallVolume) },
+        { v: ratioText(x.putCallPremium ?? null), cls: pcTone(x.putCallPremium ?? null) },
+        { v: ratioText(x.putCallOtm ?? null), cls: pcTone(x.putCallOtm ?? null) },
+        compact(x.callOi),
+        compact(x.putOi),
+        { v: ratioText(x.putCallOi), cls: pcTone(x.putCallOi) },
+        { v: pcReading(x.putCallPremium ?? x.putCallVolume), cls: pcTone(x.putCallPremium ?? x.putCallVolume) },
+        ...extra,
+      ]),
+    );
+  }
+
+  function volumeBars(d: OptionsData, nearSpot: number) {
+    const rows = d.strikes.filter((r) => Math.abs(r.strike - d.spot) / d.spot < 0.2);
+    const max = Math.max(1, ...rows.map((r) => Math.max(r.callVolume, r.putVolume)));
+    return h(
+      'div',
+      { class: 'oi-bars' },
+      ...[...rows].reverse().map((r) =>
+        h(
+          'div',
+          { class: `oi-row${r.strike === nearSpot ? ' spot' : ''}`, title: `Strike ${formatPrice(r.strike)}: ${r.putVolume.toLocaleString('en-US')} puts, ${r.callVolume.toLocaleString('en-US')} calls traded today` },
+          h('span', { class: 'oi-side put' }, h('span', { class: 'oi-fill', style: `width:${(r.putVolume / max) * 100}%` }), h('span', { class: 'oi-num' }, compact(r.putVolume))),
+          h('span', { class: 'oi-strike' }, formatPrice(r.strike)),
+          h('span', { class: 'oi-side call' }, h('span', { class: 'oi-fill', style: `width:${(r.callVolume / max) * 100}%` }), h('span', { class: 'oi-num' }, compact(r.callVolume))),
+        ),
+      ),
+    );
+  }
+
+  /** IV by strike as an SVG line chart (calls and puts), with the current price marked and hover values. */
+  function ivSmile(d: OptionsData) {
+    const pts = d.strikes.filter((r) => Math.abs(r.strike - d.spot) / d.spot < 0.25 && (r.callIv || r.putIv));
+    if (pts.length < 3) return h('p', { class: 'muted' }, 'Not enough implied-volatility data for this expiration.');
+    return xySvg(
+      [
+        { name: 'Calls', color: '#26a69a', points: pts.filter((r) => r.callIv).map((r) => ({ x: r.strike, y: r.callIv! })) },
+        { name: 'Puts', color: '#ef5350', points: pts.filter((r) => r.putIv).map((r) => ({ x: r.strike, y: r.putIv! })) },
+      ],
+      { x: (v) => formatPrice(v), y: (v) => `${v.toFixed(1)}%`, marker: { x: d.spot, label: 'Price' }, xName: 'Strike' },
+    );
+  }
+
   function oiBars(d: OptionsData, nearSpot: number) {
     const max = Math.max(1, ...d.strikes.map((r) => Math.max(r.callOi, r.putOi)));
     return h(
@@ -240,7 +364,7 @@ export function createFlowPage() {
       ...[...d.strikes].reverse().map((r) =>
         h(
           'div',
-          { class: `oi-row${r.strike === nearSpot ? ' spot' : ''}${r.strike === d.summary.maxPain ? ' pain' : ''}` },
+          { class: `oi-row${r.strike === nearSpot ? ' spot' : ''}${r.strike === d.summary.maxPain ? ' pain' : ''}`, title: `Strike ${formatPrice(r.strike)}: ${r.putOi.toLocaleString('en-US')} puts, ${r.callOi.toLocaleString('en-US')} calls open${r.strike === d.summary.maxPain ? ' · max pain' : ''}` },
           h('span', { class: 'oi-side put' }, h('span', { class: 'oi-fill', style: `width:${(r.putOi / max) * 100}%` }), h('span', { class: 'oi-num' }, compact(r.putOi))),
           h('span', { class: 'oi-strike' }, formatPrice(r.strike)),
           h('span', { class: 'oi-side call' }, h('span', { class: 'oi-fill', style: `width:${(r.callOi / max) * 100}%` }), h('span', { class: 'oi-num' }, compact(r.callOi))),

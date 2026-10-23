@@ -4,6 +4,7 @@
  * private funds and anything Schwab or the SEC knows about.
  */
 import { subscribeQuote, quoteChange, type MarketRef } from '../data/quotes';
+import { insightButton } from '../ai/insight';
 import { engineRequest } from '../data/schwab';
 import { createAltsView } from '../invest/altsView';
 import { createBondsView } from '../invest/bondsView';
@@ -180,9 +181,23 @@ export function createInvestmentsPage(ctx: InvestContext) {
     const groups = BOARDS[id];
     const boards = h('div', { class: 'inv-boards' }, ...groups.map(skeletonBoard));
     const extra = h('div');
-    view.replaceChildren(boards, extra);
+    const label = SECTIONS.find((x) => x.id === id)?.label ?? id;
+    let seen: Map<string, BoardRow> | null = null;
+    const ai = insightButton(() => {
+      if (!seen) return null;
+      const rows = seen;
+      const data = groups.map((g) => ({
+        group: g.title,
+        rows: g.symbols
+          .map(([s, name]) => rows.get(s) && { ...rows.get(s)!, name, spark: undefined })
+          .filter((r) => r && r.price != null),
+      }));
+      return { topic: 'board', symbol: '', market: label, title: `AI read: ${label}`, data };
+    }, 'AI summary');
+    view.replaceChildren(h('div', { class: 'home-ai-row' }, ai.button, h('span', { class: 'muted small' }, `What's leading and lagging in ${label.toLowerCase()}?`)), ai.panel, boards, extra);
     const draw = (rows: Map<string, BoardRow>) => {
       if (section !== id) return;
+      seen = rows;
       boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbolDetail(s, l, rows.get(s), ctx))).filter((x): x is HTMLElement => !!x));
     };
     loadBoard(groups)

@@ -88,6 +88,53 @@ def unusual(contracts, limit=30):
     return hits[:limit]
 
 
+DTE_BUCKETS = [('0-7 days', 0, 7), ('8-30 days', 8, 30), ('31-90 days', 31, 90), ('91+ days', 91, 100000)]
+
+
+def _price(c):
+    return c['last'] or c['mark'] or 0
+
+
+def flow_stats(contracts, spot):
+    """Put/call figures for a group of contracts: by volume, open interest, premium traded and out-of-the-money volume."""
+    calls = [c for c in contracts if c['type'] == 'call']
+    puts = [c for c in contracts if c['type'] == 'put']
+    cv, pv = sum(c['volume'] for c in calls), sum(c['volume'] for c in puts)
+    coi, poi = sum(c['oi'] for c in calls), sum(c['oi'] for c in puts)
+    cp = sum(c['volume'] * _price(c) * 100 for c in calls)
+    pp = sum(c['volume'] * _price(c) * 100 for c in puts)
+    otm_c = sum(c['volume'] for c in calls if c['strike'] > spot)
+    otm_p = sum(c['volume'] for c in puts if c['strike'] < spot)
+    ratio = lambda p, c: p / c if c else None  # noqa: E731
+    return {
+        'callVolume': cv, 'putVolume': pv, 'putCallVolume': ratio(pv, cv),
+        'callOi': coi, 'putOi': poi, 'putCallOi': ratio(poi, coi),
+        'callPremium': cp, 'putPremium': pp, 'putCallPremium': ratio(pp, cp),
+        'otmCallVolume': otm_c, 'otmPutVolume': otm_p, 'putCallOtm': ratio(otm_p, otm_c),
+        'contracts': len(contracts),
+    }
+
+
+def atm_iv(contracts, spot):
+    atm = sorted(contracts, key=lambda c: abs(c['strike'] - spot))[:4]
+    ivs = [c['iv'] for c in atm if c['iv']]
+    return sum(ivs) / len(ivs) if ivs else None
+
+
+def expected_move(contracts, spot):
+    """The at-the-money straddle price: roughly the move (up or down) options price in by that expiration."""
+    if not contracts:
+        return None
+    strike = min({c['strike'] for c in contracts}, key=lambda k: abs(k - spot))
+    call = next((c for c in contracts if c['type'] == 'call' and c['strike'] == strike), None)
+    put = next((c for c in contracts if c['type'] == 'put' and c['strike'] == strike), None)
+    if not call or not put:
+        return None
+    mid = lambda c: (c['bid'] + c['ask']) / 2 if c['bid'] and c['ask'] else c['mark'] or c['last']  # noqa: E731
+    move = (mid(call) or 0) + (mid(put) or 0)
+    return {'strike': strike, 'amount': move, 'percent': move / spot if spot else None} if move else None
+
+
 def analyze_chain(chain, expiration=None):
     spot = _num((chain.get('underlying') or {}).get('last')) or _num(chain.get('underlyingPrice'))
     contracts = flatten_chain(chain)
@@ -95,35 +142,44 @@ def analyze_chain(chain, expiration=None):
         raise EngineError('No options data for this symbol.')
     expirations = sorted({c['expiration'] for c in contracts})
     chosen = expiration if expiration in expirations else expirations[0]
-    calls = [c for c in contracts if c['type'] == 'call']
-    puts = [c for c in contracts if c['type'] == 'put']
-    cv, pv = sum(c['volume'] for c in calls), sum(c['volume'] for c in puts)
-    coi, poi = sum(c['oi'] for c in calls), sum(c['oi'] for c in puts)
     near = [c for c in contracts if c['expiration'] == chosen]
-    atm = sorted(near, key=lambda c: abs(c['strike'] - spot))[:4]
-    ivs = [c['iv'] for c in atm if c['iv']]
     strikes = {}
     for c in near:
-        row = strikes.setdefault(c['strike'], {'strike': c['strike'], 'callVolume': 0, 'putVolume': 0, 'callOi': 0, 'putOi': 0})
-        row['callVolume' if c['type'] == 'call' else 'putVolume'] += c['volume']
-        row['callOi' if c['type'] == 'call' else 'putOi'] += c['oi']
+        row = strikes.setdefault(c['strike'], {'strike': c['strike'], 'callVolume': 0, 'putVolume': 0, 'callOi': 0, 'putOi': 0, 'callIv': None, 'putIv': None})
+        side = 'call' if c['type'] == 'call' else 'put'
+        row[f'{side}Volume'] += c['volume']
+        row[f'{side}Oi'] += c['oi']
+        if c['iv']:
+            row[f'{side}Iv'] = c['iv']
     gex = gamma_exposure(contracts, spot)
+    by_exp = []
+    for exp in expirations:
+        group = [c for c in contracts if c['expiration'] == exp]
+        move = expected_move(group, spot)
+        by_exp.append({'expiration': exp, 'dte': group[0]['dte'], **flow_stats(group, spot), 'maxPain': max_pain(contracts, exp),
+                       'atmIv': atm_iv(group, spot), 'expectedMove': move})
+    buckets = []
+    for label, lo, hi in DTE_BUCKETS:
+        group = [c for c in contracts if lo <= c['dte'] <= hi]
+        if group:
+            buckets.append({'label': label, **flow_stats(group, spot)})
+    totals = flow_stats(contracts, spot)
+    chosen_row = next(r for r in by_exp if r['expiration'] == chosen)
     return {
         'symbol': chain.get('symbol', ''),
         'spot': spot,
         'expirations': expirations,
         'expiration': chosen,
         'summary': {
-            'callVolume': cv,
-            'putVolume': pv,
-            'putCallVolume': pv / cv if cv else None,
-            'callOi': coi,
-            'putOi': poi,
-            'putCallOi': poi / coi if coi else None,
-            'maxPain': max_pain(contracts, chosen),
-            'atmIv': sum(ivs) / len(ivs) if ivs else None,
+            **totals,
+            'maxPain': chosen_row['maxPain'],
+            'atmIv': chosen_row['atmIv'],
+            'expectedMove': chosen_row['expectedMove'],
             'netGex': sum(g['gex'] for g in gex),
+            'strikesPerExpiration': len({c['strike'] for c in near}),
         },
+        'byExpiration': by_exp,
+        'byDte': buckets,
         'strikes': sorted(strikes.values(), key=lambda r: r['strike']),
         'gex': gex,
         'unusual': unusual(contracts),
@@ -136,7 +192,8 @@ async def options(ctx, msg):
     if not symbol:
         raise EngineError('Enter a symbol')
     async def load():
-        response = await ctx.schwab.get_option_chain(symbol, strike_count=40, include_underlying_quote=True)
+        # 100 strikes around the price for every expiration: nearly all of the volume and open interest.
+        response = await ctx.schwab.get_option_chain(symbol, strike_count=100, include_underlying_quote=True)
         if response.status_code == 401:
             raise EngineError('Schwab login expired. Close the helper and start it again to log in.')
         if response.status_code != 200:

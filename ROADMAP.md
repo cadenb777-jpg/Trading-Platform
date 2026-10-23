@@ -62,6 +62,7 @@ helper/
 | 9 | AI assistant: chat with live data and actions, pop-out, file uploads, AI analysis buttons | ✅ (morning brief and agents later) |
 | 9b | Investments: market boards (stocks, ETFs, bonds, alts, crypto, commodities), bond suite (yields, Treasury auctions, CUSIP lookup, calculator, ladder), private funds from SEC filings (NAV, N-PORT, Form D), own alternatives tracker with iCapital import | ✅ |
 | 9c | Backtest research (chart-linked rules, Monte Carlo, random-walk test, parameter sweep), Williams COT/WAD, portfolios by shares/dollars with cash and alternatives, in-depth client reports with alternatives | ✅ |
+| 9d | Interactive pop-out charts (hover values, ranges, % / log scale, CSV), clickable yield curve and rates, accurate index changes, in-depth options put/call, AI summaries per page, background market scanner with backtested setups on Home | ✅ |
 | 10 | Trading through Webull (paper first) & alerts | ⏸ on hold |
 | 11 | Cloud engine, login, phone access | ⏸ on hold (last, by choice) |
 

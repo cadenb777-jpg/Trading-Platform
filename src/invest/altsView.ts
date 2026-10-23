@@ -5,6 +5,7 @@
  * (e.g. from iCapital), saved by the helper on this computer.
  */
 import { openAssistant } from '../ai/hub';
+import { insightButton } from '../ai/insight';
 import { engineRequest } from '../data/schwab';
 import { barList, createLineChart, dataTable, money, pct, statCards } from '../ui/charts';
 import { formatPrice, h, openModal, toast } from '../ui/dom';
@@ -238,6 +239,21 @@ export function createAltsView(ctx: InvestContext) {
     const out: Node[] = [];
     const displayName = f?.name ?? d.secName ?? name;
     const site = f?.site ?? (d.website ? (d.website.startsWith('http') ? d.website : `https://${d.website}`) : f ? MANAGER_SITES[f.manager] : '');
+    const ai = insightButton(() => ({
+      topic: 'fund',
+      symbol: displayName,
+      title: `AI summary: ${displayName}`,
+      data: {
+        fund: f ? { name: f.name, manager: f.manager, strategy: f.strategy, structure: f.structure } : { name: displayName },
+        secName: d.secName,
+        facts: d.facts ? Object.fromEntries(Object.entries(d.facts).map(([k, v]) => [k, v.slice(-8)])) : null,
+        nport: d.nport ? { date: d.nport.date, netAssets: d.nport.netAssets, totalAssets: d.nport.totalAssets, returns: d.nport.returns, holdingsCount: d.nport.holdingsCount, mix: d.nport.mix, topHoldings: d.nport.topHoldings.slice(0, 10) } : null,
+        formD: d.formD,
+        navNotes: d.navNotes?.slice(0, 4),
+        listedShares: d.schwab?.map(({ spark: _spark, ...r }) => r),
+        recentFilings: d.filings.slice(0, 10).map(({ form, filed, reportDate }) => ({ form, filed, reportDate })),
+      },
+    }), 'AI summary');
     out.push(
       h(
         'div',
@@ -247,7 +263,9 @@ export function createAltsView(ctx: InvestContext) {
         h('a', { class: 'btn', href: secLink(d.cik), target: '_blank', rel: 'noopener' }, 'All SEC filings ↗'),
         h('button', { class: 'btn', onclick: () => editHolding({ fund: displayName, manager: f?.manager, strategy: f?.strategy, cik: d.cik, commitment: null, contributed: null, distributed: null, value: null }) }, '+ Add to my alternatives'),
         h('button', { class: 'btn ai-btn', onclick: () => openAssistant(`Give me a rundown of ${displayName}${f ? ` (${f.short}, ${f.manager})` : ''}: what it invests in, its latest NAV and performance, distributions, liquidity terms and main risks. Use its SEC filings and recent news.`) }, h('span', { class: 'ai-spark' }, '✦'), ' Ask AI'),
+        ai.button,
       ),
+      ai.panel,
     );
 
     // Headline numbers.

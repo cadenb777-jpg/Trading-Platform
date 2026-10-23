@@ -48,7 +48,7 @@ import engine  # noqa: E402  (light: its big modules load in the background, see
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 9
+HELPER_VERSION = 10
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -593,6 +593,10 @@ class Market:
         self.listeners = {}  # symbol -> set of browser connections
         self.status = self._status('connecting', 'Connecting to Schwab')
         self.quotes = {}  # symbol -> {'last': ..., 'prevClose': ...}
+        # Schwab's official quote (REST) per symbol: the previous close it measures the day's change from. The stream's
+        # CLOSE_PRICE turns into today's close once the session ends, which made changes read 0%, so it's only a fallback.
+        self.official = {}
+        self.official_wake = asyncio.Event()
         self.dirty_quotes = set()
         self.last_volume = {}
         self.seen = set()
@@ -640,6 +644,8 @@ class Market:
                     msg['_emit'] = self.emitter(ws, msg.get('id'))
                     asyncio.create_task(self.reply(ws, msg.get('id'), self.engine_reply(kind, msg)))
                 elif kind == 'subscribe':
+                    if symbol not in self.official:
+                        self.official_wake.set()
                     self.listeners.setdefault(symbol, set()).add(ws)
                     if symbol in self.quotes:
                         await ws.send(json.dumps(self.quote_message(symbol)))
@@ -737,10 +743,10 @@ class Market:
             price = item.get('LAST_PRICE')
             total = item.get('TOTAL_VOLUME')
             if price is not None or item.get('CLOSE_PRICE') is not None:
-                quote = self.quotes.setdefault(symbol, {'last': None, 'prevClose': None})
+                quote = self.quotes.setdefault(symbol, {'last': None, 'prevClose': (self.official.get(symbol) or {}).get('prevClose')})
                 if price is not None:
                     quote['last'] = price
-                if item.get('CLOSE_PRICE') is not None:
+                if item.get('CLOSE_PRICE') is not None and symbol not in self.official:
                     quote['prevClose'] = item['CLOSE_PRICE']
                 self.dirty_quotes.add(symbol)
             size = 0
@@ -760,6 +766,51 @@ class Market:
                 continue
             trade = {'type': 'trade', 'symbol': symbol, 'price': last, 'size': size, 'time': trade_time / 1000}
             broadcast(self.listeners.get(symbol, set()), json.dumps(trade))
+
+    @staticmethod
+    def official_quote(item):
+        """Last price and previous close from a Schwab REST quote, using Schwab's own net change so the day's change
+        matches what Schwab shows (also after the close and on weekends, when it's the latest session's move)."""
+        q = item.get('quote') or {}
+        def num(key):
+            v = q.get(key)
+            return float(v) if isinstance(v, (int, float)) and v == v else None
+        last = num('lastPrice') or num('mark') or num('closePrice')
+        net = num('netChange')
+        prev = last - net if last is not None and net is not None else num('closePrice')
+        if not last or not prev:
+            return None
+        return {'last': last, 'prevClose': prev}
+
+    async def refresh_official(self):
+        """Refreshes the official quote of every watched symbol every 30 seconds (and soon after a new one)."""
+        while True:
+            symbols = sorted(s for s in self.listeners if SYMBOL_PATTERN.match(s))
+            for i in range(0, len(symbols), 100):
+                chunk = symbols[i:i + 100]
+                try:
+                    response = await self.client.get_quotes(chunk)
+                    data = response.json() if response.status_code == 200 else {}
+                except Exception as err:
+                    log.debug('Official quotes failed: %s', err)
+                    continue
+                for symbol in chunk:
+                    item = data.get(symbol)
+                    official = self.official_quote(item) if isinstance(item, dict) else None
+                    if not official:
+                        continue
+                    self.official[symbol] = official
+                    quote = self.quotes.setdefault(symbol, {'last': None, 'prevClose': None})
+                    quote['prevClose'] = official['prevClose']
+                    if quote['last'] is None or symbol not in self.seen:
+                        quote['last'] = official['last']
+                    self.dirty_quotes.add(symbol)
+            self.official_wake.clear()
+            try:
+                await asyncio.wait_for(self.official_wake.wait(), timeout=30)
+                await asyncio.sleep(0.3)  # gather a burst of new subscriptions into one request
+            except asyncio.TimeoutError:
+                pass
 
     async def send_quotes(self):
         """Sends price changes for the watchlist and index cards a few times a second."""
@@ -862,6 +913,15 @@ async def warm_up(market):
                 log.info('Warm-up of %s failed: %s', kind, err)
 
 
+async def market_scanner(market):
+    """The background market scanner (engine/scanner.py): rescans every 10 minutes in market hours."""
+    await engine.wait_loaded()
+    if 'scanner' in engine.LOAD_ERRORS:
+        return
+    from engine import scanner
+    await scanner.background(market.engine, market.news)
+
+
 def chrome_command(url):
     """The command that opens `url` in Google Chrome on this computer, or None if Chrome isn't installed."""
     if sys.platform == 'win32':
@@ -922,10 +982,10 @@ async def run(client, sec_contact='', open_browser=True):
             SCREEN.pause()
         sys.exit(f'Port {PORT} is already in use. Is the helper already running in another window?')
     async with server:
-        background = [engine_ready(market), warm_up(market), open_when_ready(market, open_browser)]
+        background = [engine_ready(market), warm_up(market), open_when_ready(market, open_browser), market_scanner(market)]
         if SCREEN:
             SCREEN.ready(PLATFORM_URL, LOG_PATH, os.environ.get('TP_LAUNCH_WARNING', ''))
-            await asyncio.gather(market.run_stream(), market.send_quotes(), screen_clock(), *background)
+            await asyncio.gather(market.run_stream(), market.send_quotes(), market.refresh_official(), screen_clock(), *background)
             return
         print()
         print('=' * 64)
@@ -935,7 +995,7 @@ async def run(client, sec_contact='', open_browser=True):
         print('  To stop the helper, press Ctrl+C or close this window.')
         print('=' * 64)
         print()
-        await asyncio.gather(market.run_stream(), market.send_quotes(), *background)
+        await asyncio.gather(market.run_stream(), market.send_quotes(), market.refresh_official(), *background)
 
 
 def start_screen():

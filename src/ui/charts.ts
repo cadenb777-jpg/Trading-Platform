@@ -1,6 +1,7 @@
 /** Small reusable charts for analysis pages: date line charts (Lightweight Charts) and bar lists. */
 import { ColorType, LineSeries, createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { THEME } from '../chart/ChartView';
+import { attachTooltip, openChartWindow } from './chartWindow';
 import { h } from './dom';
 
 export interface LineSpec {
@@ -11,10 +12,14 @@ export interface LineSpec {
   width?: 1 | 2 | 3;
 }
 
-/** A line chart over dates, sized to its container. Returns a function to replace the lines. */
-export function createLineChart(container: HTMLElement, opts: { percent?: boolean; height?: number; format?: (v: number) => string } = {}) {
+/**
+ * A line chart over dates, sized to its container, with a hover tooltip (date + values) and an expand button that
+ * opens the same lines in a floating window with zoom, ranges and stats. Returns a function to replace the lines.
+ */
+export function createLineChart(container: HTMLElement, opts: { percent?: boolean; height?: number; format?: (v: number) => string; title?: string; expand?: boolean } = {}) {
   container.classList.add('line-chart');
   if (opts.height) container.style.height = `${opts.height}px`;
+  const format = opts.format ?? ((v: number) => (opts.percent ? `${v.toFixed(1)}%` : compact(v)));
   const chart: IChartApi = createChart(container, {
     autoSize: true,
     layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text, fontFamily: "'Inter', sans-serif", fontSize: 12, attributionLogo: false },
@@ -23,15 +28,35 @@ export function createLineChart(container: HTMLElement, opts: { percent?: boolea
     timeScale: { borderColor: THEME.border },
     handleScroll: false,
     handleScale: false,
-    localization: { priceFormatter: opts.format ?? ((v: number) => (opts.percent ? `${v.toFixed(1)}%` : compact(v))) },
+    localization: { priceFormatter: format },
   });
-  let series: ISeriesApi<'Line'>[] = [];
+  let series: { series: ISeriesApi<'Line'>; name: string; color: string }[] = [];
+  let current: LineSpec[] = [];
   const legend = h('div', { class: 'line-legend' });
   container.append(legend);
+  attachTooltip(chart, container, () => series, format);
+  if (opts.expand !== false) {
+    container.append(
+      h(
+        'button',
+        {
+          class: 'chart-expand',
+          title: 'Open in a window: zoom, ranges, stats',
+          'aria-label': 'Expand chart',
+          onclick: (e: Event) => {
+            e.stopPropagation();
+            openChartWindow({ title: opts.title || current.map((l) => l.name).filter(Boolean).join(' vs ') || 'Chart', lines: current, format });
+          },
+        },
+        '⤢',
+      ),
+    );
+  }
   return {
     chart,
     set(lines: LineSpec[]) {
-      for (const s of series) chart.removeSeries(s);
+      current = lines;
+      for (const s of series) chart.removeSeries(s.series);
       series = lines.map((l) => {
         const s = chart.addSeries(LineSeries, {
           color: l.color,
@@ -40,9 +65,9 @@ export function createLineChart(container: HTMLElement, opts: { percent?: boolea
           lastValueVisible: true,
         });
         s.setData(l.data.filter((p) => Number.isFinite(p.value)) as never);
-        return s;
+        return { series: s, name: l.name, color: l.color };
       });
-      legend.replaceChildren(...lines.map((l) => h('span', {}, h('i', { style: `background:${l.color}` }), l.name)));
+      legend.replaceChildren(...lines.filter((l) => l.name).map((l) => h('span', {}, h('i', { style: `background:${l.color}` }), l.name)));
       chart.timeScale().fitContent();
     },
   };

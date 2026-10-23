@@ -2,6 +2,8 @@
 import { THEME } from '../chart/ChartView';
 import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
 import { HELPER_OUTDATED, helper, loadNews, schwab, type NewsItem, type NewsSection } from '../data/schwab';
+import { insightButton } from '../ai/insight';
+import { createSetupsPanel } from '../home/setupsPanel';
 import { createUpcomingPanel } from './calendarPage';
 import { openNewsSummary } from '../ui/newsSummary';
 import { persist, state } from '../state';
@@ -49,6 +51,10 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
 
   let closes: number[] = [];
   let quote: Quote | undefined;
+  // Older helpers (before version 10) send the stream's close price, which becomes today's close after the session
+  // and made the change read 0%. With those, measure from the previous session's close in the daily bars instead.
+  let sessionPrevClose: number | null = null;
+  const fixed = (q: Quote): Quote => ((helper.version ?? 0) < 10 && sessionPrevClose ? { ...q, prevClose: sessionPrevClose } : q);
   let drawTimer: ReturnType<typeof setTimeout> | undefined;
 
   const draw = () => {
@@ -64,7 +70,8 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
     rangePrev.textContent = quote?.prevClose ? `Prev close ${formatPrice(quote.prevClose)} · Day range ${values.length ? `${formatPrice(Math.min(...values))} – ${formatPrice(Math.max(...values))}` : '—'}` : '';
   };
 
-  const onQuote = (q: Quote) => {
+  const onQuote = (raw: Quote) => {
+    const q = fixed(raw);
     quote = q;
     const delta = quoteChange(q);
     price.textContent = formatPrice(q.last);
@@ -77,14 +84,28 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
   const loadSparkline = async () => {
     try {
       const bars = await schwab.loadHistory(index.symbol, '5m', new AbortController().signal);
-      closes = lastSession(bars).map((b) => b.close);
+      const session = lastSession(bars);
+      closes = session.map((b) => b.close);
+      if ((helper.version ?? 0) < 10 && session.length) {
+        const day = (t: number) => new Date(t * 1000).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        const sessionDay = day(session[0].time);
+        const daily = await schwab.loadHistory(index.symbol, '1D', new AbortController().signal).catch(() => []);
+        const prior = daily.filter((b) => day(b.time + 12 * 3600) < sessionDay).pop();
+        sessionPrevClose = prior?.close ?? null;
+        if (quote) onQuote(quote);
+      }
       draw();
     } catch {
       // Shown once the helper is running; the card still shows the live price.
     }
   };
 
-  return { card, onQuote, loadSparkline };
+  const snapshot = () => {
+    const delta = quoteChange(quote);
+    return quote?.last != null ? { index: index.name, last: quote.last, prevClose: quote.prevClose ?? null, changePercent: delta ? Number(delta.percent.toFixed(2)) : null } : null;
+  };
+
+  return { card, onQuote, loadSparkline, snapshot };
 }
 
 export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCalendar: () => void) {
@@ -212,6 +233,17 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
   }
 
   const upcoming = createUpcomingPanel(onOpenCalendar);
+  const setups = createSetupsPanel(onOpenChart);
+  const marketRead = insightButton(() => {
+    const indexes = cards.map((c) => c.snapshot()).filter(Boolean);
+    if (!indexes.length && !general) return null;
+    const headlines = (general?.items ?? [])
+      .filter((i) => i.impact !== 'low')
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12)
+      .map((i) => ({ title: i.title, source: i.source, impact: i.impact, section: i.section, published: new Date(i.published * 1000).toISOString() }));
+    return { topic: 'market', symbol: '', title: 'AI market read', data: { asOf: new Date().toISOString(), session: marketStatus(new Date()).label, indexes, headlines } };
+  }, 'AI market read');
 
   const watchlist = createWatchlist({ onSelect: onOpenChart });
 
@@ -226,6 +258,9 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     ),
     banner,
     h('section', { class: 'idx-row', 'aria-label': 'Market indexes' }, ...cards.map((c) => c.card)),
+    h('div', { class: 'home-ai-row' }, marketRead.button, h('span', { class: 'muted small' }, 'Bullish or bearish? A quick read of the indexes and the biggest headlines.')),
+    marketRead.panel,
+    setups.el,
     h(
       'div',
       { class: 'home-grid' },
@@ -287,6 +322,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
       if (up && !helper.tooOld) {
         refreshNews(true);
         upcoming.refresh();
+        setups.start();
         for (const c of cards) c.loadSparkline();
       }
     });

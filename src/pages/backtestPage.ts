@@ -23,6 +23,7 @@ import {
   type SweepCell,
 } from '../backtest/research';
 import { STRATEGIES } from '../backtest/strategies';
+import { insightButton } from '../ai/insight';
 import { getProvider } from '../data';
 import { guessMarket } from '../data/quotes';
 import { getIndicator, indicatorLabel } from '../indicators/library';
@@ -73,6 +74,13 @@ function histogram(bins: { from: number; to: number; count: number }[], marker?:
   for (const b of bins) {
     const bh = ((H - pad.t - pad.b) * b.count) / max;
     add('rect', { x: x(b.from) + 1, y: H - pad.b - bh, width: Math.max(1, x(b.to) - x(b.from) - 2), height: bh, fill: b.to <= 0 ? '#ef535099' : '#26a69a99', rx: 2 });
+    // Hover a bar for its range and count (a full-height invisible target makes short bars easy to hover).
+    const target = document.createElementNS(ns, 'rect');
+    for (const [k, v] of Object.entries({ x: x(b.from), y: pad.t, width: Math.max(1, x(b.to) - x(b.from)), height: H - pad.t - pad.b, fill: 'transparent' })) target.setAttribute(k, String(v));
+    const title = document.createElementNS(ns, 'title');
+    title.textContent = `${pct(b.from, 1)} to ${pct(b.to, 1)}: ${b.count} result${b.count === 1 ? '' : 's'}`;
+    target.append(title);
+    svg.append(target);
   }
   [lo, (lo + hi) / 2, hi].forEach((v, i) => add('text', { x: x(v), y: H - 8, 'text-anchor': ['start', 'middle', 'end'][i], class: 'curve-label' }, pct(v, 0)));
   if (lo < 0 && hi > 0) add('line', { x1: x(0), x2: x(0), y1: pad.t, y2: H - pad.b, stroke: '#787b86', 'stroke-dasharray': '3 3' });
@@ -125,7 +133,7 @@ export function createBacktestPage() {
   let rules: RuleSet = { entry: [], entryMode: 'all', exit: [], exitMode: 'any' };
   let chartKey = '';
   let resultTab: ResultTab = 'summary';
-  let last: { bars: Bar[]; result: BacktestResult; label: string } | null = null;
+  let last: { bars: Bar[]; result: BacktestResult; label: string; symbol: string; timeframe: string; randomWalk?: { pValue: number; verdict: string; median: number; runs: number } } | null = null;
   const research = { mcRuns: 2000, rwRuns: 200 };
   const opts = { capital: 10000, positionSize: 1, commission: 0.0005, slippage: 0.0005, stopLoss: 0, takeProfit: 0, allowShort: false };
 
@@ -339,7 +347,8 @@ export function createBacktestPage() {
       const [bars] = await Promise.all([getProvider(ref.provider).loadHistory(ref.symbol, tf, new AbortController().signal), loadExternal(ref.symbol)]);
       if (bars.length < 50) throw new Error('Not enough history for a backtest.');
       const result = backtest(bars, signalsFor(bars), backtestOpts());
-      last = { bars, result, label: `${displaySymbol(ref.symbol)} · ${tfLabel(tf)} · ${preset()?.name ?? 'Chart rules'}` };
+      last = { bars, result, label: `${displaySymbol(ref.symbol)} · ${tfLabel(tf)} · ${preset()?.name ?? 'Chart rules'}`, symbol: displaySymbol(ref.symbol), timeframe: tfLabel(tf) };
+      ai.panel.hidden = true;
       resultTabs.hidden = false;
       settingsBar.hidden = false;
       toggleSettings(false);
@@ -349,12 +358,36 @@ export function createBacktestPage() {
     }
   }
 
+  const operandText = (o: Operand) => (o.kind === 'value' ? String(o.value) : (operandOptions().find(([k]) => k === operandKey(o))?.[1] ?? operandKey(o)));
+  const ruleText = (r: Rule) => `${operandText(r.left)} ${r.op} ${operandText(r.right)}`;
+  const ai = insightButton(() => {
+    if (!last) return null;
+    const { result: r, bars } = last;
+    const p = preset();
+    const mc = monteCarlo(r.trades, opts.capital, opts.positionSize, r.stats.maxDrawdown, research.mcRuns, 7, opts.commission);
+    return {
+      topic: 'backtest',
+      symbol: last.symbol,
+      timeframe: last.timeframe,
+      title: `AI review: ${last.label}`,
+      data: {
+        strategy: p ? { name: p.name, params: { ...Object.fromEntries(p.params.map((x) => [x.key, x.default])), ...params } } : { buyWhen: `${rules.entryMode.toUpperCase()} of: ${rules.entry.map(ruleText).join('; ')}`, sellWhen: rules.exit.length ? `${rules.exitMode.toUpperCase()} of: ${rules.exit.map(ruleText).join('; ')}` : 'no exit rules' },
+        settings: opts,
+        history: { bars: bars.length, from: date(bars[0].time), to: date(bars[bars.length - 1].time) },
+        stats: r.stats,
+        deepStats: deepStats(r, opts.capital),
+        monteCarlo: mc && { runs: mc.runs, finalReturn: mc.finalReturn, maxDrawdown: mc.maxDrawdown, lossChance: mc.lossChance, worseDrawdownChance: mc.worseDrawdownChance },
+        randomWalk: last.randomWalk ?? 'not run yet (open the Random-walk tab to include it)',
+      },
+    };
+  }, 'AI review');
+
   function showTab(t: ResultTab) {
     resultTab = t;
     resultTabs.querySelectorAll<HTMLElement>('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === t));
     if (!last) return;
     const { bars, result } = last;
-    const header = h('p', { class: 'muted small' }, `${last.label} · ${bars.length} bars from ${date(bars[0].time)} to ${date(bars[bars.length - 1].time)}`);
+    const header = h('div', { class: 'home-ai-row' }, h('span', { class: 'muted small' }, `${last.label} · ${bars.length} bars from ${date(bars[0].time)} to ${date(bars[bars.length - 1].time)}`), h('span', { class: 'spacer' }), ai.button);
     const body =
       t === 'summary'
         ? summaryView(result)
@@ -367,7 +400,7 @@ export function createBacktestPage() {
               : t === 'monthly'
                 ? monthlyView(result)
                 : tradesView(result);
-    results.replaceChildren(header, ...body);
+    results.replaceChildren(header, ai.panel, ...body);
   }
 
   // ----- Result views -----
@@ -438,6 +471,7 @@ export function createBacktestPage() {
     const out = h('div', { class: 'ap-body' }, h('div', { class: 'muted pad' }, `Running the strategy on ${research.rwRuns} random walks…`));
     setTimeout(() => {
       const test = randomWalkTest(bars, (fake) => backtest(fake, signalsFor(fake), backtestOpts()).stats.totalReturn, r.stats.totalReturn, research.rwRuns);
+      if (last?.result === r) last.randomWalk = { pValue: test.pValue, verdict: test.verdict, median: test.median, runs: test.runs };
       const verdict = {
         edge: ['Likely a real edge', 'up', `Only ${pctU(test.pValue, 1)} of random price histories did as well. That's unlikely to be luck alone.`],
         maybe: ['Inconclusive', '', `${pctU(test.pValue, 0)} of random histories did as well. Some evidence of an edge, but not strong; test on other symbols and periods.`],

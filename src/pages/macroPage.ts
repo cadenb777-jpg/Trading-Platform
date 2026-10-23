@@ -1,7 +1,10 @@
 /** Macro: the economy at a glance (rates, inflation, jobs, growth, markets) and the Treasury yield curve. */
+import { insightButton } from '../ai/insight';
 import { engineRequest } from '../data/schwab';
 import { createLineChart, pageFrame } from '../ui/charts';
 import { h } from '../ui/dom';
+import { openChartWindow } from '../ui/chartWindow';
+import { openFredWindow } from '../ui/fredWindow';
 import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
 
 interface Series {
@@ -63,9 +66,15 @@ export function createMacroPage() {
   const curvePanel = h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Treasury yield curve')), h('div', { class: 'skeleton', style: 'height:260px' }));
   const note = h('p', { class: 'ap-note' });
   const stamp = h('span', { class: 'muted small' });
+  const ai = insightButton(() => {
+    if (!loaded.size) return null;
+    const readings = [...loaded.values()].map((s) => ({ name: s.name, group: s.group, unit: s.unit, date: s.date, value: s.value, previous: s.previous, monthAgo: s.monthAgo, yearAgo: s.yearAgo }));
+    return { topic: 'macro', symbol: '', title: 'AI read: the economy', data: { readings, yieldCurve: curve } };
+  }, 'AI summary');
   const rangeButtons = (['1y', '5y', 'max'] as Range[]).map((r) => h('button', { 'data-range': r, onclick: () => setRange(r) }, r === 'max' ? 'Since 2006' : r === '1y' ? '1 year' : '5 years'));
   const frame = pageFrame('Macro', 'The economy at a glance, from the St. Louis Fed (FRED) and the US Treasury. Updates automatically.', [
     stamp,
+    ai.button,
     h('div', { class: 'segmented' }, ...rangeButtons),
     h('button', { class: 'btn', onclick: () => load() }, 'Refresh'),
   ]);
@@ -85,10 +94,10 @@ export function createMacroPage() {
     if (!card.chart) {
       card.box.classList.remove('skeleton');
       card.box.replaceChildren();
-      card.chart = createLineChart(card.box, { height: 130, format: (v) => fmt(v, s.unit === 'K' ? '' : s.unit) });
+      card.chart = createLineChart(card.box, { height: 130, format: (v) => fmt(v, s.unit === 'K' ? '' : s.unit), title: s.name, expand: false });
       card.chart.chart.applyOptions({ rightPriceScale: { visible: false }, timeScale: { visible: false }, crosshair: { horzLine: { visible: false } } });
     }
-    card.chart.set([{ name: '', color: '#2962ff', width: 2, data: s.data.filter((p) => p.time >= cutoff()) }]);
+    card.chart.set([{ name: s.name, color: '#2962ff', width: 2, data: s.data.filter((p) => p.time >= cutoff()) }]);
   }
 
   function fillCard(s: Series) {
@@ -98,6 +107,15 @@ export function createMacroPage() {
     card.el.querySelector('.macro-value')!.replaceChildren(h('b', {}, fmt(s.value, s.unit)), h('span', { class: 'muted small' }, s.date));
     card.el.querySelector('.macro-changes')!.replaceChildren(...[change(s, s.monthAgo, '1m'), change(s, s.yearAgo, '1y')].filter((n): n is HTMLSpanElement => !!n));
     drawChart(s.id);
+  }
+
+  /** Full history in a chart window: daily data for rates and levels, the transformed series for yearly changes. */
+  function openSeries(id: string) {
+    const s = loaded.get(id);
+    if (!s) return;
+    const transformed = /yearly|annualised|added/i.test(s.name);
+    if (!transformed) return openFredWindow(id, s.name, s.unit === 'K' ? '' : s.unit);
+    openChartWindow({ title: s.name, subtitle: `FRED ${id} · latest ${s.date}`, lines: [{ name: s.name, color: '#2962ff', data: s.data }], format: (v) => fmt(v, s.unit) });
   }
 
   function failCard(id: string, err: unknown) {
@@ -127,6 +145,7 @@ export function createMacroPage() {
     cards.clear();
     const groups = [...new Set(catalog.map((c) => c.group))];
     frame.body.replaceChildren(
+      ai.panel,
       curvePanel,
       ...groups.map((g) =>
         h(
@@ -142,7 +161,7 @@ export function createMacroPage() {
                 const box = h('div', { class: 'skeleton', style: 'height:130px' });
                 const el = h(
                   'div',
-                  { class: 'panel macro-card loading' },
+                  { class: 'panel macro-card loading clickable-card', title: 'Click for the full history: zoom, ranges, stats', onclick: () => openSeries(c.id) },
                   h('div', { class: 'muted small' }, c.name),
                   h('div', { class: 'macro-value' }, h('span', { class: 'skeleton', style: 'width:90px;height:28px' })),
                   h('div', { class: 'macro-changes small' }),

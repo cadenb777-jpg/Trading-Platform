@@ -2,14 +2,16 @@
  * Bonds: the bond market (yields, credit spreads, the yield curve, bond ETFs), Treasury auctions, a CUSIP
  * lookup (Schwab), a bond calculator (price, yield, duration, tax-equivalent yield) and a Treasury ladder.
  */
+import { insightButton } from '../ai/insight';
 import { engineRequest } from '../data/schwab';
 import { dataTable, money, numberField, pct, statCards, pctU } from '../ui/charts';
 import { h } from '../ui/dom';
 import { sparkline } from '../ui/sparkline';
+import { openFredWindow } from '../ui/fredWindow';
 import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
 import { analyze, buildLadder, labelYears, priceChangeEstimate, priceFromYield, taxEquivalentYield, yearsUntil, yieldFromPrice, type BondInputs } from './bonds';
 import { BOARDS } from './catalog';
-import { boardTable, errorBox, loadBoard, openSymbolDetail, skeletonBoard, type InvestContext } from './shared';
+import { boardTable, errorBox, loadBoard, openSymbolDetail, skeletonBoard, type BoardRow, type InvestContext } from './shared';
 
 type Tab = 'market' | 'auctions' | 'lookup' | 'calculator' | 'ladder';
 const TABS: [Tab, string][] = [
@@ -90,13 +92,31 @@ export function createBondsView(ctx: InvestContext) {
 
   // ----- Market -----
 
+  // What the AI summary reads: whatever the market tab and the auctions tab have loaded.
+  const seen: { rates: RateSeries[]; etfs: BoardRow[]; auctions: Auction[] } = { rates: [], etfs: [], auctions: [] };
+  const ai = insightButton(() => {
+    if (!seen.rates.length && !curveCache) return null;
+    return {
+      topic: 'bonds',
+      symbol: '',
+      title: 'AI read: the bond market',
+      data: {
+        rates: seen.rates.map(({ spark: _spark, ...r }) => r),
+        yieldCurve: curveCache,
+        bondFunds: seen.etfs.map(({ spark: _spark, ...r }) => r),
+        recentAuctions: seen.auctions.slice(0, 15),
+      },
+    };
+  }, 'AI summary');
+
   function renderMarket() {
     const rates = h('div', { class: 'inv-rates' }, h('div', { class: 'skeleton', style: 'height:120px' }));
     const curvePanel = h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Treasury yield curve'), h('span', { class: 'muted small' }, 'What the government pays to borrow for each length of time')), h('div', { class: 'skeleton', style: 'height:240px' }));
     const boards = h('div', { class: 'inv-boards' }, ...BOARDS.bonds.map(skeletonBoard));
-    body.replaceChildren(rates, curvePanel, h('h2', { class: 'group-title' }, 'Bond funds (ETFs)'), boards);
+    body.replaceChildren(h('div', { class: 'home-ai-row' }, ai.button, h('span', { class: 'muted small' }, 'What are bonds saying about growth, inflation and risk?')), ai.panel, rates, curvePanel, h('h2', { class: 'group-title' }, 'Bond funds (ETFs)'), boards);
     engineRequest<{ series: RateSeries[]; failed: string[] }>('bonds.market', {}, 60000)
       .then(({ series, failed }) => {
+        seen.rates = series;
         const groups = [...new Set(series.map((s) => s.group))];
         rates.replaceChildren(
           ...groups.map((g) =>
@@ -112,7 +132,7 @@ export function createBondsView(ctx: InvestContext) {
                   .map((s) =>
                     h(
                       'div',
-                      { class: 'panel inv-rate' },
+                      { class: 'panel inv-rate clickable-card', title: 'Click for the full history: zoom, ranges, stats', onclick: () => openFredWindow(s.id, s.name) },
                       h('span', { class: 'muted small' }, s.name),
                       h('b', { class: 'inv-rate-value' }, pctPoints(s.value)),
                       h('span', { class: 'small inv-rate-change' }, h('span', {}, `${bps(s.value, s.monthAgo)} 1m`), h('span', {}, `${bps(s.value, s.yearAgo)} 1y`)),
@@ -131,7 +151,7 @@ export function createBondsView(ctx: InvestContext) {
       .then((points) => curvePanel.replaceChildren(curvePanel.firstChild!, yieldCurve(points)))
       .catch((err) => curvePanel.replaceChildren(curvePanel.firstChild!, errorBox(err)));
     loadBoard(BOARDS.bonds)
-      .then((rows) => boards.replaceChildren(...BOARDS.bonds.map((g) => boardTable(g, rows, (s, l) => openSymbolDetail(s, l, rows.get(s), ctx)))))
+      .then((rows) => (seen.etfs = [...rows.values()], boards.replaceChildren(...BOARDS.bonds.map((g) => boardTable(g, rows, (s, l) => openSymbolDetail(s, l, rows.get(s), ctx))))))
       .catch((err) => boards.replaceChildren(errorBox(err, renderMarket)));
   }
 
@@ -141,6 +161,7 @@ export function createBondsView(ctx: InvestContext) {
     body.replaceChildren(h('div', { class: 'skeleton', style: 'height:300px' }));
     engineRequest<{ results: Auction[]; upcoming: Auction[] }>('bonds.auctions', {}, 45000)
       .then(({ results, upcoming }) => {
+        seen.auctions = results;
         let filter = 'All';
         const types = ['All', ...new Set(results.map((r) => r.type).filter(Boolean))];
         const resultsBox = h('div');

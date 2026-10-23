@@ -58,6 +58,17 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   0-100% bar and starts the helper with TP_SPLASH (seed) and TP_HANDOFF; the helper then continues the bar
   (splash.HelperScreen), logs only to the file and shows one live status line. Interactive steps (Schwab keys,
   login) pause the screen. Keep splash.py standard-library only.
+  Quotes: the helper polls Schwab's REST quotes every 30 s (`refresh_official`); prevClose = lastPrice - netChange.
+  The stream's CLOSE_PRICE is only a fallback (after the session it becomes today's close, which read as 0%).
+  Scanner (engine/scanner.py, helper v10): a background task (`market_scanner` in the helper) scans UNIVERSE plus
+  the watchlist every 10 min in market hours (30 min extended, 2 h closed): daily score from trend/breakout/RS/RSI/
+  MACD/volume/Williams A/D/CMF/ADX, 30-minute agreement, support/resistance plan, a trade backtest of the same
+  signal on that stock (grade proven/mixed/unproven/failed; failed is filtered out), options, COT, insiders, news.
+  Tier A = proven + R:R >= 1.5 + score >= 5. Live quotes mark plans stale. Home shows it (src/home/setupsPanel.ts).
+  AI summary buttons (`insightButton`) are on Home, Flow, Research, Macro, Bonds, Investments boards, fund detail
+  and Backtest; not on the Chart page or Portfolios (owner's choice).
+  Pop-out charts: `openChartWindow` (src/ui/chartWindow.ts); `createLineChart` adds hover values and an expand button;
+  `openFredWindow` opens a FRED series' full history.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).
   Indicators can load outside data via `IndicatorDef.external` (COT for the related futures market, FINRA short volume).
   It is market-data only: never add order placement to it (the Schwab app's order limit is 0).

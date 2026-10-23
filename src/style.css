@@ -3825,3 +3825,355 @@ body.ai-window-body #app {
 .settings-toggle {
   align-self: flex-start;
 }
+
+/* ---------- Interactive charts: tooltips and chart windows ---------- */
+
+.chart-tip {
+  position: absolute;
+  z-index: 6;
+  pointer-events: none;
+  background: #0f1218f0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12px;
+  min-width: 140px;
+  box-shadow: 0 8px 24px #0008;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-tip-date {
+  color: var(--muted);
+  margin-bottom: 3px;
+  white-space: nowrap;
+}
+
+.chart-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.chart-tip-row i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.chart-tip-row b {
+  margin-left: auto;
+  padding-left: 10px;
+}
+
+.chart-expand {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 5;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.line-chart:hover .chart-expand,
+.chart-expand:focus-visible {
+  opacity: 1;
+}
+
+.chart-expand:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.chart-window {
+  position: fixed;
+  width: min(920px, calc(100vw - 32px));
+  height: min(600px, calc(100vh - 32px));
+  min-width: 420px;
+  min-height: 300px;
+  resize: both;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid #3a4152;
+  border-radius: 12px;
+  box-shadow: 0 24px 64px #000b;
+}
+
+.chart-window-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: move;
+  user-select: none;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+}
+
+.chart-window-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chart-window-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.small-select {
+  padding: 4px 8px;
+  font-size: 12.5px;
+}
+
+.chart-window-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.legend-chip i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.legend-chip.on {
+  color: var(--text);
+}
+
+.legend-chip:not(.on) i {
+  opacity: 0.3;
+}
+
+.chart-window-chart {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.chart-window-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-window-hint {
+  padding: 0 14px 8px;
+}
+
+.clickable-card {
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.clickable-card:hover {
+  border-color: var(--accent);
+}
+
+.svg-tip-target {
+  cursor: pointer;
+}
+.curve-interactive { position: relative; }
+
+/* ---------- Home: AI market read + best setups ---------- */
+.home-ai-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.setups-panel .panel-head {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.setups-regime {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 2px 0 12px;
+}
+
+.setups-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.setup-card {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--up);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.setup-card.short {
+  border-left-color: var(--down);
+}
+
+.setup-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setup-symbol {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.setup-symbol:hover {
+  color: var(--accent);
+}
+
+.setup-side {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.tier {
+  font-style: normal;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--panel-3);
+  color: var(--muted);
+}
+
+.tier-A {
+  background: var(--accent-soft);
+  color: #8fb0ff;
+}
+
+.setup-price {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.setup-why {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.setup-levels {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  justify-content: space-between;
+  gap: 4px 10px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.setup-track,
+.setup-bias {
+  font-size: 12px;
+}
+
+.setup-more {
+  align-self: flex-start;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12.5px;
+}
+
+.setup-details h4 {
+  margin: 10px 0 4px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.setup-details p {
+  margin: 0 0 4px;
+}
+
+.setup-reasons {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+}
+
+.setup-sr {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.setups-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 0;
+}
+
+.setups-note {
+  margin: 10px 0 0;
+}
+
+@media (max-width: 600px) {
+  .setup-levels {
+    grid-template-columns: repeat(2, auto);
+  }
+}
