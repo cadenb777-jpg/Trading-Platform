@@ -116,7 +116,7 @@ export const CRYPTO_COINS: [string, string][] = [
   ['ADA-USD', 'Cardano'], ['AVAX-USD', 'Avalanche'], ['LINK-USD', 'Chainlink'], ['LTC-USD', 'Litecoin'],
 ];
 
-export type Structure = 'Non-traded REIT' | 'Non-traded BDC' | 'Interval fund' | 'Tender-offer fund' | 'Evergreen private fund' | 'Listed BDC';
+export type Structure = 'Non-traded REIT' | 'Non-traded BDC' | 'Non-traded LLC' | 'Interval fund' | 'Tender-offer fund' | 'Evergreen private fund' | 'Listed BDC';
 export type Strategy = 'Private credit' | 'Real estate' | 'Private equity' | 'Infrastructure' | 'Venture & growth';
 
 /** How each kind of fund typically works (terms vary by fund; the fund's prospectus has the real ones). */
@@ -125,6 +125,8 @@ export const STRUCTURES: Record<Structure, string> = {
     'Owns real estate directly and is valued monthly (NAV) instead of trading on an exchange. You buy at the monthly NAV; withdrawals usually go through a share repurchase plan, typically limited to about 2% of NAV a month and 5% a quarter, and it can be limited or paused.',
   'Non-traded BDC':
     'A business development company that lends to private, mostly mid-sized companies (private credit). Priced at a monthly NAV with monthly subscriptions; liquidity usually comes from quarterly repurchase offers, typically up to 5% of shares.',
+  'Non-traded LLC':
+    'A company that buys and holds controlling stakes in private businesses (private equity), sold to individual investors instead of trading on an exchange. It files 10-Ks and 10-Qs like a public company, sets a NAV per share for each share class (usually monthly), and offers limited quarterly share repurchases that can be cut or paused.',
   'Interval fund':
     'An SEC-registered fund that must offer to buy back a set share (5–25%) of its shares at regular intervals, usually quarterly. Often has a ticker and a daily NAV, and is open to non-accredited investors.',
   'Tender-offer fund':
@@ -164,13 +166,14 @@ export const MANAGER_SITES: Record<string, string> = {
   'Goldman Sachs': 'https://am.gs.com', Carlyle: 'https://www.carlyle.com', 'Hamilton Lane': 'https://www.hamiltonlane.com', StepStone: 'https://www.stepstonegroup.com',
   'Partners Group': 'https://www.partnersgroup.com', Cliffwater: 'https://www.cliffwater.com', Fidelity: 'https://www.fidelity.com', 'T. Rowe Price': 'https://www.troweprice.com',
   Nuveen: 'https://www.nuveen.com', Invesco: 'https://www.invesco.com', iCapital: 'https://icapital.com', PIMCO: 'https://www.pimco.com', 'Bain Capital': 'https://www.baincapital.com',
-  AMG: 'https://www.amg.com', Hines: 'https://www.hines.com',
+  AMG: 'https://www.amg.com', Hines: 'https://www.hines.com', 'CNL Financial Group': 'https://www.cnl.com',
 };
 
 export const PRIVATE_FUNDS: PrivateFund[] = [
   fund('breit', 'Blackstone Real Estate Income Trust', 'BREIT', 'Blackstone', 'Real estate', 'Non-traded REIT', { site: 'https://www.breit.com' }),
   fund('bcred', 'Blackstone Private Credit Fund', 'BCRED', 'Blackstone', 'Private credit', 'Non-traded BDC', { site: 'https://www.bcred.com' }),
   fund('bxpe', 'Blackstone Private Equity Strategies Fund', 'BXPE', 'Blackstone', 'Private equity', 'Evergreen private fund'),
+  fund('cnlsc', 'CNL Strategic Capital', 'CNL SC', 'CNL Financial Group', 'Private equity', 'Non-traded LLC', { site: 'https://www.cnlstrategiccapital.com' }),
   fund('bxinfra', 'Blackstone Infrastructure Strategies', 'BXINFRA', 'Blackstone', 'Infrastructure', 'Evergreen private fund'),
   fund('bmacx', 'Blackstone Private Multi-Asset Credit and Income Fund', 'BMACX', 'Blackstone', 'Private credit', 'Interval fund'),
   fund('bxsl', 'Blackstone Secured Lending Fund', 'BXSL', 'Blackstone', 'Private credit', 'Listed BDC', { ticker: 'BXSL' }),

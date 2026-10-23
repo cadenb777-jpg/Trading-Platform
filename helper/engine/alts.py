@@ -128,7 +128,12 @@ def _series(gaap, tag, unit):
 
 def fund_facts_from(company_facts):
     gaap = company_facts.get('facts', {}).get('us-gaap', {})
-    first = lambda *options: next((s for s in (_series(gaap, t, u) for t, u in options) if s), [])  # noqa: E731
+
+    def first(*options):
+        # Funds switch XBRL tags over the years (and an old tag keeps its old data), so take whichever candidate
+        # has the most recent period, not simply the first one that has any data.
+        found = [s for s in (_series(gaap, t, u) for t, u in options) if s]
+        return max(found, key=lambda s: s[-1]['end']) if found else []
     return {
         'navPerShare': first(('NetAssetValuePerShare', 'USD/shares')),
         'netAssets': first(('AssetsNet', 'USD'), ('StockholdersEquity', 'USD')),
@@ -265,7 +270,8 @@ def nav_sentences(page, limit=3):
 
 
 async def nav_notes(ctx, cik, filings):
-    picks = [f for f in filings if f['form'] in ('424B3', '8-K', '497')][:4]
+    # Big non-traded funds file many prospectus supplements; the monthly NAV one isn't always among the newest few.
+    picks = [f for f in filings if f['form'] in ('424B3', '8-K', '497')][:10]
 
     async def one(f):
         url = sec.filing_url(cik, f['accession'], f['document'])

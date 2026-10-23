@@ -14,7 +14,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from engine import core, flow, invest, scanner  # noqa: E402
+from engine import alts, core, flow, invest, scanner  # noqa: E402
 
 
 def bar(t, o, h, l, c, v=1_000_000):
@@ -180,6 +180,23 @@ class SessionChange(unittest.TestCase):
 
     def test_mismatched_bars_are_rejected(self):
         self.assertEqual(self.run_change({'price': 6650.0, 'change': 0.0})['change'], 0.0)
+
+
+class FundFacts(unittest.TestCase):
+    def test_picks_the_tag_with_the_newest_data(self):
+        fact = lambda end, val: {'end': end, 'val': val, 'form': '10-Q', 'filed': end}  # noqa: E731
+        cf = {'facts': {'us-gaap': {
+            'AssetsNet': {'units': {'USD': [fact('2022-12-31', 1)]}},  # the old tag stopped in 2022
+            'StockholdersEquity': {'units': {'USD': [fact('2025-12-31', 5), fact('2026-06-30', 6)]}},
+        }}}
+        self.assertEqual(alts.fund_facts_from(cf)['netAssets'][-1]['end'], '2026-06-30')
+
+    def test_ignores_non_report_forms(self):
+        cf = {'facts': {'us-gaap': {'NetAssetValuePerShare': {'units': {'USD/shares': [
+            {'end': '2026-01-31', 'val': 25.0, 'form': '8-K', 'filed': '2026-02-20'},
+            {'end': '2025-12-31', 'val': 24.9, 'form': '10-K', 'filed': '2026-03-01'},
+        ]}}}}}
+        self.assertEqual([r['end'] for r in alts.fund_facts_from(cf)['navPerShare']], ['2025-12-31'])
 
 
 class Resp:
