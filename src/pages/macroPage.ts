@@ -208,7 +208,9 @@ export function createMacroPage() {
   async function loadCurve() {
     try {
       ({ curve } = await engineRequest<{ curve: CurvePoint[] }>('macro.curve', {}, 45000));
-      const spread = curve.find((p) => p.label === '10Y')!.now - (curve.find((p) => p.label === '2Y')?.now ?? 0);
+      const ten = curve.find((p) => p.label === '10Y')?.now;
+      const two = curve.find((p) => p.label === '2Y')?.now;
+      const spread = ten != null && two != null ? ten - two : 0;
       curvePanel.replaceChildren(
         h(
           'div',

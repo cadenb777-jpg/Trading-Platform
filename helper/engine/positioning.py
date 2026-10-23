@@ -10,6 +10,7 @@ from . import flow, sec
 from .core import EngineError, handler
 
 FINRA_URL = 'https://cdn.finra.org/equity/regsho/daily/CNMSshvol{day}.txt'
+_finra_slots = asyncio.Semaphore(10)
 
 # Stocks and ETFs whose closest futures market isn't the broad index.
 RELATED_MARKET = {
@@ -27,21 +28,24 @@ RELATED_MARKET = {
     '096742': ['FXB'],
     '002602': ['CORN', 'DE', 'ADM', 'BG', 'MOS', 'NTR', 'CF', 'FMC'],
     '005602': ['SOYB'],
-    '239742': ['IWM', 'IWN', 'IWO', 'VTWO', 'TNA', 'TZA'],
-    '124603': ['DIA', 'UDOW', 'SDOW'],
+    '239742': ['IWM', 'IWN', 'IWO', 'VTWO', 'TNA', 'TZA', 'RUT'],
+    '124603': ['DIA', 'UDOW', 'SDOW', 'DJI', 'DJX', 'INDU'],
     '209742': ['QQQ', 'QQQM', 'TQQQ', 'SQQQ', 'XLK', 'VGT', 'SMH', 'SOXX', 'SOXL', 'NVDA', 'AAPL', 'MSFT', 'AMZN', 'GOOGL',
                'GOOG', 'META', 'AVGO', 'TSLA', 'NFLX', 'AMD', 'ADBE', 'CSCO', 'INTC', 'QCOM', 'TXN', 'AMAT', 'MU', 'LRCX',
-               'KLAC', 'MRVL', 'PANW', 'CRWD', 'SNPS', 'CDNS', 'ORCL', 'CRM', 'PLTR', 'ARM', 'SHOP', 'ASML', 'INTU', 'ABNB'],
-    '13874A': ['SPY', 'VOO', 'IVV', 'SPLG', 'RSP', 'SSO', 'UPRO', 'SPXL', 'SPXU', 'SH'],
+               'KLAC', 'MRVL', 'PANW', 'CRWD', 'SNPS', 'CDNS', 'ORCL', 'CRM', 'PLTR', 'ARM', 'SHOP', 'ASML', 'INTU', 'ABNB',
+               'COMPX', 'NDX'],
+    '13874A': ['SPY', 'VOO', 'IVV', 'SPLG', 'RSP', 'SSO', 'UPRO', 'SPXL', 'SPXU', 'SH', 'SPX', 'VIX'],
 }
 SYMBOL_MARKET = {sym: code for code, syms in RELATED_MARKET.items() for sym in syms}
 
 
 async def related_market(ctx, symbol):
     """The futures market a stock moves with, and why."""
-    symbol = symbol.upper().lstrip('$')
+    symbol = symbol.upper().lstrip('$').removesuffix('.X')
     if symbol in flow.COT_MARKETS:
         return symbol, 'You picked this futures market directly.'
+    if '-' in symbol or symbol in ('BTC', 'ETH', 'SOL', 'XRP', 'DOGE'):
+        return '133741', f'{symbol} is a cryptocurrency, so CME Bitcoin futures are the closest futures market (crypto moves largely with Bitcoin).'
     code = SYMBOL_MARKET.get(symbol)
     if code:
         return code, f'{symbol} tends to move with {flow.COT_MARKETS[code]} futures.'
@@ -113,7 +117,8 @@ def parse_short_file(text):
 
 async def short_day(ctx, day):
     async def load():
-        response = await ctx.http.get(FINRA_URL.format(day=day.strftime('%Y%m%d')))
+        async with _finra_slots:
+            response = await ctx.http.get(FINRA_URL.format(day=day.strftime('%Y%m%d')))
         if response.status_code in (403, 404):
             return {}  # market holiday or not published yet
         response.raise_for_status()

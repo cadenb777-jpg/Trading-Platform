@@ -475,7 +475,10 @@ export class ChartView {
     const symbol = this.symbol;
     const ext = externalData(r.def, symbol, () => {
       // Redraw when the outside data arrives, if the chart still shows the same symbol.
-      if (this.symbol === symbol && this.indicators.get(r.instance.uid) === r) this.renderAll(r);
+      if (this.symbol === symbol && this.indicators.get(r.instance.uid) === r) {
+        this.renderAll(r);
+        this.onLayout(); // refresh legends (values, or why the data is unavailable)
+      }
     });
     const tf = r.instance.timeframe;
     if (!tf || TIMEFRAME_SECONDS[tf] <= TIMEFRAME_SECONDS[this.timeframe]) return r.def.compute(this.bars, params, ext);

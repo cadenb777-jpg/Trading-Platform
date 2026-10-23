@@ -9,7 +9,8 @@ export interface Attachment {
   info: string;
 }
 
-const MAX_BYTES = 25 * 1024 * 1024;
+// Sent base64-encoded (a third bigger); the AI service accepts requests up to 32 MB.
+const MAX_BYTES = 20 * 1024 * 1024;
 const MAX_TEXT_CHARS = 600_000;
 
 function toBase64(buffer: ArrayBuffer): string {
@@ -73,7 +74,7 @@ export async function xlsxToCsv(buffer: ArrayBuffer): Promise<{ text: string; sh
 }
 
 export async function readAttachment(file: File): Promise<Attachment> {
-  if (file.size > MAX_BYTES) throw new Error(`${file.name} is larger than 25 MB.`);
+  if (file.size > MAX_BYTES) throw new Error(`${file.name} is larger than 20 MB.`);
   const name = file.name;
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
   if (ext === 'xls') throw new Error(`${name} is an old Excel format. In Excel, use File → Save As → .xlsx (or .csv) and attach that.`);

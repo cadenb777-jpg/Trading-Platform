@@ -3291,3 +3291,12 @@ body.ai-window-body #app {
 .range-labels span {
   white-space: nowrap;
 }
+
+.legend-error {
+  color: var(--warn);
+  font-size: 12px;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

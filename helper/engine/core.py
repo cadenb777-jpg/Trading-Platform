@@ -97,7 +97,7 @@ class EngineContext:
                 self._cache[key] = hit
         if hit and time.time() - hit[0] < max_age:
             return hit[1]
-        if hit and stale_ok:
+        if hit and stale_ok and time.time() - hit[0] < max_age + 7 * 86400:
             if key not in self._refreshing:
                 self._refreshing.add(key)
                 asyncio.create_task(self._refresh(key, load, persist))

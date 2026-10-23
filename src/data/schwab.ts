@@ -12,7 +12,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The helper version this site needs. Must match HELPER_VERSION in helper/schwab_helper.py. */
-const REQUIRED_HELPER_VERSION = 6;
+const REQUIRED_HELPER_VERSION = 7;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';

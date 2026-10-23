@@ -291,5 +291,11 @@ export function createAssistant(opts: AssistantOptions) {
   }
 
   renderAll();
-  return { el, ask, continueConversation, focus: () => input.focus(), reload: () => ((chat = loadState()), renderAll()) };
+  return { el, ask, continueConversation, focus: () => input.focus(), reload: () => {
+      if (!busy) {
+        chat = loadState();
+        renderAll();
+      }
+    },
+  };
 }

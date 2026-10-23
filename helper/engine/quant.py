@@ -97,18 +97,19 @@ def portfolio_returns(dates, prices, weights, rebalance='quarterly'):
 
 
 def max_drawdown(returns, dates):
-    wealth = np.cumprod(1 + returns)
+    """Largest fall from a high, with its dates. `dates` has one more entry than `returns` (the start)."""
+    wealth = np.concatenate([[1.0], np.cumprod(1 + returns)])
     peaks = np.maximum.accumulate(wealth)
     dd = wealth / peaks - 1
     trough = int(np.argmin(dd))
-    peak = int(np.argmax(wealth[: trough + 1])) if trough > 0 else 0
-    recovered = next((i for i in range(trough, len(wealth)) if wealth[i] >= wealth[peak]), None)
+    peak = int(np.argmax(wealth[: trough + 1]))
+    recovered = next((i for i in range(trough, len(wealth)) if wealth[i] >= wealth[peak]), None) if dd[trough] < 0 else trough
     return {
         'maxDrawdown': float(dd.min()),
-        'peak': dates[peak + 1].isoformat(),
-        'trough': dates[trough + 1].isoformat(),
-        'recovered': dates[recovered + 1].isoformat() if recovered is not None else None,
-    }, dd
+        'peak': dates[peak].isoformat(),
+        'trough': dates[trough].isoformat(),
+        'recovered': dates[recovered].isoformat() if recovered is not None else None,
+    }, dd[1:]
 
 
 def annualised(returns, days):

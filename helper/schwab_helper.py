@@ -40,7 +40,7 @@ import engine  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 6
+HELPER_VERSION = 7
 
 HOST = '127.0.0.1'
 PORT = 8765

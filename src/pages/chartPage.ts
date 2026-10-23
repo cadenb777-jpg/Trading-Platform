@@ -13,6 +13,7 @@ import { formatNumber, h, toast } from '../ui/dom';
 import { icon, type IconName } from '../ui/icons';
 import { openIndicatorPicker, openIndicatorSettings } from '../ui/indicatorDialogs';
 import { openIndicatorInfo } from '../ui/indicatorInfo';
+import { externalError } from '../indicators/external';
 import { createTimeframePicker } from '../ui/timeframePicker';
 import { activeAlertCount, openAlertsDialog } from '../ui/alerts';
 import { createWatchlist, displaySymbol } from '../ui/watchlist';
@@ -287,6 +288,7 @@ export function createChartPage() {
         'div',
         { class: `legend-row indicator${instance.visible ? '' : ' hidden-ind'}` },
         h('span', { class: 'legend-name' }, indicatorLabel(def, instance)),
+        def.external && externalError(def, symbol()) ? h('span', { class: 'legend-error', title: externalError(def, symbol()) }, `unavailable: ${externalError(def, symbol())}`) : null,
         ...chart
           .valuesAt(instance.uid, index)
           .map((v) => h('span', { class: 'legend-value', style: `color:${v.color}`, title: v.title }, formatNumber(v.value))),

@@ -469,6 +469,7 @@ async def converse(ctx, messages, emit, tools=True, effort=None):
     turn = 0
     while turn < MAX_TURNS:
         turn += 1
+        turn_start = len(answer)
         try:
             async with client().beta.messages.stream(messages=messages, **opts) as stream:
                 async for event in stream:
@@ -483,6 +484,7 @@ async def converse(ctx, messages, emit, tools=True, effort=None):
         except ValueError:
             # A tool input the SDK couldn't parse at all; ask again (bounded).
             json_retries += 1
+            del answer[turn_start:]  # drop text from the garbled attempt; the retry writes it again
             if json_retries > 2:
                 raise EngineError('The AI sent an unreadable request twice. Please rephrase and try again.')
             turn -= 1
@@ -581,7 +583,8 @@ async def insight(ctx, msg):
     data = _clip(msg.get('data'))
     content = [{'type': 'text', 'text': f"{_context_text(None)}\n\n{prompt}\n\nKeep it to about 250-400 words with clear headings.\n\n<data>\n{data}\n</data>"}]
     messages = [{'role': 'user', 'content': content}]
-    answer, _ = await converse(ctx, messages, emit, tools=False, effort='medium')
+    # Same tools as the chat, so a follow-up question continues the identical request setup.
+    answer, _ = await converse(ctx, messages, emit)
     # Keep it as a conversation so the owner can ask follow-up questions in the assistant.
     conv_id = uuid.uuid4().hex[:12]
     _conversations[conv_id] = messages

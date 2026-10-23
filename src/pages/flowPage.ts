@@ -108,7 +108,11 @@ export function createFlowPage() {
   }
 
   let request = 0;
+  /** The options expiration the user picked, kept across automatic refreshes. */
+  let chosenExpiration: string | undefined;
   async function load(expiration?: string, quiet = false) {
+    if (expiration !== undefined || !quiet) chosenExpiration = expiration;
+    expiration = chosenExpiration;
     const symbol = symbolInput.value.trim().toUpperCase();
     const mine = ++request;
     if (!quiet) {

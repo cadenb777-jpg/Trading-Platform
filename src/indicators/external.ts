@@ -3,37 +3,46 @@ import { engineRequest } from '../data/schwab';
 import type { Bar } from '../types';
 import type { ExternalPoint, IndicatorDef } from './types';
 
-const cache = new Map<string, { data?: ExternalPoint[]; error?: string; loading?: Promise<void> }>();
+const cache = new Map<string, { data?: ExternalPoint[]; error?: string; loading?: Promise<void>; waiters: Set<() => void> }>();
 const LIFETIME_MS = 30 * 60 * 1000;
 const loadedAt = new Map<string, number>();
 
-/** Returns the data if it's ready; otherwise starts loading it and calls `onReady` when it arrives. */
+/**
+ * Returns the data if it's ready; otherwise starts loading it (once) and calls every `onReady`
+ * passed in the meantime when it arrives, so each chart showing the indicator redraws.
+ */
 export function externalData(def: IndicatorDef, symbol: string, onReady: () => void): ExternalPoint[] | undefined {
   if (!def.external || !symbol) return undefined;
   const key = `${def.id}:${symbol}`;
-  const hit = cache.get(key);
+  let entry = cache.get(key);
   const fresh = (loadedAt.get(key) ?? 0) > Date.now() - LIFETIME_MS;
-  if (hit?.data && fresh) return hit.data;
-  if (!hit?.loading) {
-    const entry = hit ?? {};
-    entry.loading = def.external
+  if (entry?.data && fresh) return entry.data;
+  if (!entry) {
+    entry = { waiters: new Set() };
+    cache.set(key, entry);
+  }
+  entry.waiters.add(onReady);
+  if (!entry.loading) {
+    const e = entry;
+    e.loading = def.external
       .load(symbol)
       .then((data) => {
-        entry.data = data;
-        entry.error = undefined;
+        e.data = data;
+        e.error = undefined;
         loadedAt.set(key, Date.now());
       })
       .catch((err: Error) => {
-        entry.error = err.message;
+        e.error = err.message;
         loadedAt.set(key, Date.now() - LIFETIME_MS + 60000); // retry in a minute
       })
       .finally(() => {
-        entry.loading = undefined;
-        onReady();
+        e.loading = undefined;
+        const waiters = [...e.waiters];
+        e.waiters.clear();
+        for (const fn of waiters) fn();
       });
-    cache.set(key, entry);
   }
-  return hit?.data;
+  return entry.data;
 }
 
 export function externalError(def: IndicatorDef, symbol: string): string | undefined {
@@ -70,6 +79,6 @@ export async function loadCot(symbol: string): Promise<ExternalPoint[]> {
 
 /** FINRA daily short-sale volume ratio (published after the close, so it applies from the next day). */
 export async function loadShortVolume(symbol: string): Promise<ExternalPoint[]> {
-  const d = await engineRequest<{ rows: { date: string; ratio: number }[] }>('flow.short_volume', { symbol, days: 120 }, 90000);
+  const d = await engineRequest<{ rows: { date: string; ratio: number }[] }>('flow.short_volume', { symbol, days: 60 }, 90000);
   return d.rows.map((r) => ({ time: toTime(r.date, 1), values: { ratio: r.ratio * 100 } }));
 }

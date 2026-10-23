@@ -32,37 +32,47 @@ const openChart = (ref: MarketRef) => {
   location.hash = '#chart';
 };
 
-const chartPage = createChartPage();
-const pages: { route: string; label: string; icon: IconName; title: string; page: Page }[] = [
-  { route: 'home', label: 'Home', icon: 'home', title: 'Trading Platform', page: createHomePage(openChart, () => (location.hash = '#calendar')) },
-  { route: 'chart', label: 'Chart', icon: 'chart', title: '', page: chartPage },
-  { route: 'multi', label: 'Multi', icon: 'grid', title: 'Multi-chart', page: createMultiChartPage(openChart) },
-  { route: 'flow', label: 'Flow', icon: 'flow', title: 'Flow', page: createFlowPage() },
-  { route: 'research', label: 'Research', icon: 'research', title: 'Research', page: createResearchPage() },
-  { route: 'macro', label: 'Macro', icon: 'macro', title: 'Macro', page: createMacroPage() },
-  { route: 'portfolio', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', page: createPortfolioPage() },
-  { route: 'clients', label: 'Clients', icon: 'clients', title: 'Clients & Reports', page: createClientsPage() },
-  { route: 'backtest', label: 'Backtest', icon: 'backtest', title: 'Backtest', page: createBacktestPage() },
-  { route: 'calendar', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', page: createCalendarPage() },
-  {
-    route: 'scripts',
-    label: 'Scripts',
-    icon: 'code',
-    title: 'Scripts',
-    page: createScriptsPage({
-      onAddToChart: (defId) => {
-        chartPage.addIndicatorById(defId);
-        location.hash = '#chart';
-      },
-      onScriptSaved: (defId) => chartPage.refreshIndicatorsFor(defId),
-    }),
-  },
-];
+/** The pop-out AI window shows only the assistant, so it doesn't build (or save state from) the pages. */
+const isAiWindow = location.hash === '#ai-window';
+
+type PageEntry = { route: string; label: string; icon: IconName; title: string; page: Page };
+let chartPage: ReturnType<typeof createChartPage>;
+let pages: PageEntry[] = [];
+
+function buildPages() {
+  chartPage = createChartPage();
+  pages = [
+    { route: 'home', label: 'Home', icon: 'home', title: 'Trading Platform', page: createHomePage(openChart, () => (location.hash = '#calendar')) },
+    { route: 'chart', label: 'Chart', icon: 'chart', title: '', page: chartPage },
+    { route: 'multi', label: 'Multi', icon: 'grid', title: 'Multi-chart', page: createMultiChartPage(openChart) },
+    { route: 'flow', label: 'Flow', icon: 'flow', title: 'Flow', page: createFlowPage() },
+    { route: 'research', label: 'Research', icon: 'research', title: 'Research', page: createResearchPage() },
+    { route: 'macro', label: 'Macro', icon: 'macro', title: 'Macro', page: createMacroPage() },
+    { route: 'portfolio', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', page: createPortfolioPage() },
+    { route: 'clients', label: 'Clients', icon: 'clients', title: 'Clients & Reports', page: createClientsPage() },
+    { route: 'backtest', label: 'Backtest', icon: 'backtest', title: 'Backtest', page: createBacktestPage() },
+    { route: 'calendar', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', page: createCalendarPage() },
+    {
+      route: 'scripts',
+      label: 'Scripts',
+      icon: 'code',
+      title: 'Scripts',
+      page: createScriptsPage({
+        onAddToChart: (defId) => {
+          chartPage.addIndicatorById(defId);
+          location.hash = '#chart';
+        },
+        onScriptSaved: (defId) => chartPage.refreshIndicatorsFor(defId),
+      }),
+    },
+  ];
+}
+
+if (!isAiWindow) buildPages();
 
 // ---------- AI assistant ----------
 
 const AI_CHANNEL = 'tp-ai-actions';
-const isAiWindow = location.hash === '#ai-window';
 
 function currentPage() {
   return pages.find((p) => location.hash === `#${p.route}`) ?? pages[0];
