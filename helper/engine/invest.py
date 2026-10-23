@@ -345,7 +345,8 @@ async def cusip_lookup(ctx, msg):
 
     async def treasury():
         rows = await fiscal(ctx, 'auctions_query', {'filter': f'cusip:eq:{cusip}', 'sort': '-auction_date'})
-        return [auction_row(r) for r in rows]
+        # Don't trust the server-side filter alone: keep only rows for this exact CUSIP.
+        return [auction_row(r) for r in rows if str(r.get('cusip', '')).upper() == cusip]
 
     found, auctions_found = await asyncio.gather(schwab(), treasury(), return_exceptions=True)
     if isinstance(found, EngineError):
@@ -361,11 +362,18 @@ async def cusip_lookup(ctx, msg):
         coupon = coupon if coupon is not None else a['rate']
         maturity = maturity or a['maturityDate'][:10] or None
         description = description or f"US Treasury {a['type']} {a['term']}".strip()
+    price = _num((found or {}).get('bondPrice'))
+    price_source = 'Schwab' if price is not None else None
+    if price is None and auctions_found and auctions_found[0].get('price') is not None:
+        # No market price from Schwab: show the latest auction price, clearly labelled with its date.
+        price = auctions_found[0]['price']
+        price_source = f"auction {auctions_found[0]['auctionDate'][:10]}"
     return {
         'cusip': cusip,
         'description': description,
         'assetType': (found or {}).get('assetType', 'BOND' if auctions_found else ''),
-        'price': _num((found or {}).get('bondPrice')),
+        'price': price,
+        'priceSource': price_source,
         'factor': _num((found or {}).get('bondFactor')),
         'exchange': (found or {}).get('exchange', ''),
         'coupon': coupon,

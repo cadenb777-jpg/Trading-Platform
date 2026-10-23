@@ -4,12 +4,11 @@
  * private funds and anything Schwab or the SEC knows about.
  */
 import { subscribeQuote, quoteChange, type MarketRef } from '../data/quotes';
-import { insightButton } from '../ai/insight';
 import { engineRequest } from '../data/schwab';
 import { createAltsView } from '../invest/altsView';
 import { createBondsView } from '../invest/bondsView';
 import { BOARDS, CRYPTO_COINS, SECTIONS, searchCatalog, type Section } from '../invest/catalog';
-import { boardTable, errorBox, loadBoard, openSymbolDetail, showSymbol, skeletonBoard, tone, type BoardRow, type InvestContext } from '../invest/shared';
+import { boardInsight, boardTable, errorBox, loadBoard, openSymbolDetail, showSymbol, skeletonBoard, tone, type BoardRow, type InvestContext } from '../invest/shared';
 import { pageFrame, pct } from '../ui/charts';
 import { formatPrice, h } from '../ui/dom';
 
@@ -182,22 +181,11 @@ export function createInvestmentsPage(ctx: InvestContext) {
     const boards = h('div', { class: 'inv-boards' }, ...groups.map(skeletonBoard));
     const extra = h('div');
     const label = SECTIONS.find((x) => x.id === id)?.label ?? id;
-    let seen: Map<string, BoardRow> | null = null;
-    const ai = insightButton(() => {
-      if (!seen) return null;
-      const rows = seen;
-      const data = groups.map((g) => ({
-        group: g.title,
-        rows: g.symbols
-          .map(([s, name]) => rows.get(s) && { ...rows.get(s)!, name, spark: undefined })
-          .filter((r) => r && r.price != null),
-      }));
-      return { topic: 'board', symbol: '', market: label, title: `AI read: ${label}`, data };
-    }, 'AI summary');
-    view.replaceChildren(h('div', { class: 'home-ai-row' }, ai.button, h('span', { class: 'muted small' }, `What's leading and lagging in ${label.toLowerCase()}?`)), ai.panel, boards, extra);
+    const ai = boardInsight(label, groups);
+    view.replaceChildren(ai.row, ai.panel, boards, extra);
     const draw = (rows: Map<string, BoardRow>) => {
       if (section !== id) return;
-      seen = rows;
+      ai.setRows(rows);
       boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbolDetail(s, l, rows.get(s), ctx))).filter((x): x is HTMLElement => !!x));
     };
     loadBoard(groups)
@@ -261,7 +249,8 @@ export function createInvestmentsPage(ctx: InvestContext) {
       ),
     );
     const boards = h('div', { class: 'inv-boards' }, ...BOARDS.crypto.map(skeletonBoard));
-    view.replaceChildren(h('section', { class: 'panel inv-board' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Coins (live from Coinbase)'), h('span', { class: 'muted small' }, 'Click one to open its chart')), h('div', { class: 'table-wrap' }, table)), boards);
+    const ai = boardInsight('Crypto', BOARDS.crypto);
+    view.replaceChildren(ai.row, ai.panel, h('section', { class: 'panel inv-board' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Coins (live from Coinbase)'), h('span', { class: 'muted small' }, 'Click one to open its chart')), h('div', { class: 'table-wrap' }, table)), boards);
     stopCrypto = CRYPTO_COINS.map(([symbol]) => {
       const ref: MarketRef = { provider: 'coinbase', symbol };
       return subscribeQuote(ref, (q) => {
@@ -274,7 +263,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
       });
     });
     loadBoard(BOARDS.crypto)
-      .then((r) => section === 'crypto' && boards.replaceChildren(...BOARDS.crypto.map((g) => boardTable(g, r, (s, l) => openSymbolDetail(s, l, r.get(s), ctx)))))
+      .then((r) => section === 'crypto' && (ai.setRows(r), true) && boards.replaceChildren(...BOARDS.crypto.map((g) => boardTable(g, r, (s, l) => openSymbolDetail(s, l, r.get(s), ctx)))))
       .catch((err) => section === 'crypto' && boards.replaceChildren(errorBox(err, renderCrypto)));
   }
 

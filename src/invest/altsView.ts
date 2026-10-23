@@ -11,7 +11,7 @@ import { barList, createLineChart, dataTable, money, pct, statCards } from '../u
 import { formatPrice, h, openModal, toast } from '../ui/dom';
 import { BOARDS, MANAGER_SITES, PRIVATE_FUNDS, STRATEGIES, STRUCTURES, type PrivateFund, type Strategy } from './catalog';
 import { holdingStats, parseCsv, rowsToHoldings, totals, type AltHolding } from './holdings';
-import { boardTable, errorBox, factSheetLink, loadBoard, openSymbolDetail, skeletonBoard, tone, type BoardRow, type InvestContext } from './shared';
+import { boardInsight, boardTable, errorBox, factSheetLink, loadBoard, openSymbolDetail, skeletonBoard, tone, type BoardRow, type InvestContext } from './shared';
 
 type Tab = 'market' | 'funds' | 'search' | 'latest' | 'mine';
 const TABS: [Tab, string][] = [
@@ -147,13 +147,17 @@ export function createAltsView(ctx: InvestContext) {
     const groups = BOARDS.alts;
     const pulse = h('div', { class: 'skeleton', style: 'height:96px' });
     const boards = h('div', { class: 'inv-boards' }, ...groups.map(skeletonBoard));
+    const ai = boardInsight('Alternatives', groups);
     body.replaceChildren(
+      ai.row,
+      ai.panel,
       h('p', { class: 'muted inv-lead' }, 'Private funds don\'t trade, so the alternatives market is read through what does: the managers\' stocks, listed private credit (BDCs), REITs and hedge-fund style ETFs. Open the Private fund directory for the funds themselves.'),
       pulse,
       boards,
     );
     loadBoard(groups)
       .then((rows) => {
+        ai.setRows(rows);
         pulse.classList.remove('skeleton');
         pulse.replaceChildren(
           statCards(

@@ -38,14 +38,22 @@ export function toUnix(t: string | number | Time): number {
 }
 
 /** A readable date (and time for intraday points). */
+/** Daily bars are stamped at midnight New York time (or midnight UTC); anything else is an intraday time. */
+function isDailyStamp(u: number): boolean {
+  if (u % DAY === 0) return true;
+  const hm = new Date(u * 1000).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York' });
+  return hm === '00:00' || hm === '24:00';
+}
+
 export function formatTime(t: string | number | Time): string {
   const u = toUnix(t);
   const d = new Date(u * 1000);
-  const intraday = typeof t === 'number' && u % DAY !== 0 && d.getUTCHours() + d.getUTCMinutes() !== 0;
-  return intraday
-    ? d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-    : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  if (typeof t === 'number' && !isDailyStamp(u)) return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: u % DAY === 0 ? 'UTC' : 'America/New_York' });
 }
+
+const csvDate = (t: number) =>
+  isDailyStamp(t) ? (t % DAY === 0 ? new Date(t * 1000).toISOString().slice(0, 10) : new Date(t * 1000).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })) : new Date(t * 1000).toISOString().slice(0, 16);
 
 /** Shows the date and each line's value under the crosshair in a small box that follows the mouse. */
 export function attachTooltip(chart: IChartApi, container: HTMLElement, getSeries: () => { series: ISeriesApi<'Line'>; name: string; color: string }[], format: (v: number) => string) {
@@ -248,7 +256,7 @@ function dedupe(data: { time: string | number; value: number }[]) {
 function downloadCsv(title: string, lines: WindowLine[]) {
   const times = [...new Set(lines.flatMap((l) => l.data.map((p) => toUnix(p.time))))].sort((a, b) => a - b);
   const maps = lines.map((l) => new Map(l.data.map((p) => [toUnix(p.time), p.value])));
-  const rows = [['Date', ...lines.map((l) => l.name || 'Value')].join(','), ...times.map((t) => [new Date(t * 1000).toISOString().slice(0, t % DAY ? 16 : 10), ...maps.map((m) => m.get(t) ?? '')].join(','))];
+  const rows = [['Date', ...lines.map((l) => l.name || 'Value')].join(','), ...times.map((t) => [csvDate(t), ...maps.map((m) => m.get(t) ?? '')].join(','))];
   const a = h('a', { href: URL.createObjectURL(new Blob([rows.join('\n')], { type: 'text/csv' })), download: `${title.replace(/[^\w\- ]+/g, '').trim() || 'chart'}.csv` });
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);

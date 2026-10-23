@@ -1,5 +1,6 @@
 /** Pieces shared by the Investments page sections: market boards, the symbol detail window and error boxes. */
 import { openAssistant } from '../ai/hub';
+import { insightButton } from '../ai/insight';
 import type { MarketRef } from '../data/quotes';
 import { engineRequest } from '../data/schwab';
 import { createLineChart, pct, rangeBar, statCards } from '../ui/charts';
@@ -26,6 +27,22 @@ export interface BoardRow {
   peRatio?: number | null;
   /** Set (unix seconds) when price/change are the latest session's close because the market is closed. */
   atClose?: number | null;
+}
+
+/** "AI summary" for a market board: reads the rows the board has loaded (null until then). */
+export function boardInsight(label: string, groups: BoardGroup[]) {
+  let seen: Map<string, BoardRow> | null = null;
+  const ai = insightButton(() => {
+    if (!seen) return null;
+    const rows = seen;
+    const data = groups.map((g) => ({
+      group: g.title,
+      rows: g.symbols.map(([s, name]) => rows.get(s) && { ...rows.get(s)!, name, spark: undefined }).filter((r) => r && r.price != null),
+    }));
+    return { topic: 'board', symbol: '', market: label, title: `AI read: ${label}`, data };
+  }, 'AI summary');
+  const row = h('div', { class: 'home-ai-row' }, ai.button, h('span', { class: 'muted small' }, `What's leading and lagging in ${label.toLowerCase()}?`));
+  return { row, panel: ai.panel, setRows: (rows: Map<string, BoardRow>) => (seen = rows) };
 }
 
 const closeDate = (t: number) => new Date(t * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
