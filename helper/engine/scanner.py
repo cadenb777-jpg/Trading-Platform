@@ -628,8 +628,11 @@ def grade_setup(r):
         r['summary'] = 'Live price already reached the first target: too late to chase'
 
 
+SCAN_EVERY = 600  # the owner wants a fresh scan every 10 minutes (cached daily bars keep quiet hours cheap)
+
+
 def next_interval(session):
-    return {'open': 600, 'extended': 1800}.get(session, 7200)
+    return SCAN_EVERY
 
 
 async def background(ctx, news=None, first_delay=15):
@@ -640,7 +643,9 @@ async def background(ctx, news=None, first_delay=15):
             await run_once(ctx, news)
         except Exception as err:
             log.info('Background scan failed: %s', err)
-        await asyncio.sleep(next_interval(market_session()))
+        wait = next_interval(market_session())
+        _state['next'] = time.time() + wait
+        await asyncio.sleep(wait)
 
 
 async def run_once(ctx, news=None):
@@ -666,5 +671,5 @@ async def results(ctx, msg):
     elif new and not _state['running']:
         # Answer now with the last scan; the watchlist additions show up on the next refresh.
         _state['refresh'] = asyncio.ensure_future(run_once(ctx, ctx.news))  # keep a reference so it isn't garbage-collected
-    return _state['result']
+    return {**_state['result'], 'nextScan': _state.get('next'), 'scanning': bool(_state['running'])}
 

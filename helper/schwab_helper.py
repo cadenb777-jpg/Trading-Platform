@@ -914,7 +914,7 @@ async def warm_up(market):
 
 
 async def market_scanner(market):
-    """The background market scanner (engine/scanner.py): rescans every 10 minutes in market hours."""
+    """The background market scanner (engine/scanner.py): rescans every 10 minutes."""
     await engine.wait_loaded()
     if 'scanner' in engine.LOAD_ERRORS:
         return

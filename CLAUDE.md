@@ -61,7 +61,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Quotes: the helper polls Schwab's REST quotes every 30 s (`refresh_official`); prevClose = lastPrice - netChange.
   The stream's CLOSE_PRICE is only a fallback (after the session it becomes today's close, which read as 0%).
   Scanner (engine/scanner.py, helper v10): a background task (`market_scanner` in the helper) scans UNIVERSE plus
-  the watchlist every 10 min in market hours (30 min extended, 2 h closed): daily score from trend/breakout/RS/RSI/
+  the watchlist every 10 minutes (the owner asked for it; daily bars are cached so quiet hours are cheap): daily score from trend/breakout/RS/RSI/
   MACD/volume/Williams A/D/CMF/ADX, 30-minute agreement, support/resistance plan, a trade backtest of the same
   signal on that stock (grade proven/mixed/unproven/failed; failed is filtered out), options, COT, insiders, news.
   Tier A = proven + R:R >= 1.5 + score >= 5. Live quotes mark plans stale. Home shows it (src/home/setupsPanel.ts).

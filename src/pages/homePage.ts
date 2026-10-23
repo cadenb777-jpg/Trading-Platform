@@ -51,10 +51,25 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
 
   let closes: number[] = [];
   let quote: Quote | undefined;
-  // Older helpers (before version 10) send the stream's close price, which becomes today's close after the session
-  // and made the change read 0%. With those, measure from the previous session's close in the daily bars instead.
-  let sessionPrevClose: number | null = null;
-  const fixed = (q: Quote): Quote => ((helper.version ?? 0) < 10 && sessionPrevClose ? { ...q, prevClose: sessionPrevClose } : q);
+  // Between sessions Schwab moves an index's "previous close" up to the latest close, so price - previous close is 0
+  // (and older helpers send the stream's close, which does the same after 4 PM). Like Google Finance, show the latest
+  // session's move then: measured from the close of the trading day before it, taken from the daily bars.
+  let daily: Bar[] = [];
+  let usingLastSession = false;
+  const fixed = (q: Quote): Quote => {
+    usingLastSession = false;
+    if (q.last == null || daily.length < 2) return q;
+    const zero = !q.prevClose || Math.abs(q.last - q.prevClose) <= q.last * 1e-6;
+    if (!zero && (helper.version ?? 0) >= 10) return q;
+    const lastBar = daily[daily.length - 1];
+    // If the newest daily bar already closed at the current price, it is the latest session: compare with the day before.
+    const prev = Math.abs(lastBar.close - q.last) <= q.last * 1e-4 ? daily[daily.length - 2].close : lastBar.close;
+    // Sanity check: an index doesn't move 20% in a session, so anything bigger means the bars don't match the quote.
+    if (!prev || Math.abs(prev - q.last) <= q.last * 1e-6 || Math.abs(prev / q.last - 1) > 0.2) return q;
+    usingLastSession = marketStatus(new Date()).phase !== 'open';
+    return { ...q, prevClose: prev };
+  };
+  let raw: Quote | undefined;
   let drawTimer: ReturnType<typeof setTimeout> | undefined;
 
   const draw = () => {
@@ -67,11 +82,12 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
       rangeHigh.textContent = formatPrice(Math.max(...values));
       rangeLow.textContent = formatPrice(Math.min(...values));
     }
-    rangePrev.textContent = quote?.prevClose ? `Prev close ${formatPrice(quote.prevClose)} · Day range ${values.length ? `${formatPrice(Math.min(...values))} – ${formatPrice(Math.max(...values))}` : '—'}` : '';
+    rangePrev.textContent = quote?.prevClose ? `${usingLastSession ? 'Last session · ' : ''}Prev close ${formatPrice(quote.prevClose)} · Day range ${values.length ? `${formatPrice(Math.min(...values))} – ${formatPrice(Math.max(...values))}` : '—'}` : '';
   };
 
-  const onQuote = (raw: Quote) => {
-    const q = fixed(raw);
+  const onQuote = (incoming: Quote) => {
+    raw = incoming;
+    const q = fixed(incoming);
     quote = q;
     const delta = quoteChange(q);
     price.textContent = formatPrice(q.last);
@@ -82,22 +98,15 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
   };
 
   const loadSparkline = async () => {
-    try {
-      const bars = await schwab.loadHistory(index.symbol, '5m', new AbortController().signal);
-      const session = lastSession(bars);
-      closes = session.map((b) => b.close);
-      if ((helper.version ?? 0) < 10 && session.length) {
-        const day = (t: number) => new Date(t * 1000).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-        const sessionDay = day(session[0].time);
-        const daily = await schwab.loadHistory(index.symbol, '1D', new AbortController().signal).catch(() => []);
-        const prior = daily.filter((b) => day(b.time + 12 * 3600) < sessionDay).pop();
-        sessionPrevClose = prior?.close ?? null;
-        if (quote) onQuote(quote);
-      }
-      draw();
-    } catch {
-      // Shown once the helper is running; the card still shows the live price.
-    }
+    const [intraday, days] = await Promise.allSettled([
+      schwab.loadHistory(index.symbol, '5m', new AbortController().signal),
+      schwab.loadHistory(index.symbol, '1D', new AbortController().signal),
+    ]);
+    // Either can fail while the helper is starting; the card still shows the live price.
+    if (intraday.status === 'fulfilled') closes = lastSession(intraday.value).map((b) => b.close);
+    if (days.status === 'fulfilled' && days.value.length) daily = days.value;
+    if (raw) onQuote(raw);
+    draw();
   };
 
   const snapshot = () => {
