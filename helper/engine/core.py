@@ -47,6 +47,24 @@ class EngineContext:
             self._cache[key] = (time.time(), value)
             return value
 
+    async def dividends(self, symbol):
+        """Cash dividends per share by ex-date ({date: amount}) from Yahoo Finance's free chart data; {} if unavailable."""
+        async def load():
+            yahoo = symbol.replace('.', '-').replace('/', '-')
+            response = await self.http.get(f'https://query1.finance.yahoo.com/v8/finance/chart/{yahoo}',
+                                           params={'range': 'max', 'interval': '1mo', 'events': 'div'})
+            response.raise_for_status()
+            result = (response.json().get('chart', {}).get('result') or [{}])[0]
+            out = {}
+            for d in (result.get('events') or {}).get('dividends', {}).values():
+                day = dt.datetime.fromtimestamp(d['date'], dt.timezone.utc).date()
+                out[day] = out.get(day, 0.0) + float(d['amount'])
+            return out
+        try:
+            return await self.cached(('dividends', symbol), 86400, load)
+        except Exception:
+            return None
+
     async def daily_bars(self, symbol, years=20):
         """Daily bars (split-adjusted) for up to `years` years: list of dicts with time (unix s) and OHLCV."""
         async def load():

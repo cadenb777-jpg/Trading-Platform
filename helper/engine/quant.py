@@ -27,18 +27,38 @@ def _date(ts):
     return dt.datetime.fromtimestamp(ts, dt.timezone.utc).date()
 
 
-async def price_matrix(ctx, symbols, years=20):
-    """Aligned daily closes: (dates, matrix[days, assets]) over the dates every symbol traded."""
-    results = await asyncio.gather(*(ctx.daily_bars(s, years) for s in symbols), return_exceptions=True)
+async def price_matrix(ctx, symbols, years=20, with_dividends=True):
+    """Aligned daily values over the dates every symbol traded: (dates, matrix[days, assets], info).
+
+    With dividends (from Yahoo) the matrix is a total-return index (dividends reinvested on the ex-date),
+    otherwise plain closing prices. info has the last prices and which symbols include dividends."""
+    bars_list = await asyncio.gather(*(ctx.daily_bars(s, years) for s in symbols), return_exceptions=True)
+    divs_list = await asyncio.gather(*(ctx.dividends(s) for s in symbols)) if with_dividends else [None] * len(symbols)
     series = []
-    for symbol, bars in zip(symbols, results):
+    for symbol, bars in zip(symbols, bars_list):
         if isinstance(bars, Exception):
             raise EngineError(f'{symbol}: {bars}')
         series.append({_date(b['time']): b['close'] for b in bars})
     common = sorted(set.intersection(*(set(s) for s in series)))
     if len(common) < 60:
         raise EngineError('Not enough shared price history for these symbols (need at least 3 months).')
-    return common, np.array([[s[d] for s in series] for d in common], dtype=float)
+    closes = np.array([[s[d] for s in series] for d in common], dtype=float)
+    values = closes.copy()
+    for j, divs in enumerate(divs_list):
+        if not divs:
+            continue
+        # Dividends paid between two trading days count on the first day on or after their ex-date.
+        div_on = np.zeros(len(common))
+        k = 0
+        for day in sorted(divs):
+            while k < len(common) and common[k] < day:
+                k += 1
+            if 0 < k < len(common):
+                div_on[k] += divs[day]
+        growth = (closes[1:, j] + div_on[1:]) / closes[:-1, j]
+        values[:, j] = closes[0, j] * np.concatenate([[1.0], np.cumprod(growth)])
+    info = {'last': closes[-1].tolist(), 'dividends': [d is not None for d in divs_list]}
+    return common, values, info
 
 
 async def risk_free(ctx):
@@ -220,7 +240,7 @@ async def analyze(ctx, msg):
     rebalance = msg.get('rebalance') if msg.get('rebalance') in REBALANCE else 'quarterly'
     years = int(msg.get('years') or 20)
     all_symbols = symbols + ([benchmark] if benchmark not in symbols else [])
-    (dates, prices), rf = await asyncio.gather(price_matrix(ctx, all_symbols, years), risk_free(ctx))
+    (dates, prices, info), rf = await asyncio.gather(price_matrix(ctx, all_symbols, years), risk_free(ctx))
     if msg.get('since'):
         since = dt.date.fromisoformat(msg['since'])
         keep = [i for i, d in enumerate(dates) if d >= since]
@@ -228,6 +248,10 @@ async def analyze(ctx, msg):
             raise EngineError('Not enough history after the start date.')
         dates, prices = [dates[i] for i in keep], prices[keep]
     port = portfolio_returns(dates, prices[:, : len(symbols)], weights, rebalance)
+    fee = max(0.0, float(msg.get('fee') or 0))
+    if fee:
+        # Advisory fee taken evenly through the year, so returns are shown net of fees.
+        port = (1 + port) * (1 - fee) ** (1 / TRADING_DAYS) - 1
     b = all_symbols.index(benchmark)
     bench = prices[1:, b] / prices[:-1, b] - 1
     asset_returns = prices[1:, : len(symbols)] / prices[:-1, : len(symbols)] - 1
@@ -244,11 +268,14 @@ async def analyze(ctx, msg):
         r = asset_returns[:, i]
         asset_stats.append({'symbol': s, 'weight': float(weights[i]), 'riskContribution': float(contrib[i]),
                             'cagr': annualised(r, (dates[-1] - dates[0]).days), 'volatility': float(r.std(ddof=1) * np.sqrt(TRADING_DAYS)),
-                            'last': float(prices[-1, i])})
+                            'last': info['last'][i], 'dividends': info['dividends'][i]})
     return {
         'symbols': symbols,
         'benchmark': benchmark,
         'rebalance': rebalance,
+        'fee': fee,
+        'totalReturn': all(info['dividends']),
+        'priceOnly': [s for s, d in zip(all_symbols, info['dividends']) if not d],
         'start': dates[0].isoformat(),
         'end': dates[-1].isoformat(),
         'riskFree': rf,
@@ -329,7 +356,7 @@ async def optimize(ctx, msg):
     lo, hi = float(msg.get('minWeight', 0)), float(msg.get('maxWeight', 1))
     if lo * len(symbols) > 1 or hi * len(symbols) < 1:
         raise EngineError('Those weight limits are impossible for this many holdings.')
-    (dates, prices), rf = await asyncio.gather(price_matrix(ctx, symbols, years), risk_free(ctx))
+    (dates, prices, _), rf = await asyncio.gather(price_matrix(ctx, symbols, years), risk_free(ctx))
     returns = prices[1:] / prices[:-1] - 1
     cov = np.cov(returns.T) * TRADING_DAYS
     historical = (np.prod(1 + returns, axis=0) ** (TRADING_DAYS / len(returns))) - 1

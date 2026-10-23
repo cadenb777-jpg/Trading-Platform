@@ -58,6 +58,12 @@ export interface Analysis {
   symbols: string[];
   benchmark: string;
   rebalance: Rebalance;
+  /** Yearly advisory fee taken out of returns. */
+  fee: number;
+  /** True when every holding includes reinvested dividends. */
+  totalReturn: boolean;
+  /** Holdings without dividend data (price-only returns). */
+  priceOnly: string[];
   start: string;
   end: string;
   riskFree: number;
@@ -70,7 +76,7 @@ export interface Analysis {
   drawdown: Point[];
   benchmarkDrawdown: Point[];
   stress: { name: string; start: string; end: string; portfolio: number | null; benchmark: number | null }[];
-  assets: { symbol: string; weight: number; riskContribution: number; cagr: number; volatility: number; last: number }[];
+  assets: { symbol: string; weight: number; riskContribution: number; cagr: number; volatility: number; last: number; dividends: boolean }[];
   correlation: number[][];
   monteCarlo: { years: number; percentiles: Record<'5' | '25' | '50' | '75' | '95', number[]>; lossChance: number } | null;
 }

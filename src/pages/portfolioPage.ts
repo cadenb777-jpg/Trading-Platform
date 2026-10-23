@@ -148,7 +148,7 @@ export function createPortfolioPage() {
     const mcBox = h('div', {});
     const optBox = h('div', { class: 'ap-body' });
     results.replaceChildren(
-      h('p', { class: 'muted small' }, `History ${a.start} to ${a.end} (limited by the youngest holding). Dividends are not included in Schwab's prices, so returns are price-only. Risk-free rate ${pct(a.riskFree)}.`),
+      h('p', { class: 'muted small' }, `History ${a.start} to ${a.end} (limited by the youngest holding). ${a.totalReturn ? 'Total returns with dividends reinvested.' : `No dividend data for ${a.priceOnly.join(', ')} (price-only).`} Risk-free rate ${pct(a.riskFree)}.`),
       statCards([
         { label: 'Annual return (CAGR)', value: pct(s.cagr), hint: `Benchmark ${pct(b.cagr)}`, tone: tone(s.cagr) },
         { label: 'Volatility', value: pctU(s.volatility, 1), hint: `Benchmark ${pctU(b.volatility, 1)}` },

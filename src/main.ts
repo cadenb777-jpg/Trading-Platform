@@ -2,6 +2,7 @@ import './style.css';
 import { createCalendarPage } from './pages/calendarPage';
 import { createBacktestPage } from './pages/backtestPage';
 import { createChartPage } from './pages/chartPage';
+import { createClientsPage } from './pages/clientsPage';
 import { createFlowPage } from './pages/flowPage';
 import { createHomePage } from './pages/homePage';
 import { createMacroPage } from './pages/macroPage';
@@ -34,6 +35,7 @@ const pages: { route: string; label: string; icon: IconName; title: string; page
   { route: 'research', label: 'Research', icon: 'research', title: 'Research', page: createResearchPage() },
   { route: 'macro', label: 'Macro', icon: 'macro', title: 'Macro', page: createMacroPage() },
   { route: 'portfolio', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', page: createPortfolioPage() },
+  { route: 'clients', label: 'Clients', icon: 'clients', title: 'Clients & Reports', page: createClientsPage() },
   { route: 'backtest', label: 'Backtest', icon: 'backtest', title: 'Backtest', page: createBacktestPage() },
   { route: 'calendar', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', page: createCalendarPage() },
   {

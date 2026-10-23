@@ -2546,3 +2546,35 @@ button.news-item {
 .field-input.compact .input {
   width: 80px;
 }
+
+.brand-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.brand-logo-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.brand-logo-preview {
+  max-height: 60px;
+  max-width: 260px;
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.brand-form input[type='color'] {
+  height: 38px;
+  padding: 2px 4px;
+}
+
+textarea.input {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  line-height: 1.5;
+}
