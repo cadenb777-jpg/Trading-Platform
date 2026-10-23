@@ -9,6 +9,8 @@ if not exist .venv (
   %PY% -m venv .venv || goto nopython
 )
 .venv\Scripts\python -m pip install -q --disable-pip-version-check -r requirements.txt || goto failed
+rem Optional parts (portfolio maths, AI). If they fail, charts and prices still work.
+.venv\Scripts\python -m pip install -q --disable-pip-version-check -r requirements-extra.txt || echo Some optional parts did not install - the AI or portfolio maths may be unavailable. Charts and prices still work.
 .venv\Scripts\python schwab_helper.py %*
 pause
 exit /b

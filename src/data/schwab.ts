@@ -11,11 +11,18 @@ const HELPER_URL = 'ws://127.0.0.1:8765';
 const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
-/** The helper version this site needs. Must match HELPER_VERSION in helper/schwab_helper.py. */
-const REQUIRED_HELPER_VERSION = 7;
+/** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
+export const LATEST_HELPER_VERSION = 7;
+/** Charts, quotes, news and the calendar work with any helper from this version on. */
+const CORE_HELPER_VERSION = 2;
+/** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
+const ENGINE_HELPER_VERSION = 6;
+const CORE_REQUESTS = new Set(['history', 'news', 'calendar', 'summary']);
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
+export const HELPER_UPDATE_FOR_FEATURE =
+  'This feature needs the updated Schwab helper. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
 
 export const HELPER_NOT_RUNNING =
   'The Schwab helper isn\'t running on this computer. Start it (double-click start-windows.bat or start-mac.command), then click Try again.';
@@ -84,7 +91,7 @@ export interface HelperListener {
 }
 
 type HelperMessage =
-  | { type: 'status'; status: ConnectionStatus; message: string; version?: number }
+  | { type: 'status'; status: ConnectionStatus; message: string; version?: number; problems?: string[]; log?: string }
   | { type: 'history'; id: number; bars: Bar[] }
   | { type: 'news'; id: number; items: NewsItem[]; failed: string[] }
   | { type: 'calendar'; id: number; events: CalendarEvent[]; failed: string[] }
@@ -108,10 +115,22 @@ class HelperConnection {
   private readonly availability = new Set<(up: boolean) => void>();
   private helperStatus: { status: ConnectionStatus; message: string } = { status: 'connecting', message: 'Connecting' };
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
-  /** True when the running helper is older than this site needs. */
+  /** The running helper's version (null until it says hello). */
+  version: number | null = null;
+  /** True when the helper is older than the newest version (a newer copy is available). */
   outdated = false;
+  /** True when even charts and quotes can't work with this helper. */
+  tooOld = false;
+  /** Helper features that couldn't start, and where the helper's log file is. */
+  problems: string[] = [];
+  logPath = '';
   /** Finishes connecting once the helper's first status message (with its version) arrives. */
   private onReady: (() => void) | null = null;
+
+  /** The helper's latest status (connecting / live / error) and message. */
+  get status() {
+    return this.helperStatus;
+  }
 
   get isConnected() {
     return this.ws?.readyState === WebSocket.OPEN;
@@ -166,7 +185,10 @@ class HelperConnection {
    */
   async request(msg: Record<string, unknown>, signal?: AbortSignal, timeoutMs = REQUEST_TIMEOUT_MS, onEvent?: (e: EngineEvent) => void): Promise<HelperMessage> {
     await this.connect();
-    if (this.outdated) throw new Error(HELPER_OUTDATED);
+    const type = String(msg.type);
+    if (this.tooOld) throw new Error(HELPER_OUTDATED);
+    // Older helpers simply ignore requests they don't know, so stop here with a clear message instead of waiting.
+    if (!CORE_REQUESTS.has(type) && (this.version ?? 0) < ENGINE_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout>;
@@ -231,11 +253,14 @@ class HelperConnection {
   private onMessage(msg: HelperMessage) {
     switch (msg.type) {
       case 'status': {
-        const outdated = (msg.version ?? 1) < REQUIRED_HELPER_VERSION;
-        if (outdated !== this.outdated) {
-          this.outdated = outdated;
-          if (!this.onReady) this.notify(true);
-        }
+        const version = msg.version ?? 1;
+        const changed = version !== this.version;
+        this.version = version;
+        this.problems = msg.problems ?? [];
+        this.logPath = msg.log ?? '';
+        this.outdated = version < LATEST_HELPER_VERSION;
+        this.tooOld = version < CORE_HELPER_VERSION;
+        if (changed && !this.onReady) this.notify(true);
         this.onReady?.();
         this.helperStatus = { status: msg.status, message: msg.message };
         for (const l of this.allListeners()) l.onStatus?.(msg.status, msg.message);

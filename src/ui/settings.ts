@@ -2,7 +2,7 @@
  * Settings: the AI key and model, the SEC email and an optional FRED key. Values go straight to the helper,
  * which saves them on this computer; keys are never stored in the browser or shown again.
  */
-import { engineRequest } from '../data/schwab';
+import { LATEST_HELPER_VERSION, engineRequest, helper } from '../data/schwab';
 import { h, openModal, toast } from './dom';
 
 export interface PlatformSettings {
@@ -78,6 +78,28 @@ function keyRow(label: string, help: Node, isSet: boolean, field: 'aiKey' | 'fre
   );
 }
 
+/** A quick health check of the helper connection, shown at the top of Settings. */
+function connectionCheck(): HTMLElement {
+  const rows: [string, string, 'ok' | 'warn' | 'bad'][] = [];
+  if (!helper.isConnected) {
+    rows.push(['Schwab helper', 'Not running. Double-click start-windows.bat (or start-mac.command) in your helper folder.', 'bad']);
+  } else {
+    const v = helper.version ?? 0;
+    rows.push(['Schwab helper', `Running, version ${v}${v < LATEST_HELPER_VERSION ? ` (newest is ${LATEST_HELPER_VERSION}: download the project ZIP again to update)` : ' (up to date)'}`, v < LATEST_HELPER_VERSION ? 'warn' : 'ok']);
+    const st = helper.status;
+    rows.push(['Schwab data', st.status === 'live' ? 'Streaming live prices' : st.message || st.status, st.status === 'live' ? 'ok' : st.status === 'error' ? 'bad' : 'warn']);
+    for (const p of helper.problems) rows.push(['Feature unavailable', p, 'bad']);
+    if (helper.logPath) rows.push(['Log file', helper.logPath, 'ok']);
+  }
+  return h(
+    'div',
+    { class: 'settings-row' },
+    h('div', { class: 'settings-label' }, h('b', {}, 'Connection check')),
+    ...rows.map(([label, text, tone]) => h('div', { class: `check-row ${tone}` }, h('span', { class: 'check-dot' }), h('b', {}, label), h('span', {}, text))),
+    helper.problems.length ? h('p', { class: 'muted small' }, 'If something says unavailable, close the helper window and start it again. If that doesn’t help, send me the log file above.') : null,
+  );
+}
+
 export async function openSettings(focus?: 'ai') {
   const body = h('div', { class: 'settings' }, h('div', { class: 'muted pad' }, 'Loading…'));
   const close = openModal('Settings', body, { wide: true });
@@ -86,7 +108,7 @@ export async function openSettings(focus?: 'ai') {
     try {
       s = await getSettings(true);
     } catch (err) {
-      body.replaceChildren(h('div', { class: 'ap-error' }, `${(err as Error).message}. Settings are saved by the helper, so start it first.`));
+      body.replaceChildren(connectionCheck(), h('div', { class: 'ap-error' }, `${(err as Error).message}`));
       return;
     }
     const model = h('select', { class: 'input' }, ...s.models.map((m) => h('option', { value: m.id, selected: m.id === s.model }, m.name)));
@@ -96,6 +118,7 @@ export async function openSettings(focus?: 'ai') {
     });
     const email = h('input', { class: 'input', type: 'email', value: s.secContact, placeholder: 'you@example.com' });
     body.replaceChildren(
+      connectionCheck(),
       h('h3', { class: 'settings-section' }, 'AI assistant'),
       keyRow(
         'Anthropic API key',

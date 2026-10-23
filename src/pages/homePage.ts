@@ -94,9 +94,9 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
   const bannerText = h('span', {});
   const banner = h('div', { class: 'helper-banner', hidden: true }, bannerText, ' ', h('a', { href: HELPER_GUIDE, target: '_blank', rel: 'noopener' }, 'Helper guide'));
   const showBanner = (up: boolean) => {
-    banner.hidden = up && !helper.outdated;
+    banner.hidden = up && !helper.tooOld;
     bannerText.replaceChildren(
-      helper.outdated
+      helper.tooOld
         ? h('b', {}, HELPER_OUTDATED)
         : h('span', {}, h('b', {}, 'Live stock prices and news need the Schwab helper.'), ' Start it on this computer and this page connects automatically.'),
     );
@@ -206,7 +206,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
       if (request === newsRequest) showNews();
     } catch {
       if (request !== newsRequest) return;
-      newsList.replaceChildren(h('div', { class: 'muted pad' }, helper.outdated ? HELPER_OUTDATED : 'News appears here when the Schwab helper is running.'));
+      newsList.replaceChildren(h('div', { class: 'muted pad' }, helper.tooOld ? HELPER_OUTDATED : 'News appears here when the Schwab helper is running.'));
       newsFooter.textContent = '';
     }
   }
@@ -284,7 +284,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     for (const [i, index] of INDEXES.entries()) subscribeQuote({ provider: 'schwab', symbol: index.symbol }, cards[i].onQuote);
     helper.onAvailability((up) => {
       showBanner(up);
-      if (up && !helper.outdated) {
+      if (up && !helper.tooOld) {
         refreshNews(true);
         upcoming.refresh();
         for (const c of cards) c.loadSparkline();

@@ -1,0 +1,5 @@
+# Optional parts: portfolio maths (numpy, scipy) and the AI assistant (anthropic).
+# If these fail to install, charts, prices and news still work.
+numpy>=2
+scipy>=1.13
+anthropic>=2.1,<3

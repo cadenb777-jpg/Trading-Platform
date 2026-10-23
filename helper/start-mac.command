@@ -15,5 +15,7 @@ if ! .venv/bin/python -m pip install -q --disable-pip-version-check -r requireme
   read -r -p "Press Enter to close"
   exit 1
 fi
+# Optional parts (portfolio maths, AI). If they fail, charts and prices still work.
+.venv/bin/python -m pip install -q --disable-pip-version-check -r requirements-extra.txt || echo "Some optional parts didn't install (AI or portfolio maths may be unavailable). Charts and prices still work."
 .venv/bin/python schwab_helper.py "$@"
 read -r -p "Press Enter to close"

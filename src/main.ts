@@ -1,18 +1,10 @@
 import './style.css';
-import { createCalendarPage } from './pages/calendarPage';
-import { createBacktestPage } from './pages/backtestPage';
 import { createChartPage } from './pages/chartPage';
-import { createClientsPage } from './pages/clientsPage';
-import { createFlowPage } from './pages/flowPage';
 import { createHomePage } from './pages/homePage';
-import { createMacroPage } from './pages/macroPage';
-import { createMultiChartPage } from './pages/multiChartPage';
-import { createPortfolioPage } from './pages/portfolioPage';
-import { createResearchPage } from './pages/researchPage';
-import { createScriptsPage } from './pages/scriptsPage';
 import { createAssistant, type AssistantAction } from './ai/assistant';
 import { setAssistantHub } from './ai/hub';
 import { guessMarket, type MarketRef } from './data/quotes';
+import { LATEST_HELPER_VERSION, helper } from './data/schwab';
 import { allIndicators } from './indicators/library';
 import { persist, state } from './state';
 import { TIMEFRAMES, type Timeframe } from './types';
@@ -27,56 +19,69 @@ interface Page {
   stop?(): void;
 }
 
-const openChart = (ref: MarketRef) => {
-  chartPage.open(ref);
-  location.hash = '#chart';
-};
-
 /** The pop-out AI window shows only the assistant, so it doesn't build (or save state from) the pages. */
 const isAiWindow = location.hash === '#ai-window';
 
-type PageEntry = { route: string; label: string; icon: IconName; title: string; page: Page };
-let chartPage: ReturnType<typeof createChartPage>;
-let pages: PageEntry[] = [];
-
-function buildPages() {
-  chartPage = createChartPage();
-  pages = [
-    { route: 'home', label: 'Home', icon: 'home', title: 'Trading Platform', page: createHomePage(openChart, () => (location.hash = '#calendar')) },
-    { route: 'chart', label: 'Chart', icon: 'chart', title: '', page: chartPage },
-    { route: 'multi', label: 'Multi', icon: 'grid', title: 'Multi-chart', page: createMultiChartPage(openChart) },
-    { route: 'flow', label: 'Flow', icon: 'flow', title: 'Flow', page: createFlowPage() },
-    { route: 'research', label: 'Research', icon: 'research', title: 'Research', page: createResearchPage() },
-    { route: 'macro', label: 'Macro', icon: 'macro', title: 'Macro', page: createMacroPage() },
-    { route: 'portfolio', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', page: createPortfolioPage() },
-    { route: 'clients', label: 'Clients', icon: 'clients', title: 'Clients & Reports', page: createClientsPage() },
-    { route: 'backtest', label: 'Backtest', icon: 'backtest', title: 'Backtest', page: createBacktestPage() },
-    { route: 'calendar', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', page: createCalendarPage() },
-    {
-      route: 'scripts',
-      label: 'Scripts',
-      icon: 'code',
-      title: 'Scripts',
-      page: createScriptsPage({
-        onAddToChart: (defId) => {
-          chartPage.addIndicatorById(defId);
-          location.hash = '#chart';
-        },
-        onScriptSaved: (defId) => chartPage.refreshIndicatorsFor(defId),
-      }),
-    },
-  ];
+let chartPage: ReturnType<typeof createChartPage> | null = null;
+/** Where pages are added when they're first built. */
+let appViews: HTMLElement | null = null;
+/** Counts page switches, so a slow-loading page doesn't appear after the user moved on. */
+let routeRequest = 0;
+/** The chart page is built on first use (opening a chart from anywhere, or the AI adding an indicator). */
+function getChartPage() {
+  chartPage ??= createChartPage();
+  return chartPage;
 }
 
-if (!isAiWindow) buildPages();
+const openChart = (ref: MarketRef) => {
+  getChartPage().open(ref);
+  location.hash = '#chart';
+};
+
+/**
+ * Each page is built the first time it's opened (and its code downloaded then), so the platform starts
+ * quickly instead of building all 13 pages at launch.
+ */
+interface PageEntry {
+  route: string;
+  label: string;
+  icon: IconName;
+  title: string;
+  create: () => Page | Promise<Page>;
+  page?: Page;
+  loading?: Promise<Page>;
+}
+
+const pages: PageEntry[] = [
+  { route: 'home', label: 'Home', icon: 'home', title: 'Trading Platform', create: () => createHomePage(openChart, () => (location.hash = '#calendar')) },
+  { route: 'chart', label: 'Chart', icon: 'chart', title: '', create: () => getChartPage() },
+  { route: 'multi', label: 'Multi', icon: 'grid', title: 'Multi-chart', create: async () => (await import('./pages/multiChartPage')).createMultiChartPage(openChart) },
+  { route: 'flow', label: 'Flow', icon: 'flow', title: 'Flow', create: async () => (await import('./pages/flowPage')).createFlowPage() },
+  { route: 'research', label: 'Research', icon: 'research', title: 'Research', create: async () => (await import('./pages/researchPage')).createResearchPage() },
+  { route: 'macro', label: 'Macro', icon: 'macro', title: 'Macro', create: async () => (await import('./pages/macroPage')).createMacroPage() },
+  { route: 'portfolio', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', create: async () => (await import('./pages/portfolioPage')).createPortfolioPage() },
+  { route: 'clients', label: 'Clients', icon: 'clients', title: 'Clients & Reports', create: async () => (await import('./pages/clientsPage')).createClientsPage() },
+  { route: 'backtest', label: 'Backtest', icon: 'backtest', title: 'Backtest', create: async () => (await import('./pages/backtestPage')).createBacktestPage() },
+  { route: 'calendar', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', create: async () => (await import('./pages/calendarPage')).createCalendarPage() },
+  {
+    route: 'scripts',
+    label: 'Scripts',
+    icon: 'code',
+    title: 'Scripts',
+    create: async () =>
+      (await import('./pages/scriptsPage')).createScriptsPage({
+        onAddToChart: (defId) => {
+          getChartPage().addIndicatorById(defId);
+          location.hash = '#chart';
+        },
+        onScriptSaved: (defId) => getChartPage().refreshIndicatorsFor(defId),
+      }),
+  },
+];
 
 // ---------- AI assistant ----------
 
 const AI_CHANNEL = 'tp-ai-actions';
-
-function currentPage() {
-  return pages.find((p) => location.hash === `#${p.route}`) ?? pages[0];
-}
 
 function aiContext(): Record<string, string> {
   const page = currentPage();
@@ -108,7 +113,7 @@ function runAction(a: AssistantAction) {
     const defs = allIndicators();
     const def = defs.find((d) => d.shortName.toLowerCase() === q || d.name.toLowerCase() === q) ?? defs.find((d) => `${d.name} ${d.shortName}`.toLowerCase().includes(q));
     if (!def) return toast(`Couldn't find an indicator called "${a.indicator}"`);
-    chartPage.addIndicatorById(def.id);
+    getChartPage().addIndicatorById(def.id);
     location.hash = '#chart';
     toast(`Added ${def.name}`);
     return;
@@ -142,6 +147,21 @@ if (isAiWindow) {
   document.querySelector('#app')!.append(assistant.el);
   assistant.focus();
 } else {
+  const views = h('div', { class: 'views' });
+  const updateBanner = h('div', { class: 'update-banner', hidden: true, role: 'status' });
+  let bannerDismissed = false;
+  /** A slim notice when a newer helper is available; everything that works with the old one keeps working. */
+  function showUpdateBanner() {
+    const v = helper.version;
+    updateBanner.hidden = bannerDismissed || v == null || !helper.outdated;
+    if (updateBanner.hidden || v == null) return;
+    updateBanner.replaceChildren(
+      h('span', {}, h('b', {}, `Helper update available (you have version ${v}, newest is ${LATEST_HELPER_VERSION}). `), v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Clients and the AI need the update. ' : 'It includes bug fixes. '),
+      h('a', { href: 'https://github.com/cadenb777-jpg/Trading-Platform', target: '_blank', rel: 'noopener' }, 'Get it: Code → Download ZIP, replace your helper folder, restart it'),
+      h('button', { class: 'icon-btn', 'aria-label': 'Dismiss', title: 'Dismiss', onclick: () => ((bannerDismissed = true), showUpdateBanner()) }, '✕'),
+    );
+  }
+  appViews = views;
   const drawer = h('aside', { class: 'ai-drawer', hidden: true, 'aria-label': 'AI assistant' });
   const assistant = createAssistant({
     mode: 'drawer',
@@ -199,22 +219,51 @@ if (isAiWindow) {
         h('button', { class: 'nav-btn', title: 'Settings', 'aria-label': 'Settings', onclick: () => openSettings() }, icon('gear', 22), h('span', { class: 'nav-label' }, 'Settings')),
       ),
     ),
-    h('div', { class: 'views' }, ...pages.map((p) => p.page.el)),
+    h('div', { class: 'app-main' }, updateBanner, views),
     drawer,
   );
+  helper.onAvailability(showUpdateBanner);
 
   window.addEventListener('hashchange', route);
   route();
   startAlertWatcher();
 }
 
-function route() {
+function currentPage() {
+  return pages.find((p) => location.hash === `#${p.route}`) ?? pages[0];
+}
+
+/** Builds a page the first time it's needed and adds it to the screen. */
+function ensurePage(entry: PageEntry): Promise<Page> {
+  if (entry.page) return Promise.resolve(entry.page);
+  entry.loading ??= Promise.resolve(entry.create()).then((page) => {
+    entry.page = page;
+    page.el.hidden = true;
+    appViews?.append(page.el);
+    return page;
+  });
+  return entry.loading;
+}
+
+async function route() {
   const current = currentPage();
+  const mine = ++routeRequest;
+  document.querySelectorAll<HTMLElement>('.nav-btn[data-route]').forEach((b) => b.classList.toggle('active', b.dataset.route === current.route));
+  if (current.title) document.title = current.title === 'Trading Platform' ? current.title : `${current.title} · Trading Platform`;
+  let page: Page;
+  try {
+    page = await ensurePage(current);
+  } catch {
+    // The page's code couldn't be downloaded (e.g. offline or the site was just updated): reload once.
+    toast('Couldn’t load that page. Refreshing…');
+    setTimeout(() => location.reload(), 1200);
+    return;
+  }
+  if (mine !== routeRequest) return; // the user already moved on to another page
   for (const p of pages) {
+    if (!p.page) continue;
     p.page.el.hidden = p !== current;
     if (p !== current) p.page.stop?.();
   }
-  document.querySelectorAll<HTMLElement>('.nav-btn[data-route]').forEach((b) => b.classList.toggle('active', b.dataset.route === current.route));
-  current.page.start();
-  if (current.title) document.title = current.title === 'Trading Platform' ? current.title : `${current.title} · Trading Platform`;
+  page.start();
 }

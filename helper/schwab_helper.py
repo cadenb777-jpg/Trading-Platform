@@ -50,6 +50,7 @@ PLATFORM_URL = 'https://cadenb777-jpg.github.io/Trading-Platform/'
 # Keys and login tokens live in your home folder, never inside the project folder.
 DATA_DIR = Path.home() / '.trading-platform'
 CONFIG_PATH = DATA_DIR / 'schwab_config.json'
+LOG_PATH = DATA_DIR / 'helper.log'
 TOKEN_PATH = DATA_DIR / 'schwab_token.json'
 
 # Only these web pages may connect to the helper.
@@ -534,6 +535,15 @@ def merge_fomc(events):
     return unique
 
 
+def unknown_request_message(kind):
+    """Why a request can't be answered: a feature that failed to start, or a request this helper doesn't know."""
+    if engine.LOAD_ERRORS:
+        failed = ', '.join(engine.LOAD_ERRORS)
+        return (f'That feature isn\'t available because part of the helper couldn\'t start ({failed}). '
+                'Close the helper and start it again; if it keeps happening, download the helper again. Details are in helper.log.')
+    return f'This helper doesn\'t know "{kind}". Download the latest helper from GitHub and restart it.'
+
+
 # ---------- Live data ----------
 
 
@@ -549,14 +559,20 @@ class Market:
         self.stream_factory = stream_factory
         self.browsers = set()
         self.listeners = {}  # symbol -> set of browser connections
-        self.status = {'type': 'status', 'status': 'connecting', 'message': 'Connecting to Schwab', 'version': HELPER_VERSION}
+        self.status = self._status('connecting', 'Connecting to Schwab')
         self.quotes = {}  # symbol -> {'last': ..., 'prevClose': ...}
         self.dirty_quotes = set()
         self.last_volume = {}
         self.seen = set()
 
+    @staticmethod
+    def _status(status, message):
+        # `problems` lists features that couldn't start, shown in the platform's Settings window.
+        problems = [f'{name}: {err}' for name, err in engine.LOAD_ERRORS.items()]
+        return {'type': 'status', 'status': status, 'message': message, 'version': HELPER_VERSION, 'problems': problems, 'log': str(LOG_PATH)}
+
     def set_status(self, status, message):
-        self.status = {'type': 'status', 'status': status, 'message': message, 'version': HELPER_VERSION}
+        self.status = self._status(status, message)
         broadcast(self.browsers, json.dumps(self.status))
 
     # ----- Browser side -----
@@ -593,6 +609,8 @@ class Market:
                         await ws.send(json.dumps(self.quote_message(symbol)))
                 elif kind == 'unsubscribe':
                     self.remove_listener(ws, symbol)
+                else:
+                    await ws.send(json.dumps({'type': 'error', 'id': msg.get('id'), 'message': unknown_request_message(kind)}))
         finally:
             self.browsers.discard(ws)
             for symbol in list(self.listeners):
@@ -768,6 +786,18 @@ def main():
     parser.add_argument('--reset', action='store_true', help='enter new Schwab keys and log in again')
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format='%(asctime)s  %(message)s', datefmt='%H:%M:%S')
+    # Also keep a log file, so problems can be looked at after the window is closed.
+    try:
+        import logging.handlers
+        DATA_DIR.mkdir(exist_ok=True)
+        file_log = logging.handlers.RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=1, encoding='utf-8')
+        file_log.setFormatter(logging.Formatter('%(asctime)s  %(levelname)s  %(name)s  %(message)s'))
+        logging.getLogger().addHandler(file_log)
+    except OSError:
+        pass
+    log.info('Helper version %s starting (Python %s)', HELPER_VERSION, sys.version.split()[0])
+    for name, err in engine.LOAD_ERRORS.items():
+        log.warning('Feature unavailable: %s (%s)', name, err)
     logging.getLogger('httpx').setLevel(logging.WARNING)
     logging.getLogger('websockets').setLevel(logging.WARNING)
 
