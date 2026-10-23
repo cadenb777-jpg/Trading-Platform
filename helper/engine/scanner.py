@@ -11,6 +11,7 @@ record on all Nasdaq-100 stocks and on this stock, a random-entry and a random-w
 earnings dates inside the holding period, news, insider buying and big options trades. Signals, not certainties.
 """
 import asyncio
+import math
 import datetime as dt
 import logging
 import time
@@ -36,7 +37,6 @@ NASDAQ_100 = [
 ]
 UNIVERSE = NASDAQ_100
 CONTEXT = ['QQQ']  # read for the market regime, not traded
-MAX_EXTRA = 25  # watchlist symbols added on top of the Nasdaq-100
 NDX_COT = '209742'  # Nasdaq-100 E-mini futures: the COT market for Nasdaq stocks
 # Schwab allows about 120 requests a minute for the whole app, and the charts share it: the scanner sends one
 # request at a time, at most one every 0.7 s (about 85 a minute), so the owner's own charts always have room.
@@ -264,6 +264,111 @@ def split_bars(history, quote):
     return done, done + [tb]
 
 
+# ---------- Other time frames: hourly bars (short swing) and weekly bars (position) ----------
+
+OPEN_MIN, CLOSE_MIN = 9 * 60 + 30, 16 * 60  # regular session, New York time
+
+
+def hourly_bars(bars30):
+    """60-minute bars for the regular session (9:30, 10:30 ... 15:30, the last one half an hour) from 30-minute bars.
+    Pre- and after-market bars are left out so every day has the same 7 bars."""
+    out, key = [], None
+    for b in bars30:
+        t = dt.datetime.fromtimestamp(b['time'], EASTERN)
+        m = t.hour * 60 + t.minute
+        if t.weekday() >= 5 or not OPEN_MIN <= m < CLOSE_MIN:
+            continue
+        start_m = OPEN_MIN + (m - OPEN_MIN) // 60 * 60
+        start = t.replace(hour=start_m // 60, minute=start_m % 60, second=0, microsecond=0)
+        if (t.date(), start_m) != key:
+            key = (t.date(), start_m)
+            out.append({'time': int(start.timestamp()), 'open': b['open'], 'high': b['high'], 'low': b['low'], 'close': b['close'], 'volume': b.get('volume', 0)})
+        else:
+            cur = out[-1]
+            cur['high'], cur['low'], cur['close'] = max(cur['high'], b['high']), min(cur['low'], b['low']), b['close']
+            cur['volume'] += b.get('volume', 0)
+    return out
+
+
+def _live_price(quote):
+    q = (quote or {}).get('quote') or {}
+    last, when = q.get('lastPrice'), q.get('tradeTime') or q.get('quoteTime')
+    return (last, when / 1000) if isinstance(last, (int, float)) and last > 0 and when else (None, None)
+
+
+def split_hourly(hours, quote, now=None):
+    """(finished hourly bars, bars with this hour still forming or None). During the session the forming hour is
+    brought up to date with the live price, so every 5-minute scan sees where it stands now."""
+    now = now or dt.datetime.now(EASTERN)
+    if not hours:
+        return [], None
+    m = now.hour * 60 + now.minute
+    if now.weekday() >= 5 or not OPEN_MIN <= m < CLOSE_MIN:
+        return hours, None
+    start_m = OPEN_MIN + (m - OPEN_MIN) // 60 * 60
+    start = int(now.replace(hour=start_m // 60, minute=start_m % 60, second=0, microsecond=0).timestamp())
+    done = [b for b in hours if b['time'] < start]
+    cur = dict(hours[-1]) if hours[-1]['time'] == start else None
+    last, when = _live_price(quote)
+    if last and when and when >= start:
+        cur = cur or {'time': start, 'open': last, 'high': last, 'low': last, 'close': last, 'volume': 0}
+        cur['high'], cur['low'], cur['close'] = max(cur['high'], last), min(cur['low'], last), last
+    return done, (done + [cur] if cur else None)
+
+
+def _week(t):
+    return bar_day(t + 12 * 3600).isocalendar()[:2]
+
+
+def split_weekly(weeks, quote, now=None):
+    """(finished weekly bars, bars with this week still forming or None). This week's bar is updated with today's
+    live high, low and price; it counts as finished after Friday's close."""
+    now = now or dt.datetime.now(EASTERN)
+    if not weeks:
+        return [], None
+    this_week = now.date().isocalendar()[:2]
+    done = [w for w in weeks if _week(w['time']) < this_week]
+    cur = dict(weeks[-1]) if _week(weeks[-1]['time']) == this_week else None
+    tb = today_bar(quote, weeks[-1]['time'])
+    if tb:
+        cur = cur or {'time': tb['time'], 'open': tb['open'], 'high': tb['high'], 'low': tb['low'], 'close': tb['close'], 'volume': 0}
+        cur['high'], cur['low'], cur['close'] = max(cur['high'], tb['high']), min(cur['low'], tb['low']), tb['close']
+    if not cur:
+        return done, None
+    if now.weekday() >= 5 or (now.weekday() == 4 and session_finished(now)):
+        return done + [cur], None
+    return done, done + [cur]
+
+
+async def hourly_history(ctx, symbol):
+    """About 6 months of hourly bars, refreshed every 30 minutes (the live price fills in between)."""
+    now = dt.datetime.now(EASTERN)
+    bucket = f"{now:%Y-%m-%d %H}:{now.minute // 30}"
+    bars30 = await _history(ctx, symbol, 'get_price_history_every_thirty_minutes', 180, ('scan-30m', bucket), 1800)
+    return hourly_bars(bars30)
+
+
+async def weekly_history(ctx, symbol):
+    """About 15 years of weekly bars, fetched once a day."""
+    return await _history(ctx, symbol, 'get_price_history_every_week', 15 * 366, ('scan-weekly', str(ny_today())), 20 * 3600)
+
+
+async def dark_pool(ctx, s):
+    """FINRA's daily short-sale volume for off-exchange trades (dark pools and internalisers): the 5-day share
+    against its 40-day norm. Market makers short to fill customer buy orders, so an unusual rise often comes with
+    heavy buying. Shown as a reading, not scored."""
+    try:
+        sv = await positioning.short_volume(ctx, {'symbol': s['symbol'], 'days': 40})
+    except Exception as err:
+        log.info('Scanner dark-pool data for %s failed: %s', s['symbol'], err)
+        return
+    a5, a40 = sv['avg5'], sv['avgAll']
+    diff = a5 - a40
+    s['darkPool'] = {'avg5': a5, 'avg40': a40, 'date': sv['latest']['date']}
+    s['checks'].append({'label': 'Dark pool (FINRA off-exchange short volume)', 'ok': None,
+                        'detail': f"5-day {a5:.0%} vs 40-day {a40:.0%} ({'unusually high: often heavy buying being filled' if diff > 0.05 else 'unusually low' if diff < -0.05 else 'normal'})"})
+
+
 async def cot_for(ctx, code):
     rows = await positioning.cot_rows(ctx, code)
     return st.cot_index(rows) if rows else []
@@ -330,8 +435,7 @@ _bt_cache = {}  # (symbol, strategy, last completed day) -> trades
 
 
 def stock_trades(symbol, key, ind):
-    day = bar_day(ind['bars'][-1]['time']) if ind['bars'] else None
-    ck = (symbol, key, day)
+    ck = (symbol, key, ind.get('horizon'), ind['bars'][-1]['time'] if ind['bars'] else None)
     if len(_bt_cache) > 5000:
         _bt_cache.clear()  # a new day: yesterday's results are no longer used
     if ck not in _bt_cache:
@@ -352,15 +456,16 @@ def setup_state(ind_all, s, plan, d):
     return ('in trade', t) if still_open else None
 
 
-SIGNAL_LOOKBACK = 25  # sessions: longer than any strategy's entry window + holding period (breakout: 2 + 20)
+SIGNAL_LOOKBACK = 25  # bars, for strategies without a time-frame entry (each real one uses its entry window + hold + 1)
 
 
-def analyse_symbol(symbol, done, live, cot, strategy_keys):
-    """All current setups for one stock, plus its backtests. `done` = completed daily bars, `live` = with today."""
+def analyse_symbol(symbol, done, live, cot, strategy_keys, horizon='swing'):
+    """All current setups for one stock, plus its backtests. `done` = completed bars of the time frame, `live` = with
+    the bar still forming (today's daily bar, this hour's bar, this week's bar)."""
     if len(done) < 260:
         return {'symbol': symbol, 'setups': [], 'trades': {}}
-    ind_done = st.prepare(done, cot)
-    ind_live = st.prepare(live, cot) if live else None
+    ind_done = st.prepare(done, cot, horizon)
+    ind_live = st.prepare(live, cot, horizon) if live else None
     ind_now = ind_live or ind_done
     found, trades = [], {}
     for key in strategy_keys:
@@ -370,7 +475,9 @@ def analyse_symbol(symbol, done, live, cot, strategy_keys):
         picked = None
         # The newest signal whose trade is still waiting to trigger or still open. Trades last a while (weekly swing
         # up to 7 sessions, breakout about a month), so look back far enough not to drop one that is still on.
-        for s in range(n - 1, max(0, n - 1 - SIGNAL_LOOKBACK), -1):
+        H = st.HORIZONS[horizon]
+        lookback = H['valid'].get(key, 2) + H['maxHold'].get(key, SIGNAL_LOOKBACK) + 1 if key in H['valid'] else SIGNAL_LOOKBACK
+        for s in range(n - 1, max(0, n - 1 - lookback), -1):
             if picked:
                 break
             sig = strat['signal'](ind_done, s)
@@ -390,7 +497,8 @@ def analyse_symbol(symbol, done, live, cot, strategy_keys):
             setup = build_setup(symbol, key, src, s, sig, plan, state, trade, ind_now)
             setup['new'] = state != 'forming' and s == n - 1  # signalled at the latest close
             found.append(setup)
-    return {'symbol': symbol, 'setups': found, 'trades': trades,
+    edge = st.cot_z_events(ind_done, st.HORIZONS[horizon]['maxHold']['weekly_swing']) if cot else []
+    return {'symbol': symbol, 'setups': found, 'trades': trades, 'edge': edge,
             'closes': ind_done['closes'], 'opens': [b['open'] for b in done]}
 
 
@@ -403,20 +511,25 @@ def build_setup(symbol, key, ind, s, sig, plan, state, trade, ind_now):
     entry = plan['trigger'] if plan['entry'] == 'stop' else bars[s]['close']
     risk = abs(entry - plan['stop'])
     rr = abs(plan['target'] - entry) / risk if plan['target'] is not None and risk else None
-    signal_day = bar_day(bars[s]['time'])
-    valid_until = add_sessions(signal_day, plan['validDays'])
-    exit_by = add_sessions(signal_day, plan['validDays'] + plan['maxHold'] - 1)
+    H = st.HORIZONS[ind.get('horizon', 'swing')]
+    u, spb = H['unit'], H['sessionsPerBar']
+    signal_day = bar_day(bars[s]['time']) + dt.timedelta(days=4 if u == 'week' else 0)  # a weekly bar is final on Friday
+    valid_until = add_sessions(signal_day, max(0 if u == 'hour' else 1, math.ceil(plan['validDays'] * spb)))
+    exit_by = add_sessions(signal_day, max(1, math.ceil((plan['validDays'] + plan['maxHold'] - 1) * spb)))
+    hold_sessions = max(1, math.ceil(plan['maxHold'] * spb))
     z, wr, cot = ind['z20'][s], ind['willr'][s], ind['cot'][s]
     week_ago = now_bars[-6]['close'] if len(now_bars) > 6 else None
     status_text = {
-        'forming': 'Forming today: only confirmed if it still holds at the 4 PM close',
+        'forming': {'hour': 'Forming this hour: only confirmed if it still holds when the hour closes',
+                    'day': 'Forming today: only confirmed if it still holds at the 4 PM close',
+                    'week': "Forming this week: only confirmed if it still holds at Friday's close"}[u],
         'ready': (f"Ready: {'buy' if d > 0 else 'sell short'} if price trades {'above' if d > 0 else 'below'} {entry:.2f} by {valid_until:%a %b %d}"
-                  if plan['entry'] == 'stop' else f"Ready: {'buy' if d > 0 else 'sell short'} at the next open"),
+                  if plan['entry'] == 'stop' else f"Ready: {'buy' if d > 0 else 'sell short'} at the next {u}'s open"),
         'waiting': f"Waiting for the trigger: {'above' if d > 0 else 'below'} {entry:.2f}, valid through {valid_until:%a %b %d}",
         'in trade': 'Triggered: the trade is on',
     }[state]
     out = {
-        'symbol': symbol, 'strategy': key, 'strategyName': st.STRATEGIES[key]['short'], 'direction': d,
+        'symbol': symbol, 'strategy': key, 'strategyName': H['names'].get(key, st.STRATEGIES[key]['name']), 'horizon': ind.get('horizon', 'swing'), 'unit': u, 'direction': d,
         'status': state, 'statusText': status_text, 'signalDate': signal_day.isoformat(),
         'price': price, 'day': None, 'week': price / week_ago - 1 if week_ago else None,
         'reasons': sig['reasons'], 'score': 0, 'tier': None,
@@ -424,7 +537,8 @@ def build_setup(symbol, key, ind, s, sig, plan, state, trade, ind_now):
             'entryType': plan['entry'], 'trigger': entry, 'validUntil': valid_until.isoformat(), 'stop': plan['stop'],
             'target': plan['target'], 'targetNote': plan['targetNote'], 'maxHold': plan['maxHold'], 'exitBy': exit_by.isoformat(),
             'exitRule': plan['exitRule'], 'riskReward': rr, 'riskPct': risk / entry if entry else None, 'atr': a,
-            'horizon': st.STRATEGIES[key]['horizon'],
+            'horizon': H['hold'], 'holdSessions': hold_sessions,
+            'holdText': f"up to {plan['maxHold']} {u}{'s' if plan['maxHold'] != 1 else ''} (about {hold_sessions} trading day{'s' if hold_sessions != 1 else ''})",
         },
         'indicators': {'z': z, 'willr': wr, 'cot': cot, 'cotView': st.cot_view(cot, d), 'weekly': ind['weekly'][s],
                        'wadRising': ind['wad'][s] >= ind['wad_ema'][s] if ind['wad_ema'][s] is not None else None,
@@ -442,8 +556,9 @@ def levels_around(ind, price):
     if not a:
         return {'supports': [], 'resistances': []}
     lv = st.swing_levels(ind['bars'], a)
-    extra = [{'price': ind['sma50'][-1], 'label': '50-day average'}, {'price': ind['sma200'][-1], 'label': '200-day average'},
-             {'price': ind['sma20'][-1], 'label': '20-day average'}]
+    u = st.HORIZONS[ind.get('horizon', 'swing')]['unit']
+    extra = [{'price': ind['sma50'][-1], 'label': f'50-{u} average'}, {'price': ind['sma200'][-1], 'label': f'200-{u} average'},
+             {'price': ind['sma20'][-1], 'label': f'20-{u} average'}]
     pts = [{'price': x['price'], 'label': f"Swing level ({x['touches']} touch{'' if x['touches'] == 1 else 'es'})"} for x in lv]
     pts += [x for x in extra if x['price']]
     return {'supports': sorted((x for x in pts if x['price'] < price), key=lambda x: price - x['price'])[:4],
@@ -453,22 +568,27 @@ def levels_around(ind, price):
 _random_entry_cache = {}
 
 
-def strategy_stats(per_symbol):
+def strategy_stats(per_symbol, horizon='swing'):
     """Each strategy's pooled record across all scanned stocks, with the random-entry test."""
     out = {}
+    H = st.HORIZONS[horizon]
     for key, strat in st.STRATEGIES.items():
         by_sym = {r['symbol']: r['trades'].get(key, []) for r in per_symbol if r.get('trades')}
         pooled = [t for ts in by_sym.values() for t in ts]
         closes = {r['symbol']: r['closes'] for r in per_symbol if r.get('closes')}
         opens = {r['symbol']: r['opens'] for r in per_symbol if r.get('opens')}
         # 1,000 random-entry sets take a few seconds; the past trades only change once a day, so reuse the answer.
-        ck = (key, str(ny_today()), len(pooled), round(sum(t['ret'] for t in pooled), 6))
+        ck = (key, horizon, str(ny_today()), len(pooled), round(sum(t['ret'] for t in pooled), 6))
         if ck not in _random_entry_cache:
             if len(_random_entry_cache) > 50:
                 _random_entry_cache.clear()
             _random_entry_cache[ck] = st.random_entry_test({k: v for k, v in by_sym.items() if k in closes}, closes, opens)
         test = _random_entry_cache[ck]
-        out[key] = {'name': strat['name'], 'short': strat['short'], 'horizon': strat['horizon'], 'stats': st.summarise(pooled),
+        # Out-of-sample check: the same rules on only the last 30% of each stock's history. A strategy that only
+        # worked long ago shows up here.
+        recent = [t for r in per_symbol if r.get('closes') for t in r['trades'].get(key, []) if t['signal'] >= 0.7 * len(r['closes'])]
+        out[key] = {'name': H['names'].get(key, strat['name']), 'short': H['names'].get(key, strat['name']).split(' (')[0], 'horizon': H['hold'], 'stats': st.summarise(pooled),
+                    'recent': st.summarise(recent),
                     'randomEntry': test, 'monteCarlo': st.monte_carlo(pooled), 'stocks': len(by_sym)}
     return out
 
@@ -516,7 +636,7 @@ def grade(setup, stock, strat, earnings):
     if not ps['trades']:
         add('untested', 'This strategy has no past trades yet to prove it works')
     elif not positive:
-        add('losing', f"This strategy lost money over 3 years of Nasdaq-100 history ({(ps['expectancy'] or 0) * 100:+.2f}% per trade after costs)")
+        add('losing', f"This strategy lost money in its Nasdaq-100 backtest ({(ps['expectancy'] or 0) * 100:+.2f}% per trade after costs)")
     elif not edge:
         add('unproven', f"This strategy's past results don't clearly beat random entries (profit factor {ps['profitFactor']}, "
                    f"p = {re['p']:.2f})" if re.get('p') is not None else "Too few past trades to test against random entries")
@@ -548,10 +668,15 @@ def grade(setup, stock, strat, earnings):
                           'expectancy': ps['expectancy'], 'randomEntryP': re.get('p')}
 
 
-def compute(rows, strategy_keys, earnings):
-    """CPU part of a scan: analyse every stock, pool the backtests, grade the setups."""
-    per_symbol = [analyse_symbol(sym, done, live, cot, strategy_keys) for sym, done, live, cot in rows]
-    stats = strategy_stats(per_symbol)
+def compute(rows, strategy_keys, earnings, horizon='swing'):
+    """CPU part of a scan for one time frame: analyse every stock, pool the backtests, grade the setups."""
+    per_symbol = [analyse_symbol(sym, done, live, cot, strategy_keys, horizon) for sym, done, live, cot in rows]
+    stats = strategy_stats(per_symbol, horizon)
+    events = [e for r in per_symbol for e in r.get('edge', [])]
+    ck = ('edge', horizon, str(ny_today()), len(events))
+    if ck not in _random_entry_cache:
+        _random_entry_cache[ck] = st.edge_summary(events)  # 1,000-run permutation test, once a day
+    stats['_edge'] = _random_entry_cache[ck]
     setups, filtered = [], []
     for r in per_symbol:
         for s in r['setups']:
@@ -577,12 +702,12 @@ _rw_jobs = {}  # cache key -> (done, cot) waiting for the worker
 _rw_worker = None
 
 
-def random_walk_for(symbol, key, done, cot):
+def random_walk_for(symbol, key, done, cot, horizon='swing'):
     """Per-stock random-walk test for a current setup: 1,000 shuffled histories (about 15-30 seconds of work), so it
     runs in the background one stock at a time and is cached for the day. Returns the result, or a 'pending' marker
     the first time; the card fills in when it's done (needs 5+ past trades to mean anything)."""
     global _rw_worker
-    ck = (symbol, key, bar_day(done[-1]['time']))
+    ck = (symbol, key, horizon, bar_day(done[-1]['time']))
     if ck in _rw_cache:
         return _rw_cache[ck]
     if len(_rw_cache) > 500:
@@ -597,14 +722,15 @@ async def _run_rw_jobs():
     while _rw_jobs:
         ck, (done, cot) = next(iter(_rw_jobs.items()))
         try:
-            _rw_cache[ck] = await asyncio.to_thread(st.random_walk_test, done, cot, ck[1], RW_RUNS)
+            _rw_cache[ck] = await asyncio.to_thread(st.random_walk_test, done, cot, ck[1], RW_RUNS, 11, ck[2])
         except Exception as err:
             log.info('Random-walk test for %s failed: %s', ck[0], err)
             _rw_cache[ck] = None
         _rw_jobs.pop(ck, None)
         # Show it straight away on the last published scan too.
-        for s in (_state.get('result') or {}).get('setups', []):
-            if (s['symbol'], s['strategy']) == ck[:2] and (s.get('randomWalk') or {}).get('pending'):
+        result = _state.get('result') or {}
+        for s in [x for h in (result.get('horizons') or {}).values() for x in h.get('setups', [])] + result.get('setups', []):
+            if (s['symbol'], s['strategy'], s.get('horizon', 'swing')) == ck[:3] and (s.get('randomWalk') or {}).get('pending'):
                 s['randomWalk'] = _rw_cache[ck]
 
 
@@ -613,68 +739,46 @@ async def _run_rw_jobs():
 SCAN_EVERY = 300  # the owner wants a fresh scan every 5 minutes
 
 
-async def scan(ctx, news=None):
-    session = market_session()
-    pctx = _PacedContext(ctx)
-    bad = bad_symbols()
-    extras = [s for s in sorted(_state['extra'] - bad) if s not in UNIVERSE][:MAX_EXTRA]
-    symbols = list(dict.fromkeys(UNIVERSE + extras))
-    quotes = await live_quotes(pctx, symbols + CONTEXT + ['$VIX'])
-    cot_cache, histories, skipped = {}, {}, []
-    for sym in symbols + CONTEXT:
-        try:
-            histories[sym] = await daily_history(ctx, sym)
-        except EngineError:
-            raise  # expired login: nothing else will work either
-        except Exception as err:
-            log.info('Scanner skipped %s: %s', sym, err)
-            if sym in CONTEXT:
-                continue
-            if isinstance(err, SymbolError):
-                skipped.append({'symbol': sym, 'reason': 'unknown'})
-                if sym in _state['extra']:
-                    _state['bad'][sym] = time.time()
-            else:
-                skipped.append({'symbol': sym, 'reason': 'temporary'})
+HORIZON_ORDER = ('swing', 'position', 'short')  # daily data is fetched first, so the swing results come first
+
+
+async def _horizon_rows(ctx, horizon, symbols, histories, quotes, cot_of):
+    """(symbol, finished bars, bars with the forming one, COT) for one time frame."""
     rows = []
     for sym in symbols:
         if sym not in histories:
+            continue  # no daily history: Schwab doesn't know it or it failed this time
+        try:
+            if horizon == 'swing':
+                done, live = split_bars(histories[sym], quotes.get(sym))
+            elif horizon == 'position':
+                done, live = split_weekly(await weekly_history(ctx, sym), quotes.get(sym))
+            else:
+                done, live = split_hourly(await hourly_history(ctx, sym), quotes.get(sym))
+        except EngineError:
+            raise
+        except Exception as err:
+            log.info('Scanner %s bars for %s failed: %s', horizon, sym, err)
             continue
-        code = await market_for(pctx, sym)
-        if code and code not in cot_cache:
-            try:
-                cot_cache[code] = await cot_for(ctx, code)
-            except Exception as err:
-                log.info('Scanner COT %s failed: %s', code, err)
-                cot_cache[code] = []
-        done, live = split_bars(histories[sym], quotes.get(sym))
-        rows.append((sym, done, live, cot_cache.get(code) or None))
-    if not rows:
-        raise EngineError('The scanner could not load price history from Schwab.')
-    earnings = await earnings_dates(ctx)
-    keys = list(st.STRATEGIES)
-    per_symbol, stats, setups, filtered = await asyncio.to_thread(compute, rows, keys, earnings)
+        rows.append((sym, done, live, cot_of.get(sym)))
+    return rows
 
-    # Day change from the live quote (same as the rest of the platform).
-    for s in setups:
-        q = (quotes.get(s['symbol']) or {}).get('quote') or {}
-        last, net = q.get('lastPrice'), q.get('netChange')
-        if isinstance(last, (int, float)) and isinstance(net, (int, float)) and last - net > 0:
-            s['day'] = net / (last - net)
-    tier_rank = {'A': 0, 'B': 1, 'C': 2}
-    setups.sort(key=lambda s: (tier_rank[s['tier']], s['status'] == 'forming', -s['score']))
 
-    # Extra checks for the best few per strategy: random-walk test, news, insiders and big options trades, 30-minute lean.
+async def _enrich(ctx, pctx, horizon, setups, rows, session, news, keys):
+    """Extra checks for the best few per strategy: 1,000-run random-walk test, dark-pool volume, insiders and big
+    options trades, the 30-minute lean and news."""
     top = []
     for key in keys:
-        top += [s for s in setups if s['strategy'] == key][:4]
+        top += [s for s in setups if s['strategy'] == key][:3 if horizon != 'swing' else 4]
     by_sym = {sym: (done, cot) for sym, done, _, cot in rows}
     for s in top:
         done, cot = by_sym[s['symbol']]
         if s['stock']['trades'] >= 5:
-            s['randomWalk'] = random_walk_for(s['symbol'], s['strategy'], done, cot)
-        await smart_money(pctx, s)
-        if session != 'closed':
+            s['randomWalk'] = random_walk_for(s['symbol'], s['strategy'], done, cot, horizon)
+        await dark_pool(ctx, s)
+        if s['tier'] in ('A', 'B'):
+            await smart_money(pctx, s)
+        if session != 'closed' and horizon == 'short':
             try:
                 m5 = await _history(ctx, s['symbol'], 'get_price_history_every_five_minutes', 5, 'scan-5m', 240)
                 s['bias'] = intraday_bias(m5)
@@ -696,7 +800,101 @@ async def scan(ctx, news=None):
         except Exception as err:
             log.info('Scanner news failed: %s', err)
 
-    # Market regime: Nasdaq-100 trend, breadth, VIX and where commercials sit in Nasdaq futures.
+
+async def scan(ctx, news=None, publish=None):
+    """One full scan of the Nasdaq-100 on every time frame. `publish` receives the results after each time frame,
+    so the page fills in while the slower ones (hourly bars) are still loading."""
+    session = market_session()
+    pctx = _PacedContext(ctx)
+    bad = bad_symbols()  # symbols Schwab didn't know earlier today (e.g. a ticker change) wait a day
+    symbols = [s for s in UNIVERSE if s not in bad]
+    quotes = await live_quotes(pctx, symbols + CONTEXT + ['$VIX'])
+    cot_cache, cot_of, histories = {}, {}, {}
+    skipped = [{'symbol': b, 'reason': 'unknown'} for b in sorted(bad) if b in UNIVERSE]
+    for sym in symbols + CONTEXT:
+        try:
+            histories[sym] = await daily_history(ctx, sym)
+        except EngineError:
+            raise  # expired login: nothing else will work either
+        except Exception as err:
+            log.info('Scanner skipped %s: %s', sym, err)
+            if sym not in CONTEXT:
+                skipped.append({'symbol': sym, 'reason': 'unknown' if isinstance(err, SymbolError) else 'temporary'})
+                if isinstance(err, SymbolError):
+                    _state['bad'][sym] = time.time()
+    for sym in symbols:
+        code = await market_for(pctx, sym)
+        if code and code not in cot_cache:
+            try:
+                cot_cache[code] = await cot_for(ctx, code)
+            except Exception as err:
+                log.info('Scanner COT %s failed: %s', code, err)
+                cot_cache[code] = []
+        cot_of[sym] = cot_cache.get(code) or None
+    if not any(sym in histories for sym in symbols):
+        raise EngineError('The scanner could not load price history from Schwab.')
+    earnings = await earnings_dates(ctx)
+    keys = list(st.STRATEGIES)
+
+    # Day and week change from the daily bars and live quotes (the same on every time frame).
+    moves = {}
+    for sym in symbols:
+        q = (quotes.get(sym) or {}).get('quote') or {}
+        last, net = q.get('lastPrice'), q.get('netChange')
+        day = net / (last - net) if isinstance(last, (int, float)) and isinstance(net, (int, float)) and last - net > 0 else None
+        closes = [b['close'] for b in histories.get(sym, [])]
+        week = (last or closes[-1]) / closes[-6] - 1 if len(closes) > 6 and (last or closes[-1]) else None
+        moves[sym] = (day, week)
+
+    regime = market_regime(histories, quotes, cot_cache, symbols)
+    horizons = {}
+
+    def assemble():
+        swing = horizons.get('swing') or {}
+        return {
+            'updated': time.time(), 'session': session, 'universe': 'Nasdaq-100', 'scanned': swing.get('scanned', 0),
+            'skipped': skipped, 'regime': regime, 'primary': 'weekly_swing',
+            'horizons': horizons, 'horizonInfo': {h: {k: st.HORIZONS[h][k] for k in ('label', 'hold', 'bar', 'unit', 'higher')} for h in HORIZON_ORDER},
+            # The swing results at the top level too, for older pages.
+            'strategies': swing.get('strategies', {}), 'setups': swing.get('setups', []), 'filteredOut': swing.get('filteredOut', []),
+        }
+
+    tier_rank = {'A': 0, 'B': 1, 'C': 2}
+    for horizon in HORIZON_ORDER:
+        rows = await _horizon_rows(ctx, horizon, symbols, histories, quotes, cot_of)
+        if not rows:
+            horizons[horizon] = {'scanned': 0, 'strategies': {}, 'setups': [], 'filteredOut': [], 'updated': time.time(),
+                                 'error': 'No price history for this time frame yet'}
+            continue
+        enough = [r for r in rows if len(r[1]) >= 260]
+        if not enough:
+            longest = max(len(r[1]) for r in rows)
+            horizons[horizon] = {'scanned': len(rows), 'strategies': {}, 'setups': [], 'filteredOut': [], 'updated': time.time(),
+                                 'error': f"Schwab returned only {longest} {st.HORIZONS[horizon]['unit']} bars per stock; this time frame needs at least 260 to test the strategies. It will fill in as more history becomes available."}
+            if publish:
+                publish(assemble())
+            continue
+        _, stats, setups, filtered = await asyncio.to_thread(compute, rows, keys, earnings, horizon)
+        for s in setups:
+            s['day'], s['week'] = moves.get(s['symbol'], (None, None))
+        setups.sort(key=lambda s: (tier_rank[s['tier']], s['status'] == 'forming', -s['score']))
+        await _enrich(ctx, pctx, horizon, setups, rows, session, news, keys)
+        # Many stocks are tested at once, so per-stock random-walk p-values get Benjamini-Hochberg q-values.
+        tested = [s for s in setups if s.get('randomWalk') and 'p' in s['randomWalk']]
+        for s, q in zip(tested, st.bh_qvalues([s['randomWalk']['p'] for s in tested])):
+            s['randomWalk'] = {**s['randomWalk'], 'q': q, 'tests': len(tested)}
+        edge = stats.pop('_edge', None)
+        horizons[horizon] = {
+            'scanned': len(rows), 'updated': time.time(), 'strategies': stats, 'setups': setups[:60], 'edge': edge,
+            'filteredOut': [{'symbol': s['symbol'], 'strategy': s['strategy'], 'stock': s['stock']} for s in filtered][:30],
+        }
+        if publish:
+            publish(assemble())
+    return assemble()
+
+
+def market_regime(histories, quotes, cot_cache, symbols):
+    """Nasdaq-100 trend, breadth, VIX and where commercials sit in Nasdaq futures."""
     regime = {'qqqWeekly': None, 'qqqWeek': None, 'above50': None, 'vix': None, 'ndxCot': None}
     if 'QQQ' in histories:
         done, live = split_bars(histories['QQQ'], quotes.get('QQQ'))
@@ -704,17 +902,13 @@ async def scan(ctx, news=None):
         regime['qqqWeekly'] = q_ind['weekly'][-1]
         regime['qqqWeek'] = q_ind['closes'][-1] / q_ind['closes'][-6] - 1 if len(q_ind['closes']) > 6 else None
         regime['ndxCot'] = q_ind['cot'][-1]
-    above = [r for r in per_symbol if r.get('closes') and len(r['closes']) > 50]
-    if above:
-        regime['above50'] = sum(1 for r in above if r['closes'][-1] > sum(r['closes'][-50:]) / 50) / len(above)
+    closes = [[b['close'] for b in histories[s]] for s in symbols if s in histories]
+    closes = [c for c in closes if len(c) > 50]
+    if closes:
+        regime['above50'] = sum(1 for c in closes if c[-1] > sum(c[-50:]) / 50) / len(closes)
     vq = (quotes.get('$VIX') or {}).get('quote') or {}
     regime['vix'] = vq.get('lastPrice') or vq.get('closePrice')
-    return {
-        'updated': time.time(), 'session': session, 'universe': 'Nasdaq-100', 'scanned': len(rows),
-        'skipped': skipped + [{'symbol': b, 'reason': 'unknown'} for b in sorted(bad) if b in _state['extra']],
-        'regime': regime, 'strategies': stats, 'primary': 'weekly_swing',
-        'setups': setups[:60], 'filteredOut': [{'symbol': s['symbol'], 'strategy': s['strategy'], 'stock': s['stock']} for s in filtered][:30],
-    }
+    return regime
 
 
 def next_interval():
@@ -737,7 +931,8 @@ async def background(ctx, news=None, first_delay=15):
 async def run_once(ctx, news=None):
     if _state['running']:
         return await _state['running']
-    task = asyncio.ensure_future(scan(ctx, news))
+    # Each finished time frame is shown straight away while the others are still loading.
+    task = asyncio.ensure_future(scan(ctx, news, publish=lambda r: _state.__setitem__('result', {**r, 'partial': True})))
     _state['running'] = task
     try:
         _state['result'] = await task
@@ -748,16 +943,10 @@ async def run_once(ctx, news=None):
 
 @handler('scanner.results')
 async def results(ctx, msg):
-    """The latest scan (runs one first if there isn't one yet). `symbols` adds your watchlist to the scan."""
-    extra = {str(s).upper() for s in msg.get('symbols') or [] if isinstance(s, str) and s and '-' not in s and not s.startswith('$')}
-    new = extra - _state['extra'] - set(UNIVERSE)
-    _state['extra'] |= extra
+    """The latest scan of the Nasdaq-100 (the owner's universe; runs one first if there isn't one yet)."""
     if msg.get('refresh'):
         _state['bad'].clear()  # "Scan again" retries symbols Schwab rejected earlier
     if _state['result'] is None or msg.get('refresh'):
         await run_once(ctx, ctx.news)
-    elif new and not _state['running']:
-        # Answer now with the last scan; the watchlist additions show up on the next refresh.
-        _state['refresh'] = asyncio.ensure_future(run_once(ctx, ctx.news))  # keep a reference so it isn't garbage-collected
     return {**_state['result'], 'nextScan': _state.get('next'), 'scanning': bool(_state['running'])}
 

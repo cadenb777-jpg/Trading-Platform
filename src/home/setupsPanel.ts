@@ -28,6 +28,9 @@ interface Stats {
   avgBars?: number | null;
   maxDrawdown?: number;
   grade?: string;
+  /** t-statistic of the average trade, and trades needed for t = 2 (helper v19+). */
+  tStat?: number | null;
+  tradesNeeded?: number | null;
 }
 
 export interface Setup {
@@ -63,6 +66,9 @@ export interface Setup {
     exitRule: string;
     riskReward: number | null;
     riskPct: number | null;
+    /** "up to 21 hours (about 3 trading days)" (helper v19+) */
+    holdText?: string;
+    holdSessions?: number;
     atr: number;
     horizon: string;
   };
@@ -74,6 +80,11 @@ export interface Setup {
   randomWalk?: { runs: number; p: number; verdict: 'edge' | 'maybe' | 'luck' } | { pending: true; runs: number } | null;
   monteCarlo?: MonteCarlo | null;
   trade?: { entry: number; filled: string; pnl: number; daysHeld: number };
+  /** Time frame (helper v19+): short (hourly bars), swing (daily) or position (weekly). */
+  horizon?: 'short' | 'swing' | 'position';
+  /** Bar size word: hour, day or week. */
+  unit?: string;
+  darkPool?: { avg5: number; avg40: number; date: string };
   earnings?: { date?: string; time?: string; inWindow?: boolean; unknown?: boolean } | null;
   news?: { headline: string; link?: string; source?: string; count: number; tone: number };
   smartMoney?: { text: string; points: number }[];
@@ -99,6 +110,8 @@ export interface StrategyInfo {
   stats: Stats;
   randomEntry: { p: number; trades: number; runs?: number; verdict: 'edge' | 'maybe' | 'luck' } | null;
   monteCarlo?: MonteCarlo | null;
+  /** The same rules on only the last 30% of each stock's history (out-of-sample check, helper v19+). */
+  recent?: Stats;
 }
 
 interface ScanResult {
@@ -127,7 +140,7 @@ const TIER_TEXT: Record<Tier, string> = {
 /** Plain wording for each reason code the scanner gives (scanner.grade). */
 const BLOCKERS: Record<string, string> = {
   untested: 'the strategy has no past trades yet',
-  losing: 'the strategy lost money in its 3-year test',
+  losing: 'the strategy lost money in its backtest',
   unproven: 'the strategy doesn\'t clearly beat random entries yet',
   cot: 'the big hedgers (COT) lean the other way',
   earnings: 'earnings fall inside the trade',
@@ -361,7 +374,7 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
         ? h('div', { class: 'setup-conflict small', title: 'Two strategies disagree on this stock' }, `⚠ Mixed signals: ${s.conflict.strategy} says ${s.conflict.direction > 0 ? 'BUY' : 'SELL'}${s.conflict.tier ? ` (${s.conflict.tier}-grade)` : ''}`)
         : '',
       s.trade
-        ? h('div', { class: 'setup-trade small' }, `Entered ${formatPrice(s.trade.entry)} on ${shortDate(s.trade.filled)} · `, h('b', { class: s.trade.pnl >= 0 ? 'up' : 'down' }, `${pct(s.trade.pnl)} so far`), ` · day ${s.trade.daysHeld} of ${p.maxHold}`)
+        ? h('div', { class: 'setup-trade small' }, `Entered ${formatPrice(s.trade.entry)} on ${shortDate(s.trade.filled)} · `, h('b', { class: s.trade.pnl >= 0 ? 'up' : 'down' }, `${pct(s.trade.pnl)} so far`), ` · ${s.unit ?? 'day'} ${s.trade.daysHeld} of ${p.maxHold}`)
         : '',
       h(
         'div',

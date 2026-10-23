@@ -3,7 +3,7 @@ import { CandlestickSeries, LineStyle, createChart, type IPriceLine, type UTCTim
 import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
 import { HELPER_OUTDATED, helper, loadNews, schwab, type NewsItem, type NewsSection } from '../data/schwab';
 import { insightButton } from '../ai/insight';
-import { createSetupsPanel } from '../home/setupsPanel';
+import { createSetupsTeaser } from '../home/setupsTeaser';
 import { createUpcomingPanel } from './calendarPage';
 import { openNewsSummary } from '../ui/newsSummary';
 import { persist, state } from '../state';
@@ -292,7 +292,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
   }
 
   const upcoming = createUpcomingPanel(onOpenCalendar);
-  const setups = createSetupsPanel(onOpenChart);
+  const setups = createSetupsTeaser(); // the full list lives on the Setups page
   const marketRead = insightButton(() => {
     const indexes = cards.map((c) => c.snapshot()).filter(Boolean);
     if (!indexes.length && !general) return null;

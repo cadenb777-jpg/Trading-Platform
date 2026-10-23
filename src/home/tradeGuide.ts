@@ -65,6 +65,13 @@ const READING_HELP: Record<string, string> = {
 };
 
 export function openTradeGuide(s: Setup, strat: StrategyInfo | undefined, onOpenChart: (ref: MarketRef) => void) {
+  let close = () => {};
+  const body = tradeGuideBody(s, strat, (ref) => (close(), onOpenChart(ref)));
+  close = openModal(`${s.symbol} trade guide`, body, { wide: true, noAutofocus: true }); // open at the top, not at the size boxes
+}
+
+/** The guide itself (also shown inline on the Setups page). */
+export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpenChart: (ref: MarketRef) => void): HTMLElement {
   const long = s.direction > 0;
   const p = s.plan;
   const entry = s.trade?.entry ?? (p.entryType === 'stop' ? p.trigger : s.price);
@@ -98,7 +105,7 @@ export function openTradeGuide(s: Setup, strat: StrategyInfo | undefined, onOpen
     [
       'When to get in',
       s.trade
-        ? `You're already in at ${usd(s.trade.entry)} (filled ${shortDate(s.trade.filled)}). It is ${pct(s.trade.pnl)} so far, day ${s.trade.daysHeld} of ${p.maxHold}.`
+        ? `You're already in at ${usd(s.trade.entry)} (filled ${shortDate(s.trade.filled)}). It is ${pct(s.trade.pnl)} so far, ${s.unit ?? 'day'} ${s.trade.daysHeld} of ${p.maxHold}.`
         : p.entryType === 'stop'
           ? `Place a ${long ? 'buy-stop' : 'sell-stop'} order at ${usd(p.trigger)}, ${long ? 'just above' : 'just below'} the signal day's ${long ? 'high' : 'low'}. It only fills if the price ${long ? 'rises' : 'falls'} through that level, which shows ${long ? 'buyers' : 'sellers'} have taken over. It's good until ${shortDate(p.validUntil)}; if it hasn't filled by then, cancel it: the moment has passed.`
           : `${long ? 'Buy' : 'Sell short'} at the next market open (around ${usd(s.price)}). This strategy doesn't wait for confirmation because snap-backs happen fast.`,
@@ -113,7 +120,7 @@ export function openTradeGuide(s: Setup, strat: StrategyInfo | undefined, onOpen
         ? `Target ${usd(p.target)}: ${p.targetNote}.${p.riskReward != null ? ` You're risking $1 to make about $${p.riskReward.toFixed(1)}${p.riskReward < 1.5 ? ', which is thin: winners have to come often for this to pay' : ''}.` : ''}${s.strategy === 'weekly_swing' ? ' Once the trade is up as much as you risked, move the stop to your entry price so it can no longer lose.' : ''}`
         : `No fixed target: the stop trails behind the price. ${p.exitRule}`,
     ],
-    ['When to get out anyway', `${exitOnly(p.exitRule)} At the latest, close it by ${shortDate(p.exitBy)}.`],
+    ['How long to hold, and when to get out anyway', `Plan to hold ${p.holdText ?? `up to ${p.maxHold} ${s.unit ?? 'day'}s`}. ${exitOnly(p.exitRule)} At the latest, close it by ${shortDate(p.exitBy)}.`],
     [
       'How much to buy',
       h(
@@ -202,7 +209,7 @@ export function openTradeGuide(s: Setup, strat: StrategyInfo | undefined, onOpen
 
     h('h3', {}, 'How it has worked before'),
     st.trades
-      ? h('p', {}, `On ${s.symbol}: ${st.trades} past trades over about 3 years, ${Math.round((st.winRate ?? 0) * 100)}% winners, ${pct(st.expectancy, 2)} per trade after costs, held ${st.avgBars?.toFixed(1) ?? '—'} days on average (${st.grade}).`)
+      ? h('p', {}, `On ${s.symbol}: ${st.trades} past trades in its backtest, ${Math.round((st.winRate ?? 0) * 100)}% winners, ${pct(st.expectancy, 2)} per trade after costs, held ${st.avgBars?.toFixed(1) ?? '—'} ${s.unit ?? 'day'}s on average (${st.grade}).`)
       : h('p', { class: 'muted' }, `No past trades on ${s.symbol} with this strategy, so the record below is for all Nasdaq-100 stocks.`),
     strat ? h('p', {}, `Across ${strat.stocks} Nasdaq-100 stocks: ${strat.stats.trades} trades, ${Math.round((strat.stats.winRate ?? 0) * 100)}% winners, ${pct(strat.stats.expectancy, 2)} per trade, profit factor ${strat.stats.profitFactor ?? '—'}.`) : '',
     re
@@ -235,9 +242,9 @@ export function openTradeGuide(s: Setup, strat: StrategyInfo | undefined, onOpen
     h(
       'div',
       { class: 'guide-actions' },
-      h('button', { class: 'btn primary', onclick: () => (close(), onOpenChart({ provider: 'schwab', symbol: s.symbol })) }, `Open ${s.symbol} chart`),
+      h('button', { class: 'btn primary', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, `Open ${s.symbol} chart`),
     ),
     h('p', { class: 'muted tiny' }, `Education, not advice. Past results and simulations don't guarantee the future. Plan to ${side} only what you can afford to lose.`),
   );
-  const close = openModal(`${s.symbol} trade guide`, body, { wide: true, noAutofocus: true }); // open at the top, not at the size boxes
+  return body;
 }

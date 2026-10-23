@@ -332,6 +332,9 @@ class FakeSchwab:
     async def get_price_history_every_five_minutes(self, symbol, **kw):
         return self._history(symbol, 300)
 
+    async def get_price_history_every_week(self, symbol, **kw):
+        return self._history(symbol, 7 * 86400)
+
     async def get_quotes(self, symbols, **kw):
         return Resp(200, {})
 
@@ -365,10 +368,11 @@ class ScanErrors(unittest.TestCase):
     def scan(self, schwab):
         return asyncio.run(scanner.scan(FakeCtx(schwab)))
 
-    def test_unknown_watchlist_symbol_is_skipped_and_remembered(self):
-        scanner._state['extra'] = {'BADX'}
+    def test_unknown_symbol_is_skipped_and_remembered(self):
+        scanner.UNIVERSE.append('BADX')
         r = self.scan(FakeSchwab({'BADX': 400}))
         self.assertEqual(r['scanned'], 2)
+        self.assertEqual(set(r['horizons']), {'short', 'swing', 'position'})
         self.assertIn({'symbol': 'BADX', 'reason': 'unknown'}, r['skipped'])
         schwab = FakeSchwab({'BADX': 400})
         r2 = self.scan(schwab)
@@ -376,7 +380,7 @@ class ScanErrors(unittest.TestCase):
         self.assertIn({'symbol': 'BADX', 'reason': 'unknown'}, r2['skipped'])  # ...but still listed
 
     def test_temporary_error_only_skips_one_scan(self):
-        scanner._state['extra'] = {'TMP'}
+        scanner.UNIVERSE.append('TMP')
         r = self.scan(FakeSchwab({'TMP': 503}))
         self.assertIn({'symbol': 'TMP', 'reason': 'temporary'}, r['skipped'])
         self.assertEqual(scanner._state['bad'], {})
@@ -642,6 +646,106 @@ class OpenTradesStayListed(unittest.TestCase):
         for s in both:
             self.assertEqual(s['conflict']['direction'], -s['direction'])
             self.assertTrue(any(c['label'] == 'Other strategies' for c in s['checks']))
+
+
+
+class StatisticsDesign(unittest.TestCase):
+    """The statistics behind the grades (docs/research/setups-statistics.md)."""
+
+    def test_rolling_quantile_uses_only_earlier_bars(self):
+        from engine import strategies
+        vals = list(range(10))
+        q = strategies.rolling_quantile(vals, 4, 0.0)
+        self.assertEqual(q[:4], [None] * 4)
+        self.assertEqual(q[4], 0)  # min of bars 0..3
+        self.assertEqual(q[9], 5)  # min of bars 5..8: bar 9 itself is not included
+        changed = vals[:9] + [-100]
+        self.assertEqual(strategies.rolling_quantile(changed, 4, 0.0)[9], 5)
+
+    def test_benjamini_hochberg(self):
+        from engine import strategies
+        q = strategies.bh_qvalues([0.01, 0.04, None, 0.03, 0.5])
+        self.assertAlmostEqual(q[0], 0.04)  # 0.01 * 4 / 1
+        self.assertAlmostEqual(q[3], 0.04 * 4 / 3 if 0.04 * 4 / 3 < 0.03 * 4 / 2 else 0.03 * 4 / 2)
+        self.assertIsNone(q[2])
+        self.assertAlmostEqual(q[4], 0.5)
+
+    def test_edge_study_finds_a_planted_edge_and_not_a_fake_one(self):
+        from engine import strategies
+        rnd = random.Random(2)
+        real = [{'cot': 'agree', 'ret': rnd.gauss(0.02, 0.02)} for _ in range(150)] + [{'cot': 'against', 'ret': rnd.gauss(-0.01, 0.02)} for _ in range(150)]
+        self.assertEqual(strategies.edge_summary(real)['test']['verdict'], 'COT adds an edge')
+        fake = [{'cot': rnd.choice(['agree', 'against']), 'ret': rnd.gauss(0, 0.02)} for _ in range(160)]
+        self.assertGreater(strategies.edge_summary(fake)['test']['p'], 0.05)
+
+    def test_bounds_fit_each_stock(self):
+        from engine import strategies
+        calm = strategies.prepare(random_walk(600, seed=1), None)
+        wild = strategies.prepare([{**b, 'close': b['close']} for b in random_walk(600, seed=9)], None)
+        for ind in (calm, wild):
+            self.assertTrue(all(-2.5 <= v <= -0.75 for v in ind['zlo'] if v is not None))
+            self.assertTrue(all(2 <= v <= 15 for v in ind['rlo'] if v is not None))
+
+    def test_cot_z_events_respect_the_holding_period(self):
+        from engine import strategies
+        ind = strategies.prepare(random_walk(800, seed=4), None)
+        ev = strategies.cot_z_events(ind, 5)
+        self.assertTrue(all(e['cot'] == 'none' for e in ev))  # no COT data given
+        self.assertTrue(all(e['dir'] in (1, -1) for e in ev))
+
+
+
+class TimeFrames(unittest.TestCase):
+    """Hourly and weekly bars, and the bar still forming, for the short-swing and position time frames."""
+    E = scanner.EASTERN
+
+    def ts(self, *a):
+        return int(dt.datetime(*a, tzinfo=self.E).timestamp())
+
+    def test_hourly_bars_cover_the_regular_session_only(self):
+        b30 = [bar(self.ts(2026, 10, 21, h, m), 10, 11, 9, 10 + i) for i, (h, m) in enumerate(
+            [(8, 0), (9, 30), (10, 0), (10, 30), (11, 0), (15, 30), (16, 0)])]
+        hb = scanner.hourly_bars(b30)
+        self.assertEqual([dt.datetime.fromtimestamp(b['time'], self.E).strftime('%H:%M') for b in hb], ['09:30', '10:30', '15:30'])
+        self.assertEqual(hb[0]['close'], 12)  # the 10:00 half-hour closes the 9:30 hour
+
+    def test_forming_hour_uses_the_live_price(self):
+        hb = [bar(self.ts(2026, 10, 21, 9, 30), 10, 11, 9, 10.5), bar(self.ts(2026, 10, 21, 10, 30), 10.5, 10.8, 10.4, 10.6)]
+        now = dt.datetime(2026, 10, 21, 10, 50, tzinfo=self.E)
+        quote = {'quote': {'lastPrice': 11.2, 'tradeTime': now.timestamp() * 1000}}
+        done, live = scanner.split_hourly(hb, quote, now)
+        self.assertEqual(len(done), 1)
+        self.assertEqual(live[-1]['close'], 11.2)
+        self.assertEqual(live[-1]['high'], 11.2)
+        done2, live2 = scanner.split_hourly(hb, quote, dt.datetime(2026, 10, 21, 17, 0, tzinfo=self.E))
+        self.assertEqual((len(done2), live2), (2, None))  # after the close every hour is finished
+
+    def test_this_week_is_forming_until_friday_close(self):
+        weeks = [bar(self.ts(2026, 10, 12, 0, 0), 10, 11, 9, 10), bar(self.ts(2026, 10, 19, 0, 0), 10, 12, 9, 11)]
+        wed = dt.datetime(2026, 10, 21, 12, 0, tzinfo=self.E)
+        done, live = scanner.split_weekly(weeks, None, wed)
+        self.assertEqual((len(done), len(live)), (1, 2))
+        done, live = scanner.split_weekly(weeks, None, dt.datetime(2026, 10, 23, 16, 30, tzinfo=self.E))
+        self.assertEqual((len(done), live), (2, None))
+
+    def test_every_time_frame_has_its_own_lengths(self):
+        from engine import strategies
+        for h, cfg in strategies.HORIZONS.items():
+            ind = strategies.prepare(random_walk(600, seed=7), None, h)
+            self.assertEqual(ind['horizon'], h)
+            for key in strategies.STRATEGIES:
+                # analyse_symbol looks back entry window + hold + 1 bars, so an open trade is never dropped.
+                bars = random_walk(400, seed=3)
+                n = len(bars)
+                fake = OpenTradesStayListed().fake_strategy(n - cfg['maxHold'][key])  # filled next bar, one bar of the hold left
+                fake['plan'] = (lambda real: lambda ind, i, d: {**real(ind, i, d), 'validDays': cfg['valid'][key], 'maxHold': cfg['maxHold'][key]})(fake['plan'])
+                strategies.STRATEGIES[key + '_t'] = fake
+                cfg['valid'][key + '_t'], cfg['maxHold'][key + '_t'] = cfg['valid'][key], cfg['maxHold'][key]
+                try:
+                    out = scanner.analyse_symbol('TEST', bars, None, None, [key + '_t'], h)
+                finally:
+                    del strategies.STRATEGIES[key + '_t'], cfg['valid'][key + '_t'], cfg['maxHold'][key + '_t']
+                self.assertEqual(len(out['setups']), 1, (h, key))
 
 
 if __name__ == '__main__':

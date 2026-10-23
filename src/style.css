@@ -4757,3 +4757,59 @@ body.ai-window-body #app {
 .win-study-edit .input { width: 90px; }
 .new-chip { background: var(--link); color: var(--bg); border-radius: 8px; padding: 0 6px; font-weight: 600; font-size: 11px; }
 .setup-conflict { color: var(--warn-text); }
+
+/* Setups page (src/pages/setupsPage.ts) */
+.sp-horizons button { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; padding: 4px 12px; }
+.sp-status { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 10px; }
+.sp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.sp-card, .sp-edge { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--panel); }
+.sp-card { cursor: pointer; }
+.sp-card.on, .sp-card:hover { border-color: var(--link); }
+.sp-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.sp-card-stats { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 4px; }
+.sp-verdict { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 8px; border: 1px solid currentColor; white-space: nowrap; }
+.sp-verdict.up { color: var(--up); }
+.sp-verdict.down { color: var(--down); }
+.sp-verdict.warn { color: var(--warn-text); }
+.sp-edge { grid-column: span 2; }
+.sp-edge-table { width: 100%; border-collapse: collapse; margin: 4px 0; }
+.sp-edge-table th, .sp-edge-table td { text-align: left; padding: 2px 6px; border-bottom: 1px solid var(--border); }
+.sp-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 10px; }
+.sp-auto { display: inline-flex; align-items: center; gap: 4px; }
+.sp-main { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.sp-left { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.sp-list { overflow-x: auto; }
+.sp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sp-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 6px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.sp-table td { padding: 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.sp-table .num { text-align: right; white-space: nowrap; }
+.sp-table tbody tr { cursor: pointer; }
+.sp-table tbody tr:hover { background: var(--panel-2); }
+.sp-table tbody tr.sel { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--link); }
+.sp-side { font-size: 11px; font-weight: 700; }
+.sp-warn { color: var(--warn-text); }
+.sp-star { background: none; border: 0; cursor: pointer; font-size: 16px; color: var(--muted); padding: 0 2px; }
+.sp-star.on { color: var(--warn); }
+.sp-detail { position: sticky; top: 8px; max-height: calc(100vh - 24px); overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: var(--panel); min-width: 0; }
+.sp-detail-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; }
+.sp-detail-head h2 { margin: 0; }
+.sp-live { border: 1px solid var(--border); border-left-width: 4px; border-radius: 6px; padding: 8px 12px; margin: 10px 0; background: var(--panel-2); }
+.sp-live p { margin: 4px 0 0; }
+.sp-live.zone-entry { border-left-color: var(--up); }
+.sp-live.zone-approaching, .sp-live.zone-extended, .sp-live.zone-forming { border-left-color: var(--warn); }
+.sp-live.zone-invalid { border-left-color: var(--down); }
+.sp-chart { height: 260px; margin-bottom: 8px; }
+.sp-evidence-line { color: var(--muted); }
+.sp-alerts h3 { margin: 0 0 6px; font-size: 14px; }
+.sp-alert-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.sp-alert-list li.up { color: var(--up); }
+.sp-alert-list li.warn { color: var(--warn-text); }
+.setups-teaser .teaser-counts { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 6px; }
+.teaser-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.teaser-list a { color: inherit; text-decoration: none; }
+.teaser-list a:hover b { color: var(--link); }
+@media (max-width: 900px) {
+  .sp-main { grid-template-columns: 1fr; }
+  .sp-detail { position: static; max-height: none; }
+  .sp-edge { grid-column: auto; }
+}

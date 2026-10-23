@@ -59,7 +59,7 @@ window.addEventListener('tp:backtest-chart', () => {
 
 /**
  * Each page is built the first time it's opened (and its code downloaded then), so the platform starts
- * quickly instead of building all 13 pages at launch.
+ * quickly instead of building all 14 pages at launch.
  */
 interface PageEntry {
   route: string;
@@ -74,6 +74,7 @@ interface PageEntry {
 const pages: PageEntry[] = [
   { route: 'home', label: 'Home', icon: 'home', title: 'Trading Platform', create: () => createHomePage(openChart, () => (location.hash = '#calendar')) },
   { route: 'chart', label: 'Chart', icon: 'chart', title: '', create: () => getChartPage() },
+  { route: 'setups', label: 'Setups', icon: 'target', title: 'Setups', create: async () => (await import('./pages/setupsPage')).createSetupsPage(openChart) },
   { route: 'multi', label: 'Multi', icon: 'grid', title: 'Multi-chart', create: async () => (await import('./pages/multiChartPage')).createMultiChartPage(openChart) },
   {
     route: 'invest',

@@ -67,9 +67,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   login) pause the screen. Keep splash.py standard-library only.
   Quotes: the helper polls Schwab's REST quotes every 30 s (`refresh_official`); prevClose = lastPrice - netChange.
   The stream's CLOSE_PRICE is only a fallback (after the session it becomes today's close, which read as 0%).
-  Scanner (engine/scanner.py + engine/strategies.py, helper v12): a background task (`market_scanner`) scans the
-  Nasdaq-100 (NASDAQ_100 list; update it after each December rebalance) plus up to 25 watchlist symbols every 5
-  minutes (owner's request). Daily history is fetched once per day; today's bar comes from the live quotes.
+  Scanner (engine/scanner.py + engine/strategies.py): a background task (`market_scanner`) scans the
+  Nasdaq-100 (NASDAQ_100 list; update it after each December rebalance) every 5 minutes (owner's request). Daily history is fetched once per day; today's bar comes from the live quotes.
   strategies.py is pure and tested: weekly_swing (primary: weekly trend from finished weeks, Williams COT index for
   commercials >= 60 / <= 40 when available, z-score(20) beyond ±1 and turning, Williams %R crossing out of -80/-20,
   Williams A/D vs its 20-day EMA; buy-stop above the signal day's high, stop past the 3-day swing (0.75-2 ATR),
@@ -89,7 +88,20 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   points the other way on the same stock (neutral check + warning, v18).
   Statuses: forming (today's bar), ready, waiting (trigger valid 2 days), in trade. Schwab requests
   are paced (one at a time, 0.7 s apart); unknown symbols are skipped for a day, only an expired login stops a scan.
-  Home shows it with strategy tabs (src/home/setupsPanel.ts).
+  Time frames (v19, strategies.HORIZONS): short (1-hour bars from 30-minute history, regular session only, refreshed every
+  30 min; daily trend filter), swing (daily; weekly trend) and position (weekly bars, 15 years; monthly trend). Each runs
+  the three strategies with its own entry window and hold (in bars); the forming bar (hour/day/week) is updated from
+  live quotes on every 5-minute scan. Results: `horizons[h]` = {strategies (with `recent` = last 30% of history,
+  tStat, tradesNeeded), setups, edge}; the top level keeps swing for older pages. Universe: Nasdaq-100 only (owner).
+  Thresholds fit each stock: z-score and RSI(2) bands are the stock's own rolling percentiles (rolling_quantile,
+  causal), stops/targets in ATR. Monte Carlo uses the stationary bootstrap; per-stock random-walk p-values get
+  Benjamini-Hochberg q-values; `edge` = COT + z-score edge study (cot_z_events/edge_summary, 1,000-run permutation).
+  Statistics rationale and sources: docs/research/setups-statistics.md.
+  Setups page (src/pages/setupsPage.ts, route #setups): time-frame tabs, strategy evidence cards, edge study, sortable
+  list, detail with live entry zone (src/home/entryZone.ts: waiting/approaching/entry/extended/target/invalid/expired,
+  chase limit 0.25R), chart with entry/stop/target and the trade guide (tradeGuideBody). Watched setups (and A/B when
+  "Alert me" is on) follow live quotes and alert with a sound/notification. Home shows a small teaser
+  (src/home/setupsTeaser.ts); src/home/setupsPanel.ts now only provides types and the old card helpers.
   AI summary buttons (`insightButton`) are on Home, Flow, Research, Macro, Bonds, Investments boards, fund detail
   and Backtest; not on the Chart page or Portfolios (owner's choice).
   Theme: light/dark via CSS variables (`:root[data-theme='light']`) and src/ui/theme.ts (THEME object updated in place,
