@@ -47,6 +47,7 @@ export function createWatchlist(opts: { onSelect: (ref: MarketRef) => void; isAc
     const chg = row.querySelector('.wl-chg')!;
     chg.textContent = change ? `${change.percent >= 0 ? '+' : ''}${change.percent.toFixed(2)}%` : '—';
     chg.className = `wl-chg ${change ? (change.percent >= 0 ? 'up' : 'down') : ''}`;
+    chg.setAttribute('title', q?.lastSession ? 'Change in the latest session (the market is closed)' : 'Change today');
   };
 
   const render = () => {

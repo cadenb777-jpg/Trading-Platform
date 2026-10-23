@@ -36,8 +36,19 @@ function fmt(v: number | null | undefined, unit: string) {
 function change(s: Series, then: number | null, label: string) {
   if (then == null) return null;
   const diff = s.value - then;
-  const text = s.unit === '%' ? `${diff >= 0 ? '+' : ''}${diff.toFixed(2)} pts` : `${diff >= 0 ? '+' : ''}${then ? ((diff / Math.abs(then)) * 100).toFixed(1) : '0'}%`;
-  const tiny = s.unit === '%' ? Math.abs(diff) < 0.005 : Math.abs(diff) < Math.abs(then) * 0.0005;
+  const tiny = s.unit === '%' || s.unit === 'K' ? Math.abs(diff) < 0.005 : Math.abs(diff) < Math.abs(then) * 0.0005;
+  const sign = diff >= 0 ? '+' : '−';
+  // Rates are compared in points, monthly job gains in thousands (a % change of a number that can go negative means
+  // nothing), everything else in %.
+  const text = tiny
+    ? 'unchanged'
+    : s.unit === '%'
+      ? `${sign}${Math.abs(diff).toFixed(2)} pts`
+      : s.unit === 'K'
+        ? `${sign}${Math.round(Math.abs(diff))}K`
+        : then > 0 && s.value > 0
+          ? `${sign}${((Math.abs(diff) / then) * 100).toFixed(1)}%`
+          : `${sign}${Math.abs(diff).toFixed(2)}`;
   const tone = s.upGood == null || tiny ? '' : diff > 0 === s.upGood ? 'up' : 'down';
   return h('span', { class: tone }, `${text} ${label}`);
 }
@@ -115,7 +126,7 @@ export function createMacroPage() {
     if (!s) return;
     const transformed = /yearly|annualised|added/i.test(s.name);
     if (!transformed) return openFredWindow(id, s.name, s.unit === 'K' ? '' : s.unit);
-    openChartWindow({ title: s.name, subtitle: `FRED ${id} · latest ${s.date}`, lines: [{ name: s.name, color: '#2962ff', data: s.data }], format: (v) => fmt(v, s.unit) });
+    openChartWindow({ title: s.name, subtitle: `FRED ${id} · latest ${s.date}`, lines: [{ name: s.name, color: '#2962ff', data: s.data }], format: (v) => fmt(v, s.unit), changeAs: s.unit === '%' || s.unit === 'K' ? 'points' : 'percent' });
   }
 
   function failCard(id: string, err: unknown) {

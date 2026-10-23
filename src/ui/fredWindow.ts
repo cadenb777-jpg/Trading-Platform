@@ -13,7 +13,7 @@ export async function openFredWindow(id: string, name = CURVE_NAMES[id] ?? id, u
   try {
     const d = await engineRequest<{ data: { time: string; value: number }[]; date: string }>('macro.series', { series: id, raw: true, limit: 100000 }, 45000);
     const format = (v: number) => (unit === '%' ? `${v.toFixed(2)}%` : unit === '$' ? `$${v.toFixed(2)}` : Math.abs(v) >= 10000 ? Math.round(v).toLocaleString('en-US') : v.toFixed(2));
-    openChartWindow({ title: name, subtitle: `FRED ${id} · latest ${d.date}`, lines: [{ name, color: '#2962ff', data: d.data }], format });
+    openChartWindow({ title: name, subtitle: `FRED ${id} · latest ${d.date}`, lines: [{ name, color: '#2962ff', data: d.data }], format, changeAs: unit === '%' ? 'points' : 'percent' });
   } catch (err) {
     toast((err as Error).message);
   }

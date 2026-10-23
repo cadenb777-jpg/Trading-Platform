@@ -24,6 +24,8 @@ export interface ChartWindowOptions {
   format?: (v: number) => string;
   /** Extra buttons in the title bar (e.g. "Open in chart"). */
   actions?: Node[];
+  /** 'points' for rates and other values already in % (a change is "+0.25 pts", not a % of a %). */
+  changeAs?: 'percent' | 'points';
 }
 
 const DAY = 86400;
@@ -206,14 +208,16 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
     const hi = pts.reduce((m, p) => (p.value > m.value ? p : m));
     const lo = pts.reduce((m, p) => (p.value < m.value ? p : m));
     const diff = b.value - a.value;
-    const pctChange = a.value ? diff / Math.abs(a.value) : null;
+    // A % change only means something for a positive series measured in its own units.
+    const pctChange = o.changeAs !== 'points' && a.value > 0 && b.value > 0 ? diff / a.value : null;
+    const diffText = o.changeAs === 'points' ? `${diff >= 0 ? '+' : '−'}${Math.abs(diff).toFixed(2)} pts` : `${diff >= 0 ? '+' : '−'}${format(Math.abs(diff))}`;
     const tone = diff >= 0 ? 'up' : 'down';
     const item = (label: string, value: string, cls = '') => h('span', {}, h('span', { class: 'muted' }, label), ' ', h('b', { class: cls }, value));
     stats.replaceChildren(
       item(`${s.name || 'Value'}:`, `${formatTime(a.time)} → ${formatTime(b.time)}`),
       item('Start', format(a.value)),
       item('End', format(b.value)),
-      item('Change', `${diff >= 0 ? '+' : ''}${format(diff)}${pctChange != null ? ` (${pctChange >= 0 ? '+' : ''}${(pctChange * 100).toFixed(2)}%)` : ''}`, tone),
+      item('Change', `${diffText}${pctChange != null ? ` (${pctChange >= 0 ? '+' : ''}${(pctChange * 100).toFixed(2)}%)` : ''}`, tone),
       item('High', `${format(hi.value)} · ${formatTime(hi.time)}`),
       item('Low', `${format(lo.value)} · ${formatTime(lo.time)}`),
     );

@@ -318,38 +318,60 @@ def key_levels(ind, atr_now):
         {'price': ind['e200'][-1], 'kind': 'ma', 'label': '200-day average'},
     ]
     for lv in levels:
-        lv.setdefault('label', f"Swing level ({lv.get('touches', 1)} touches)")
+        n = lv.get('touches', 1)
+        lv.setdefault('label', f"Swing level ({n} touch{'' if n == 1 else 'es'})")
     return levels
 
 
+def dedupe_levels(levels, atr_now, origin):
+    """Merges levels closer than 0.25 ATR (keeping the nearer-to-origin one's label plus the other's), nearest first."""
+    out = []
+    for lv in sorted(levels, key=lambda x: abs(x['price'] - origin)):
+        twin = next((o for o in out if abs(o['price'] - lv['price']) < 0.25 * atr_now), None)
+        if twin:
+            if lv['label'] not in twin['label']:
+                twin['label'] = f"{twin['label']} + {lv['label']}"
+        else:
+            out.append({'price': lv['price'], 'label': lv['label']})
+    return out
+
+
 def trade_plan(levels, price, atr_now, direction, today):
-    """Entry, stop and targets from real levels: stop just past the nearest level behind the trade, targets at the
-    next levels ahead (falling back to ATR distances), and the resulting reward-to-risk."""
-    # Levels closer than 0.75 ATR are noise for a swing stop; farther than 2.5 ATR risks too much.
-    behind = sorted((lv for lv in levels if (lv['price'] < price if direction > 0 else lv['price'] > price) and 0.75 * atr_now <= abs(price - lv['price']) <= 2.5 * atr_now),
-                    key=lambda lv: abs(price - lv['price']))
-    ahead = sorted((lv for lv in levels if (lv['price'] > price if direction > 0 else lv['price'] < price) and abs(lv['price'] - price) >= 1.0 * atr_now),
-                   key=lambda lv: abs(lv['price'] - price))
+    """Entry, stop and targets from real levels, all measured from the entry trigger (where the trade would really
+    be filled): stop just past the nearest level 0.75-2.5 ATR behind the entry, targets at the next distinct levels
+    at least 1 ATR ahead of it (falling back to ATR distances), and reward-to-risk from the entry."""
+    trigger = max(today['high'], price) if direction > 0 else min(today['low'], price)
+    entry = trigger
+    behind = sorted((lv for lv in levels if (lv['price'] < entry if direction > 0 else lv['price'] > entry) and 0.75 * atr_now <= abs(entry - lv['price']) <= 2.5 * atr_now),
+                    key=lambda lv: abs(entry - lv['price']))
     if behind:
         stop = behind[0]['price'] - 0.25 * atr_now * direction
         stop_note = f"just past {behind[0]['label']} at {behind[0]['price']:.2f}"
     else:
-        stop = price - STOP_ATR * atr_now * direction
-        stop_note = f'{STOP_ATR} ATR'
-    risk = abs(price - stop) or atr_now
-    t1 = ahead[0]['price'] if ahead else price + 2 * atr_now * direction
-    t2 = ahead[1]['price'] if len(ahead) > 1 else price + 3.5 * atr_now * direction
-    trigger = today['high'] if direction > 0 else today['low']
+        stop = entry - STOP_ATR * atr_now * direction
+        stop_note = f'{STOP_ATR} ATR below the entry' if direction > 0 else f'{STOP_ATR} ATR above the entry'
+    risk = abs(entry - stop) or atr_now
+    ahead = dedupe_levels([lv for lv in levels if (lv['price'] - entry) * direction >= 1.0 * atr_now], atr_now, entry)
+    t1 = ahead[0] if ahead else {'price': entry + 2 * atr_now * direction, 'label': '2 ATR'}
+    rest = [lv for lv in ahead[1:] if (lv['price'] - t1['price']) * direction >= 0.5 * atr_now]
+    if rest:
+        t2 = rest[0]
+    elif (3.5 * atr_now) - abs(t1['price'] - entry) >= 0.5 * atr_now:
+        t2 = {'price': entry + 3.5 * atr_now * direction, 'label': '3.5 ATR'}
+    else:  # target 1 is already far away: aim 1.5 ATR past it
+        t2 = {'price': t1['price'] + 1.5 * atr_now * direction, 'label': f"1.5 ATR past {t1['label']}"}
+    side = 'above' if direction > 0 else 'below'
     return {
-        'entry': price, 'trigger': trigger,
-        'entryNote': f"Enter on a move {'above' if direction > 0 else 'below'} today's {'high' if direction > 0 else 'low'} ({trigger:.2f}), or on a pullback toward support that holds",
+        'entry': entry, 'trigger': trigger, 'price': price,
+        'entryNote': f"Buy only on a move {side} {trigger:.2f} (today's {'high' if direction > 0 else 'low'}): the breakout confirms the signal. A pullback that holds support is a second chance, with the same stop" if direction > 0
+                     else f"Sell short only on a move {side} {trigger:.2f} (today's low): the breakdown confirms the signal. A bounce that fails at resistance is a second chance, with the same stop",
         'stop': stop, 'stopNote': stop_note,
-        'target1': t1, 'target1Note': ahead[0]['label'] if ahead else '2 ATR',
-        'target2': t2, 'target2Note': ahead[1]['label'] if len(ahead) > 1 else '3.5 ATR',
-        'riskReward': abs(t1 - price) / risk, 'atr': atr_now,
-        'exitNote': 'Exit early on a daily close back through the 20-day average, or trail the stop 2 ATR behind the highest close (chandelier exit)',
-        'supports': [{'price': lv['price'], 'label': lv['label']} for lv in sorted((x for x in levels if x['price'] < price), key=lambda x: price - x['price'])[:4]],
-        'resistances': [{'price': lv['price'], 'label': lv['label']} for lv in sorted((x for x in levels if x['price'] > price), key=lambda x: x['price'] - price)[:4]],
+        'target1': t1['price'], 'target1Note': t1['label'],
+        'target2': t2['price'], 'target2Note': t2['label'],
+        'riskReward': abs(t1['price'] - entry) / risk, 'riskPct': risk / entry, 'atr': atr_now,
+        'exitNote': 'Take some profit at target 1 and move the stop to break-even; exit the rest at target 2, on a daily close back through the 20-day average, or with a stop trailed 2 ATR behind the best close (chandelier exit)',
+        'supports': dedupe_levels([x for x in levels if x['price'] < price], atr_now, price)[:4],
+        'resistances': dedupe_levels([x for x in levels if x['price'] > price], atr_now, price)[:4],
     }
 
 

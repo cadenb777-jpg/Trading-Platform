@@ -34,6 +34,7 @@ export interface Setup {
     target2: number;
     target2Note: string;
     riskReward: number;
+    riskPct?: number;
     atr: number;
     exitNote: string;
     supports: Level[];
@@ -118,7 +119,7 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
     if (!data) return;
     const r = data.regime;
     regime.replaceChildren(
-      h('span', {}, 'Market: ', h('b', { class: (r.spyScore ?? 0) > 0 ? 'up' : (r.spyScore ?? 0) < 0 ? 'down' : '' }, (r.spyScore ?? 0) >= 3 ? 'S&P 500 trending up' : (r.spyScore ?? 0) <= -3 ? 'S&P 500 trending down' : 'S&P 500 mixed')),
+      h('span', {}, 'Market: ', h('b', { class: (r.spyScore ?? 0) >= 3 ? 'up' : (r.spyScore ?? 0) <= -3 ? 'down' : '' }, (r.spyScore ?? 0) >= 3 ? 'S&P 500 trending up' : (r.spyScore ?? 0) <= -3 ? 'S&P 500 trending down' : 'S&P 500 mixed')),
       h('span', {}, 'S&P week ', h('b', { class: (r.spyWeek ?? 0) >= 0 ? 'up' : 'down' }, pct(r.spyWeek))),
       r.vix != null ? h('span', {}, 'VIX ', h('b', { class: r.vix > 25 ? 'down' : r.vix < 15 ? 'up' : '' }, `${r.vix.toFixed(1)}${r.vix > 25 ? ' (fearful)' : r.vix < 15 ? ' (calm)' : ''}`)) : '',
       h('span', {}, `${Math.round(r.uptrendShare * 100)}% of ${data.scanned} scanned stocks in uptrends`),
@@ -214,6 +215,7 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
             {},
             h('h4', {}, 'Plan'),
             h('p', { class: 'small' }, lv.entryNote, '.'),
+            h('p', { class: 'small' }, `Risk ${formatPrice(Math.abs(lv.entry - lv.stop))} a share (${((lv.riskPct ?? Math.abs(lv.entry - lv.stop) / lv.entry) * 100).toFixed(1)}%): with $10,000 and 1% risked per trade that's about ${Math.floor(100 / Math.abs(lv.entry - lv.stop))} shares.`),
             h('p', { class: 'small' }, `Stop ${formatPrice(lv.stop)} (${lv.stopNote}). Targets ${formatPrice(lv.target1)} (${lv.target1Note}) and ${formatPrice(lv.target2)} (${lv.target2Note}). ATR ${formatPrice(lv.atr)}.`),
             h('p', { class: 'small muted' }, lv.exitNote, '.'),
             h('h4', {}, 'Support & resistance'),
