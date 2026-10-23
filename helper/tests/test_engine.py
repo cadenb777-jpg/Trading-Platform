@@ -553,3 +553,31 @@ class MonteCarlo(unittest.TestCase):
             finally:
                 scanner.RW_RUNS = old
         asyncio.run(go())
+
+
+class NavHistory(unittest.TestCase):
+    """Monthly NAV announcements read into a NAV line."""
+
+    TABLE = ('<p>Net Asset Value per Share as of September 30, 2026</p><table><tr><td>Class S Shares</td><td>$</td><td>14.5012</td></tr>'
+             '<tr><td>Class I Shares</td><td>$</td><td>14.6488</td></tr><tr><td>Class D Shares</td><td>$</td><td>14.5500</td></tr></table>')
+    SENTENCE = '<p>The net asset value ("NAV") per share for each class of shares as of August 31, 2026 was $23.60.</p>'
+
+    def test_table_and_sentence(self):
+        pts = alts.nav_points(self.TABLE)
+        self.assertIn(('2026-09-30', 'Class I', 14.6488), pts)
+        self.assertIn(('2026-09-30', 'Class S', 14.5012), pts)
+        self.assertEqual(alts.nav_points(self.SENTENCE), [('2026-08-31', 'All classes', 23.6)])
+
+    def test_does_not_mix_in_an_older_table(self):
+        page = self.TABLE + '<p>As of December 31, 2024 the Class I Shares were $13.10 under the prior offering.</p>'
+        self.assertNotIn(('2026-09-30', 'Class I', 13.1), alts.nav_points(page))
+
+    def test_series_prefers_class_i_and_drops_outliers(self):
+        pts = [('2026-07-31', 'Class I', 14.65), ('2026-08-31', 'Class I', 14.69), ('2026-09-30', 'Class I', 14.65),
+               ('2026-09-30', 'Class S', 14.50), ('2026-08-31', 'Class I', 14.69), ('2026-06-30', 'Class I', 1.47),
+               ('2019-01-31', 'Class I', 11.0)]
+        s = alts.nav_series(pts, today=dt.date(2026, 10, 23))
+        self.assertEqual(s['cls'], 'Class I')
+        self.assertEqual([p['date'] for p in s['points']], ['2026-07-31', '2026-08-31', '2026-09-30'])
+        self.assertEqual({c['cls'] for c in s['latestByClass']}, {'Class I', 'Class S'})
+        self.assertIsNone(alts.nav_series([], today=dt.date(2026, 10, 23)))

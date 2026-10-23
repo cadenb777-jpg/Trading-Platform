@@ -5,6 +5,7 @@ and returns (Form N-PORT), and monthly NAV announcements (prospectus supplements
 raising money in the US files a Form D: fund type, amount raised, minimum investment and number of investors.
 """
 import asyncio
+import datetime as dt
 import html
 import re
 import urllib.parse
@@ -269,30 +270,96 @@ def nav_sentences(page, limit=3):
     return out
 
 
-async def nav_notes(ctx, cik, filings):
+_MONTHS = 'January|February|March|April|May|June|July|August|September|October|November|December'
+_NAV_PHRASE = re.compile(r'(net asset value|\bNAV\b)\s*(\(\s*“?"?NAV"?”?\s*\)\s*)?per (share|unit)', re.I)
+_DATE = re.compile(rf'\b({_MONTHS})\s+(\d{{1,2}}),\s*(20\d\d)')
+_CLASS_VALUE = re.compile(r'\bClass\s+([A-Z](?:-[A-Z])?|[A-Z][a-z]?)(?:\s+Series\s+(I{1,3}|[A-Z]))?(?:\s+(?:Common\s+)?(?:Shares|Units|shares|units))?'
+                          r'[^$\d.]{0,40}\$\s?(\d{1,3}(?:\.\d{2,4}))')
+_SINGLE_VALUE = re.compile(r'(?:was|of|is|equal(?:ed)? to|were)\s+\$\s?(\d{1,3}\.\d{2,4})')
+
+
+def nav_points(page):
+    """NAV per share figures with their dates from one filing: [(iso date, class label, value)]. Reads monthly NAV
+    announcements like "NAV per share as of September 30, 2026 ... Class I Shares $14.6488" or "the NAV per share
+    for each class ... as of September 30, 2026 was $23.51"."""
+    text = html.unescape(re.sub(r'<[^>]+>', ' ', re.sub(r'(?is)<(script|style).*?</\1>', ' ', page)))
+    text = re.sub(r'\s+', ' ', text)
+    out = []
+    for m in _NAV_PHRASE.finditer(text):
+        d = _DATE.search(text, m.end(), m.end() + 220) or _DATE.search(text, max(0, m.start() - 160), m.start())
+        if not d:
+            continue
+        day = dt.date(int(d.group(3)), _MONTHS.split('|').index(d.group(1)) + 1, int(d.group(2))).isoformat()
+        window = text[max(m.end(), d.end()):max(m.end(), d.end()) + 900]
+        nxt = _DATE.search(window)  # stop at the next date so an older table's numbers aren't mixed in
+        if nxt and nxt.start() > 40:
+            window = window[:nxt.start()]
+        found = False
+        for c in _CLASS_VALUE.finditer(window):
+            label = f"Class {c.group(1)}" + (f" Series {c.group(2)}" if c.group(2) else '')
+            v = float(c.group(3))
+            if 1 <= v < 1000:
+                out.append((day, label, v))
+                found = True
+        if not found:
+            single = _SINGLE_VALUE.search(window[:200])
+            if single and 1 <= float(single.group(1)) < 1000:
+                out.append((day, 'All classes', float(single.group(1))))
+    return list(dict.fromkeys(out))
+
+
+def nav_series(points, today=None):
+    """One monthly NAV line from many filings' points: Class I if the fund has it (the class advisors use),
+    otherwise the one reported most often. Drops readings that are far from the class's typical value."""
+    today = today or dt.date.today()
+    oldest = (today - dt.timedelta(days=4 * 365)).isoformat()
+    recent = [p for p in points if oldest <= p[0] <= today.isoformat()]
+    if not recent:
+        return None
+    by_class = {}
+    for day, label, v in recent:
+        by_class.setdefault(label, {})[day] = v
+    pick = next((c for c in ('Class I', 'Class I Series I', 'All classes') if c in by_class), None)
+    pick = pick or max(by_class, key=lambda c: len(by_class[c]))
+    vals = sorted(by_class[pick].values())
+    mid = vals[len(vals) // 2]
+    line = [{'date': d, 'value': v} for d, v in sorted(by_class[pick].items()) if abs(v / mid - 1) < 0.4]
+    if not line:
+        return None
+    latest = line[-1]['date']
+    classes = sorted({label: v for label, (d, v) in ((c, max(ds.items())) for c, ds in by_class.items()) if d == latest}.items())
+    return {'cls': pick, 'points': line, 'latestByClass': [{'cls': c, 'value': v, 'date': latest} for c, v in classes]}
+
+
+async def nav_data(ctx, cik, filings):
+    """{'notes': NAV sentences quoted from recent filings, 'history': a monthly NAV line (nav_series) or None}."""
     # Big non-traded funds file many prospectus supplements; the monthly NAV one isn't always among the newest few.
     # The newest quarterly and annual reports (10-Q / 10-K) state NAV per share for every share class too.
-    picks = [f for f in filings if f['form'] in ('424B3', '8-K', '497')][:10]
-    picks += [f for f in filings if f['form'] == '10-Q'][:1] + [f for f in filings if f['form'] == '10-K'][:1]
+    # The monthly NAV announcements over the last couple of years also give a modern NAV history (navHistory),
+    # which most big funds no longer report in the SEC's structured data. Each filing is read once and cached.
+    monthly = [f for f in filings if f['form'] in ('424B3', '8-K', '497')]
+    picks = monthly[:30] + [f for f in filings if f['form'] == '10-Q'][:3] + [f for f in filings if f['form'] == '10-K'][:1]
 
     async def one(f):
         url = sec.filing_url(cik, f['accession'], f['document'])
         async def load():
             page = (await sec.sec_get(ctx, url)).text[:4_000_000 if f['form'] in ('10-Q', '10-K') else 800_000]
-            return nav_sentences(page)
+            return {'sentences': nav_sentences(page), 'points': nav_points(page)}
         try:
-            found = await ctx.cached(('nav-notes', f['accession']), 365 * 86400, load, persist=True)
+            found = await ctx.cached(('nav-read', f['accession']), 365 * 86400, load, persist=True)
         except Exception:
-            return []
-        return [{'text': t, 'form': f['form'], 'filed': f['filed'], 'url': url} for t in found]
+            return [], []
+        return [{'text': t, 'form': f['form'], 'filed': f['filed'], 'url': url} for t in found['sentences']], found['points']
 
+    results = await asyncio.gather(*(one(f) for f in picks))
+    history = nav_series([tuple(p) for _, pts in results for p in pts])
     notes, seen = [], set()
-    for n in (n for group in await asyncio.gather(*(one(f) for f in picks)) for n in group):
+    for n in (n for ns, _ in results for n in ns):
         if n['text'] not in seen:  # the same NAV sentence is often repeated in the next filing
             seen.add(n['text'])
             notes.append(n)
     notes.sort(key=lambda n: n['filed'], reverse=True)  # newest first, whichever kind of filing it came from
-    return notes[:6]
+    return {'notes': notes[:6], 'history': history}
 
 
 async def schwab_classes(ctx, name, ticker=None):
@@ -339,7 +406,7 @@ async def fund(ctx, msg):
         'facts': fund_facts(ctx, cik) if forms & {'10-K', '10-Q'} else None,
         'nport': latest_nport(ctx, cik, all_filings),
         'formD': form_d(ctx, cik, latest_d['accession'], latest_d['document']) if latest_d else None,
-        'navNotes': nav_notes(ctx, cik, all_filings),
+        'navData': nav_data(ctx, cik, all_filings),
         'schwab': schwab_classes(ctx, subs.get('name') or name, msg.get('ticker')),
     }
     keys = [k for k, t in tasks.items() if t is not None]
@@ -355,6 +422,10 @@ async def fund(ctx, msg):
             out[key] = None
         else:
             out[key] = result
+    nav = out.pop('navData', None) or {}
+    out['navNotes'], out['navHistory'] = nav.get('notes'), nav.get('history')
+    if 'navData' in out['errors']:
+        out['errors']['navNotes'] = out['errors'].pop('navData')
     if latest_d and out.get('formD'):
         out['formD'] = {**out['formD'], 'filed': latest_d['filed'], 'url': sec.filing_url(cik, latest_d['accession'], latest_d['document'])}
     return out

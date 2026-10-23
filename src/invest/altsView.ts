@@ -57,6 +57,8 @@ interface FundData {
   } | null;
   formD?: FormD | null;
   navNotes?: { text: string; form: string; filed: string; url: string }[] | null;
+  /** Monthly NAV line read from the fund's NAV announcements (helper v15+). */
+  navHistory?: { cls: string; points: { date: string; value: number }[]; latestByClass: { cls: string; value: number; date: string }[] } | null;
   schwab?: BoardRow[] | null;
 }
 
@@ -309,13 +311,27 @@ export function createAltsView(ctx: InvestContext) {
     // The SEC's machine-readable data leaves out figures reported per share class, which is how most big
     // non-traded funds report NAV now. A NAV from there that is many months old is labelled as such, and the
     // fund's own NAV announcements (quoted from its latest filings) are shown first instead.
-    const staleNav = !!lastNav && Date.now() - Date.parse(lastNav.end) > 270 * 86400 * 1000;
+    // The fund's own monthly NAV announcements, when newer than the structured data, replace it as the headline.
+    const hist = d.navHistory;
+    const histLast = hist?.points[hist.points.length - 1];
+    const useHist = !!hist && !!histLast && (!lastNav || histLast.date > lastNav.end);
+    const staleNav = !useHist && !!lastNav && Date.now() - Date.parse(lastNav.end) > 270 * 86400 * 1000;
+    const histPrev = useHist ? hist!.points[hist!.points.length - 2] : undefined;
+    const histYearAgo = useHist ? [...hist!.points].reverse().find((n) => n.date <= shiftYear(histLast!.date)) : undefined;
+    const otherClasses = useHist ? hist!.latestByClass.filter((c) => c.cls !== hist!.cls).map((c) => `${c.cls.replace('Class ', '')} $${c.value.toFixed(2)}`) : [];
+    const histCards = useHist
+      ? [
+          { label: `NAV per share (${hist!.cls})`, value: `$${histLast!.value.toFixed((String(histLast!.value).split('.')[1]?.length ?? 0) > 2 ? 4 : 2)}`, hint: `As of ${histLast!.date}${histPrev ? ` · ${pct(histLast!.value / histPrev.value - 1)} vs ${histPrev.date}` : ''}${otherClasses.length ? ` · other classes: ${otherClasses.join(', ')}` : ''}` },
+          histYearAgo ? { label: 'NAV change, 1 year', value: pct(histLast!.value / histYearAgo.value - 1), tone: tone(histLast!.value / histYearAgo.value - 1), hint: 'Price only, before distributions' } : null,
+        ]
+      : [];
     const cards = [
-      lastNav && !staleNav ? { label: 'NAV per share', value: `$${lastNav.value.toFixed(2)}`, hint: `As of ${lastNav.end}${prevNav ? ` · ${pct(lastNav.value / prevNav.value - 1)} vs prior report` : ''}` } : null,
+      ...histCards,
+      lastNav && !staleNav && !useHist ? { label: 'NAV per share', value: `$${lastNav.value.toFixed(2)}`, hint: `As of ${lastNav.end}${prevNav ? ` · ${pct(lastNav.value / prevNav.value - 1)} vs prior report` : ''}` } : null,
       lastNav && staleNav
         ? { label: 'NAV per share (old)', value: `$${lastNav.value.toFixed(2)}`, tone: '' as const, hint: `Last one in the SEC's structured data is from ${lastNav.end}; the fund now reports NAV by share class. Latest NAVs are quoted below.` }
         : null,
-      lastNav && yearAgoNav && !staleNav ? { label: 'NAV change, 1 year', value: pct(lastNav.value / yearAgoNav.value - 1), tone: tone(lastNav.value / yearAgoNav.value - 1), hint: 'Price only, before distributions' } : null,
+      lastNav && yearAgoNav && !staleNav && !useHist ? { label: 'NAV change, 1 year', value: pct(lastNav.value / yearAgoNav.value - 1), tone: tone(lastNav.value / yearAgoNav.value - 1), hint: 'Price only, before distributions' } : null,
       ret ? { label: 'Total return', value: pct(ret.value), tone: tone(ret.value), hint: `${ret.start ?? ''} → ${ret.end} (with distributions)` } : null,
       dist ? { label: 'Distributions per share', value: `$${dist.value.toFixed(4)}`, hint: `${dist.start ?? ''} → ${dist.end}` } : null,
       netAssets ? { label: 'Net assets', value: usd(netAssets.value), hint: `As of ${netAssets.end}` } : d.nport?.netAssets ? { label: 'Net assets', value: usd(d.nport.netAssets), hint: `As of ${d.nport.date}` } : null,
@@ -324,7 +340,7 @@ export function createAltsView(ctx: InvestContext) {
     ].filter((c): c is NonNullable<typeof c> => !!c);
     const snap = f ? FUND_SNAPSHOTS[f.id] : undefined;
     // Show the researched figures unless the SEC's live data already has a newer NAV.
-    if (snap && !(lastNav && !staleNav && lastNav.end > snap.asOf)) out.push(snapshotPanel(snap));
+    if (snap && !(lastNav && !staleNav && lastNav.end > snap.asOf) && !(useHist && histLast!.date >= snap.asOf)) out.push(snapshotPanel(snap));
     if (cards.length) out.push(statCards(cards));
     else if (d.formD && !d.filings.some((x) => ['10-K', '10-Q', 'NPORT-P', 'N-CSR'].includes(x.form)))
       out.push(h('p', { class: 'muted' }, 'Private funds don\'t report NAV or returns publicly; what is public is their Form D below (money raised, investors, minimum). The manager\'s fact sheet or your iCapital statements have the performance.'));
@@ -342,7 +358,11 @@ export function createAltsView(ctx: InvestContext) {
       );
     };
     if (staleNav) navNotesBlock();
-    if (nav.length > 1) {
+    if (useHist && hist!.points.length > 1) {
+      const box = h('div');
+      out.push(h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, `NAV per share over time (${hist!.cls})`), h('span', { class: 'muted small' }, `From the fund's monthly NAV filings, ${hist!.points[0].date} to ${histLast!.date}`)), box));
+      requestAnimationFrame(() => createLineChart(box, { height: 240, format: (v) => `$${v.toFixed(2)}` }).set([{ name: `NAV per share (${hist!.cls})`, color: '#2962ff', data: hist!.points.map((n) => ({ time: n.date, value: n.value })) }]));
+    } else if (nav.length > 1) {
       const box = h('div');
       out.push(h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'NAV per share over time'), h('span', { class: 'muted small' }, staleNav ? `From quarterly and annual reports, up to ${lastNav!.end}` : 'From quarterly and annual reports')), box));
       requestAnimationFrame(() => createLineChart(box, { height: 220, format: (v) => `$${v.toFixed(2)}` }).set([{ name: 'NAV per share', color: '#2962ff', data: nav.map((n) => ({ time: n.end, value: n.value })) }]));
