@@ -67,7 +67,7 @@ market dropdown.
 When the platform gets new features, you may need a new copy of the helper. Download the ZIP
 again (step 2), replace your old folder, and start it as usual. Your keys and login are kept.
 
-Version 6 adds the AI assistant and stock positioning. The first start after updating installs a few
+Version 6 added the AI assistant and stock positioning; version 7 is a bug-fix update. The first start after updating installs a few
 more parts, so it takes a couple of minutes. Keys and emails are no longer typed into this window:
 open **Settings** (gear icon, bottom of the left menu in the platform) to add your SEC email (needed
 for company financials and insider trades), your Anthropic API key (for the AI) and, optionally, a free
