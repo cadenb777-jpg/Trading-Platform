@@ -12,7 +12,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 15;
+export const LATEST_HELPER_VERSION = 16;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -347,12 +347,67 @@ export async function loadNews(symbols: string[] = [], query = ''): Promise<{ it
  * Asks the helper's analysis engine for something (fundamentals, options flow, portfolio maths...).
  * `type` is the engine handler name, e.g. 'sec.financials'.
  */
+/**
+ * How long (ms) a read-only reply can be reused, so clicking back to a page or tab shows its data instantly.
+ * Live prices are kept briefly; slow-moving data (macro, bonds, filings) longer. Anything that saves, asks the AI
+ * or scans is never cached.
+ */
+export const ENGINE_CACHE_MS: Record<string, number> = {
+  'invest.board': 20_000,
+  'invest.movers': 20_000,
+  'flow.options': 20_000,
+  'invest.history': 5 * 60_000,
+  'portfolio.analyze': 5 * 60_000,
+  'flow.positioning': 5 * 60_000,
+  'invest.search': 10 * 60_000,
+  'bonds.cusip': 10 * 60_000,
+  'bonds.market': 10 * 60_000,
+  'bonds.auctions': 10 * 60_000,
+  'macro.series': 10 * 60_000,
+  'macro.curve': 10 * 60_000,
+  'macro.catalog': 60 * 60_000,
+  'flow.cot': 30 * 60_000,
+  'flow.cot_markets': 60 * 60_000,
+  'flow.cot_for_symbol': 30 * 60_000,
+  'flow.short_volume': 30 * 60_000,
+  'research.company': 15 * 60_000,
+  'alts.fund': 15 * 60_000,
+  'alts.search_private': 15 * 60_000,
+  'alts.latest_private': 10 * 60_000,
+};
+const engineCache = new Map<string, { at: number; value: Promise<unknown> }>();
+
+/** JSON with object keys sorted at every level, so the same request always gives the same cache key. */
+export function stableKey(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableKey).join(',')}]`;
+  if (v && typeof v === 'object') return `{${Object.keys(v).sort().filter((k) => (v as Record<string, unknown>)[k] !== undefined).map((k) => `${JSON.stringify(k)}:${stableKey((v as Record<string, unknown>)[k])}`).join(',')}}`;
+  return JSON.stringify(v) ?? 'null';
+}
+
+/** Forgets cached replies (all, or those whose type starts with `prefix`), e.g. after the Refresh button. */
+export function clearEngineCache(prefix = '') {
+  for (const key of [...engineCache.keys()]) if (key.startsWith(prefix)) engineCache.delete(key);
+}
+
 export async function engineRequest<T>(type: string, params: Record<string, unknown> = {}, timeoutMs = 60000, onEvent?: (e: EngineEvent) => void, signal?: AbortSignal): Promise<T> {
   // Every message carries its request number as `id`, so parameters must use other names.
   if ('id' in params || 'type' in params) throw new Error(`engineRequest("${type}"): "id" and "type" are reserved parameter names`);
-  const reply = await helper.request({ ...params, type }, signal, timeoutMs, onEvent);
-  if (reply.type !== 'engine') throw new Error('Unexpected reply from the helper');
-  return reply.data as T;
+  const ttl = onEvent || params.refresh ? 0 : (ENGINE_CACHE_MS[type] ?? 0);
+  const key = `${type} ${stableKey(params)}`;
+  const hit = ttl ? engineCache.get(key) : undefined;
+  // Reuse a recent reply, or join the same request already on its way (two panels asking for one board).
+  if (hit && Date.now() - hit.at < ttl) return hit.value as Promise<T>;
+  const value = helper.request({ ...params, type }, signal, timeoutMs, onEvent).then((reply) => {
+    if (reply.type !== 'engine') throw new Error('Unexpected reply from the helper');
+    return reply.data as T;
+  });
+  if (ttl) {
+    const entry = { at: Date.now(), value };
+    engineCache.set(key, entry);
+    value.catch(() => engineCache.get(key) === entry && engineCache.delete(key)); // never keep a failure
+    if (engineCache.size > 300) engineCache.delete(engineCache.keys().next().value!);
+  }
+  return value;
 }
 
 export async function loadCalendar(): Promise<{ events: CalendarEvent[]; failed: string[] }> {

@@ -338,7 +338,7 @@ async def nav_data(ctx, cik, filings):
     # The monthly NAV announcements over the last couple of years also give a modern NAV history (navHistory),
     # which most big funds no longer report in the SEC's structured data. Each filing is read once and cached.
     monthly = [f for f in filings if f['form'] in ('424B3', '8-K', '497')]
-    picks = monthly[:30] + [f for f in filings if f['form'] == '10-Q'][:3] + [f for f in filings if f['form'] == '10-K'][:1]
+    picks = monthly[:16] + [f for f in filings if f['form'] == '10-Q'][:3] + [f for f in filings if f['form'] == '10-K'][:1]
 
     async def one(f):
         url = sec.filing_url(cik, f['accession'], f['document'])

@@ -198,7 +198,7 @@ export function createAltsView(ctx: InvestContext) {
         ...list.map((f) =>
           h(
             'button',
-            { class: 'fund-card', onclick: () => openFund(f) },
+            { class: 'fund-card', onclick: () => openFund(f), onmouseenter: () => prefetchFund(f) },
             h('span', { class: 'fund-card-top' }, h('b', {}, f.short), h('span', { class: 'fund-badge' }, f.structure)),
             h('span', { class: 'fund-card-name' }, f.name),
             h('span', { class: 'muted small' }, `${f.manager} · ${f.strategy}`),
@@ -229,7 +229,7 @@ export function createAltsView(ctx: InvestContext) {
       content,
     );
     body.scrollIntoView({ block: 'start' });
-    const params: Record<string, unknown> = 'cik' in f ? { cik: f.cik, name: f.name } : { name: f.name, ticker: catalog?.ticker };
+    const params = fundParams(f);
     try {
       const data = await engineRequest<FundData>('alts.fund', params, 90000);
       if (!content.isConnected) return;
@@ -242,6 +242,19 @@ export function createAltsView(ctx: InvestContext) {
   function aboutPanel(f: PrivateFund) {
     return h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, `How it works: ${f.structure}`)), h('p', { class: 'muted' }, STRUCTURES[f.structure]));
   }
+
+  /** The alts.fund request for a fund (the same parameters every time, so the reply cache can be reused). */
+  function fundParams(f: PrivateFund | { cik: number; name: string } | { name: string }): Record<string, unknown> {
+    const catalog = 'id' in f ? f : PRIVATE_FUNDS.find((p) => p.name.toLowerCase() === f.name.toLowerCase());
+    return 'cik' in f ? { cik: f.cik, name: f.name } : { name: f.name, ticker: catalog?.ticker };
+  }
+
+  /** Starts loading a fund's page when the pointer rests on its card. */
+  function prefetchFund(f: PrivateFund) {
+    clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(() => engineRequest('alts.fund', fundParams(f), 90000).catch(() => {}), 250);
+  }
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
 
   function snapshotPanel(snap: FundSnapshot): Node {
     return h(

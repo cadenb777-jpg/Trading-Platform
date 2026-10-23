@@ -39,7 +39,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Investments page (src/pages/investmentsPage.ts, src/invest/): boards via invest.board (quotes + 1m/3m/YTD/1y from
   daily closes), invest.history/movers/search; bonds.market (FRED yields/spreads), bonds.auctions (Treasury Fiscal Data),
   bonds.cusip (Schwab get_instrument_by_cusip); alts.fund (SEC: XBRL NAV per share, N-PORT, Form D, NAV sentences from
-  424B3/8-K; navHistory = monthly NAV line parsed from the last ~30 NAV filings by alts.nav_points/nav_series, shown
+  424B3/8-K; navHistory = monthly NAV line parsed from the last ~16 NAV filings + 3 10-Qs by alts.nav_points/nav_series, shown
   instead of the XBRL NAV when newer), alts.search_private (EDGAR full-text search of Form D), alts.latest_private (latest Form D feed).
   The private fund directory is src/invest/catalog.ts (names only; data is live from the SEC). src/invest/fundSnapshots.ts
   holds hand-researched latest published figures (dated, sourced, verified flag; shown unless the SEC data is newer). Bond maths is
@@ -91,6 +91,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   `followTheme(chart)` repaints canvases). Use variables, not hard-coded colours, in new CSS.
   Chart legend (chartPage renderLegend) is rebuilt only when its layout changes; values update in place. Indicator
   instances can hide single plots (`hiddenPlots`) and levels (`hideLevels`); the manager is openIndicatorManager.
+  Browser reply cache: engineRequest reuses read-only replies for ENGINE_CACHE_MS (20 s quotes .. 60 min catalogs),
+  joins identical in-flight requests, never caches store/settings/ai/scanner or failures; Refresh buttons call
+  clearEngineCache. Investments prefetches sections on hover and in the background; fund cards prefetch alts.fund.
+  Line-chart indicators: chart windows have an Indicators menu (src/ui/windowIndicators.ts, LINE_INDICATORS run on
+  the first line as flat bars); page charts have an fx button that opens it.
   Pop-out charts: `openChartWindow` (src/ui/chartWindow.ts); `createLineChart` adds hover values and an expand button;
   `openFredWindow` opens a FRED series' full history.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).

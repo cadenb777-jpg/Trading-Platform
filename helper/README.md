@@ -91,7 +91,8 @@ every Nasdaq-100 stock every 5 minutes for swing trades (weekly swing with COT, 
 breakouts), adds RIA fee schedules to client reports and reads fund NAVs from the newest quarterly reports. Version 13 says on each setup card why it isn't an A-grade and fills in
 the economic calendar's actual numbers for US releases (from the St. Louis Fed). Version 14 runs 1,000 simulations for every backtest check and adds the trade guide that
 opens when you click a setup card. Version 15 builds each fund's NAV chart from its monthly NAV announcements, so
-the alternatives pages show current prices instead of old quarterly data. If an optional part
+the alternatives pages show current prices instead of old quarterly data. Version 16 reads fewer filings the first
+time a fund opens, so fund pages load faster. If an optional part
 (the AI or portfolio maths) fails to install, the helper still starts and charts and prices keep working; the
 platform's Settings window shows what's unavailable, and the helper writes a log to `~/.trading-platform/helper.log`. The first start after updating installs a few
 more parts, so it takes a couple of minutes. Keys and emails are no longer typed into this window:

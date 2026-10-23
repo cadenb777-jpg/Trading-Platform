@@ -4,7 +4,7 @@
  * private funds and anything Schwab or the SEC knows about.
  */
 import { subscribeQuote, quoteChange, type MarketRef } from '../data/quotes';
-import { engineRequest } from '../data/schwab';
+import { clearEngineCache, engineRequest, helper } from '../data/schwab';
 import { createAltsView } from '../invest/altsView';
 import { createBondsView } from '../invest/bondsView';
 import { BOARDS, CRYPTO_COINS, SECTIONS, searchCatalog, type Section } from '../invest/catalog';
@@ -48,7 +48,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
 
   const frame = pageFrame('Investments', 'Stocks, ETFs, bonds, alternatives and private funds, with live market data. Click a section to see how that market is doing.', [
     searchWrap,
-    h('button', { class: 'btn', onclick: () => showSection(section) }, 'Refresh'),
+    h('button', { class: 'btn', title: 'Load fresh data now', onclick: () => (clearEngineCache(), showSection(section)) }, 'Refresh'),
   ]);
 
   const cards = h(
@@ -57,7 +57,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
     ...SECTIONS.map((s) =>
       h(
         'button',
-        { class: 'inv-card', 'data-section': s.id, onclick: () => showSection(s.id) },
+        { class: 'inv-card', 'data-section': s.id, onclick: () => showSection(s.id), onmouseenter: () => prefetch(s.id) },
         h('span', { class: 'inv-card-title' }, s.label),
         h('span', { class: 'inv-card-value' }, h('span', { class: 'skeleton', style: 'width:70px;height:18px' })),
         h('span', { class: 'muted small' }, s.blurb),
@@ -155,6 +155,14 @@ export function createInvestmentsPage(ctx: InvestContext) {
   }
 
   // ----- Sections -----
+
+  /** Starts loading a section's boards before it's clicked (the reply is cached, so the click shows it at once). */
+  function prefetch(id: Section) {
+    const groups = (BOARDS as Partial<Record<Section, typeof BOARDS.stocks>>)[id];
+    if (groups?.length) loadBoard(groups).catch(() => {});
+  }
+  // A few seconds after the page opens, quietly load the other sections too.
+  setTimeout(() => SECTIONS.forEach((x, i) => setTimeout(() => helper.isConnected && document.visibilityState === 'visible' && prefetch(x.id), i * 1500)), 4000);
 
   function showSection(next: Section, render = true) {
     section = next;

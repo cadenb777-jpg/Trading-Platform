@@ -1,6 +1,6 @@
 /** Macro: the economy at a glance (rates, inflation, jobs, growth, markets) and the Treasury yield curve. */
 import { insightButton } from '../ai/insight';
-import { engineRequest } from '../data/schwab';
+import { clearEngineCache, engineRequest } from '../data/schwab';
 import { createLineChart, pageFrame } from '../ui/charts';
 import { h } from '../ui/dom';
 import { openChartWindow } from '../ui/chartWindow';
@@ -87,7 +87,7 @@ export function createMacroPage() {
     stamp,
     ai.button,
     h('div', { class: 'segmented' }, ...rangeButtons),
-    h('button', { class: 'btn', onclick: () => load() }, 'Refresh'),
+    h('button', { class: 'btn', title: 'Load fresh data now', onclick: () => (clearEngineCache('macro.'), load()) }, 'Refresh'),
   ]);
 
   function setRange(r: Range) {
