@@ -108,3 +108,21 @@ order and architecture rules; update its Status table when a stage is done.
 Later stages (trading via Webull, AI agents) will need a small backend so secrets are
 not exposed in the browser. Real-money trading must stay behind explicit confirmation, and
 paper trading comes first.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues for cadenb777-jpg/trading-platform (via the `gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The seven default labels: bug, enhancement, needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `GLOSSARY.md` at the root and ADRs in `docs/adr/` (created when first needed). See `docs/agents/domain.md`.
+
+### External peers
+
+Host-only: code review and jury use Claude reviewers only, with no external CLI. See `docs/agents/cross-model.json`.
