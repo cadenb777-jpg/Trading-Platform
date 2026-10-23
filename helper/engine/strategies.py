@@ -463,7 +463,7 @@ def shuffled_bars(bars, rnd):
     return out
 
 
-def random_walk_test(bars, cot, key, runs=100, seed=11):
+def random_walk_test(bars, cot, key, runs=1000, seed=11):
     """Runs the strategy on `runs` shuffled versions of the stock's history. p = share of random histories where it
     made at least as much as on the real one (low p = unlikely to be luck)."""
     actual = sum(t['ret'] for t in trades_for(prepare(bars, cot), key))
@@ -477,7 +477,7 @@ def random_walk_test(bars, cot, key, runs=100, seed=11):
     return {'runs': runs, 'p': p, 'actual': actual, 'verdict': 'edge' if p <= 0.05 else 'maybe' if p <= 0.2 else 'luck'}
 
 
-def random_entry_test(trades_by_symbol, closes_by_symbol, opens_by_symbol, runs=500, seed=7):
+def random_entry_test(trades_by_symbol, closes_by_symbol, opens_by_symbol, runs=1000, seed=7):
     """Pools a strategy's trades across stocks and compares their average return with the same number of trades
     entered on random days (same stocks, same direction, same holding time). p = share of random sets that did at
     least as well."""
@@ -498,6 +498,32 @@ def random_entry_test(trades_by_symbol, closes_by_symbol, opens_by_symbol, runs=
             better += 1
     p = (better + 1) / (runs + 1)
     return {'runs': runs, 'p': p, 'actual': actual, 'trades': len(pool), 'verdict': 'edge' if p <= 0.05 else 'maybe' if p <= 0.2 else 'luck'}
+
+
+def monte_carlo(trades, runs=1000, horizon=20, seed=5):
+    """What the next `horizon` trades could look like: `runs` simulations that each draw that many trades at random
+    (with replacement) from the past ones and add up their returns. Gives the chance of ending ahead, the typical
+    result, a bad case (5th percentile), a good case (95th) and the deepest drop along the way in 1 run of 20."""
+    rets = [t['ret'] for t in trades]
+    if len(rets) < 5:
+        return None
+    rnd = random.Random(seed)
+    totals, drops = [], []
+    for _ in range(runs):
+        equity = peak = dd = 0.0
+        for _ in range(horizon):
+            equity += rets[rnd.randrange(len(rets))]
+            peak = max(peak, equity)
+            dd = min(dd, equity - peak)
+        totals.append(equity)
+        drops.append(dd)
+    totals.sort()
+    drops.sort()
+
+    def at(xs, q):
+        return xs[min(len(xs) - 1, int(q * len(xs)))]
+    return {'runs': runs, 'horizon': horizon, 'profitable': sum(1 for x in totals if x > 0) / runs,
+            'median': at(totals, 0.5), 'bad': at(totals, 0.05), 'good': at(totals, 0.95), 'worstDrop': at(drops, 0.05)}
 
 
 def swing_levels(bars, atr_now, lookback=120, width=3):

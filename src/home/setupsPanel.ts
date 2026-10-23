@@ -10,6 +10,7 @@ import { state } from '../state';
 import { pct as fmtPct } from '../ui/charts';
 import { formatPrice, h, timeAgo } from '../ui/dom';
 import { icon } from '../ui/icons';
+import { openTradeGuide } from './tradeGuide';
 
 type StrategyKey = 'weekly_swing' | 'mean_reversion' | 'breakout';
 type Tier = 'A' | 'B' | 'C';
@@ -64,7 +65,8 @@ export interface Setup {
   levels: { supports: Level[]; resistances: Level[] };
   stock: Stats;
   strategyStats: Stats & { randomEntryP: number | null };
-  randomWalk?: { runs: number; p: number; verdict: 'edge' | 'maybe' | 'luck' };
+  randomWalk?: { runs: number; p: number; verdict: 'edge' | 'maybe' | 'luck' } | { pending: true; runs: number } | null;
+  monteCarlo?: MonteCarlo | null;
   trade?: { entry: number; filled: string; pnl: number; daysHeld: number };
   earnings?: { date?: string; time?: string; inWindow?: boolean; unknown?: boolean } | null;
   news?: { headline: string; link?: string; source?: string; count: number; tone: number };
@@ -72,13 +74,25 @@ export interface Setup {
   bias?: { direction: 'up' | 'down' | 'flat'; winRate: number | null; samples: number } | null;
 }
 
-interface StrategyInfo {
+/** 1,000 simulated runs of the next `horizon` trades, drawn from the past ones. */
+export interface MonteCarlo {
+  runs: number;
+  horizon: number;
+  profitable: number;
+  median: number;
+  bad: number;
+  good: number;
+  worstDrop: number;
+}
+
+export interface StrategyInfo {
   name: string;
   short: string;
   horizon: string;
   stocks: number;
   stats: Stats;
-  randomEntry: { p: number; trades: number; verdict: 'edge' | 'maybe' | 'luck' } | null;
+  randomEntry: { p: number; trades: number; runs?: number; verdict: 'edge' | 'maybe' | 'luck' } | null;
+  monteCarlo?: MonteCarlo | null;
 }
 
 interface ScanResult {
@@ -285,11 +299,15 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
   function card(s: Setup) {
     const long = s.direction > 0;
     const p = s.plan;
-    const details = h('div', { class: 'setup-details', hidden: true });
+    const guide = () => openTradeGuide(s, data?.strategies?.[s.strategy], onOpenChart);
     const entryText = p.entryType === 'stop' ? `${long ? 'above' : 'below'} ${formatPrice(p.trigger)}` : 'next open';
     return h(
       'div',
-      { class: `setup-card ${long ? 'long' : 'short'}${s.status === 'forming' ? ' forming' : ''}` },
+      {
+        class: `setup-card ${long ? 'long' : 'short'}${s.status === 'forming' ? ' forming' : ''}`,
+        title: 'Click for the trade guide',
+        onclick: (e: Event) => !(e.target as HTMLElement).closest('button, a') && guide(),
+      },
       h(
         'div',
         { class: 'setup-top' },
@@ -327,64 +345,19 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
       s.tier !== 'A' && s.why?.length
         ? h('div', { class: 'setup-why small' }, h('b', {}, `Why not A-grade: `), s.why.join(' · '))
         : '',
-      s.randomWalk
-        ? h('div', { class: 'small' }, h('span', { class: 'muted' }, 'Random-walk test on this stock: '), h('b', { class: s.randomWalk.verdict === 'edge' ? 'up' : s.randomWalk.verdict === 'maybe' ? 'warn' : 'down' }, s.randomWalk.verdict === 'edge' ? 'likely a real edge' : s.randomWalk.verdict === 'maybe' ? 'inconclusive' : 'could be luck'), h('span', { class: 'muted' }, ` (p = ${s.randomWalk.p.toFixed(2)}, ${s.randomWalk.runs} shuffled histories)`))
+      s.randomWalk && 'pending' in s.randomWalk
+        ? h('div', { class: 'small muted' }, `Random-walk test: running ${s.randomWalk.runs.toLocaleString()} simulations…`)
+        : s.randomWalk
+          ? h('div', { class: 'small' }, h('span', { class: 'muted' }, 'Random-walk test on this stock: '), h('b', { class: s.randomWalk.verdict === 'edge' ? 'up' : s.randomWalk.verdict === 'maybe' ? 'warn' : 'down' }, s.randomWalk.verdict === 'edge' ? 'likely a real edge' : s.randomWalk.verdict === 'maybe' ? 'inconclusive' : 'could be luck'), h('span', { class: 'muted' }, ` (p = ${s.randomWalk.p.toFixed(3)}, ${s.randomWalk.runs.toLocaleString()} simulations)`))
+          : '',
+      s.monteCarlo
+        ? h('div', { class: 'small' }, h('span', { class: 'muted' }, `Next ${s.monteCarlo.horizon} trades, ${s.monteCarlo.runs.toLocaleString()} simulations: `), h('b', { class: s.monteCarlo.profitable >= 0.6 ? 'up' : s.monteCarlo.profitable >= 0.5 ? 'warn' : 'down' }, `${Math.round(s.monteCarlo.profitable * 100)}% ended ahead`))
         : '',
       s.bias && s.bias.direction !== 'flat'
         ? h('div', { class: 'setup-bias small' }, 'Next 30 min: ', h('b', { class: s.bias.direction === 'up' ? 'up' : 'down' }, s.bias.direction === 'up' ? 'leaning up' : 'leaning down'), s.bias.winRate != null ? h('span', { class: 'muted' }, ` · right ${Math.round(s.bias.winRate * 100)}% of ${s.bias.samples} recent times${s.bias.winRate < 0.55 ? ' (about a coin flip, so give it little weight)' : ''}`) : '')
         : '',
-      h('button', { class: 'setup-more', onclick: () => ((details.hidden = !details.hidden), details.childElementCount || details.append(...detailView(s))) }, 'Details: why, exit rules, levels'),
-      details,
+      h('button', { class: 'setup-more', onclick: guide }, '📖 Trade guide: when to get in, why, how much'),
     );
-  }
-
-  function detailView(s: Setup): (Node | string)[] {
-    const p = s.plan;
-    const st = s.stock;
-    const i = s.indicators;
-    return [
-      h('h4', {}, 'Why this setup'),
-      h('ul', { class: 'setup-reasons' }, ...s.reasons.map((r) => h('li', {}, r))),
-      h('h4', {}, 'The plan'),
-      h('p', { class: 'small' }, s.statusText, '.'),
-      h('p', { class: 'small' }, p.exitRule),
-      h(
-        'p',
-        { class: 'small' },
-        `Stop ${formatPrice(p.stop)} · target ${p.target != null ? formatPrice(p.target) : '—'} (${p.targetNote})${p.riskReward != null ? ` · reward:risk ${p.riskReward.toFixed(1)}x` : ''}. ATR ${formatPrice(p.atr)}.`,
-      ),
-      p.riskPct
-        ? h('p', { class: 'small muted' }, `Risk ${(p.riskPct * 100).toFixed(1)}% of the entry price per share: with $10,000 and 1% risked per trade that's about ${Math.max(1, Math.floor(100 / (p.riskPct * p.trigger)))} shares.`)
-        : '',
-      h('h4', {}, 'Readings on the signal day'),
-      h(
-        'p',
-        { class: 'small' },
-        [
-          i.cot != null ? `COT commercials ${i.cot.toFixed(0)}/100` : 'COT n/a',
-          i.z != null ? `z-score ${i.z.toFixed(2)}` : '',
-          i.willr != null ? `Williams %R ${i.willr.toFixed(0)}` : '',
-          i.wadRising != null ? `Williams A/D ${i.wadRising ? 'accumulating' : 'distributing'}` : '',
-          i.weekly != null ? `weekly trend ${i.weekly > 0 ? 'up' : i.weekly < 0 ? 'down' : 'flat'}` : '',
-          i.rsi2 != null ? `RSI(2) ${i.rsi2.toFixed(0)}` : '',
-          i.adx != null ? `ADX ${i.adx.toFixed(0)}` : '',
-        ]
-          .filter(Boolean)
-          .join(' · '),
-      ),
-      h('h4', {}, 'Support & resistance'),
-      h('div', { class: 'setup-sr small' }, h('div', {}, h('b', {}, 'Resistance'), ...s.levels.resistances.map((x) => h('div', {}, `${formatPrice(x.price)} · ${x.label}`))), h('div', {}, h('b', {}, 'Support'), ...s.levels.supports.map((x) => h('div', {}, `${formatPrice(x.price)} · ${x.label}`)))),
-      s.smartMoney?.length ? h('div', {}, h('h4', {}, 'Institutional flow'), ...s.smartMoney.map((t) => h('p', { class: 'small' }, t.text))) : '',
-      s.news ? h('div', {}, h('h4', {}, 'News'), h('p', { class: 'small' }, s.news.link ? h('a', { href: s.news.link, target: '_blank', rel: 'noopener' }, s.news.headline) : s.news.headline, h('span', { class: 'muted' }, ` · ${s.news.source ?? ''}`))) : '',
-      st.trades
-        ? h(
-            'div',
-            {},
-            h('h4', {}, 'This strategy on this stock'),
-            h('p', { class: 'small' }, `${st.trades} past trades: ${Math.round((st.winRate ?? 0) * 100)}% winners, ${pct(st.expectancy, 2)} per trade after costs, profit factor ${st.profitFactor ?? '—'}, held ${st.avgBars?.toFixed(1) ?? '—'} days on average. Grade: ${st.grade}.`),
-          )
-        : '',
-    ];
   }
 
   let started = false;

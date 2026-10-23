@@ -4706,3 +4706,36 @@ body.ai-window-body #app {
 .snap-nav { display: flex; flex-direction: column; }
 .snap-nav b { font-size: 18px; }
 .fund-snapshot p { margin: 4px 0; }
+
+/* Trade guide pop-up (src/home/tradeGuide.ts) */
+.setup-card { cursor: pointer; }
+.setup-card:hover { border-color: var(--link); }
+.trade-guide { line-height: 1.5; max-width: 760px; }
+.trade-guide h3 { margin: 18px 0 6px; font-size: 15px; }
+.trade-guide p { margin: 4px 0; }
+.guide-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.guide-verdict { border: 1px solid var(--border); border-left-width: 4px; border-radius: 6px; padding: 10px 12px; background: var(--panel-2); }
+.guide-verdict.good { border-left-color: var(--up); }
+.guide-verdict.ok { border-left-color: var(--link); }
+.guide-verdict.wait, .guide-verdict.no { border-left-color: var(--warn); }
+.guide-verdict b { font-size: 15px; }
+.guide-steps { padding-left: 20px; margin: 0; }
+.guide-steps li { margin: 8px 0; }
+.guide-levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0; }
+.guide-levels > div { display: flex; flex-direction: column; background: var(--panel-2); border-radius: 6px; padding: 8px; }
+.guide-levels b { font-size: 16px; }
+.guide-size { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-top: 6px; }
+.guide-size label { display: flex; flex-direction: column; gap: 2px; }
+.guide-size .input { width: 130px; }
+.guide-size-out { flex-basis: 100%; }
+.guide-why { margin: 4px 0 8px; color: var(--warn); }
+.guide-checks { list-style: none; padding: 0; margin: 6px 0; }
+.guide-checks li { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.guide-checks li i { font-style: normal; width: 16px; }
+.guide-checks li.ok i { color: var(--up); }
+.guide-checks li.bad i { color: var(--down); }
+.guide-readings dt { margin-top: 6px; }
+.guide-readings dd { margin: 0 0 4px; }
+.guide-actions { margin: 16px 0 8px; }
+@media (max-width: 600px) { .guide-levels { grid-template-columns: repeat(2, 1fr); } }
+.modal:has(.trade-guide) { max-width: 780px; }

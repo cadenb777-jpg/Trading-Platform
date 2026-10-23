@@ -448,6 +448,9 @@ def levels_around(ind, price):
             'resistances': sorted((x for x in pts if x['price'] > price), key=lambda x: x['price'] - price)[:4]}
 
 
+_re_cache = {}
+
+
 def strategy_stats(per_symbol):
     """Each strategy's pooled record across all scanned stocks, with the random-entry test."""
     out = {}
@@ -456,9 +459,15 @@ def strategy_stats(per_symbol):
         pooled = [t for ts in by_sym.values() for t in ts]
         closes = {r['symbol']: r['closes'] for r in per_symbol if r.get('closes')}
         opens = {r['symbol']: r['opens'] for r in per_symbol if r.get('opens')}
-        test = st.random_entry_test({k: v for k, v in by_sym.items() if k in closes}, closes, opens)
+        # 1,000 random-entry sets take a few seconds; the past trades only change once a day, so reuse the answer.
+        ck = (key, str(ny_today()), len(pooled), round(sum(t['ret'] for t in pooled), 6))
+        if ck not in _re_cache:
+            if len(_re_cache) > 50:
+                _re_cache.clear()
+            _re_cache[ck] = st.random_entry_test({k: v for k, v in by_sym.items() if k in closes}, closes, opens)
+        test = _re_cache[ck]
         out[key] = {'name': strat['name'], 'short': strat['short'], 'horizon': strat['horizon'], 'stats': st.summarise(pooled),
-                    'randomEntry': test, 'stocks': len(by_sym)}
+                    'randomEntry': test, 'monteCarlo': st.monte_carlo(pooled), 'stocks': len(by_sym)}
     return out
 
 
@@ -540,23 +549,49 @@ def compute(rows, strategy_keys, earnings):
     setups, filtered = [], []
     for r in per_symbol:
         for s in r['setups']:
-            stock = st.summarise(r['trades'].get(s['strategy'], []))
+            past = r['trades'].get(s['strategy'], [])
+            stock = st.summarise(past)
             grade(s, stock, stats[s['strategy']], earnings)
+            s['monteCarlo'] = st.monte_carlo(past)
             (setups if s['tier'] else filtered).append(s)
     return per_symbol, stats, setups, filtered
 
 
+RW_RUNS = 1000  # shuffled histories per random-walk test (owner's request)
 _rw_cache = {}
+_rw_jobs = {}  # cache key -> (done, cot) waiting for the worker
+_rw_worker = None
 
 
 def random_walk_for(symbol, key, done, cot):
-    """Per-stock random-walk test for a current setup (cached for the day; needs 5+ past trades to mean anything)."""
+    """Per-stock random-walk test for a current setup: 1,000 shuffled histories (about 15-30 seconds of work), so it
+    runs in the background one stock at a time and is cached for the day. Returns the result, or a 'pending' marker
+    the first time; the card fills in when it's done (needs 5+ past trades to mean anything)."""
+    global _rw_worker
     ck = (symbol, key, bar_day(done[-1]['time']))
+    if ck in _rw_cache:
+        return _rw_cache[ck]
     if len(_rw_cache) > 500:
         _rw_cache.clear()
-    if ck not in _rw_cache:
-        _rw_cache[ck] = st.random_walk_test(done, cot, key, runs=100)
-    return _rw_cache[ck]
+    _rw_jobs.setdefault(ck, (done, cot))
+    if _rw_worker is None or _rw_worker.done():
+        _rw_worker = asyncio.ensure_future(_run_rw_jobs())
+    return {'pending': True, 'runs': RW_RUNS}
+
+
+async def _run_rw_jobs():
+    while _rw_jobs:
+        ck, (done, cot) = next(iter(_rw_jobs.items()))
+        try:
+            _rw_cache[ck] = await asyncio.to_thread(st.random_walk_test, done, cot, ck[1], RW_RUNS)
+        except Exception as err:
+            log.info('Random-walk test for %s failed: %s', ck[0], err)
+            _rw_cache[ck] = None
+        _rw_jobs.pop(ck, None)
+        # Show it straight away on the last published scan too.
+        for s in (_state.get('result') or {}).get('setups', []):
+            if (s['symbol'], s['strategy']) == ck[:2] and (s.get('randomWalk') or {}).get('pending'):
+                s['randomWalk'] = _rw_cache[ck]
 
 
 # ---------- The scan ----------
@@ -623,7 +658,7 @@ async def scan(ctx, news=None):
     for s in top:
         done, cot = by_sym[s['symbol']]
         if s['stock']['trades'] >= 5:
-            s['randomWalk'] = await asyncio.to_thread(random_walk_for, s['symbol'], s['strategy'], done, cot)
+            s['randomWalk'] = random_walk_for(s['symbol'], s['strategy'], done, cot)
         await smart_money(pctx, s)
         if session != 'closed':
             try:

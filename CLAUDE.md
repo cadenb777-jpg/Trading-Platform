@@ -78,6 +78,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   moves, seeded). Tier A = strategy beats random entries (PF >= 1.2, p <= 0.10) + stock record not failed + COT
   not against + no earnings in the hold (Nasdaq earnings calendar; failure = "unavailable", never "none") + R:R >= 1.5
   (weekly swing). B = profitable strategy and no failed check of its own; non-A cards carry `why` (plain reasons, v13).
+  Simulations are 1,000 each: pooled random-entry (cached per day), per-stock random walk (RW_RUNS, background worker
+  `_run_rw_jobs`, card shows pending first) and Monte Carlo of the next 20 trades (`monte_carlo`). Clicking a card opens
+  the trade guide pop-up (src/home/tradeGuide.ts: verdict, step-by-step entry/stop/target/exit, size calculator, grade).
   Statuses: forming (today's bar), ready, waiting (trigger valid 2 days), in trade. Schwab requests
   are paced (one at a time, 0.7 s apart); unknown symbols are skipped for a day, only an expired login stops a scan.
   Home shows it with strategy tabs (src/home/setupsPanel.ts).

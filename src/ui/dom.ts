@@ -15,7 +15,7 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = 
 }
 
 /** Opens a dialog box. Returns a function that closes it. */
-export function openModal(title: string, body: Node, opts: { wide?: boolean; onClose?: () => void } = {}): () => void {
+export function openModal(title: string, body: Node, opts: { wide?: boolean; onClose?: () => void; noAutofocus?: boolean } = {}): () => void {
   const close = () => {
     backdrop.remove();
     document.removeEventListener('keydown', onKey);
@@ -36,7 +36,8 @@ export function openModal(title: string, body: Node, opts: { wide?: boolean; onC
   );
   document.addEventListener('keydown', onKey);
   document.body.append(backdrop);
-  backdrop.querySelector<HTMLInputElement>('input')?.focus();
+  if (opts.noAutofocus) backdrop.querySelector<HTMLElement>('.modal-header .icon-btn')?.focus();
+  else backdrop.querySelector<HTMLInputElement>('input')?.focus();
   return close;
 }
 

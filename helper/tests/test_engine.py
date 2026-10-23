@@ -524,3 +524,32 @@ class Grading(unittest.TestCase):
 def st_cot_view(v):
     from engine import strategies
     return strategies.cot_view(v, 1)
+
+
+class MonteCarlo(unittest.TestCase):
+    def test_summary_is_repeatable_and_sensible(self):
+        from engine import strategies
+        trades = [{'ret': r} for r in (0.03, -0.01, 0.02, -0.015, 0.025, -0.01, 0.01)]
+        a = strategies.monte_carlo(trades)
+        self.assertEqual(a, strategies.monte_carlo(trades))
+        self.assertEqual(a['runs'], 1000)
+        self.assertTrue(a['bad'] <= a['median'] <= a['good'])
+        self.assertTrue(0.5 < a['profitable'] <= 1)  # every trade averages +0.86%
+        self.assertLessEqual(a['worstDrop'], 0)
+        self.assertIsNone(strategies.monte_carlo(trades[:3]))
+
+    def test_random_walk_runs_in_background(self):
+        async def go():
+            bars = [{'time': 1_600_000_000 + i * 86400, 'open': 100 + i % 7, 'high': 102 + i % 7, 'low': 98 + i % 7, 'close': 101 + i % 5, 'volume': 1}
+                    for i in range(300)]
+            old = scanner.RW_RUNS
+            scanner.RW_RUNS = 5
+            try:
+                first = scanner.random_walk_for('TEST', 'mean_reversion', bars, None)
+                self.assertTrue(first['pending'])
+                await scanner._rw_worker
+                done = scanner.random_walk_for('TEST', 'mean_reversion', bars, None)
+                self.assertEqual(done['runs'], 5)
+            finally:
+                scanner.RW_RUNS = old
+        asyncio.run(go())
