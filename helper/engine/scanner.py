@@ -465,7 +465,8 @@ def strategy_stats(per_symbol):
 def grade(setup, stock, strat, earnings):
     """Tier A: the strategy beats random entries across the Nasdaq-100 (profit factor 1.2+, p <= 0.10), this stock's
     own record isn't losing, commercials (COT) aren't against it, no earnings inside the holding period, and (for the
-    weekly swing) the target is at least 1.5x the risk. B: positive strategy, nothing against. C: the rest."""
+    weekly swing) the target is at least 1.5x the risk. B: the strategy makes money and none of this setup's checks is
+    against it (only the strict random-entry test may be unproven). C: the rest; `why` says in plain words what's missing."""
     s, d = setup, setup['direction']
     ps, re = strat['stats'], strat['randomEntry'] or {}
     edge = (ps['expectancy'] or 0) > 0 and (ps['profitFactor'] or 0) >= 1.2 and (re.get('p') or 1) <= 0.10
@@ -495,13 +496,36 @@ def grade(setup, stock, strat, earnings):
         checks.append({'label': 'Reward:risk', 'ok': (s['plan']['riskReward'] >= 1.5) if s['strategy'] == 'weekly_swing' else None,
                        'detail': f"{s['plan']['riskReward']:.1f}x to the target"})
     s['checks'] = checks
+    # Plain reasons this setup is not an A grade, so a C card says why instead of leaving the owner guessing.
+    why = []
+    if not ps['trades']:
+        why.append('This strategy has no past trades yet to prove it works')
+    elif not positive:
+        why.append(f"This strategy lost money over 3 years of Nasdaq-100 history ({(ps['expectancy'] or 0) * 100:+.2f}% per trade after costs)")
+    elif not edge:
+        why.append(f"This strategy's past results don't clearly beat random entries (profit factor {ps['profitFactor']}, "
+                   f"p = {re['p']:.2f})" if re.get('p') is not None else "Too few past trades to test against random entries")
+    if not cot_ok:
+        why.append(f"Commercial hedgers (COT) lean against this direction (index {s['indicators']['cot']:.0f}/100)")
+    if in_window:
+        why.append(f"Earnings on {e['date']} fall inside the holding period")
+    if not rr_ok:
+        why.append(f"Target is only {(s['plan']['riskReward'] or 0):.1f}x the risk (needs 1.5x)")
+    if s['status'] == 'forming':
+        why.append('The signal is still forming: it only counts once today\'s bar closes')
+    if not stock_ok:
+        why.append(f"This strategy has lost money on {s['symbol']} itself ({stock['trades']} past trades)")
+    if z is not None and next(c for c in checks if c['label'] == 'Z-score')['ok'] is False:
+        why.append(f"Price isn't stretched enough for this setup (z-score {z:+.2f})" if s['strategy'] != 'breakout'
+                   else f"Price is already very stretched (z-score {z:+.2f})")
+    s['why'] = why
     s['score'] += sum(2 if c['ok'] else -2 if c['ok'] is False else 0 for c in checks)
     if not stock_ok:
         s['tier'] = None
     elif edge and cot_ok and not in_window and rr_ok and s['status'] != 'forming':
         s['tier'] = 'A'
-    elif positive and cot_ok:
-        s['tier'] = 'B'
+    elif positive and not any(c['ok'] is False for c in checks[1:]):
+        s['tier'] = 'B'  # the strategy makes money and none of this setup's own checks is against it
     else:
         s['tier'] = 'C'
     s['stock'] = stock

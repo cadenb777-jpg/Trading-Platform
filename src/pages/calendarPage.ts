@@ -77,7 +77,7 @@ const impactDots = (impact: CalendarEvent['impact']) =>
 
 function valueCell(e: CalendarEvent) {
   const cmp = compareActual(e);
-  return h('span', { class: `cal-actual ${cmp ?? ''}`, title: cmp ? `Actual came in ${cmp === 'inline' ? 'in line with' : cmp === 'above' ? 'higher than' : 'lower than'} the forecast` : '' }, e.actual || '—');
+  return h('span', { class: `cal-actual ${cmp ?? ''}`, title: [cmp ? `Actual came in ${cmp === 'inline' ? 'in line with' : cmp === 'above' ? 'higher than' : 'lower than'} the forecast.` : '', e.actualSource ? `Official figure from ${e.actualSource}.` : ''].join(' ').trim() }, e.actual || '—');
 }
 
 export function openEventDetails(e: CalendarEvent) {
@@ -90,7 +90,9 @@ export function openEventDetails(e: CalendarEvent) {
     : cmp === null
       ? e.actual
         ? 'Released.'
-        : 'Released. The actual number appears here once the feed updates (usually within minutes).'
+        : e.country === 'USD'
+          ? 'Released. The official number appears here once the St. Louis Fed (FRED) publishes it, usually within the hour.'
+          : 'Released. The free calendar feed has no actual numbers for this country; check the official statistics office.'
       : cmp === 'inline'
         ? 'Came in exactly as forecast.'
         : `Came in ${cmp === 'above' ? 'higher' : 'lower'} than the forecast. Whether that's good or bad depends on the report (see below).`;
@@ -339,7 +341,7 @@ export function createCalendarPage() {
     try {
       const result = await getCalendar(force);
       events = result.events;
-      foot.textContent = `Detailed events (forecast, previous, actual) come from Forex Factory and cover the current week. Fed rate decisions are shown for the whole year.${result.failed.length ? ' Could not reach Forex Factory just now.' : ''}`;
+      foot.textContent = `Detailed events (forecast and previous) come from Forex Factory and cover the current week; actual numbers for US releases come from the St. Louis Fed (FRED) shortly after each release. Fed rate decisions are shown for the whole year.${result.failed.length ? ' Could not reach Forex Factory just now.' : ''}`;
       render();
     } catch (err) {
       body.replaceChildren(h('div', { class: 'muted pad' }, (err as Error).message || HELPER_NOT_RUNNING));

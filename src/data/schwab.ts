@@ -12,7 +12,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 12;
+export const LATEST_HELPER_VERSION = 13;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -64,6 +64,8 @@ export interface CalendarEvent {
   forecast: string;
   previous: string;
   actual: string;
+  /** Where the actual came from when the feed lacked it (e.g. 'FRED') */
+  actualSource?: string;
 }
 
 /** Which Schwab bar size to request for each timeframe, and how many days back. */

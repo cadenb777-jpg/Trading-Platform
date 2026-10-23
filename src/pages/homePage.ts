@@ -55,7 +55,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
   );
   const card = h(
     'div',
-    { class: 'idx-card', role: 'button', tabindex: 0, title: `Open ${index.name} chart`, onclick: onOpen, onkeydown: (e: Event) => (e as KeyboardEvent).key === 'Enter' && onOpen() },
+    { class: 'idx-card', role: 'button', tabindex: 0, title: `Open ${index.name} chart`, onclick: onOpen, onkeydown: (e: Event) => (e as KeyboardEvent).key === 'Enter' && e.target === card && onOpen() },
     h('div', { class: 'idx-head' }, h('span', { class: 'idx-name' }, index.name), h('span', { class: 'idx-sym' }, index.symbol.replace('$', ''))),
     h('div', { class: 'idx-quote' }, h('div', {}, price, change), h('div', { class: 'segmented tiny idx-ranges' }, ...rangeButtons)),
     h('div', { class: 'idx-chart-wrap' }, chartBox, legend),

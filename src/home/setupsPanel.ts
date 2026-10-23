@@ -43,6 +43,7 @@ export interface Setup {
   reasons: string[];
   score: number;
   tier: Tier | null;
+  why?: string[];
   plan: {
     entryType: 'stop' | 'open';
     trigger: number;
@@ -100,7 +101,7 @@ const shortDate = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateStri
 const REFRESH_MS = 60 * 1000; // the helper rescans every 5 minutes; checking every minute keeps the box current
 const TIER_TEXT: Record<Tier, string> = {
   A: 'A-grade: the strategy beats random entries across the Nasdaq-100, this stock’s record isn’t losing, COT isn’t against it, no earnings in the holding period, and (weekly swing) the target is at least 1.5x the risk',
-  B: 'B-grade: the strategy is profitable overall and nothing is against it, but not every A-grade check passed',
+  B: 'B-grade: the strategy is profitable overall and none of this setup’s checks is against it, but its edge over random entries isn’t proven yet',
   C: 'C-grade: weak or untested: an idea to watch, not a trade',
 };
 const STRATEGY_TABS: { key: StrategyKey | 'all'; label: string }[] = [
@@ -197,7 +198,7 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
     const shown = bestOnly ? (best.length ? best : live).slice(0, 6) : pool;
     const note =
       bestOnly && shown.length && !best.length
-        ? h('div', { class: 'setups-banner' }, h('b', {}, 'Nothing above C-grade here right now.'), ' These are the closest candidates: ideas to watch, not trades to take.')
+        ? h('div', { class: 'setups-banner' }, h('b', {}, 'Nothing above C-grade here right now.'), ' These are the closest candidates: ideas to watch, not trades to take.', mainBlocker(live))
         : bestOnly && pool.length > shown.length
           ? h('p', { class: 'muted tiny' }, `${pool.length - shown.length} more (forming today or lower grade) under “Everything”.`)
           : '';
@@ -270,6 +271,17 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
     return parts.length ? h('p', { class: 'muted tiny' }, parts.join(' ')) : '';
   }
 
+  // The reason most cards miss A-grade, so the banner explains a page full of C's in one line.
+  function mainBlocker(list: Setup[]) {
+    const counts = new Map<string, number>();
+    for (const s of list) for (const w of s.why ?? []) {
+      const key = w.replace(/\(.*\)/, '').trim();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const top = [...counts].sort((a, b) => b[1] - a[1])[0];
+    return top ? h('div', { class: 'small' }, `Main reason: ${top[0].toLowerCase()} (${top[1]} of ${list.length}).`) : '';
+  }
+
   function card(s: Setup) {
     const long = s.direction > 0;
     const p = s.plan;
@@ -312,6 +324,9 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
         { class: 'setup-checks small' },
         ...s.checks.map((c) => h('li', { class: c.ok === true ? 'ok' : c.ok === false ? 'bad' : 'neutral', title: c.detail }, h('i', {}, c.ok === true ? '✓' : c.ok === false ? '✗' : '•'), h('span', {}, c.label), h('span', { class: 'muted' }, ` ${c.detail}`))),
       ),
+      s.tier !== 'A' && s.why?.length
+        ? h('div', { class: 'setup-why small' }, h('b', {}, `Why not A-grade: `), s.why.join(' · '))
+        : '',
       s.randomWalk
         ? h('div', { class: 'small' }, h('span', { class: 'muted' }, 'Random-walk test on this stock: '), h('b', { class: s.randomWalk.verdict === 'edge' ? 'up' : s.randomWalk.verdict === 'maybe' ? 'warn' : 'down' }, s.randomWalk.verdict === 'edge' ? 'likely a real edge' : s.randomWalk.verdict === 'maybe' ? 'inconclusive' : 'could be luck'), h('span', { class: 'muted' }, ` (p = ${s.randomWalk.p.toFixed(2)}, ${s.randomWalk.runs} shuffled histories)`))
         : '',

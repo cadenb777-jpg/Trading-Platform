@@ -16,6 +16,9 @@
   --ai: #b18cff;
   --ai-bg: #1b1730;
   --ai-border: #4b3d8a;
+  --ai-hover: #251f42;
+  --ai-top: #151a26;
+  --insight-top: #1a1630;
   --faint: #4a5162;
   --border-strong: #3a4152;
   --up-text: #4fd1c1;
@@ -49,6 +52,9 @@
   --ai: #6b3fd4;
   --ai-bg: #f1ecff;
   --ai-border: #c8b6f5;
+  --ai-hover: #e4dbff;
+  --ai-top: #eef0fb;
+  --insight-top: #f1ecff;
   --faint: #9aa1ad;
   --border-strong: #c6cdd8;
   --up-text: #067a67;
@@ -1390,7 +1396,7 @@ button.nav-btn {
 }
 
 .impact-medium {
-  color: #f5a623;
+  color: var(--warn);
 }
 
 .impact-low {
@@ -1553,7 +1559,7 @@ button.nav-btn {
 
 .cal-actual.below,
 .event-verdict.below {
-  color: #f5a623;
+  color: var(--warn);
 }
 
 .cal-foot {
@@ -1866,7 +1872,7 @@ button.news-item {
 }
 
 .day-event.impact-medium i {
-  color: #f5a623;
+  color: var(--warn);
 }
 
 .day-more {
@@ -2845,7 +2851,7 @@ textarea.input {
   flex-direction: column;
   min-width: 0;
   height: 100%;
-  background: linear-gradient(180deg, #151a26 0%, var(--bg) 220px);
+  background: linear-gradient(180deg, var(--ai-top) 0%, var(--bg) 220px);
   position: relative;
 }
 
@@ -3230,12 +3236,12 @@ body.ai-window-body #app {
 }
 
 .ai-btn:hover {
-  background: #251f42;
+  background: var(--ai-hover);
 }
 
 .insight-panel {
   border-color: var(--ai-border);
-  background: linear-gradient(180deg, #1a1630, var(--panel) 160px);
+  background: linear-gradient(180deg, var(--insight-top), var(--panel) 160px);
 }
 
 .insight-head {
@@ -4690,3 +4696,5 @@ body.ai-window-body #app {
   margin: 0;
   color: var(--link);
 }
+.setup-why { color: var(--warn); line-height: 1.35; }
+.setup-why b { font-weight: 600; }

@@ -284,6 +284,23 @@ class AdvisoryFees(unittest.TestCase):
         self.assertAlmostEqual(events[0][1], 120_000 * 0.012 / 12)  # account opened Mar 31: April is a full month
         self.assertEqual(events[1][0], dt.date(2025, 5, 1))
 
+    def test_zero_rate_tier_is_a_real_band(self):
+        import numpy as np
+        tiers = [{'upTo': 1_000_000, 'rate': 0}, {'upTo': None, 'rate': 0.01}]
+        dates = self.days(dt.date(2025, 1, 2), 300)
+        _, events = quant.apply_fees(dates, np.zeros(len(dates) - 1), {'tiers': tiers, 'billing': 'quarterly'}, 1_000_000)
+        self.assertEqual(sum(f for _, f in events), 0)
+        self.assertAlmostEqual(quant.blended_rate(1_500_000, tiers), 5_000)
+
+    def test_ytd_excludes_last_years_december_fee(self):
+        import numpy as np
+        dates = self.days(dt.date(2024, 1, 2), 470)  # past Dec 31 2024 (a Tuesday) into 2025
+        flat = {'tiers': [{'upTo': None, 'rate': 0.01}], 'billing': 'quarterly', 'timing': 'arrears'}
+        net, events = quant.apply_fees(dates, np.zeros(len(dates) - 1), flat, 100_000)
+        ytd = quant.trailing(net, dates, 0)
+        fees_2025 = sum(f for d, f in events if d.year == 2025)
+        self.assertAlmostEqual(ytd, -fees_2025 / (100_000 - sum(f for d, f in events if d.year == 2024)), places=6)
+
 
 class Resp:
     def __init__(self, code, data=None):
@@ -421,3 +438,89 @@ class Flow(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CalendarActuals(unittest.TestCase):
+    """US actuals read from FRED only when FRED already has the period the release covers."""
+
+    def setUp(self):
+        from engine import actuals
+        self.a = actuals
+        self.tz = dt.timezone.utc
+
+    def ev(self, title, day, forecast='', previous=''):
+        t = int(dt.datetime.fromisoformat(day + 'T12:30:00+00:00').timestamp())
+        return {'title': title, 'country': 'USD', 'time': t, 'forecast': forecast, 'previous': previous, 'actual': ''}
+
+    def test_periods(self):
+        p = self.a.period_for
+        self.assertEqual(p(dt.date(2026, 10, 15), 'm1'), dt.date(2026, 9, 1))
+        self.assertEqual(p(dt.date(2026, 1, 9), 'm2'), dt.date(2025, 11, 1))
+        self.assertEqual(p(dt.date(2026, 10, 29), 'q'), dt.date(2026, 7, 1))
+        self.assertEqual(p(dt.date(2026, 3, 26), 'q'), dt.date(2025, 10, 1))
+        self.assertEqual(p(dt.date(2026, 10, 22), 'w1'), dt.date(2026, 10, 17))  # Thursday -> last Saturday
+
+    def test_cpi_filled_and_formatted(self):
+        e = self.ev('CPI m/m', '2026-10-15', '0.3%', '0.4%')
+        rows = [('2026-08-01', 320.0), ('2026-09-01', 321.0)]
+        self.a.fill([e], {'CPIAUCSL': rows}, self.tz)
+        self.assertEqual(e['actual'], '0.3%')
+        self.assertEqual(e['actualSource'], 'FRED')
+
+    def test_waits_for_fred_to_update(self):
+        e = self.ev('CPI m/m', '2026-10-15', '0.3%', '0.4%')
+        self.a.fill([e], {'CPIAUCSL': [('2026-07-01', 319.0), ('2026-08-01', 320.0)]}, self.tz)
+        self.assertEqual(e['actual'], '')
+
+    def test_payrolls_claims_and_units(self):
+        nfp = self.ev('Non-Farm Employment Change', '2026-10-02', '120K', '22K')
+        claims = self.ev('Unemployment Claims', '2026-10-22', '225K', '231K')
+        jolts = self.ev('JOLTS Job Openings', '2026-10-06', '7.20M', '7.18M')
+        self.a.fill([nfp, claims, jolts], {
+            'PAYEMS': [('2026-08-01', 159500.0), ('2026-09-01', 159640.0)],
+            'ICSA': [('2026-10-10', 231000.0), ('2026-10-17', 219000.0)],
+            'JTSJOL': [('2026-08-01', 7227.0)],
+        }, self.tz)
+        self.assertEqual(nfp['actual'], '140K')
+        self.assertEqual(claims['actual'], '219K')
+        self.assertEqual(jolts['actual'], '7.23M')
+
+    def test_only_released_us_events(self):
+        future = self.ev('CPI m/m', '2099-01-13')
+        other = dict(self.ev('CPI m/m', '2026-10-15'), country='EUR')
+        self.assertEqual(self.a.series_needed([future, other], time.time()), [])
+
+
+class Grading(unittest.TestCase):
+    """A B-grade never has a failed check of its own, and every non-A card says why."""
+
+    def setup(self, rr=2.0, z=-1.5, cot=70):
+        return {'direction': 1, 'symbol': 'TEST', 'signalDate': '2026-10-22', 'strategy': 'weekly_swing', 'status': 'ready',
+                'score': 0, 'plan': {'exitBy': '2026-10-30', 'riskReward': rr},
+                'indicators': {'cotView': st_cot_view(cot), 'cot': cot, 'z': z}}
+
+    def strat(self, exp=0.004, pf=1.5, p=0.05):
+        return {'stats': {'trades': 200, 'winRate': 0.55, 'profitFactor': pf, 'expectancy': exp}, 'randomEntry': {'p': p}}
+
+    def test_tiers(self):
+        stock = {'grade': 'proven', 'trades': 10, 'winRate': 0.6}
+        a = self.setup()
+        scanner.grade(a, stock, self.strat(), {})
+        self.assertEqual(a['tier'], 'A')
+        self.assertEqual(a['why'], [])
+        b = self.setup()
+        scanner.grade(b, stock, self.strat(p=0.3), {})
+        self.assertEqual(b['tier'], 'B')
+        c = self.setup(rr=0.4)
+        scanner.grade(c, stock, self.strat(p=0.3), {})
+        self.assertEqual(c['tier'], 'C')
+        self.assertTrue(any('risk' in w for w in c['why']))
+        losing = self.setup()
+        scanner.grade(losing, stock, self.strat(exp=-0.001, pf=0.9), {})
+        self.assertEqual(losing['tier'], 'C')
+        self.assertIn('lost money', losing['why'][0])
+
+
+def st_cot_view(v):
+    from engine import strategies
+    return strategies.cot_view(v, 1)

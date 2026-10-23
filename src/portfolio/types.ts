@@ -123,7 +123,8 @@ export interface FeeSchedule {
 /** "1.00% on the first $1,000,000, 0.75% above; billed quarterly in arrears". */
 export function describeFees(f: FeeSchedule): string {
   const money = (v: number) => v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
-  const tiers = [...f.tiers].filter((t) => t.rate > 0).sort((a, b) => (a.upTo ?? Infinity) - (b.upTo ?? Infinity));
+  // 0% tiers stay: "0% on the first $1M" is a real band (and a capped top tier reads "0.00% above ...").
+  const tiers = [...f.tiers].sort((a, b) => (a.upTo ?? Infinity) - (b.upTo ?? Infinity));
   const parts = tiers.map((t, i) => {
     const rate = `${(t.rate * 100).toFixed(2)}%`;
     if (tiers.length === 1) return `${rate} a year`;
@@ -131,7 +132,8 @@ export function describeFees(f: FeeSchedule): string {
     const prev = tiers[i - 1].upTo ?? 0;
     return t.upTo == null ? `${rate} above ${money(prev)}` : `${rate} from ${money(prev)} to ${money(t.upTo)}`;
   });
-  return `${parts.join(', ')}; billed ${f.billing} in ${f.timing}`;
+  const billed = { monthly: 'monthly', quarterly: 'quarterly', annual: 'annually' }[f.billing] ?? f.billing;
+  return `${parts.join(', ')}; billed ${billed} in ${f.timing}`;
 }
 
 export interface Analysis {

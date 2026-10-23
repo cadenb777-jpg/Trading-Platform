@@ -48,7 +48,7 @@ import engine  # noqa: E402  (light: its big modules load in the background, see
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 12
+HELPER_VERSION = 13
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -128,8 +128,8 @@ NEWS_TOPICS = [
 NEWS_TOPIC_PATTERNS = [(label, weight, section, re.compile(rx, re.I)) for label, weight, section, rx in NEWS_TOPICS]
 STOPWORDS = set('the and for with from that this will after over into amid says said than more what about their have been stocks stock market'.split())
 
-# Economic calendar: Forex Factory's free weekly feeds (forecast, previous, and actual when published).
-# Forex Factory only publishes the current week as a free feed.
+# Economic calendar: Forex Factory's free weekly feed (forecast and previous; it has no actual numbers, so US
+# actuals come from FRED after each release: engine/actuals.py). Forex Factory only publishes the current week.
 CALENDAR_FEEDS = ['https://nfs.faireconomy.media/ff_calendar_thisweek.json']
 CALENDAR_CACHE_SECONDS = 3600
 # Fed rate decision days (2:00 PM ET). Check https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
@@ -586,6 +586,7 @@ class Market:
         self.client = client
         self.news = news or NewsFetcher()
         self.engine = engine_ctx or engine.EngineContext(client)
+        self.fred_cache = {}  # series -> (fetched_at, rows) for calendar actuals
         if self.engine.news is None:
             self.engine.news = self.news
         self.stream_factory = stream_factory
@@ -706,7 +707,37 @@ class Market:
 
     async def calendar_reply(self):
         events, failed = await self.news.calendar()
+        await self.fill_actuals(events)
         return {'type': 'calendar', 'events': events, 'failed': failed}
+
+    async def fill_actuals(self, events):
+        """Forex Factory's feed has no actual numbers: read US releases' official figures from FRED (free)."""
+        from engine import actuals
+        needed = actuals.series_needed(events, time.time())
+        if not needed:
+            return
+        try:
+            await asyncio.wait_for(engine.wait_loaded(), 20)
+            from engine import macro
+        except Exception as err:
+            log.info('Calendar actuals skipped: %s', err)
+            return
+
+        async def load(series):
+            # FRED updates within minutes of a release, so re-check every 10 minutes while an actual is missing.
+            cached = self.fred_cache.get(series)
+            if cached and time.time() - cached[0] < 600:
+                return cached[1]
+            rows = await macro._fred_download(self.engine, series)
+            self.fred_cache[series] = (time.time(), rows)
+            return rows
+
+        results = await asyncio.gather(*(load(s) for s in needed), return_exceptions=True)
+        data = {s: r for s, r in zip(needed, results) if not isinstance(r, Exception)}
+        for s, r in zip(needed, results):
+            if isinstance(r, Exception):
+                log.info('FRED %s for the calendar failed: %s', s, r)
+        actuals.fill(events, data, EASTERN)
 
     async def summary_reply(self, links, title):
         if not links:

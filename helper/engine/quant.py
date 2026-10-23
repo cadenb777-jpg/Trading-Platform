@@ -124,10 +124,12 @@ def trailing(returns, dates, years):
     start = end - dt.timedelta(days=round(365.25 * years)) if years else dt.date(end.year - 1, 12, 31)
     if dates[0] > start + dt.timedelta(days=7):
         return None
-    i = next(i for i, d in enumerate(dates) if d >= start)
-    r = returns[max(0, i - 1):] if i else returns
+    # Measure from the last close on or before the start date: returns[k] is the return on dates[k + 1], so a
+    # return (or a fee) dated on the start day itself (e.g. Dec 31 for year-to-date) belongs to the period before.
+    j = max([k for k, d in enumerate(dates) if d <= start] or [0])
+    r = returns[j:]
     if years and years >= 1:
-        return annualised(r, (end - dates[max(0, i - 1)]).days)
+        return annualised(r, (end - dates[j]).days)
     return float(np.prod(1 + r) - 1)
 
 
@@ -275,7 +277,8 @@ def apply_fees(dates, gross, schedule, initial):
     in arrears yet. Returns (net daily returns, [(date, dollars)])."""
     billing = schedule.get('billing') if schedule.get('billing') in BILLING_PERIODS else 'quarterly'
     advance = schedule.get('timing') == 'advance'
-    tiers = [t for t in schedule.get('tiers') or [] if float(t.get('rate') or 0) > 0]
+    # Keep 0% tiers: "0% on the first $1M" is a real band. Rates are capped at 5% a year, like the form.
+    tiers = [{'upTo': t.get('upTo'), 'rate': min(max(float(t.get('rate') or 0), 0.0), 0.05)} for t in schedule.get('tiers') or []]
     per_year = BILLING_PERIODS[billing]
     days = dates[1:]  # gross[k] is the return on days[k]; the account opens at the close of dates[0]
     periods = [_period(d, billing) for d in days]

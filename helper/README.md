@@ -88,7 +88,8 @@ starts faster and opens the platform in Chrome when it's ready; version 10 adds 
 put/call data and AI summaries on more pages. Version 11 makes the scanner backtest the exact plan shown on each card, retry symbols after temporary
 Schwab errors, pace all its requests gently, and shows "At close" values on the Investments boards. Version 12 scans
 every Nasdaq-100 stock every 5 minutes for swing trades (weekly swing with COT, z-score and Williams; mean reversion;
-breakouts), adds RIA fee schedules to client reports and reads fund NAVs from the newest quarterly reports. If an optional part
+breakouts), adds RIA fee schedules to client reports and reads fund NAVs from the newest quarterly reports. Version 13 says on each setup card why it isn't an A-grade and fills in
+the economic calendar's actual numbers for US releases (from the St. Louis Fed). If an optional part
 (the AI or portfolio maths) fails to install, the helper still starts and charts and prices keep working; the
 platform's Settings window shows what's unavailable, and the helper writes a log to `~/.trading-platform/helper.log`. The first start after updating installs a few
 more parts, so it takes a couple of minutes. Keys and emails are no longer typed into this window:

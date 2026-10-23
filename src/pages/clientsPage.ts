@@ -141,6 +141,7 @@ export function createClientsPage() {
     const text = (key: 'name' | 'household' | 'accountName' | 'benchmark', placeholder = '') => {
       const el = h('input', { class: 'input', value: c[key] ?? '', placeholder });
       el.addEventListener('input', () => (c[key] = el.value));
+      el.addEventListener('change', () => ((c[key] = el.value.trim()), (el.value = c[key] ?? '')));
       return el;
     };
     const pfSelect = h(
@@ -221,6 +222,7 @@ export function createClientsPage() {
 
   async function save() {
     try {
+      for (const k of ['name', 'household', 'accountName', 'benchmark'] as const) if (typeof current[k] === 'string') current[k] = current[k]!.trim();
       current = await saveDoc('clients', current);
       toast(`Saved ${current.name}`);
       await refresh();
@@ -469,6 +471,7 @@ function feeEditor(c: Client): HTMLElement {
       rate.addEventListener('input', () => {
         const v = parseFloat(rate.value);
         t.rate = Number.isFinite(v) && v >= 0 ? Math.min(v, 5) / 100 : 0;
+        if (Number.isFinite(v) && v > 5) rate.value = '5'; // show the 5% cap instead of silently using it
         save();
         summary.textContent = describeFees(sch);
       });
