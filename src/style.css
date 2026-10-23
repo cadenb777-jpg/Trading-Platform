@@ -4755,3 +4755,5 @@ body.ai-window-body #app {
 .win-study-edit { display: flex; gap: 8px; flex-basis: 100%; padding: 4px 0; }
 .win-study-edit label { display: flex; flex-direction: column; }
 .win-study-edit .input { width: 90px; }
+.new-chip { background: var(--link); color: var(--bg); border-radius: 8px; padding: 0 6px; font-weight: 600; font-size: 11px; }
+.setup-conflict { color: var(--warn-text); }

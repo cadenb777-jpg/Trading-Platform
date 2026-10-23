@@ -93,7 +93,8 @@ the economic calendar's actual numbers for US releases (from the St. Louis Fed).
 opens when you click a setup card. Version 15 builds each fund's NAV chart from its monthly NAV announcements, so
 the alternatives pages show current prices instead of old quarterly data. Version 16 reads fewer filings the first
 time a fund opens, so fund pages load faster. Version 17 fixes calendar actuals when the St. Louis Fed skips a
-month and names the main reason when no setup beats a C-grade. If an optional part
+month and names the main reason when no setup beats a C-grade. Version 18 keeps open trades on the setups list
+until they end, marks new setups and warns when two strategies disagree on a stock. If an optional part
 (the AI or portfolio maths) fails to install, the helper still starts and charts and prices keep working; the
 platform's Settings window shows what's unavailable, and the helper writes a log to `~/.trading-platform/helper.log`. The first start after updating installs a few
 more parts, so it takes a couple of minutes. Keys and emails are no longer typed into this window:

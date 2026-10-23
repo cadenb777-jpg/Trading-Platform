@@ -40,6 +40,12 @@ function verdict(s: Setup): { tone: 'good' | 'ok' | 'wait' | 'no'; title: string
     return { tone: 'wait', title: 'Not yet: wait for today\'s close', text: `The signal is still forming on today's bar and only counts once the market closes. Check again after 4:00 PM New York time.${why}` };
   if (s.earnings?.inWindow)
     return { tone: 'no', title: 'Careful: earnings during the trade', text: `${s.symbol} reports on ${s.earnings.date}, inside the holding period. Earnings can gap the price straight past your stop. Most swing traders skip this or use a much smaller position.` };
+  if (s.conflict)
+    return {
+      tone: 'wait',
+      title: 'Mixed signals: be careful',
+      text: `${s.conflict.strategy} says ${s.conflict.direction > 0 ? 'BUY' : 'SELL'} on ${s.symbol} at the same time${s.conflict.tier ? ` (${s.conflict.tier}-grade)` : ''}. The strategies look at different time frames, so both can be "right", but they can't both work. Most traders wait, or take only the higher grade at a small size.${why}`,
+    };
   if (s.tier === 'A')
     return { tone: 'good', title: 'Yes, this meets every rule', text: 'The strategy has beaten random entries across the Nasdaq-100, this stock\'s own record isn\'t losing, the big hedgers aren\'t against it, no earnings get in the way and the target is worth the risk. Take it at your normal size if the entry triggers.' };
   if (s.tier === 'B')

@@ -47,6 +47,10 @@ export interface Setup {
   why?: string[];
   /** One short code per `why` reason (helper v17+), for counting the same reason together. */
   whyCodes?: string[];
+  /** Signalled at the latest close (helper v18+). */
+  new?: boolean;
+  /** Another strategy points the other way on this stock (helper v18+). */
+  conflict?: { strategy: string; direction: number; tier: Tier | null };
   plan: {
     entryType: 'stop' | 'open';
     trigger: number;
@@ -249,6 +253,18 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
       h('div', { class: 'setups-grid' }, ...shown.map(card)),
       data.filteredOut.length ? h('p', { class: 'muted tiny' }, `Filtered out ${data.filteredOut.length} setup${data.filteredOut.length === 1 ? '' : 's'} whose strategy lost money when tested on that stock: ${data.filteredOut.map((f) => f.symbol).join(', ')}.`) : '',
       skippedNote(data.skipped ?? []),
+      cadenceNote(),
+    );
+  }
+
+  /** How often the list changes, so the same cards all day don't look like a stuck scanner. */
+  function cadenceNote() {
+    const fresh = data?.setups.filter((s) => s.new).length ?? 0;
+    return h(
+      'p',
+      { class: 'muted tiny' },
+      `${fresh ? `${fresh} new at the latest close. ` : ''}Signals are built from daily bars, so new ones appear after each 4 PM close (and as "forming" during the day). `,
+      'Each 5-minute scan updates prices, triggers, grades and simulations. A setup stays until its trade ends: up to about 7 trading days for the weekly swing, a month for breakouts.',
     );
   }
 
@@ -334,7 +350,16 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
           s.week != null ? h('span', { class: 'muted small', title: 'Past 5 trading days' }, ' · wk ', h('span', { class: s.week >= 0 ? 'up' : 'down' }, pct(s.week))) : '',
         ),
       ),
-      h('div', { class: 'setup-meta small' }, h('span', { class: 'strategy-chip' }, s.strategyName), h('span', { class: `status-chip status-${s.status.replace(' ', '-')}` }, s.statusText)),
+      h(
+        'div',
+        { class: 'setup-meta small' },
+        s.new ? h('span', { class: 'new-chip', title: 'Signalled at the latest close' }, 'New') : '',
+        h('span', { class: 'strategy-chip' }, s.strategyName),
+        h('span', { class: `status-chip status-${s.status.replace(' ', '-')}` }, s.statusText),
+      ),
+      s.conflict
+        ? h('div', { class: 'setup-conflict small', title: 'Two strategies disagree on this stock' }, `⚠ Mixed signals: ${s.conflict.strategy} says ${s.conflict.direction > 0 ? 'BUY' : 'SELL'}${s.conflict.tier ? ` (${s.conflict.tier}-grade)` : ''}`)
+        : '',
       s.trade
         ? h('div', { class: 'setup-trade small' }, `Entered ${formatPrice(s.trade.entry)} on ${shortDate(s.trade.filled)} · `, h('b', { class: s.trade.pnl >= 0 ? 'up' : 'down' }, `${pct(s.trade.pnl)} so far`), ` · day ${s.trade.daysHeld} of ${p.maxHold}`)
         : '',

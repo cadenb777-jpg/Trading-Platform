@@ -589,5 +589,60 @@ class NavHistory(unittest.TestCase):
         self.assertIsNone(alts.nav_series([], today=dt.date(2026, 10, 23)))
 
 
+
+class OpenTradesStayListed(unittest.TestCase):
+    """A trade that triggered days ago stays on the list until it ends (the scanner used to look back 3 days only)."""
+
+    def fake_strategy(self, signal_at):
+        def signal(ind, i):
+            return {'dir': 1, 'reasons': ['test']} if i == signal_at else None
+
+        def plan(ind, i, d):
+            c = ind['bars'][i]['close']
+            return {'entry': 'open', 'trigger': c, 'validDays': 1, 'stop': c * 0.5, 'target': c * 2, 'maxHold': 15,
+                    'breakEvenAtR': None, 'exit': None, 'targetNote': 'test', 'exitRule': 'test'}
+        return {'name': 'Test', 'short': 'Test', 'signal': signal, 'plan': plan, 'horizon': 'test'}
+
+    def test_trade_from_eight_sessions_ago_is_still_shown(self):
+        from engine import strategies
+        bars = random_walk(400, seed=3)
+        n = len(bars)
+        strategies.STRATEGIES['test'] = self.fake_strategy(n - 9)
+        try:
+            out = scanner.analyse_symbol('TEST', bars, None, None, ['test'])
+        finally:
+            del strategies.STRATEGIES['test']
+        self.assertEqual(len(out['setups']), 1)
+        self.assertEqual(out['setups'][0]['status'], 'in trade')
+        self.assertFalse(out['setups'][0]['new'])
+
+    def test_lookback_covers_every_strategy(self):
+        from engine import strategies
+        ind = strategies.prepare(random_walk(400, seed=5), None)
+        for key, strat in strategies.STRATEGIES.items():
+            p = strat['plan'](ind, 300, 1) or strat['plan'](ind, 300, -1)
+            if p:
+                self.assertLessEqual(p['validDays'] + p['maxHold'], scanner.SIGNAL_LOOKBACK, key)
+
+
+    def test_opposite_signals_on_one_stock_are_flagged(self):
+        from engine import strategies
+        bars = random_walk(400, seed=3)
+        n = len(bars)
+        up, down = self.fake_strategy(n - 1), self.fake_strategy(n - 1)
+        down['signal'] = lambda ind, i: {'dir': -1, 'reasons': ['test']} if i == n - 1 else None
+        down['plan'] = lambda ind, i, d: {**up['plan'](ind, i, d), 'stop': ind['bars'][i]['close'] * 1.5, 'target': ind['bars'][i]['close'] * 0.5}
+        strategies.STRATEGIES['up'], strategies.STRATEGIES['down'] = up, down
+        try:
+            _, _, setups, filtered = scanner.compute([('TEST', bars, None, None)], ['up', 'down'], {})
+        finally:
+            del strategies.STRATEGIES['up'], strategies.STRATEGIES['down']
+        both = setups + filtered
+        self.assertEqual(len(both), 2)
+        for s in both:
+            self.assertEqual(s['conflict']['direction'], -s['direction'])
+            self.assertTrue(any(c['label'] == 'Other strategies' for c in s['checks']))
+
+
 if __name__ == '__main__':
     unittest.main()

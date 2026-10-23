@@ -352,6 +352,9 @@ def setup_state(ind_all, s, plan, d):
     return ('in trade', t) if still_open else None
 
 
+SIGNAL_LOOKBACK = 25  # sessions: longer than any strategy's entry window + holding period (breakout: 2 + 20)
+
+
 def analyse_symbol(symbol, done, live, cot, strategy_keys):
     """All current setups for one stock, plus its backtests. `done` = completed daily bars, `live` = with today."""
     if len(done) < 260:
@@ -363,31 +366,30 @@ def analyse_symbol(symbol, done, live, cot, strategy_keys):
     for key in strategy_keys:
         strat = st.STRATEGIES[key]
         trades[key] = stock_trades(symbol, key, ind_done)
-        candidates = []
         n = len(done)
-        for s in (n - 1, n - 2, n - 3):  # signals from the last few completed days may still be valid or open
-            sig = strat['signal'](ind_done, s)
-            if sig:
-                candidates.append((s, sig, None))
+        picked = None
+        # The newest signal whose trade is still waiting to trigger or still open. Trades last a while (weekly swing
+        # up to 7 sessions, breakout about a month), so look back far enough not to drop one that is still on.
+        for s in range(n - 1, max(0, n - 1 - SIGNAL_LOOKBACK), -1):
+            if picked:
                 break
-        if ind_live:  # forming today: only final at the close
-            sig = strat['signal'](ind_live, len(live) - 1)
-            if sig:
-                candidates.append((len(live) - 1, sig, 'forming'))
-        for s, sig, forced in candidates:
-            src = ind_live if forced else ind_done
-            plan = strat['plan'](src, s, sig['dir'])
+            sig = strat['signal'](ind_done, s)
+            plan = sig and strat['plan'](ind_done, s, sig['dir'])
             if not plan:
                 continue
-            if forced:
-                state, trade = 'forming', None
-            else:
-                res = setup_state(ind_now, s, plan, sig['dir'])
-                if res is None:
-                    continue
-                state, trade = res
-            found.append(build_setup(symbol, key, src, s, sig, plan, state, trade, ind_now))
-            break
+            res = setup_state(ind_now, s, plan, sig['dir'])
+            if res is not None:
+                picked = (ind_done, s, sig, plan, *res)
+        if not picked and ind_live:  # otherwise one forming today: only final at the close
+            sig = strat['signal'](ind_live, len(live) - 1)
+            plan = sig and strat['plan'](ind_live, len(live) - 1, sig['dir'])
+            if plan:
+                picked = (ind_live, len(live) - 1, sig, plan, 'forming', None)
+        if picked:
+            src, s, sig, plan, state, trade = picked
+            setup = build_setup(symbol, key, src, s, sig, plan, state, trade, ind_now)
+            setup['new'] = state != 'forming' and s == n - 1  # signalled at the latest close
+            found.append(setup)
     return {'symbol': symbol, 'setups': found, 'trades': trades,
             'closes': ind_done['closes'], 'opens': [b['open'] for b in done]}
 
@@ -557,6 +559,14 @@ def compute(rows, strategy_keys, earnings):
             stock = st.summarise(past)
             grade(s, stock, stats[s['strategy']], earnings)
             s['monteCarlo'] = st.monte_carlo(past)
+        # Two strategies can disagree on one stock (e.g. a weekly-swing sell in a weekly downtrend while mean
+        # reversion sees a short-term oversold buy above the 200-day average). Say so on both cards.
+        for s in r['setups']:
+            other = next((o for o in r['setups'] if o is not s and o['direction'] != s['direction']), None)
+            if other:
+                s['conflict'] = {'strategy': other['strategyName'], 'direction': other['direction'], 'tier': other.get('tier')}
+                s['checks'].append({'label': 'Other strategies', 'ok': None,
+                                    'detail': f"{other['strategyName']} says {'BUY' if other['direction'] > 0 else 'SELL'} on this stock: mixed signals, so use a smaller size or wait"})
             (setups if s['tier'] else filtered).append(s)
     return per_symbol, stats, setups, filtered
 
