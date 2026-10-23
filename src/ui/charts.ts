@@ -134,7 +134,13 @@ export const money = (v: number | null | undefined) => {
   return `${sign}$${abs.toFixed(2)}`;
 };
 
-export const pct = (v: number | null | undefined, digits = 2) => (v == null || !Number.isFinite(v) ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(digits)}%`);
+export const pct = (v: number | null | undefined, digits = 2) => {
+  if (v == null || !Number.isFinite(v)) return '—';
+  const text = (v * 100).toFixed(digits);
+  // A value that rounds to zero is shown as plain 0 (never "-0.0%" or "+0.0%").
+  if (Number(text) === 0) return `${(0).toFixed(digits)}%`;
+  return `${v > 0 ? '+' : ''}${text}%`;
+};
 
 /** Like pct but without a + sign, for things that are never negative (volatility, weights). */
 export const pctU = (v: number | null | undefined, digits = 2) => pct(v, digits).replace('+', '');
