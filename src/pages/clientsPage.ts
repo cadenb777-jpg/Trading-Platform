@@ -277,7 +277,7 @@ export function createClientsPage() {
     await Promise.all(
       [...names].filter(Boolean).map(async (name) => {
         try {
-          const d = await engineRequest<{ facts?: FundFacts | null }>('alts.fund', { name }, 45000);
+          const d = await engineRequest<{ facts?: FundFacts | null }>('alts.fund', { name }, 90000); // same request (and cache entry) as the fund page
           if (d.facts) out[name.toLowerCase()] = d.facts;
         } catch {
           // Not every private fund files reports with the SEC; the report just leaves that row out.

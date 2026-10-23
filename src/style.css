@@ -1396,7 +1396,7 @@ button.nav-btn {
 }
 
 .impact-medium {
-  color: var(--warn);
+  color: var(--warn-text);
 }
 
 .impact-low {
@@ -1559,7 +1559,7 @@ button.nav-btn {
 
 .cal-actual.below,
 .event-verdict.below {
-  color: var(--warn);
+  color: var(--warn-text);
 }
 
 .cal-foot {
@@ -4696,7 +4696,7 @@ body.ai-window-body #app {
   margin: 0;
   color: var(--link);
 }
-.setup-why { color: var(--warn); line-height: 1.35; }
+.setup-why { color: var(--warn-text); line-height: 1.35; }
 .setup-why b { font-weight: 600; }
 .fund-snapshot .panel-head { flex-wrap: wrap; gap: 8px; }
 .snap-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid currentColor; }
@@ -4728,7 +4728,7 @@ body.ai-window-body #app {
 .guide-size label { display: flex; flex-direction: column; gap: 2px; }
 .guide-size .input { width: 130px; }
 .guide-size-out { flex-basis: 100%; }
-.guide-why { margin: 4px 0 8px; color: var(--warn); }
+.guide-why { margin: 4px 0 8px; color: var(--warn-text); }
 .guide-checks { list-style: none; padding: 0; margin: 6px 0; }
 .guide-checks li { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
 .guide-checks li i { font-style: normal; width: 16px; }

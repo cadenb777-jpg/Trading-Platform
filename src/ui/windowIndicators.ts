@@ -41,6 +41,7 @@ interface Study {
   def: IndicatorDef;
   params: IndicatorParams;
   series: ISeriesApi<'Line' | 'Histogram'>[];
+  /** Pane index at the last draw (0 = with the data line); re-read from the chart before each redraw. */
   pane: number;
 }
 
@@ -54,14 +55,12 @@ export function indicatorMenu(chart: IChartApi, base: () => Point[], opts: { ope
   const chips = h('div', { class: 'win-studies' });
   const menu = h('div', { class: 'win-ind-menu', hidden: true });
 
-  function nextPane() {
-    const used = new Set(studies.map((s) => s.pane));
-    let p = 1;
-    while (used.has(p)) p++;
-    return p;
-  }
-
   function draw(study: Study) {
+    // The chart deletes a pane when its last series goes and renumbers the ones below, so a saved pane number goes
+    // stale: read the study's pane from the chart, and keep it while its series are swapped.
+    const keep = study.def.placement !== 'overlay' && study.series.length ? study.series[0].getPane() : null;
+    keep?.setPreserveEmptyPane(true);
+    if (study.def.placement !== 'overlay') study.pane = keep ? keep.paneIndex() : chart.panes().length;
     for (const s of study.series) chart.removeSeries(s);
     const values = computeOnLine(study.def, study.params, base());
     study.series = study.def.plots
@@ -80,6 +79,7 @@ export function indicatorMenu(chart: IChartApi, base: () => Point[], opts: { ope
         s.setData((plot.type === 'histogram' && plot.colorBy === 'sign' ? pts.map((p) => ({ ...p, color: p.value >= 0 ? plot.color : (plot.negativeColor ?? '#ef5350') })) : pts) as never);
         return s;
       });
+    keep?.setPreserveEmptyPane(false);
     const first = study.series[0];
     if (first && study.def.placement !== 'overlay') for (const level of study.def.levels ?? []) first.createPriceLine({ price: level, color: '#787b86', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
   }
@@ -132,7 +132,7 @@ export function indicatorMenu(chart: IChartApi, base: () => Point[], opts: { ope
   }
 
   function add(def: IndicatorDef) {
-    const study: Study = { def, params: defaultParams(def), series: [], pane: def.placement === 'overlay' ? 0 : nextPane(), color: PALETTE[added++ % PALETTE.length] };
+    const study: Study = { def, params: defaultParams(def), series: [], pane: 0, color: PALETTE[added++ % PALETTE.length] };
     studies.push(study);
     draw(study);
     renderChips();

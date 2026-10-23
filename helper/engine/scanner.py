@@ -448,7 +448,7 @@ def levels_around(ind, price):
             'resistances': sorted((x for x in pts if x['price'] > price), key=lambda x: x['price'] - price)[:4]}
 
 
-_re_cache = {}
+_random_entry_cache = {}
 
 
 def strategy_stats(per_symbol):
@@ -461,11 +461,11 @@ def strategy_stats(per_symbol):
         opens = {r['symbol']: r['opens'] for r in per_symbol if r.get('opens')}
         # 1,000 random-entry sets take a few seconds; the past trades only change once a day, so reuse the answer.
         ck = (key, str(ny_today()), len(pooled), round(sum(t['ret'] for t in pooled), 6))
-        if ck not in _re_cache:
-            if len(_re_cache) > 50:
-                _re_cache.clear()
-            _re_cache[ck] = st.random_entry_test({k: v for k, v in by_sym.items() if k in closes}, closes, opens)
-        test = _re_cache[ck]
+        if ck not in _random_entry_cache:
+            if len(_random_entry_cache) > 50:
+                _random_entry_cache.clear()
+            _random_entry_cache[ck] = st.random_entry_test({k: v for k, v in by_sym.items() if k in closes}, closes, opens)
+        test = _random_entry_cache[ck]
         out[key] = {'name': strat['name'], 'short': strat['short'], 'horizon': strat['horizon'], 'stats': st.summarise(pooled),
                     'randomEntry': test, 'monteCarlo': st.monte_carlo(pooled), 'stocks': len(by_sym)}
     return out
@@ -506,28 +506,32 @@ def grade(setup, stock, strat, earnings):
                        'detail': f"{s['plan']['riskReward']:.1f}x to the target"})
     s['checks'] = checks
     # Plain reasons this setup is not an A grade, so a C card says why instead of leaving the owner guessing.
-    why = []
+    why, why_codes = [], []
+
+    def add(code, text):  # the code lets the Home page count the same reason together whatever its numbers
+        why.append(text)
+        why_codes.append(code)
     if not ps['trades']:
-        why.append('This strategy has no past trades yet to prove it works')
+        add('untested', 'This strategy has no past trades yet to prove it works')
     elif not positive:
-        why.append(f"This strategy lost money over 3 years of Nasdaq-100 history ({(ps['expectancy'] or 0) * 100:+.2f}% per trade after costs)")
+        add('losing', f"This strategy lost money over 3 years of Nasdaq-100 history ({(ps['expectancy'] or 0) * 100:+.2f}% per trade after costs)")
     elif not edge:
-        why.append(f"This strategy's past results don't clearly beat random entries (profit factor {ps['profitFactor']}, "
+        add('unproven', f"This strategy's past results don't clearly beat random entries (profit factor {ps['profitFactor']}, "
                    f"p = {re['p']:.2f})" if re.get('p') is not None else "Too few past trades to test against random entries")
     if not cot_ok:
-        why.append(f"Commercial hedgers (COT) lean against this direction (index {s['indicators']['cot']:.0f}/100)")
+        add('cot', f"Commercial hedgers (COT) lean against this direction (index {s['indicators']['cot']:.0f}/100)")
     if in_window:
-        why.append(f"Earnings on {e['date']} fall inside the holding period")
+        add('earnings', f"Earnings on {e['date']} fall inside the holding period")
     if not rr_ok:
-        why.append(f"Target is only {(s['plan']['riskReward'] or 0):.1f}x the risk (needs 1.5x)")
+        add('rr', f"Target is only {(s['plan']['riskReward'] or 0):.1f}x the risk (needs 1.5x)")
     if s['status'] == 'forming':
-        why.append('The signal is still forming: it only counts once today\'s bar closes')
+        add('forming', 'The signal is still forming: it only counts once today\'s bar closes')
     if not stock_ok:
-        why.append(f"This strategy has lost money on {s['symbol']} itself ({stock['trades']} past trades)")
+        add('stock', f"This strategy has lost money on {s['symbol']} itself ({stock['trades']} past trades)")
     if z is not None and next(c for c in checks if c['label'] == 'Z-score')['ok'] is False:
-        why.append(f"Price isn't stretched enough for this setup (z-score {z:+.2f})" if s['strategy'] != 'breakout'
+        add('z', f"Price isn't stretched enough for this setup (z-score {z:+.2f})" if s['strategy'] != 'breakout'
                    else f"Price is already very stretched (z-score {z:+.2f})")
-    s['why'] = why
+    s['why'], s['whyCodes'] = why, why_codes
     s['score'] += sum(2 if c['ok'] else -2 if c['ok'] is False else 0 for c in checks)
     if not stock_ok:
         s['tier'] = None

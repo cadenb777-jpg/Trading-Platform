@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { clearEngineCache, engineRequest, helper, stableKey } from './schwab';
+import { clearEngineCache, complete, engineRequest, helper, stableKey } from './schwab';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -29,5 +29,16 @@ describe('engine reply cache', () => {
     await engineRequest('store.save', { collection: 'x' });
     await engineRequest('bonds.market', { refresh: true });
     expect(spy).toHaveBeenCalledTimes(5);
+  });
+
+  it('does not keep partly failed replies', async () => {
+    expect(complete('alts.fund', { errors: { navNotes: 'SEC timeout' } })).toBe(false);
+    expect(complete('research.company', { quote: {} })).toBe(false);
+    expect(complete('research.company', { quote: { price: 1 } })).toBe(true);
+    const spy = vi.spyOn(helper, 'request').mockResolvedValue({ type: 'engine', data: { errors: { nport: 'x' } } } as never);
+    await engineRequest('alts.fund', { name: 'X' });
+    await Promise.resolve();
+    await engineRequest('alts.fund', { name: 'X' });
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 });

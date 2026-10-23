@@ -42,7 +42,7 @@ export const FUND_SNAPSHOTS: Record<string, FundSnapshot> = {
     nav: [{ label: 'Class I (transactional)', value: 39.72 }],
     netAssets: 'About $19.3B',
     notes: ['End of 2025: 34.16.'],
-    sources: [{ label: 'Third-party summary of the fund\'s filings', url: 'https://www.crowdfundedwealth.com/' }],
+    sources: [{ label: 'Third-party summary of the fund\'s filings: check them in the fund\'s SEC filings', url: 'https://www.sec.gov/cgi-bin/browse-edgar?company=Blackstone+Private+Equity+Strategies+Fund&owner=include&count=40' }],
     verified: false,
   },
   cnlsc: {
@@ -159,7 +159,7 @@ export const FUND_SNAPSHOTS: Record<string, FundSnapshot> = {
     asOf: '2026-08-31',
     nav: [{ label: 'NAV per share', value: 29.1 }],
     notes: ['Jun 30: 29.07.'],
-    sources: [{ label: 'Third-party summary of the fund\'s filings', url: 'https://www.crowdfundedwealth.com/' }],
+    sources: [{ label: 'Third-party summary of the fund\'s filings: check them in the fund\'s SEC filings', url: 'https://www.sec.gov/cgi-bin/browse-edgar?company=KKR+FS+Income+Trust&owner=include&count=40' }],
     verified: false,
   },
   kpec: {
@@ -202,7 +202,7 @@ export const FUND_SNAPSHOTS: Record<string, FundSnapshot> = {
     asOf: '2026-08-31',
     nav: [{ label: 'NAV per share', value: 26.74 }],
     notes: ['September 2026 tender: requests of 13.1% of shares, prorated.'],
-    sources: [{ label: 'Third-party summary of the fund\'s filings', url: 'https://www.crowdfundedwealth.com/' }],
+    sources: [{ label: 'Third-party summary of the fund\'s filings: check them in the fund\'s SEC filings', url: 'https://www.sec.gov/cgi-bin/browse-edgar?company=Ares+Strategic+Income+Fund&owner=include&count=40' }],
     verified: false,
   },
   aireit: {
@@ -249,14 +249,14 @@ export const FUND_SNAPSHOTS: Record<string, FundSnapshot> = {
   brookreit: {
     asOf: '2026-04-30',
     nav: [{ label: 'Class I', value: 10.39 }],
-    sources: [{ label: 'Third-party summary of the fund\'s filings', url: 'https://www.crowdfundedwealth.com/' }],
+    sources: [{ label: 'Third-party summary of the fund\'s filings: check them in the fund\'s SEC filings', url: 'https://www.sec.gov/cgi-bin/browse-edgar?company=Brookfield+Real+Estate+Income+Trust&owner=include&count=40' }],
     verified: false,
   },
   hlend: {
     asOf: '2026-06-30',
     nav: [{ label: 'Tender price per share', value: 24.42 }],
     notes: ['Q2 tender paid 37.6% of requests; Q3 requests were about 11.5% of shares against a 5% cap.'],
-    sources: [{ label: 'Third-party summary of the tender offer filing', url: 'https://www.crowdfundedwealth.com/' }],
+    sources: [{ label: 'Third-party summary of the fund\'s filings: check them in the fund\'s SEC filings', url: 'https://www.sec.gov/cgi-bin/browse-edgar?company=HPS+Corporate+Lending+Fund&owner=include&count=40' }],
     verified: false,
   },
   oscf: {
@@ -272,7 +272,7 @@ export const FUND_SNAPSHOTS: Record<string, FundSnapshot> = {
     nav: [{ label: 'NAV per share', value: 24.28 }],
     distribution: 'Monthly distribution $0.1875 per share',
     notes: ['Current tender offer closes Oct 28, 2026.'],
-    sources: [{ label: 'Third-party summary of the fund\'s filings', url: 'https://www.crowdfundedwealth.com/' }],
+    sources: [{ label: 'Third-party summary of the fund\'s filings: check them in the fund\'s SEC filings', url: 'https://www.sec.gov/cgi-bin/browse-edgar?company=Golub+Capital+Private+Credit+Fund&owner=include&count=40' }],
     verified: false,
   },
   pif: {
@@ -291,7 +291,7 @@ export const FUND_SNAPSHOTS: Record<string, FundSnapshot> = {
       { label: 'Class Y', value: 11.31 },
     ],
     netAssets: 'Total NAV about $1.12B',
-    sources: [{ label: 'Prospectus supplement, Jul 15, 2026', url: 'https://jpmorganreit.gcs-web.com/' }],
+    sources: [{ label: 'Third-party summary of the fund\'s filings: check them in the fund\'s SEC filings', url: 'https://www.sec.gov/cgi-bin/browse-edgar?company=J.P.+Morgan+Real+Estate+Income+Trust&owner=include&count=40' }],
     verified: false,
   },
   gspc: {
@@ -317,7 +317,7 @@ export const FUND_SNAPSHOTS: Record<string, FundSnapshot> = {
     asOf: '2026-06-30',
     nav: [{ label: 'Class I', value: 20.83 }],
     notes: ['Mar 31 (audited): 19.77.'],
-    sources: [{ label: 'Third-party summary of the fund\'s filings', url: 'https://www.crowdfundedwealth.com/' }],
+    sources: [{ label: 'Third-party summary of the fund\'s filings: check them in the fund\'s SEC filings', url: 'https://www.sec.gov/cgi-bin/browse-edgar?company=Hamilton+Lane+Private+Assets+Fund&owner=include&count=40' }],
     verified: false,
   },
   spring: {
@@ -330,7 +330,7 @@ export const FUND_SNAPSHOTS: Record<string, FundSnapshot> = {
     asOf: '2026-07-23',
     nav: [{ label: 'NAV per share', value: 10.28 }],
     notes: ['Interval fund with a ticker (CCLFX), so Schwab shows the daily NAV when available.'],
-    sources: [{ label: 'Third-party summary of the fund\'s filings', url: 'https://www.crowdfundedwealth.com/' }],
+    sources: [{ label: 'Third-party summary of the fund\'s filings: check them in the fund\'s SEC filings', url: 'https://www.sec.gov/cgi-bin/browse-edgar?company=Cliffwater+Corporate+Lending+Fund&owner=include&count=40' }],
     verified: false,
   },
   fpcf: {

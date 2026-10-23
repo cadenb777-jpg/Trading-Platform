@@ -45,6 +45,8 @@ export interface Setup {
   score: number;
   tier: Tier | null;
   why?: string[];
+  /** One short code per `why` reason (helper v17+), for counting the same reason together. */
+  whyCodes?: string[];
   plan: {
     entryType: 'stop' | 'open';
     trigger: number;
@@ -117,6 +119,18 @@ const TIER_TEXT: Record<Tier, string> = {
   A: 'A-grade: the strategy beats random entries across the Nasdaq-100, this stock’s record isn’t losing, COT isn’t against it, no earnings in the holding period, and (weekly swing) the target is at least 1.5x the risk',
   B: 'B-grade: the strategy is profitable overall and none of this setup’s checks is against it, but its edge over random entries isn’t proven yet',
   C: 'C-grade: weak or untested: an idea to watch, not a trade',
+};
+/** Plain wording for each reason code the scanner gives (scanner.grade). */
+const BLOCKERS: Record<string, string> = {
+  untested: 'the strategy has no past trades yet',
+  losing: 'the strategy lost money in its 3-year test',
+  unproven: 'the strategy doesn\'t clearly beat random entries yet',
+  cot: 'the big hedgers (COT) lean the other way',
+  earnings: 'earnings fall inside the trade',
+  rr: 'the target is too small for the risk',
+  forming: 'signals are still forming on today\'s bar',
+  stock: 'the strategy has lost money on these stocks',
+  z: 'prices aren\'t stretched enough',
 };
 const STRATEGY_TABS: { key: StrategyKey | 'all'; label: string }[] = [
   { key: 'weekly_swing', label: '★ Weekly swing' },
@@ -288,12 +302,9 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
   // The reason most cards miss A-grade, so the banner explains a page full of C's in one line.
   function mainBlocker(list: Setup[]) {
     const counts = new Map<string, number>();
-    for (const s of list) for (const w of s.why ?? []) {
-      const key = w.replace(/\(.*\)/, '').trim();
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
+    for (const s of list) for (const code of s.whyCodes ?? []) counts.set(code, (counts.get(code) ?? 0) + 1);
     const top = [...counts].sort((a, b) => b[1] - a[1])[0];
-    return top ? h('div', { class: 'small' }, `Main reason: ${top[0].toLowerCase()} (${top[1]} of ${list.length}).`) : '';
+    return top ? h('div', { class: 'small' }, `Main reason: ${BLOCKERS[top[0]] ?? top[0]} (${top[1]} of ${list.length}).`) : '';
   }
 
   function card(s: Setup) {

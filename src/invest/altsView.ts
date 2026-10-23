@@ -118,6 +118,9 @@ const avg = (values: (number | null | undefined)[]) => {
 };
 const secLink = (cik: number) => `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cik}&type=&dateb=&owner=include&count=40`;
 
+/** A NAV per share as funds publish it: 4 decimals when they give 4 (BREIT's 14.6488), otherwise cents. */
+const navPrice = (v: number) => `$${v.toFixed((String(v).split('.')[1]?.length ?? 0) > 2 ? 4 : 2)}`;
+
 export function createAltsView(ctx: InvestContext) {
   let tab: Tab = 'market';
   let strategy: Strategy | 'All' = 'All';
@@ -270,7 +273,7 @@ export function createAltsView(ctx: InvestContext) {
           : h('span', { class: 'snap-badge warn', title: 'From a third-party summary of the fund\'s filings: check the filing before relying on it' }, 'Third-party summary: check the filing'),
       ),
       snap.nav?.length
-        ? h('div', { class: 'snap-navs' }, ...snap.nav.map((n) => h('div', { class: 'snap-nav' }, h('span', { class: 'muted small' }, n.label), h('b', {}, `$${n.value.toFixed((String(n.value).split('.')[1]?.length ?? 0) > 2 ? 4 : 2)}`))))
+        ? h('div', { class: 'snap-navs' }, ...snap.nav.map((n) => h('div', { class: 'snap-nav' }, h('span', { class: 'muted small' }, n.label), h('b', {}, navPrice(n.value)))))
         : '',
       snap.netAssets ? h('p', { class: 'small' }, h('span', { class: 'muted' }, 'Size: '), snap.netAssets) : '',
       snap.distribution ? h('p', { class: 'small' }, h('span', { class: 'muted' }, 'Distributions: '), snap.distribution) : '',
@@ -335,7 +338,7 @@ export function createAltsView(ctx: InvestContext) {
     const otherClasses = useHist ? hist!.latestByClass.filter((c) => c.cls !== hist!.cls).map((c) => `${c.cls.replace('Class ', '')} $${c.value.toFixed(2)}`) : [];
     const histCards = useHist
       ? [
-          { label: `NAV per share (${hist!.cls})`, value: `$${histLast!.value.toFixed((String(histLast!.value).split('.')[1]?.length ?? 0) > 2 ? 4 : 2)}`, hint: `As of ${histLast!.date}${histPrev ? ` · ${pct(histLast!.value / histPrev.value - 1)} vs ${histPrev.date}` : ''}${otherClasses.length ? ` · other classes: ${otherClasses.join(', ')}` : ''}` },
+          { label: `NAV per share (${hist!.cls})`, value: navPrice(histLast!.value), hint: `As of ${histLast!.date}${histPrev ? ` · ${pct(histLast!.value / histPrev.value - 1)} vs ${histPrev.date}` : ''}${otherClasses.length ? ` · other classes: ${otherClasses.join(', ')}` : ''}` },
           histYearAgo ? { label: 'NAV change, 1 year', value: pct(histLast!.value / histYearAgo.value - 1), tone: tone(histLast!.value / histYearAgo.value - 1), hint: 'Price only, before distributions' } : null,
         ]
       : [];

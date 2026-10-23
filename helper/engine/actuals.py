@@ -27,9 +27,9 @@ RELEASES = {
     'ppi m/m': ('PPIFIS', 'mom', 1, '%', 'm1'),
     'core ppi m/m': ('PPIFES', 'mom', 1, '%', 'm1'),
     'unemployment claims': ('ICSA', 'level', 0.001, 'K', 'w1'),
+    # Only the advance GDP estimate: FRED already holds the quarter when the prelim and final revisions come out,
+    # so it would show the old advance figure as their actual.
     'advance gdp q/q': ('A191RL1Q225SBEA', 'level', 1, '%', 'q'),
-    'prelim gdp q/q': ('A191RL1Q225SBEA', 'level', 1, '%', 'q'),
-    'final gdp q/q': ('A191RL1Q225SBEA', 'level', 1, '%', 'q'),
     'core pce price index m/m': ('PCEPILFE', 'mom', 1, '%', 'm1'),
     'pce price index m/m': ('PCEPI', 'mom', 1, '%', 'm1'),
     'personal spending m/m': ('PCE', 'mom', 1, '%', 'm1'),
@@ -76,17 +76,19 @@ def period_for(day, period):
 
 def value_for(rows, obs, transform):
     """The release's figure from FRED rows [(iso date, value)], or None if FRED hasn't got that period yet."""
-    dates = {d: i for i, (d, _) in enumerate(rows)}
-    i = dates.get(obs.isoformat())
-    if i is None:
+    values = dict(rows)
+    v = values.get(obs.isoformat())
+    if v is None:
         return None
-    v = rows[i][1]
     if transform == 'level':
         return v
+    # The earlier reading is looked up by its date, not its position: FRED leaves out months it has no value for
+    # (e.g. during a government shutdown), and counting back rows would then compare against the wrong month.
+    prior = values.get(_month_start(obs, 12 if transform == 'yoy' else 1).isoformat())
+    if prior is None:
+        return None
     if transform == 'diff':
-        return v - rows[i - 1][1] if i >= 1 else None
-    back = 12 if transform == 'yoy' else 1
-    prior = rows[i - back][1] if i >= back else None
+        return v - prior
     return (v / prior - 1) * 100 if prior else None
 
 

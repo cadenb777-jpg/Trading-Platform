@@ -21,7 +21,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   News comes from Google News RSS and CNBC RSS (Google Finance has no feed); `rank_news` groups
   duplicate stories, assigns a section and scores market impact with keyword weights (free, no AI).
   Calendar: Forex Factory this-week JSON only (there is no next-week feed) plus hard-coded FOMC dates. The feed has no
-  actuals: US actuals come from FRED after release (helper/engine/actuals.py, only when FRED has that exact period).
+  actuals: US actuals come from FRED after release (helper/engine/actuals.py, only when FRED has that exact period;
+  earlier readings are looked up by date, and prelim/final GDP are left out because FRED still holds the advance).
   Summaries: the helper fetches the article (decoding Google News links via batchexecute) and
   extracts key sentences (`summarize_text`); no paid AI.
   Changing the protocol means the owner must re-download the helper; say so.
@@ -78,7 +79,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   bars <= i (tests check this). Pooled random-entry test per strategy and per-stock random-walk test (shuffled daily
   moves, seeded). Tier A = strategy beats random entries (PF >= 1.2, p <= 0.10) + stock record not failed + COT
   not against + no earnings in the hold (Nasdaq earnings calendar; failure = "unavailable", never "none") + R:R >= 1.5
-  (weekly swing). B = profitable strategy and no failed check of its own; non-A cards carry `why` (plain reasons, v13).
+  (weekly swing). B = profitable strategy and no failed check of its own; non-A cards carry `why` (plain reasons, v13)
+  and `whyCodes` (one code per reason, v17; the Home banner counts the main one).
   Simulations are 1,000 each: pooled random-entry (cached per day), per-stock random walk (RW_RUNS, background worker
   `_run_rw_jobs`, card shows pending first) and Monte Carlo of the next 20 trades (`monte_carlo`). Clicking a card opens
   the trade guide pop-up (src/home/tradeGuide.ts: verdict, step-by-step entry/stop/target/exit, size calculator, grade).

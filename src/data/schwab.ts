@@ -12,7 +12,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 16;
+export const LATEST_HELPER_VERSION = 17;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -370,12 +370,20 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'flow.cot_markets': 60 * 60_000,
   'flow.cot_for_symbol': 30 * 60_000,
   'flow.short_volume': 30 * 60_000,
-  'research.company': 15 * 60_000,
+  'research.company': 5 * 60_000,
   'alts.fund': 15 * 60_000,
   'alts.search_private': 15 * 60_000,
   'alts.latest_private': 10 * 60_000,
 };
 const engineCache = new Map<string, { at: number; value: Promise<unknown> }>();
+
+/** A reply that came back partly failed (a section in `errors`, or Research without its quote) isn't reused. */
+export function complete(type: string, data: unknown): boolean {
+  const d = (data ?? {}) as { errors?: Record<string, unknown>; quote?: Record<string, unknown> };
+  if (d.errors && Object.keys(d.errors).length) return false;
+  if (type === 'research.company' && !(d.quote && Object.keys(d.quote).length)) return false;
+  return true;
+}
 
 /** JSON with object keys sorted at every level, so the same request always gives the same cache key. */
 export function stableKey(v: unknown): string {
@@ -404,7 +412,8 @@ export async function engineRequest<T>(type: string, params: Record<string, unkn
   if (ttl) {
     const entry = { at: Date.now(), value };
     engineCache.set(key, entry);
-    value.catch(() => engineCache.get(key) === entry && engineCache.delete(key)); // never keep a failure
+    const drop = () => engineCache.get(key) === entry && engineCache.delete(key);
+    value.then((data) => complete(type, data) || drop(), drop); // never keep a failure or a partial reply
     if (engineCache.size > 300) engineCache.delete(engineCache.keys().next().value!);
   }
   return value;

@@ -436,9 +436,6 @@ class Flow(unittest.TestCase):
         self.assertIsNone(flow.flow_stats([c('put', 90, 5, 5, 1.0)], 100)['putCallVolume'])
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class CalendarActuals(unittest.TestCase):
     """US actuals read from FRED only when FRED already has the period the release covers."""
@@ -485,6 +482,13 @@ class CalendarActuals(unittest.TestCase):
         self.assertEqual(claims['actual'], '219K')
         self.assertEqual(jolts['actual'], '7.23M')
 
+    def test_missing_month_gives_no_actual_rather_than_a_wrong_one(self):
+        rows = [(f'2025-{m:02d}-01', 300 + m) for m in range(1, 13) if m != 10] + [('2026-09-01', 320.0)]
+        self.assertIsNone(self.a.value_for(rows, dt.date(2025, 11, 1), 'mom'))  # October missing
+        rows += [('2025-09-01', 309.0)]
+        self.assertAlmostEqual(self.a.value_for(sorted(rows), dt.date(2026, 9, 1), 'yoy'), (320 / 309 - 1) * 100)
+        self.assertIsNone(self.a.release_for({'country': 'USD', 'title': 'Prelim GDP q/q'}))
+
     def test_only_released_us_events(self):
         future = self.ev('CPI m/m', '2099-01-13')
         other = dict(self.ev('CPI m/m', '2026-10-15'), country='EUR')
@@ -515,6 +519,8 @@ class Grading(unittest.TestCase):
         scanner.grade(c, stock, self.strat(p=0.3), {})
         self.assertEqual(c['tier'], 'C')
         self.assertTrue(any('risk' in w for w in c['why']))
+        self.assertIn('rr', c['whyCodes'])
+        self.assertEqual(len(c['why']), len(c['whyCodes']))
         losing = self.setup()
         scanner.grade(losing, stock, self.strat(exp=-0.001, pf=0.9), {})
         self.assertEqual(losing['tier'], 'C')
@@ -581,3 +587,7 @@ class NavHistory(unittest.TestCase):
         self.assertEqual([p['date'] for p in s['points']], ['2026-07-31', '2026-08-31', '2026-09-30'])
         self.assertEqual({c['cls'] for c in s['latestByClass']}, {'Class I', 'Class S'})
         self.assertIsNone(alts.nav_series([], today=dt.date(2026, 10, 23)))
+
+
+if __name__ == '__main__':
+    unittest.main()
