@@ -7,6 +7,7 @@
 import { ColorType, LineSeries, PriceScaleMode, createChart, type IChartApi, type ISeriesApi, type MouseEventParams, type Time } from 'lightweight-charts';
 import { THEME, followTheme } from './theme';
 import { h } from './dom';
+import { indicatorMenu } from './windowIndicators';
 
 export interface WindowLine {
   name: string;
@@ -26,6 +27,8 @@ export interface ChartWindowOptions {
   actions?: Node[];
   /** 'points' for rates and other values already in % (a change is "+0.25 pts", not a % of a %). */
   changeAs?: 'percent' | 'points';
+  /** Open with the indicator menu showing (the ƒx button on page charts). */
+  openIndicators?: boolean;
 }
 
 const DAY = 86400;
@@ -164,11 +167,11 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
     rightPriceScale: { borderColor: THEME.border },
     timeScale: { borderColor: THEME.border, rightOffset: 4 },
     crosshair: { mode: 0 },
-    localization: { priceFormatter: format },
   });
   followTheme(chart);
   const series = lines.map((l) => {
-    const s = chart.addSeries(LineSeries, { color: l.color, lineWidth: l.width ?? 2, priceLineVisible: false, lastValueVisible: true, title: lines.length > 1 ? l.name : '' });
+    // The format goes on each series (not the whole chart) so indicator panes keep their own units.
+    const s = chart.addSeries(LineSeries, { color: l.color, lineWidth: l.width ?? 2, priceLineVisible: false, lastValueVisible: true, title: lines.length > 1 ? l.name : '', priceFormat: { type: 'custom', formatter: format, minMove: 0.0001 } });
     s.setData(dedupe(l.data) as never);
     return { series: s, name: l.name, color: l.color, line: l, visible: true };
   });
@@ -228,7 +231,8 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
   const csv = h('button', { class: 'btn small', title: 'Download the data as a spreadsheet (CSV)', onclick: () => downloadCsv(o.title, lines) }, 'CSV');
   const fit = h('button', { class: 'btn small', title: 'Fit everything', onclick: () => chart.timeScale().fitContent() }, 'Fit');
   const stats = h('div', { class: 'chart-window-stats' });
-  const tools = h('div', { class: 'chart-window-tools' }, rangeBtns, scale, fit, csv, legend);
+  const studies = indicatorMenu(chart, () => dedupe(lines[0]?.data ?? []), { open: o.openIndicators, format });
+  const tools = h('div', { class: 'chart-window-tools' }, rangeBtns, scale, fit, csv, studies.button, legend);
 
   /** Change, high and low over the visible period for the first visible line. */
   function updateStats() {
@@ -263,10 +267,11 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
   }
   chart.timeScale().subscribeVisibleTimeRangeChange(() => requestAnimationFrame(updateStats));
 
-  win.append(bar, tools, box, stats, h('div', { class: 'chart-window-hint muted small' }, 'Scroll or pinch to zoom · drag to pan · drag the title bar to move · drag the corner to resize'), grip);
+  win.append(bar, tools, studies.menu, studies.chips, box, stats, h('div', { class: 'chart-window-hint muted small' }, 'Scroll or pinch to zoom · drag to pan · drag the title bar to move · drag the corner to resize'), grip);
   document.body.append(win);
   chart.timeScale().fitContent();
-  requestAnimationFrame(updateStats);
+  // The chart measures itself before the window is laid out; fit again once it has its real size.
+  requestAnimationFrame(() => requestAnimationFrame(() => (chart.timeScale().fitContent(), updateStats())));
   return close;
 }
 

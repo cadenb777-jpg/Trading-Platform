@@ -374,6 +374,7 @@ export function createBondsView(ctx: InvestContext) {
     const draw = () => {
       if (!points.length) return;
       out.classList.remove('skeleton');
+      out.style.height = '';
       const first = Math.round(plan.first);
       const last = Math.round(plan.last);
       const problem = ladderProblem(plan.amount, first, last);
@@ -381,7 +382,6 @@ export function createBondsView(ctx: InvestContext) {
       const rungs = buildLadder(plan.amount, Math.round(plan.first), Math.round(plan.last), points);
       const income = rungs.reduce((s, r) => s + r.income, 0);
       const year = new Date().getFullYear();
-      out.classList.remove('skeleton');
       out.replaceChildren(
         statCards([
           { label: 'Yearly interest', value: money(income), hint: 'Before tax, at today\'s Treasury yields' },

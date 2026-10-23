@@ -162,6 +162,7 @@ export function createAltsView(ctx: InvestContext) {
       .then((rows) => {
         ai.setRows(rows);
         pulse.classList.remove('skeleton');
+        pulse.style.height = ''; // the placeholder's fixed height would clip the real cards
         pulse.replaceChildren(
           statCards(
             groups.map((g) => {
@@ -425,6 +426,7 @@ export function createAltsView(ctx: InvestContext) {
         .then((rows) => {
           const r = rows.get(f.managerTicker!);
           row.classList.remove('skeleton');
+          row.style.height = '';
           row.replaceChildren(
             h(
               'button',

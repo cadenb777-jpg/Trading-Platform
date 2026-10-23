@@ -4739,3 +4739,19 @@ body.ai-window-body #app {
 .guide-actions { margin: 16px 0 8px; }
 @media (max-width: 600px) { .guide-levels { grid-template-columns: repeat(2, 1fr); } }
 .modal:has(.trade-guide) { max-width: 780px; }
+
+/* Indicators on line charts (src/ui/windowIndicators.ts) */
+.chart-expand.chart-fx { right: 32px; opacity: 0.75; font-style: italic; font-weight: 600; }
+.win-ind-menu { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel-2); max-height: 40%; overflow: auto; }
+.win-ind-menu > p { flex-basis: 100%; margin: 0; }
+.win-ind-group { display: flex; flex-direction: column; gap: 2px; min-width: 140px; }
+.win-ind-item { text-align: left; background: none; border: 0; color: var(--text); padding: 3px 4px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.win-ind-item:hover { background: var(--panel); color: var(--link); }
+.win-studies { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px; }
+.win-studies:empty { display: none; }
+.win-study { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 8px; border: 1px solid var(--border); border-radius: 12px; font-size: 12px; }
+.win-study i { width: 8px; height: 8px; border-radius: 50%; }
+.win-study .icon-btn.tiny { width: 22px; height: 22px; font-size: 12px; }
+.win-study-edit { display: flex; gap: 8px; flex-basis: 100%; padding: 4px 0; }
+.win-study-edit label { display: flex; flex-direction: column; }
+.win-study-edit .input { width: 90px; }

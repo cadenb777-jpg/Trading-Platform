@@ -37,17 +37,25 @@ export function createLineChart(container: HTMLElement, opts: { percent?: boolea
   followTheme(chart, { transparent: true, hideVertGrid: true });
   attachTooltip(chart, container, () => series, format, () => isDailySeries((current[0]?.data ?? []).map((p) => toUnix(p.time as never))));
   if (opts.expand !== false) {
+    const open = (openIndicators: boolean) => openChartWindow({ title: opts.title || current.map((l) => l.name).filter(Boolean).join(' vs ') || 'Chart', lines: current, format, openIndicators });
     container.append(
+      h(
+        'button',
+        {
+          class: 'chart-expand chart-fx',
+          title: 'Add indicators (moving averages, RSI, MACD, z-score...)',
+          'aria-label': 'Add indicators',
+          onclick: (e: Event) => (e.stopPropagation(), open(true)),
+        },
+        'ƒx',
+      ),
       h(
         'button',
         {
           class: 'chart-expand',
           title: 'Open in a window: zoom, ranges, stats',
           'aria-label': 'Expand chart',
-          onclick: (e: Event) => {
-            e.stopPropagation();
-            openChartWindow({ title: opts.title || current.map((l) => l.name).filter(Boolean).join(' vs ') || 'Chart', lines: current, format });
-          },
+          onclick: (e: Event) => (e.stopPropagation(), open(false)),
         },
         '⤢',
       ),
