@@ -63,6 +63,7 @@ helper/
 | 9b | Investments: market boards (stocks, ETFs, bonds, alts, crypto, commodities), bond suite (yields, Treasury auctions, CUSIP lookup, calculator, ladder), private funds from SEC filings (NAV, N-PORT, Form D), own alternatives tracker with iCapital import | ✅ |
 | 9c | Backtest research (chart-linked rules, Monte Carlo, random-walk test, parameter sweep), Williams COT/WAD, portfolios by shares/dollars with cash and alternatives, in-depth client reports with alternatives | ✅ |
 | 9d | Interactive pop-out charts (hover values, ranges, % / log scale, CSV), clickable yield curve and rates, accurate index changes, in-depth options put/call, AI summaries per page, background market scanner with backtested setups on Home | ✅ |
+| 9e | Nasdaq-100 swing scanner every 5 min (weekly swing: COT + z-score + Williams; mean reversion; breakout) with backtests, random-entry and random-walk tests; light/dark mode; candlestick index cards; indicator manager with per-line editing; RIA fee schedules in client reports | ✅ |
 | 10 | Trading through Webull (paper first) & alerts | ⏸ on hold |
 | 11 | Cloud engine, login, phone access | ⏸ on hold (last, by choice) |
 

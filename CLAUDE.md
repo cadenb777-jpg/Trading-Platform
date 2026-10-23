@@ -49,8 +49,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Portfolios: Holding.kind security/cash/alt, Portfolio.mode weight/shares/dollars; positions()/holdingsPayload()
   in src/portfolio/types.ts value holdings (live prices via src/portfolio/prices.ts) and map cash/alts to listed
   stand-ins (PROXIES) for the maths. holdingsPayload throws when a shares-mode holding has no price.
-  Client reports (src/reports/report.ts): sections toggled by Client.sections; include linked alt_holdings
-  (Client.altIds), SEC fund facts (alts.fund) and a market overview (invest.board). Long tables page-break by chunks.
+  Client reports (src/reports/report.ts) are for the owner's own RIA use: sections toggled by Client.sections; include
+  linked alt_holdings (Client.altIds), SEC fund facts (alts.fund) and a market overview (invest.board). Long tables
+  page-break by chunks. Fees: Client.feeSchedule (flat or tiered brackets, monthly/quarterly/annual, arrears or
+  advance) is debited from the account in portfolio.analyze (quant.apply_fees, first period prorated by calendar
+  days); the report shows net and gross returns and fees paid per year. Client.fee (flat, daily) is the old fallback.
   Engine modules load on a background thread (engine.start_loading in main; engine.wait_loaded for requests
   that arrive early). After start the helper warms caches (news, headline board, curve, bond market) and opens
   the platform in Chrome (settings open_browser, flag --no-browser) unless a tab connects within 3 s.
@@ -60,16 +63,27 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   login) pause the screen. Keep splash.py standard-library only.
   Quotes: the helper polls Schwab's REST quotes every 30 s (`refresh_official`); prevClose = lastPrice - netChange.
   The stream's CLOSE_PRICE is only a fallback (after the session it becomes today's close, which read as 0%).
-  Scanner (engine/scanner.py, helper v10): a background task (`market_scanner` in the helper) scans UNIVERSE plus
-  the watchlist every 10 minutes (the owner asked for it; daily bars are cached so quiet hours are cheap): daily score from trend/breakout/RS/RSI/
-  MACD/volume/Williams A/D/CMF/ADX, 30-minute agreement, support/resistance plan (all measured from the entry
-  trigger), and a backtest that trades that same plan on the stock's history (signal_trades/simulate_plan: fill on a
-  break of the trigger, half off at target 1 then break-even; grade proven/mixed/unproven/failed; failed is filtered
-  out), options, COT, insiders, news. Schwab requests are paced (one at a time, 0.7 s apart); a watchlist symbol
-  with no history is skipped, never fatal (only an expired login stops a scan).
-  Tier A = proven + R:R >= 1.5 + score >= 5. Live quotes mark plans stale. Home shows it (src/home/setupsPanel.ts).
+  Scanner (engine/scanner.py + engine/strategies.py, helper v12): a background task (`market_scanner`) scans the
+  Nasdaq-100 (NASDAQ_100 list; update it after each December rebalance) plus up to 25 watchlist symbols every 5
+  minutes (owner's request). Daily history is fetched once per day; today's bar comes from the live quotes.
+  strategies.py is pure and tested: weekly_swing (primary: weekly trend from finished weeks, Williams COT index for
+  commercials >= 60 / <= 40 when available, z-score(20) beyond ±1 and turning, Williams %R crossing out of -80/-20,
+  Williams A/D vs its 20-day EMA; buy-stop above the signal day's high, stop past the 3-day swing (0.75-2 ATR),
+  target ±1 SD band, exit after 5 sessions, break-even at +1R), mean_reversion (RSI2 + z-score with the 200-day
+  trend, exit on a close across the 5-day average or 7 days) and breakout (Donchian 20 + ADX + volume, 10-day
+  trailing exit). COT is used from the Friday after its Tuesday data date. Every signal/plan/exit at bar i uses only
+  bars <= i (tests check this). Pooled random-entry test per strategy and per-stock random-walk test (shuffled daily
+  moves, seeded). Tier A = strategy beats random entries (PF >= 1.2, p <= 0.10) + stock record not failed + COT
+  not against + no earnings in the hold (Nasdaq earnings calendar; failure = "unavailable", never "none") + R:R >= 1.5
+  (weekly swing). Statuses: forming (today's bar), ready, waiting (trigger valid 2 days), in trade. Schwab requests
+  are paced (one at a time, 0.7 s apart); unknown symbols are skipped for a day, only an expired login stops a scan.
+  Home shows it with strategy tabs (src/home/setupsPanel.ts).
   AI summary buttons (`insightButton`) are on Home, Flow, Research, Macro, Bonds, Investments boards, fund detail
   and Backtest; not on the Chart page or Portfolios (owner's choice).
+  Theme: light/dark via CSS variables (`:root[data-theme='light']`) and src/ui/theme.ts (THEME object updated in place,
+  `followTheme(chart)` repaints canvases). Use variables, not hard-coded colours, in new CSS.
+  Chart legend (chartPage renderLegend) is rebuilt only when its layout changes; values update in place. Indicator
+  instances can hide single plots (`hiddenPlots`) and levels (`hideLevels`); the manager is openIndicatorManager.
   Pop-out charts: `openChartWindow` (src/ui/chartWindow.ts); `createLineChart` adds hover values and an expand button;
   `openFredWindow` opens a FRED series' full history.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).
