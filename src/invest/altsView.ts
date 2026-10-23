@@ -5,6 +5,7 @@
  * (e.g. from iCapital), saved by the helper on this computer.
  */
 import { openAssistant } from '../ai/hub';
+import { FUND_SNAPSHOTS, SNAPSHOTS_RESEARCHED, type FundSnapshot } from './fundSnapshots';
 import { insightButton } from '../ai/insight';
 import { engineRequest } from '../data/schwab';
 import { barList, createLineChart, dataTable, money, pct, statCards } from '../ui/charts';
@@ -239,6 +240,29 @@ export function createAltsView(ctx: InvestContext) {
     return h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, `How it works: ${f.structure}`)), h('p', { class: 'muted' }, STRUCTURES[f.structure]));
   }
 
+  function snapshotPanel(snap: FundSnapshot): Node {
+    return h(
+      'section',
+      { class: 'panel fund-snapshot' },
+      h(
+        'div',
+        { class: 'panel-head' },
+        h('h3', {}, 'Latest published figures'),
+        h('span', { class: 'muted small' }, `As of ${snap.asOf}`),
+        snap.verified
+          ? h('span', { class: 'snap-badge ok', title: 'Read from the fund\'s own filing or report' }, 'From the fund\'s filing')
+          : h('span', { class: 'snap-badge warn', title: 'From a third-party summary of the fund\'s filings: check the filing before relying on it' }, 'Third-party summary: check the filing'),
+      ),
+      snap.nav?.length
+        ? h('div', { class: 'snap-navs' }, ...snap.nav.map((n) => h('div', { class: 'snap-nav' }, h('span', { class: 'muted small' }, n.label), h('b', {}, `$${n.value.toFixed((String(n.value).split('.')[1]?.length ?? 0) > 2 ? 4 : 2)}`))))
+        : '',
+      snap.netAssets ? h('p', { class: 'small' }, h('span', { class: 'muted' }, 'Size: '), snap.netAssets) : '',
+      snap.distribution ? h('p', { class: 'small' }, h('span', { class: 'muted' }, 'Distributions: '), snap.distribution) : '',
+      ...(snap.notes ?? []).map((n) => h('p', { class: 'small' }, n)),
+      h('p', { class: 'muted tiny' }, 'Source: ', ...snap.sources.flatMap((src, i) => [i ? ' · ' : '', h('a', { href: src.url, target: '_blank', rel: 'noopener' }, `${src.label} ↗`)]), ` · researched ${SNAPSHOTS_RESEARCHED}`),
+    );
+  }
+
   function fundSections(d: FundData, f: PrivateFund | undefined, name: string): Node[] {
     const out: Node[] = [];
     const displayName = f?.name ?? d.secName ?? name;
@@ -298,6 +322,9 @@ export function createAltsView(ctx: InvestContext) {
       invest ? { label: 'Investments (fair value)', value: usd(invest.value), hint: `As of ${invest.end}` } : null,
       ...(d.schwab ?? []).slice(0, 2).map((r) => ({ label: `${r.symbol} price (Schwab)`, value: formatPrice(r.price), tone: tone(r.change), hint: `${pct(r.change)} today · 1y ${pct(r.y1)}` })),
     ].filter((c): c is NonNullable<typeof c> => !!c);
+    const snap = f ? FUND_SNAPSHOTS[f.id] : undefined;
+    // Show the researched figures unless the SEC's live data already has a newer NAV.
+    if (snap && !(lastNav && !staleNav && lastNav.end > snap.asOf)) out.push(snapshotPanel(snap));
     if (cards.length) out.push(statCards(cards));
     else if (d.formD && !d.filings.some((x) => ['10-K', '10-Q', 'NPORT-P', 'N-CSR'].includes(x.form)))
       out.push(h('p', { class: 'muted' }, 'Private funds don\'t report NAV or returns publicly; what is public is their Form D below (money raised, investors, minimum). The manager\'s fact sheet or your iCapital statements have the performance.'));

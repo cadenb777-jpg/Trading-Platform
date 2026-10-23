@@ -40,7 +40,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   daily closes), invest.history/movers/search; bonds.market (FRED yields/spreads), bonds.auctions (Treasury Fiscal Data),
   bonds.cusip (Schwab get_instrument_by_cusip); alts.fund (SEC: XBRL NAV per share, N-PORT, Form D, NAV sentences from
   424B3/8-K), alts.search_private (EDGAR full-text search of Form D), alts.latest_private (latest Form D feed).
-  The private fund directory is src/invest/catalog.ts (names only; data is live from the SEC). Bond maths is
+  The private fund directory is src/invest/catalog.ts (names only; data is live from the SEC). src/invest/fundSnapshots.ts
+  holds hand-researched latest published figures (dated, sourced, verified flag; shown unless the SEC data is newer). Bond maths is
   src/invest/bonds.ts. The owner's own alternatives are store collection alt_holdings (iCapital has no public API:
   they import a CSV/Excel export, src/invest/holdings.ts).
   Backtest (src/pages/backtestPage.ts, src/backtest/research.ts): "My chart's indicators" builds rules (operand

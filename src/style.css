@@ -4698,3 +4698,11 @@ body.ai-window-body #app {
 }
 .setup-why { color: var(--warn); line-height: 1.35; }
 .setup-why b { font-weight: 600; }
+.fund-snapshot .panel-head { flex-wrap: wrap; gap: 8px; }
+.snap-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid currentColor; }
+.snap-badge.ok { color: var(--up); }
+.snap-badge.warn { color: var(--warn); }
+.snap-navs { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 4px 0 8px; }
+.snap-nav { display: flex; flex-direction: column; }
+.snap-nav b { font-size: 18px; }
+.fund-snapshot p { margin: 4px 0; }
