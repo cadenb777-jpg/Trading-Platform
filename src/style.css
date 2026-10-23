@@ -2455,3 +2455,94 @@ button.news-item {
   fill: var(--muted);
   font-size: 11px;
 }
+
+.curve-label.strong {
+  fill: var(--text);
+}
+
+.pf-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.pf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pf-list button {
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.pf-list button:hover {
+  background: var(--panel-2);
+}
+
+.pf-list button.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.pf-list .muted.small {
+  padding: 8px 10px 2px;
+}
+
+.holdings-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.holdings-table td,
+.holdings-table th {
+  padding: 4px 6px;
+  text-align: left;
+  font-weight: 500;
+}
+
+.holdings-table th {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.holdings-table .input {
+  width: 100%;
+}
+
+.holdings-table td.w {
+  width: 110px;
+}
+
+.holdings-table td.x {
+  width: 36px;
+}
+
+.weight-total.bad {
+  color: var(--warn);
+}
+
+.corr-cell {
+  text-align: center !important;
+}
+
+@media (max-width: 1000px) {
+  .pf-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field-input.compact span {
+  white-space: nowrap;
+}
+
+.field-input.compact .input {
+  width: 80px;
+}

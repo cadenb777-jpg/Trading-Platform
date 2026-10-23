@@ -1,10 +1,12 @@
 import './style.css';
 import { createCalendarPage } from './pages/calendarPage';
+import { createBacktestPage } from './pages/backtestPage';
 import { createChartPage } from './pages/chartPage';
 import { createFlowPage } from './pages/flowPage';
 import { createHomePage } from './pages/homePage';
 import { createMacroPage } from './pages/macroPage';
 import { createMultiChartPage } from './pages/multiChartPage';
+import { createPortfolioPage } from './pages/portfolioPage';
 import { createResearchPage } from './pages/researchPage';
 import { createScriptsPage } from './pages/scriptsPage';
 import type { MarketRef } from './data/quotes';
@@ -31,6 +33,8 @@ const pages: { route: string; label: string; icon: IconName; title: string; page
   { route: 'flow', label: 'Flow', icon: 'flow', title: 'Flow', page: createFlowPage() },
   { route: 'research', label: 'Research', icon: 'research', title: 'Research', page: createResearchPage() },
   { route: 'macro', label: 'Macro', icon: 'macro', title: 'Macro', page: createMacroPage() },
+  { route: 'portfolio', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', page: createPortfolioPage() },
+  { route: 'backtest', label: 'Backtest', icon: 'backtest', title: 'Backtest', page: createBacktestPage() },
   { route: 'calendar', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', page: createCalendarPage() },
   {
     route: 'scripts',

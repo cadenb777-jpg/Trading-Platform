@@ -29,6 +29,8 @@ const PATHS = {
   flow: '<path d="M3 7h11l-3-3M21 17H10l3 3"/><path d="M3 12h6M15 12h6"/>',
   research: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5"/><path d="M8 12.5V10M10.5 12.5V8M13 12.5v-3"/>',
   macro: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.8 5.2 3.8 8.5s-1.2 6.1-3.8 8.5M12 3.5C9.4 5.9 8.2 8.7 8.2 12s1.2 6.1 3.8 8.5"/>',
+  portfolio: '<path d="M12 3v9h9"/><path d="M19.5 15.5A8.5 8.5 0 1110 3.7"/>',
+  backtest: '<path d="M3 12a9 9 0 109-9"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/>',
   refresh: '<path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 4v7h-7"/>',
 } as const;
 

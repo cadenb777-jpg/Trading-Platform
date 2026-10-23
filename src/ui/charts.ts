@@ -92,6 +92,9 @@ export const money = (v: number | null | undefined) => {
 
 export const pct = (v: number | null | undefined, digits = 2) => (v == null || !Number.isFinite(v) ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(digits)}%`);
 
+/** Like pct but without a + sign, for things that are never negative (volatility, weights). */
+export const pctU = (v: number | null | undefined, digits = 2) => pct(v, digits).replace('+', '');
+
 export const compact = (v: number | null | undefined) => {
   if (v == null || !Number.isFinite(v)) return '—';
   const abs = Math.abs(v);
@@ -149,4 +152,58 @@ export function numberField(label: string, value: number, onChange: (v: number) 
     if (Number.isFinite(v)) onChange(opts.percent ? v / 100 : v);
   });
   return h('label', { class: 'field', title: opts.hint ?? '' }, h('span', { class: 'muted small' }, label), h('span', { class: 'field-input' }, input, opts.percent ? h('span', { class: 'muted' }, '%') : null));
+}
+
+/** A small SVG scatter/line chart with % axes, e.g. an efficient frontier (risk on x, return on y). */
+export function scatterChart(
+  layers: { name: string; color: string; points: { x: number; y: number; label?: string }[]; line?: boolean; size?: number }[],
+  axes: { x: string; y: string },
+) {
+  const W = 500;
+  const H = 300;
+  const pad = { l: 52, r: 20, t: 14, b: 40 };
+  const all = layers.flatMap((l) => l.points);
+  const xs = all.map((p) => p.x);
+  const ys = all.map((p) => p.y);
+  const span = (lo: number, hi: number) => (hi - lo || Math.abs(hi) || 0.01) * 0.08;
+  const x0 = Math.min(0, ...xs);
+  const x1 = Math.max(...xs) + span(Math.min(...xs), Math.max(...xs));
+  const y0 = Math.min(...ys) - span(Math.min(...ys), Math.max(...ys));
+  const y1 = Math.max(...ys) + span(Math.min(...ys), Math.max(...ys));
+  const X = (v: number) => pad.l + ((v - x0) / (x1 - x0)) * (W - pad.l - pad.r);
+  const Y = (v: number) => pad.t + ((y1 - v) / (y1 - y0)) * (H - pad.t - pad.b);
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('class', 'curve-svg');
+  const add = (tag: string, attrs: Record<string, string | number>, text?: string) => {
+    const el = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+    if (text) el.textContent = text;
+    svg.append(el);
+    return el;
+  };
+  const ticks = (lo: number, hi: number) => {
+    const step = [0.01, 0.02, 0.025, 0.05, 0.1, 0.2, 0.25, 0.5].find((s) => (hi - lo) / s <= 7) ?? 1;
+    const out: number[] = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(v);
+    return out;
+  };
+  for (const v of ticks(y0, y1)) {
+    add('line', { x1: pad.l, x2: W - pad.r, y1: Y(v), y2: Y(v), class: 'curve-grid' });
+    add('text', { x: pad.l - 6, y: Y(v) + 4, 'text-anchor': 'end', class: 'curve-label' }, `${(v * 100).toFixed(0)}%`);
+  }
+  for (const v of ticks(x0, x1)) add('text', { x: X(v), y: H - 22, 'text-anchor': 'middle', class: 'curve-label' }, `${(v * 100).toFixed(0)}%`);
+  add('text', { x: (W + pad.l) / 2, y: H - 4, 'text-anchor': 'middle', class: 'curve-label' }, axes.x);
+  add('text', { x: 12, y: (H - pad.b) / 2, 'text-anchor': 'middle', class: 'curve-label', transform: `rotate(-90 12 ${(H - pad.b) / 2})` }, axes.y);
+  for (const l of layers) {
+    if (l.line && l.points.length > 1) add('polyline', { points: l.points.map((p) => `${X(p.x)},${Y(p.y)}`).join(' '), fill: 'none', stroke: l.color, 'stroke-width': 2 });
+    else
+      for (const p of l.points) {
+        add('circle', { cx: X(p.x), cy: Y(p.y), r: l.size ?? 5, fill: l.color });
+        if (p.label) add('text', { x: X(p.x) + 8, y: Y(p.y) + 4, class: 'curve-label strong' }, p.label);
+      }
+  }
+  const legend = h('div', { class: 'line-legend static' }, ...layers.map((l) => h('span', {}, h('i', { style: `background:${l.color}` }), l.name)));
+  return h('div', { class: 'curve-wrap' }, legend, svg);
 }
