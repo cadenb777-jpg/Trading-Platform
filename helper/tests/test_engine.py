@@ -2,8 +2,10 @@
 
 Run from the repository root:  python -m unittest discover helper/tests
 """
+import asyncio
 import datetime as dt
 import math
+import time
 import os
 import random
 import sys
@@ -96,6 +98,24 @@ class Simulation(unittest.TestCase):
         self.assertEqual(t['reason'], 'stop')
         self.assertAlmostEqual(t['r'], (96 - 101) / 3)
 
+    def test_costs_are_charged(self):
+        bars = [bar(0, 100, 100.5, 99, 100), bar(1, 100.5, 102, 100, 101.5), bar(2, 102, 104.5, 101.5, 104), bar(3, 104, 107.5, 103.5, 107)]
+        t = scanner.simulate_plan(bars, 0, self.plan, 1)
+        self.assertAlmostEqual(t['ret'], (0.5 * 3 + 0.5 * 6) / 101 - scanner.COSTS)
+
+    def test_same_bar_target_and_return_to_entry_is_break_even(self):
+        # Fills at 101, then one bar reaches both targets but also falls back to 100.5: the stop is assumed first.
+        bars = [bar(0, 100, 100.5, 99, 100), bar(1, 100.5, 101.5, 100.8, 101.2), bar(2, 101.5, 107.5, 100.5, 106)]
+        t = scanner.simulate_plan(bars, 0, self.plan, 1)
+        self.assertEqual(t['reason'], 'break-even')
+        self.assertAlmostEqual(t['r'], 0.5 * 3 / 3)
+
+    def test_gap_past_target_one_fills_at_the_open(self):
+        bars = [bar(0, 100, 100.5, 99, 100), bar(1, 100.5, 101.5, 100.8, 101.2), bar(2, 105, 105.5, 104.5, 105), bar(3, 105, 107.2, 104.8, 107)]
+        t = scanner.simulate_plan(bars, 0, self.plan, 1)
+        self.assertEqual(t['reason'], 'target')
+        self.assertAlmostEqual(t['r'], (0.5 * (105 - 101) + 0.5 * 6) / 3)
+
     def test_break_even_after_target_one(self):
         bars = [bar(0, 100, 100.5, 99, 100), bar(1, 101, 104.2, 100.8, 104), bar(2, 103, 103.5, 100.5, 100.8)]
         t = scanner.simulate_plan(bars, 0, self.plan, 1)
@@ -116,9 +136,29 @@ class Backtest(unittest.TestCase):
     def test_grade_and_dates_are_reported(self):
         bars = random_walk(seed=3)
         r = scanner.backtest_signal(scanner.prepare(bars), 1, scanner.atr(bars))
-        self.assertIn(r['grade'], ('proven', 'mixed', 'unproven', 'failed'))
+        self.assertEqual(r['grade'], scanner.summarise_trades(scanner.signal_trades(scanner.prepare(bars), 1, scanner.atr(bars)))['grade'])
         self.assertEqual(r['from'], bars[211]['time'])
         self.assertEqual(r['to'], bars[-1]['time'])
+
+
+class Grades(unittest.TestCase):
+    t = staticmethod(lambda ret: {'ret': ret, 'r': ret * 10, 'reason': 'x', 'bars': 3, 'exit': 0})
+
+    def test_grades_from_known_trades(self):
+        g = lambda rets: scanner.summarise_trades([self.t(x) for x in rets])['grade']  # noqa: E731
+        self.assertEqual(g([0.03, 0.03, 0.03, -0.01, -0.01, -0.01]), 'proven')  # profit factor 3
+        self.assertEqual(g([0.012, 0.012, 0.012, -0.01, -0.01, -0.01]), 'mixed')  # positive, profit factor 1.2
+        self.assertEqual(g([0.01, -0.02, 0.01, -0.02]), 'failed')
+        self.assertEqual(g([0.05, 0.05, 0.05]), 'unproven')  # too few trades to judge
+        self.assertEqual(g([]), 'unproven')
+
+    def test_stats(self):
+        s = scanner.summarise_trades([self.t(x) for x in (0.02, -0.01, -0.01, 0.04)])
+        self.assertEqual(s['trades'], 4)
+        self.assertAlmostEqual(s['winRate'], 0.5)
+        self.assertAlmostEqual(s['profitFactor'], 3.0)
+        self.assertAlmostEqual(s['expectancy'], 0.01)
+        self.assertEqual(s['maxLosingStreak'], 2)
 
 
 class SessionChange(unittest.TestCase):
@@ -140,6 +180,119 @@ class SessionChange(unittest.TestCase):
 
     def test_mismatched_bars_are_rejected(self):
         self.assertEqual(self.run_change({'price': 6650.0, 'change': 0.0})['change'], 0.0)
+
+
+class Resp:
+    def __init__(self, code, data=None):
+        self.status_code, self._data = code, data or {}
+
+    def json(self):
+        return self._data
+
+
+class FakeSchwab:
+    """Answers price history like Schwab: random-walk candles, or the error code set for a symbol."""
+
+    def __init__(self, errors=None):
+        self.errors, self.calls = errors or {}, []
+
+    def _history(self, symbol, step):
+        self.calls.append(symbol)
+        if symbol in self.errors:
+            return Resp(self.errors[symbol])
+        bars = random_walk(n=900 if step == 86400 else 400, seed=hash(symbol) % 1000)
+        return Resp(200, {'candles': [{'datetime': (1_600_000_000 + i * step) * 1000, **{k: b[k] for k in ('open', 'high', 'low', 'close', 'volume')}} for i, b in enumerate(bars)]})
+
+    async def get_price_history_every_day(self, symbol, **kw):
+        return self._history(symbol, 86400)
+
+    async def get_price_history_every_thirty_minutes(self, symbol, **kw):
+        return self._history(symbol, 1800)
+
+    async def get_price_history_every_five_minutes(self, symbol, **kw):
+        return self._history(symbol, 300)
+
+    async def get_quotes(self, symbols, **kw):
+        return Resp(200, {})
+
+    async def get_option_chain(self, symbol, **kw):
+        return Resp(500)
+
+
+class FakeCtx:
+    def __init__(self, schwab):
+        self.schwab, self.news, self._cache = schwab, None, {}
+
+    async def cached(self, key, max_age, load, persist=False, stale_ok=False):
+        if key not in self._cache:
+            self._cache[key] = await load()
+        return self._cache[key]
+
+
+class ScanErrors(unittest.TestCase):
+    def setUp(self):
+        self.patches = [mock.patch.object(scanner, 'UNIVERSE', ['SPY', 'AAA']), mock.patch.object(scanner, 'REQUEST_GAP', 0),
+                        mock.patch.object(scanner, 'market_session', return_value='closed')]
+        for p in self.patches:
+            p.start()
+        scanner._state.update({'result': None, 'running': None, 'extra': set(), 'bad': {}})
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+        scanner._state.update({'result': None, 'running': None, 'extra': set(), 'bad': {}})
+
+    def scan(self, schwab):
+        return asyncio.run(scanner.scan(FakeCtx(schwab)))
+
+    def test_unknown_watchlist_symbol_is_skipped_and_remembered(self):
+        scanner._state['extra'] = {'BADX'}
+        r = self.scan(FakeSchwab({'BADX': 400}))
+        self.assertEqual(r['scanned'], 2)
+        self.assertIn({'symbol': 'BADX', 'reason': 'unknown'}, r['skipped'])
+        schwab = FakeSchwab({'BADX': 400})
+        r2 = self.scan(schwab)
+        self.assertNotIn('BADX', schwab.calls)  # not asked again for a day...
+        self.assertIn({'symbol': 'BADX', 'reason': 'unknown'}, r2['skipped'])  # ...but still listed
+
+    def test_temporary_error_only_skips_one_scan(self):
+        scanner._state['extra'] = {'TMP'}
+        r = self.scan(FakeSchwab({'TMP': 503}))
+        self.assertIn({'symbol': 'TMP', 'reason': 'temporary'}, r['skipped'])
+        self.assertEqual(scanner._state['bad'], {})
+        schwab = FakeSchwab()
+        self.scan(schwab)
+        self.assertIn('TMP', schwab.calls)
+
+    def test_bad_symbols_are_retried_after_a_day(self):
+        scanner._state['bad'] = {'OLD': time.time() - scanner.BAD_SYMBOL_RETRY - 1, 'NEW': time.time()}
+        self.assertEqual(scanner.bad_symbols(), {'NEW'})
+
+    def test_expired_login_stops_the_scan(self):
+        with self.assertRaises(core.EngineError):
+            self.scan(FakeSchwab({'AAA': 401}))
+
+
+class Pacing(unittest.TestCase):
+    def test_requests_go_one_at_a_time_with_a_gap(self):
+        starts, running, overlap = [], [0], [False]
+
+        async def call():
+            starts.append(time.monotonic())
+            running[0] += 1
+            overlap[0] |= running[0] > 1
+            await asyncio.sleep(0.01)
+            running[0] -= 1
+
+        async def main():
+            await asyncio.gather(*(scanner._paced(call) for _ in range(4)))
+
+        with mock.patch.object(scanner, 'REQUEST_GAP', 0.05):
+            scanner._last_request[0] = 0.0
+            asyncio.run(main())
+        self.assertFalse(overlap[0])
+        gaps = [b - a for a, b in zip(starts, starts[1:])]
+        self.assertTrue(all(g >= 0.055 for g in gaps), gaps)
 
 
 class Sessions(unittest.TestCase):

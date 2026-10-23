@@ -54,7 +54,8 @@ interface CusipResult {
   description: string;
   assetType: string;
   price: number | null;
-  priceSource?: { source: 'schwab' | 'auction'; date?: string } | null;
+  /** Helper 11+: { source, date }. Helper 10 sent text: 'Schwab' or 'auction YYYY-MM-DD'. */
+  priceSource?: { source: 'schwab' | 'auction'; date?: string } | string | null;
   coupon: number | null;
   maturity: string | null;
   auctions: Auction[];
@@ -229,6 +230,11 @@ export function createBondsView(ctx: InvestContext) {
     if (lookupCusip) go();
   }
 
+  function priceHint(src: CusipResult['priceSource']): string {
+    const auction = typeof src === 'string' ? (src.startsWith('auction') ? src.slice(8) : null) : src?.source === 'auction' ? (src.date ?? '') : null;
+    return auction != null ? `Latest auction price${auction ? `, ${auction}` : ''} (Schwab has no live price)` : 'From Schwab';
+  }
+
   function cusipCard(r: CusipResult) {
     const years = r.maturity ? yearsUntil(r.maturity) : null;
     // Treasury bills pay no coupon: they are priced as zero-coupon bonds.
@@ -241,7 +247,7 @@ export function createBondsView(ctx: InvestContext) {
       { class: 'panel' },
       h('div', { class: 'panel-head' }, h('h3', {}, r.description || r.cusip), h('span', { class: 'muted small' }, `CUSIP ${r.cusip}${r.assetType ? ` · ${r.assetType}` : ''}`)),
       statCards([
-        { label: 'Price (per $100)', value: r.price ? r.price.toFixed(3) : '—', hint: r.price ? (r.priceSource?.source === 'auction' ? `Latest auction price, ${r.priceSource.date} (Schwab has no live price)` : 'From Schwab') : 'Schwab has no price for this bond' },
+        { label: 'Price (per $100)', value: r.price ? r.price.toFixed(3) : '—', hint: r.price ? priceHint(r.priceSource) : 'Schwab has no price for this bond' },
         { label: 'Coupon', value: r.coupon != null ? `${r.coupon.toFixed(3)}%` : bill ? 'None (bill)' : '—', hint: bill ? 'Bills are sold at a discount and pay $100 at maturity' : '' },
         { label: 'Matures', value: r.maturity ?? '—', hint: years != null ? `${years.toFixed(1)} years` : '' },
         { label: 'Yield to maturity', value: ytm != null ? pctU(ytm, 3) : '—', hint: 'Calculated from the price' },

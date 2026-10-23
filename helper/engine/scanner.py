@@ -33,11 +33,53 @@ MAX_SYMBOLS = 45
 REQUEST_GAP = 0.7
 _pace = asyncio.Lock()
 _last_request = [0.0]
-_state = {'result': None, 'running': None, 'extra': set(), 'bad': set()}
+BAD_SYMBOL_RETRY = 24 * 3600
+_state = {'result': None, 'running': None, 'extra': set(), 'bad': {}}  # bad: symbol -> when Schwab rejected it
 
 
 class SymbolError(Exception):
-    """Schwab couldn't give history for one symbol (unknown, delisted, futures): skip it, keep scanning."""
+    """Schwab says it doesn't know this symbol (400/404: unknown, delisted, futures): skip it for a day."""
+
+
+class TemporaryError(Exception):
+    """Schwab couldn't answer right now (rate limit, server error): skip the symbol this scan only."""
+
+
+class _PacedClient:
+    """The Schwab client with every call going through the scanner's pacer."""
+
+    def __init__(self, client):
+        self._client = client
+
+    def __getattr__(self, name):
+        attr = getattr(self._client, name)
+        if not callable(attr):
+            return attr
+
+        async def call(*args, **kwargs):
+            return await _paced(lambda: attr(*args, **kwargs))
+        return call
+
+
+class _PacedContext:
+    """The engine context as other modules see it (cache, http, settings), but with a paced Schwab client, so the
+    scanner's options and quote requests share the same one-at-a-time limit as its price history."""
+
+    def __init__(self, ctx):
+        self._ctx = ctx
+        self.schwab = _PacedClient(ctx.schwab)
+
+    def __getattr__(self, name):
+        return getattr(self._ctx, name)
+
+
+def bad_symbols(now=None):
+    """Watchlist symbols Schwab rejected in the last day (they are tried again after that)."""
+    now = now or time.time()
+    for sym, when in list(_state['bad'].items()):
+        if now - when > BAD_SYMBOL_RETRY:
+            del _state['bad'][sym]
+    return set(_state['bad'])
 
 
 async def _paced(call):
@@ -269,11 +311,17 @@ def simulate_plan(bars, i, plan, direction):
             realised += (0.5 if half_done else 1.0) * (price - entry) * d
             exit_i, reason = j, ('break-even' if half_done else 'stop')
             break
+        # A target is filled at its price, or at the open when price gaps past it (never worse than the fill).
+        better = (lambda target: max(target, gap_open)) if d > 0 else (lambda target: min(target, gap_open))
         if not half_done and ((hi >= t1) if d > 0 else (lo <= t1)):
-            realised += 0.5 * (t1 - entry) * d
+            realised += 0.5 * (better(t1) - entry) * d
             half_done, current_stop = True, entry
+            # The bar that hit target 1 also came back to the entry: assume the break-even stop came first.
+            if (lo <= entry) if d > 0 else (hi >= entry):
+                exit_i, reason = j, 'break-even'
+                break
         if half_done and ((hi >= t2) if d > 0 else (lo <= t2)):
-            realised += 0.5 * (t2 - entry) * d
+            realised += 0.5 * (better(t2) - entry) * d
             exit_i, reason = j, 'target'
             break
     if exit_i is None:
@@ -310,7 +358,14 @@ def signal_trades(ind, direction, atrs):
 def backtest_signal(ind, direction, atrs):
     """The setup's track record on this stock (signal_trades), graded. Costs 0.1% a round trip."""
     bars = ind['bars']
-    trades = signal_trades(ind, direction, atrs)
+    return {**summarise_trades(signal_trades(ind, direction, atrs)),
+            'from': bars[211]['time'] if len(bars) > 211 else None, 'to': bars[-1]['time'],
+            'rules': f'Same plan as the card: enter only on a break of the trigger within {FILL_WINDOW} days, stop and targets from support and resistance, half off at target 1 with the stop moved to break-even, the rest at target 2 or after {MAX_HOLD} days; {COSTS * 100:.1f}% costs'}
+
+
+def summarise_trades(trades):
+    """Win rate, profit factor, expectancy and a grade: proven (6+ trades, positive expectancy, profit factor 1.25+),
+    mixed (4+ trades, positive), failed (4+ trades, losing) or unproven (too few to judge)."""
     wins = [t for t in trades if t['ret'] > 0]
     losses = [t for t in trades if t['ret'] <= 0]
     gross_win, gross_loss = sum(t['ret'] for t in wins), -sum(t['ret'] for t in losses)
@@ -331,9 +386,7 @@ def backtest_signal(ind, direction, atrs):
     return {'trades': n, 'winRate': len(wins) / n if n else None, 'profitFactor': None if pf is None else (round(pf, 2) if pf != float('inf') else 99),
             'expectancy': exp, 'avgR': sum(t['r'] for t in trades) / n if n else None, 'avgBars': sum(t['bars'] for t in trades) / n if n else None,
             'targets': sum(1 for t in trades if t['reason'] == 'target'), 'stops': sum(1 for t in trades if t['reason'] == 'stop'),
-            'maxLosingStreak': worst, 'total': sum(t['ret'] for t in trades), 'grade': grade,
-            'from': bars[211]['time'] if len(bars) > 211 else None, 'to': bars[-1]['time'],
-            'rules': f'Same plan as the card: enter only on a break of the trigger within {FILL_WINDOW} days, stop and targets from support and resistance, half off at target 1 with the stop moved to break-even, the rest at target 2 or after {MAX_HOLD} days; {COSTS * 100:.1f}% costs'}
+            'maxLosingStreak': worst, 'total': sum(t['ret'] for t in trades), 'grade': grade}
 
 
 def swing_levels(bars, atr_now, lookback=180, width=3):
@@ -483,8 +536,10 @@ async def _history(ctx, symbol, method, days, key, max_age):
         response = await _paced(lambda: getattr(ctx.schwab, method)(symbol, start_datetime=now - dt.timedelta(days=days), end_datetime=now))
         if response.status_code == 401:
             raise EngineError('Schwab login expired. Close the helper and start it again to log in.')
+        if response.status_code in (400, 404):
+            raise SymbolError(f'Schwab has no price history for {symbol}')
         if response.status_code != 200:
-            raise SymbolError(f'Schwab returned {response.status_code} for {symbol}')
+            raise TemporaryError(f'Schwab returned {response.status_code} for {symbol}')
         return [{'time': c['datetime'] // 1000, 'open': c['open'], 'high': c['high'], 'low': c['low'], 'close': c['close'], 'volume': c.get('volume', 0)}
                 for c in response.json().get('candles', []) if c.get('close')]
     # No stale_ok: signals must use fresh bars (a stale hit would also start uncounted background requests).
@@ -535,7 +590,9 @@ async def analyse(ctx, symbol, spy_closes, session):
 
 async def scan(ctx, news=None):
     session = market_session()
-    symbols = list(dict.fromkeys(UNIVERSE + sorted(_state['extra'] - _state['bad'])))[:MAX_SYMBOLS]
+    pctx = _PacedContext(ctx)
+    bad = bad_symbols()
+    symbols = list(dict.fromkeys(UNIVERSE + sorted(_state['extra'] - bad)))[:MAX_SYMBOLS]
     spy = await _history(ctx, 'SPY', 'get_price_history_every_day', 1100, 'scan-daily3y', daily_age(session))
     spy_closes = [(b['time'], b['close']) for b in spy]
     results, skipped = [], []
@@ -548,16 +605,19 @@ async def scan(ctx, news=None):
             raise  # expired login: nothing else will work either
         except Exception as err:
             log.info('Scanner skipped %s: %s', sym, err)
-            skipped.append(sym)
-            if isinstance(err, SymbolError) and sym in _state['extra']:
-                _state['bad'].add(sym)  # a watchlist symbol Schwab has no history for: stop asking every scan
+            if isinstance(err, SymbolError):
+                skipped.append({'symbol': sym, 'reason': 'unknown'})
+                if sym in _state['extra']:
+                    _state['bad'][sym] = time.time()  # stop asking every scan; tried again in a day
+            else:
+                skipped.append({'symbol': sym, 'reason': 'temporary'})
     if not results:
         raise EngineError('The scanner could not load price history from Schwab.')
     ranked = sorted([r for r in results if r['direction']], key=lambda r: -abs(r['score']))
     # Options flow and headlines for the strongest few (these cost more requests).
     for r in ranked[:6]:
         try:
-            o = await flow.options(ctx, {'symbol': r['symbol']})
+            o = await flow.options(pctx, {'symbol': r['symbol']})
             pc = o['summary'].get('putCallPremium') or o['summary'].get('putCallVolume')
             if pc is not None:
                 r['options'] = {'putCallPremium': pc, 'expectedMove': o['summary'].get('expectedMove'), 'expiration': o['expiration']}
@@ -569,7 +629,7 @@ async def scan(ctx, news=None):
         except Exception as err:
             log.info('Scanner options for %s failed: %s', r['symbol'], err)
     for r in ranked[:6]:
-        await smart_money(ctx, r)
+        await smart_money(pctx, r)
     if news is not None and ranked:
         try:
             items, _ = await news.get([r['symbol'] for r in ranked[:6]])
@@ -580,12 +640,12 @@ async def scan(ctx, news=None):
                     r['news'] = {'headline': mine[0]['title'], 'link': mine[0].get('link'), 'source': mine[0].get('source'), 'count': len(mine), 'tone': tone}
         except Exception as err:
             log.info('Scanner news failed: %s', err)
-    await live_prices(ctx, results)
+    await live_prices(pctx, results)
     above50 = sum(1 for r in results if r['reasons'] and any('Uptrend' in x['text'] for x in r['reasons']))
     spy_row = next((r for r in results if r['symbol'] == 'SPY'), None)
     vix = None
     try:
-        resp = await ctx.schwab.get_quotes(['$VIX'])
+        resp = await pctx.schwab.get_quotes(['$VIX'])
         q = (resp.json().get('$VIX') or {}).get('quote', {}) if resp.status_code == 200 else {}
         vix = q.get('lastPrice') or q.get('closePrice')
     except Exception:
@@ -605,7 +665,7 @@ async def scan(ctx, news=None):
         'updated': time.time(),
         'session': session,
         'scanned': len(results),
-        'skipped': skipped,
+        'skipped': skipped + [{'symbol': b, 'reason': 'unknown'} for b in sorted(bad) if b in _state['extra']],
         'regime': {'spyScore': spy_row['score'] if spy_row else None, 'spyWeek': spy_row['week'] if spy_row else None, 'vix': vix,
                    'uptrendShare': above50 / len(results)},
         'setups': ranked[:12],
@@ -631,7 +691,7 @@ async def live_prices(ctx, results):
                 r['day'] = net / (last - net)
 
 
-async def smart_money(ctx, r):
+async def smart_money(ctx, r):  # ctx is the scanner's paced context
     """Institutional positioning for a top setup: commercial hedgers in the related futures (Williams COT index, 26
     weeks), insiders' open-market buying, and big options trades paid at the ask."""
     d = r['direction']
@@ -741,6 +801,8 @@ async def results(ctx, msg):
     extra = {str(s).upper() for s in msg.get('symbols') or [] if isinstance(s, str) and s and '-' not in s and not s.startswith('$')}
     new = extra - _state['extra'] - set(UNIVERSE)
     _state['extra'] |= extra
+    if msg.get('refresh'):
+        _state['bad'].clear()  # "Scan again" retries symbols Schwab rejected earlier
     if _state['result'] is None or msg.get('refresh'):
         await run_once(ctx, ctx.news)
     elif new and not _state['running']:

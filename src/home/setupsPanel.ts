@@ -56,7 +56,8 @@ interface ScanResult {
   updated: number;
   session: 'open' | 'extended' | 'closed';
   scanned: number;
-  skipped?: string[];
+  /** Helper 11+: [{ symbol, reason }]; helper 10 sent plain symbols. */
+  skipped?: ({ symbol: string; reason: 'unknown' | 'temporary' } | string)[];
   regime: { spyScore: number | null; spyWeek: number | null; vix: number | null; uptrendShare: number };
   setups: Setup[];
   filteredOut: { symbol: string }[];
@@ -104,7 +105,7 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
   async function load(refresh = false) {
     if (loading || !helper.isConnected) return;
     loading = true;
-    if (refresh || !data) body.replaceChildren(h('div', { class: 'muted pad' }, refresh ? 'Scanning the market…' : 'The scanner is reading about 30 stocks plus your watchlist on several timeframes. The first scan after the helper starts takes about a minute.'));
+    if (refresh || !data) body.replaceChildren(h('div', { class: 'muted pad' }, refresh ? 'Scanning the market…' : 'The scanner is reading about 30 stocks plus your watchlist on several timeframes. The first scan after the helper starts takes a couple of minutes (it reads Schwab gently so your charts stay fast).'));
     try {
       const symbols = state.watchlist.filter((r) => r.provider === 'schwab').map((r) => r.symbol);
       data = await engineRequest<ScanResult>('scanner.results', { symbols, refresh }, 240000);
@@ -147,7 +148,18 @@ export function createSetupsPanel(onOpenChart: (ref: MarketRef) => void) {
     body.replaceChildren(
       note,
       h('div', { class: 'setups-grid' }, ...shown.map(card)),
-      data.skipped?.length ? h('p', { class: 'muted tiny' }, `Couldn't get price history for ${data.skipped.join(', ')} from Schwab (unknown, delisted or futures symbols), so they were skipped.`) : '', data.filteredOut.length ? h('p', { class: 'muted tiny' }, `Filtered out ${data.filteredOut.length} signal${data.filteredOut.length === 1 ? '' : 's'} that lost money when tested on that stock: ${data.filteredOut.map((f) => f.symbol).join(', ')}.`) : '');
+      skippedNote(data.skipped ?? []), data.filteredOut.length ? h('p', { class: 'muted tiny' }, `Filtered out ${data.filteredOut.length} signal${data.filteredOut.length === 1 ? '' : 's'} that lost money when tested on that stock: ${data.filteredOut.map((f) => f.symbol).join(', ')}.`) : '');
+  }
+
+  function skippedNote(list: NonNullable<ScanResult['skipped']>) {
+    const items = list.map((x) => (typeof x === 'string' ? { symbol: x, reason: 'unknown' as const } : x));
+    const unknown = items.filter((x) => x.reason === 'unknown').map((x) => x.symbol);
+    const temporary = items.filter((x) => x.reason === 'temporary').map((x) => x.symbol);
+    const parts = [
+      unknown.length ? `Schwab has no price history for ${unknown.join(', ')} (unknown, delisted or futures symbols); they're tried again tomorrow or when you press Scan again.` : '',
+      temporary.length ? `Schwab didn't answer for ${temporary.join(', ')} this time; they're included in the next scan.` : '',
+    ].filter(Boolean);
+    return parts.length ? h('p', { class: 'muted tiny' }, parts.join(' ')) : '';
   }
 
   function card(s: Setup) {
