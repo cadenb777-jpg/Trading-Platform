@@ -192,6 +192,17 @@ export const INDICATOR_GUIDES: Record<string, IndicatorGuide> = {
     signals: ['Speculator extremes (above 80 or below 20) turning back often come before reversals.', 'Hedgers at an extreme long while price falls = possible bottom.'],
     tip: 'COT exists only for futures; for individual stocks this uses the closest futures market.',
   },
+  williamscot: {
+    what: 'Larry Williams’ COT Index from the CFTC’s weekly Commitment of Traders report: each group’s net futures position scaled 0-100 against its own range over the look-back (26 weeks by default). Commercials are producers and big hedgers, large specs are funds, small traders are the public.',
+    use: ['Williams focuses on the commercials: they are the "smart money" that buys weakness and sells strength.', 'Use it on daily or weekly charts; the data is weekly (Tuesday positions, released Friday).', 'For stocks it uses the futures market the stock moves with.'],
+    signals: ['Commercials above 75 (and large specs/small traders low) = bullish setup; wait for price to confirm, e.g. a break of a recent high.', 'Commercials below 25 = bearish setup.', 'Signals work best at the extremes, against the crowd.'],
+    tip: 'Try 26 weeks for swing trades and 156 weeks (3 years) for the bigger picture.',
+  },
+  wad: {
+    what: 'Williams Accumulation/Distribution: a running total of buying and selling pressure based on where each bar closes versus the previous close and the true high/low. It shows whether money is flowing in or out.',
+    use: ['Compare its direction with price rather than reading the level.', 'The orange line is its average: WAD above it = accumulation.'],
+    signals: ['Price makes a new low but WAD doesn’t = bullish divergence (accumulation).', 'Price makes a new high but WAD doesn’t = bearish divergence (distribution).'],
+  },
   shortvol: {
     what: 'The share of each day’s trading volume that was short selling, from FINRA’s free daily data. Around 40-50% is normal for many stocks because market makers short to provide liquidity.',
     use: ['Compare with the average line rather than looking at the level alone.', 'Daily data: best on daily charts.'],

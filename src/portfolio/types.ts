@@ -1,14 +1,70 @@
 /** Portfolios and the analysis the helper sends back (see helper/engine/quant.py). */
 
-export const ASSET_CLASSES = ['US stocks', 'International stocks', 'Bonds', 'Real estate', 'Commodities', 'Cash', 'Crypto', 'Other'] as const;
+export const ASSET_CLASSES = [
+  'US stocks',
+  'International stocks',
+  'Bonds',
+  'Real estate',
+  'Commodities',
+  'Cash',
+  'Crypto',
+  'Private credit',
+  'Private real estate',
+  'Private equity',
+  'Infrastructure',
+  'Hedge funds',
+  'Other',
+] as const;
 export type AssetClass = (typeof ASSET_CLASSES)[number];
 export type Rebalance = 'none' | 'monthly' | 'quarterly' | 'yearly';
+/** How holdings are entered: target percentages, number of shares, or dollar amounts. */
+export type EntryMode = 'weight' | 'shares' | 'dollars';
+export type HoldingKind = 'security' | 'cash' | 'alt';
+
+export const ALT_CLASSES: AssetClass[] = ['Private credit', 'Private real estate', 'Private equity', 'Infrastructure', 'Hedge funds'];
+/** How liquid each asset class usually is, for reports. */
+export function liquidityOf(h: Pick<Holding, 'kind' | 'assetClass'>): 'Liquid' | 'Semi-liquid' | 'Illiquid' {
+  if (h.kind === 'alt') return h.assetClass === 'Private equity' || h.assetClass === 'Infrastructure' ? 'Illiquid' : 'Semi-liquid';
+  return 'Liquid';
+}
+
+/** Listed stand-ins used to model alternatives and cash in the performance maths (they have no daily prices). */
+export const PROXIES: Partial<Record<AssetClass, string>> = {
+  Cash: 'BIL',
+  'Private credit': 'BIZD',
+  'Private real estate': 'VNQ',
+  'Private equity': 'PSP',
+  Infrastructure: 'IGF',
+  'Hedge funds': 'QAI',
+};
 
 export interface Holding {
+  /** Ticker for securities; for cash and alternatives a short label (e.g. CASH, BCRED). */
   symbol: string;
-  /** Target weight in percent. */
+  /** Target weight in percent (used when the portfolio is entered as percentages). */
   weight: number;
   assetClass: AssetClass;
+  kind?: HoldingKind;
+  /** Full name, e.g. "Blackstone Private Credit Fund" or "Schwab money market". */
+  name?: string;
+  /** Number of shares (shares mode, securities). */
+  shares?: number;
+  /** Dollar value: the amount in dollars mode, and always for cash and alternatives outside percent mode. */
+  amount?: number;
+  /** Total cost basis in dollars (optional), for unrealized gain. */
+  cost?: number;
+  /** Yearly income yield as a fraction (cash rate, fund distribution rate); securities use their dividend yield. */
+  yield?: number;
+  /** Listed stand-in for the performance maths (alternatives and cash); defaults by asset class. */
+  proxy?: string;
+  /** Private fund directory id (src/invest/catalog.ts) when the alternative is a known fund. */
+  fundId?: string;
+  /** Alternatives: commitment, paid in and distributions (for TVPI/DPI in reports). */
+  commitment?: number;
+  contributed?: number;
+  distributed?: number;
+  /** Date of the latest NAV / valuation for alternatives. */
+  valueDate?: string;
 }
 
 export interface Portfolio {
@@ -16,6 +72,8 @@ export interface Portfolio {
   name: string;
   benchmark: string;
   rebalance: Rebalance;
+  /** How holdings are entered (default: percentages). */
+  mode?: EntryMode;
   holdings: Holding[];
   /** Optional start date (YYYY-MM-DD) for performance, e.g. when a client account opened. */
   inception?: string;
@@ -140,6 +198,72 @@ export const TEMPLATES: Portfolio[] = [
   },
 ];
 
-export function holdingsPayload(p: Portfolio) {
-  return p.holdings.filter((h) => h.symbol.trim() && h.weight > 0).map((h) => ({ symbol: h.symbol.trim().toUpperCase(), weight: h.weight }));
+export const isCashOrAlt = (h: Holding) => h.kind === 'cash' || h.kind === 'alt';
+
+/** The ticker used for a holding's price history: its own symbol, or a listed stand-in for cash and alternatives. */
+export function analysisSymbol(h: Holding): string {
+  if (isCashOrAlt(h)) return (h.proxy?.trim() || PROXIES[h.assetClass] || (h.kind === 'cash' ? 'BIL' : 'PSP')).toUpperCase();
+  return h.symbol.trim().toUpperCase();
+}
+
+/** Market value of a holding in dollars (null in percent mode, or when a needed price is missing). */
+export function holdingValue(p: Portfolio, h: Holding, prices: Record<string, number | null | undefined>): number | null {
+  const mode = p.mode ?? 'weight';
+  if (mode === 'weight') return null;
+  if (isCashOrAlt(h) || mode === 'dollars') return h.amount ?? null;
+  const price = prices[h.symbol.trim().toUpperCase()];
+  return h.shares != null && price != null ? h.shares * price : null;
+}
+
+export interface Position {
+  holding: Holding;
+  value: number | null;
+  /** Share of the portfolio, 0-1. */
+  weight: number;
+  price: number | null;
+}
+
+/** Each holding's value and weight. In percent mode weights come from the targets; otherwise from values. */
+export function positions(p: Portfolio, prices: Record<string, number | null | undefined> = {}): { rows: Position[]; total: number | null } {
+  const live = p.holdings.filter((h) => h.symbol.trim() || h.name?.trim());
+  if ((p.mode ?? 'weight') === 'weight') {
+    const sum = live.reduce((s, h) => s + (h.weight > 0 ? h.weight : 0), 0) || 1;
+    return { rows: live.map((h) => ({ holding: h, value: null, weight: h.weight > 0 ? h.weight / sum : 0, price: prices[h.symbol.trim().toUpperCase()] ?? null })), total: null };
+  }
+  const values = live.map((h) => holdingValue(p, h, prices));
+  const total = values.reduce<number>((s, v) => s + (v && v > 0 ? v : 0), 0);
+  return {
+    rows: live.map((h, i) => ({ holding: h, value: values[i], weight: total && values[i] ? Math.max(0, values[i]!) / total : 0, price: isCashOrAlt(h) ? null : (prices[h.symbol.trim().toUpperCase()] ?? null) })),
+    total: total || null,
+  };
+}
+
+/** Symbols whose live price is needed to value the portfolio (shares mode). */
+export function pricedSymbols(p: Portfolio): string[] {
+  return [...new Set(p.holdings.filter((h) => !isCashOrAlt(h) && h.symbol.trim()).map((h) => h.symbol.trim().toUpperCase()))];
+}
+
+/** Symbols in a shares-mode portfolio that have shares entered but no price yet (so they can't be valued). */
+export function unpricedSymbols(p: Portfolio, prices: Record<string, number | null | undefined>): string[] {
+  if ((p.mode ?? 'weight') !== 'shares') return [];
+  return p.holdings.filter((h) => !isCashOrAlt(h) && h.symbol.trim() && (h.shares ?? 0) > 0 && prices[h.symbol.trim().toUpperCase()] == null).map((h) => h.symbol.trim().toUpperCase());
+}
+
+/** What the helper's portfolio maths needs: one weight per ticker (stand-ins merged, weights in percent). */
+export function holdingsPayload(p: Portfolio, prices: Record<string, number | null | undefined> = {}) {
+  const missing = unpricedSymbols(p, prices);
+  // Without a price a holding would silently drop out and the rest (often just cash) would look like 100%.
+  if (missing.length) throw new Error(`No live price for ${missing.join(', ')}, so the share amounts can't be valued. Check the helper is running and logged in to Schwab, then try again.`);
+  const merged = new Map<string, number>();
+  for (const r of positions(p, prices).rows) {
+    if (r.weight <= 0) continue;
+    const sym = analysisSymbol(r.holding);
+    if (sym) merged.set(sym, (merged.get(sym) ?? 0) + r.weight * 100);
+  }
+  return [...merged.entries()].map(([symbol, weight]) => ({ symbol, weight: +weight.toFixed(4) }));
+}
+
+/** Plain-language list of stand-ins used, for notes under results and in reports. */
+export function proxyNotes(p: Portfolio): string[] {
+  return p.holdings.filter(isCashOrAlt).map((h) => `${h.name || h.symbol} modelled with ${analysisSymbol(h)}`);
 }

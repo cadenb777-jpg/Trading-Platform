@@ -389,3 +389,27 @@
     break-after: auto;
   }
 }
+
+.rpt-donut.small {
+  flex: 0 0 150px;
+  max-width: 150px;
+}
+
+.rpt-sub {
+  color: var(--rpt-muted);
+  font-size: 7.5pt;
+}
+
+.rpt-page .rpt-table td {
+  vertical-align: top;
+}
+
+.rpt-table.dense {
+  font-size: 7.6pt;
+}
+
+.rpt-table.dense th,
+.rpt-table.dense td {
+  padding-left: 4px;
+  padding-right: 4px;
+}

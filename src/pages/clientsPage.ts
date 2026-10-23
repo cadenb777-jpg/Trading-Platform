@@ -1,10 +1,13 @@
 /** Clients: client accounts, report branding, and printable white-label performance reports. */
 import { engineRequest } from '../data/schwab';
 import { deleteDoc, listDocs, saveDoc } from '../data/store';
-import { TEMPLATES, holdingsPayload, type Analysis, type Portfolio } from '../portfolio/types';
-import { buildReport } from '../reports/report';
+import type { AltHolding } from '../invest/holdings';
+import { PRIVATE_FUNDS } from '../invest/catalog';
+import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
+import { TEMPLATES, holdingsPayload, isCashOrAlt, type Analysis, type Portfolio } from '../portfolio/types';
+import { buildReport, type FundFacts, type MarketRow } from '../reports/report';
 import '../reports/report.css';
-import { DEFAULT_BRANDING, type Branding, type Client } from '../reports/types';
+import { DEFAULT_BRANDING, OBJECTIVES, REPORT_SECTIONS, type Branding, type Client } from '../reports/types';
 import { pageFrame } from '../ui/charts';
 import { h, openModal, toast } from '../ui/dom';
 
@@ -19,6 +22,22 @@ const blankClient = (portfolioId = ''): Client => ({
   commentary: '',
   reports: [],
 });
+
+/** Benchmarks for the report's market overview page. */
+const MARKET: [string, string][] = [
+  ['$SPX', 'S&P 500 (US large caps)'],
+  ['$COMPX', 'Nasdaq Composite'],
+  ['$RUT', 'Russell 2000 (US small caps)'],
+  ['VXUS', 'International stocks'],
+  ['VWO', 'Emerging markets'],
+  ['AGG', 'US investment-grade bonds'],
+  ['HYG', 'High-yield bonds'],
+  ['MUB', 'Municipal bonds'],
+  ['VNQ', 'Real estate (REITs)'],
+  ['BIZD', 'Private credit (listed BDCs)'],
+  ['GLD', 'Gold'],
+  ['BIL', 'Cash (T-bills)'],
+];
 
 /** Puts report pages in a hidden container, opens the browser's print dialog (choose "Save as PDF"), then cleans up. */
 function printReports(docs: HTMLElement[], title: string) {
@@ -64,6 +83,7 @@ function readLogo(file: File): Promise<string> {
 
 export function createClientsPage() {
   let clients: (Client & { id: string })[] = [];
+  let altHoldings: (AltHolding & { id: string })[] = [];
   let savedPortfolios: (Portfolio & { id: string })[] = [];
   /** Templates (e.g. Classic 60/40) can be picked straight away, without saving them first. */
   const templates = TEMPLATES.map((t) => ({ ...t, id: `template:${t.name}` }));
@@ -82,6 +102,7 @@ export function createClientsPage() {
   async function refresh() {
     try {
       [clients, savedPortfolios] = await Promise.all([listDocs<Client>('clients'), listDocs<Portfolio>('portfolios')]);
+      altHoldings = await listDocs<AltHolding>('alt_holdings').catch(() => []);
       portfolios = [...savedPortfolios, ...templates];
       const saved = await listDocs<Branding>('branding');
       branding = { ...DEFAULT_BRANDING, ...(saved.find((b) => b.id === 'default') ?? {}) };
@@ -138,6 +159,35 @@ export function createClientsPage() {
     const commentary = h('textarea', { class: 'input', rows: 5, placeholder: 'Optional market and portfolio commentary for this report. Leave a blank line between paragraphs.' });
     commentary.value = c.commentary ?? '';
     commentary.addEventListener('input', () => (c.commentary = commentary.value));
+    const additions = h('input', { class: 'input', type: 'number', step: 1000, value: c.netAdditions ?? 0 });
+    additions.addEventListener('input', () => (c.netAdditions = parseFloat(additions.value) || 0));
+    const objective = h('select', { class: 'input' }, h('option', { value: '' }, '—'), ...OBJECTIVES.map((o) => h('option', { value: o, selected: o === c.objective }, o)));
+    objective.addEventListener('change', () => (c.objective = objective.value || undefined));
+    const altBox = h(
+      'div',
+      { class: 'check-list' },
+      ...(altHoldings.length
+        ? altHoldings.map((x) => {
+            const box = h('input', { type: 'checkbox', checked: !!c.altIds?.includes(x.id) });
+            box.addEventListener('change', () => {
+              const ids = new Set(c.altIds ?? []);
+              if (box.checked) ids.add(x.id);
+              else ids.delete(x.id);
+              c.altIds = [...ids];
+            });
+            return h('label', { class: 'check-item' }, box, h('span', {}, x.fund, x.account ? h('span', { class: 'muted small' }, ` · ${x.account}`) : ''));
+          })
+        : [h('span', { class: 'muted small' }, 'None saved yet. Add them under Investments → Alternatives → My alternatives (or import an iCapital export), or add alternatives directly to the portfolio.')]),
+    );
+    const sectionBox = h(
+      'div',
+      { class: 'check-list' },
+      ...REPORT_SECTIONS.map(([key, label]) => {
+        const box = h('input', { type: 'checkbox', checked: c.sections?.[key] !== false });
+        box.addEventListener('change', () => (c.sections = { ...c.sections, [key]: box.checked }));
+        return h('label', { class: 'check-item' }, box, h('span', {}, label));
+      }),
+    );
     const history = c.reports?.length ? h('p', { class: 'muted small' }, `Reports generated: ${c.reports.slice(-5).reverse().map((r) => `${r.generated} (as of ${r.asOf})`).join(', ')}`) : '';
     editor.replaceChildren(
       h('div', { class: 'panel-head' }, h('h3', {}, 'Client')),
@@ -152,7 +202,10 @@ export function createClientsPage() {
         field('Initial investment ($)', initial),
         field('Advisory fee (% a year)', fee, 'Returns are shown net of this fee'),
         field('Benchmark (optional)', text('benchmark', 'Uses the portfolio’s benchmark')),
+        field('Net additions since start ($)', additions, 'Deposits minus withdrawals, for the change-in-value table'),
+        field('Investment objective', objective),
       ),
+      h('div', { class: 'two-col', style: 'margin-top:12px' }, h('div', { class: 'field' }, h('span', { class: 'muted small' }, 'Alternative investments to include'), altBox), h('div', { class: 'field' }, h('span', { class: 'muted small' }, 'Report sections'), sectionBox)),
       h('label', { class: 'field', style: 'margin-top:12px' }, h('span', { class: 'muted small' }, 'Commentary'), commentary),
       history,
       h(
@@ -187,12 +240,50 @@ export function createClientsPage() {
   async function build(c: Client) {
     const portfolio = portfolios.find((p) => p.id === c.portfolioId);
     if (!portfolio) throw new Error(`${c.name}: choose a portfolio for this client (its old portfolio may have been deleted).`);
-    const analysis = await engineRequest<Analysis>(
-      'portfolio.analyze',
-      { holdings: holdingsPayload(portfolio), benchmark: c.benchmark?.trim() || portfolio.benchmark, rebalance: portfolio.rebalance, since: c.inception || undefined, fee: c.fee },
-      120000,
+    const on = (k: keyof NonNullable<Client['sections']>) => c.sections?.[k] !== false;
+    // Live prices (for share counts and dividend yields); reports still build without them.
+    let prices: Record<string, PriceInfo> = {};
+    const symbols = portfolio.holdings.filter((x) => !isCashOrAlt(x) && x.symbol.trim()).map((x) => x.symbol);
+    if (symbols.length) prices = await fetchPrices(symbols).catch(() => ({}));
+    const alternatives = altHoldings.filter((x) => c.altIds?.includes(x.id));
+    const [analysis, market, fundFacts] = await Promise.all([
+      engineRequest<Analysis>(
+        'portfolio.analyze',
+        { holdings: holdingsPayload(portfolio, priceMap(prices)), benchmark: c.benchmark?.trim() || portfolio.benchmark, rebalance: portfolio.rebalance, since: c.inception || undefined, fee: c.fee },
+        120000,
+      ),
+      on('market') ? loadMarket() : Promise.resolve([] as MarketRow[]),
+      on('alternatives') ? loadFundFacts(portfolio, alternatives) : Promise.resolve({}),
+    ]);
+    return { doc: buildReport({ client: c, portfolio, analysis, branding, prices, alternatives, fundFacts, market }), analysis };
+  }
+
+  async function loadMarket(): Promise<MarketRow[]> {
+    try {
+      const { rows } = await engineRequest<{ rows: { symbol: string; m3?: number; ytd?: number; y1?: number }[] }>('invest.board', { symbols: MARKET.map(([s]) => s) }, 60000);
+      return MARKET.map(([symbol, label]) => ({ symbol, label, ...rows.find((r) => r.symbol === symbol) }));
+    } catch {
+      return [];
+    }
+  }
+
+  /** NAV per share, total return and distributions from SEC filings for the known funds in the report. */
+  async function loadFundFacts(portfolio: Portfolio, alternatives: AltHolding[]): Promise<Record<string, FundFacts>> {
+    const names = new Set<string>();
+    for (const x of portfolio.holdings) if (x.kind === 'alt') names.add(PRIVATE_FUNDS.find((f) => f.id === x.fundId)?.name ?? x.name ?? x.symbol);
+    for (const x of alternatives) names.add(PRIVATE_FUNDS.find((f) => f.short.toLowerCase() === x.fund.toLowerCase())?.name ?? x.fund);
+    const out: Record<string, FundFacts> = {};
+    await Promise.all(
+      [...names].filter(Boolean).map(async (name) => {
+        try {
+          const d = await engineRequest<{ facts?: FundFacts | null }>('alts.fund', { name }, 45000);
+          if (d.facts) out[name.toLowerCase()] = d.facts;
+        } catch {
+          // Not every private fund files reports with the SEC; the report just leaves that row out.
+        }
+      }),
     );
-    return { doc: buildReport({ client: c, portfolio, analysis, branding }), analysis };
+    return out;
   }
 
   async function record(c: Client, asOf: string) {

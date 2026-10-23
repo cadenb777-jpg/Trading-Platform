@@ -652,6 +652,30 @@ export const MORE_INDICATORS: IndicatorDef[] = [
     },
   },
   {
+    id: 'wad',
+    name: 'Williams Accumulation/Distribution',
+    shortName: 'WAD',
+    category: 'Volume',
+    description: 'Larry Williams’ buying vs selling pressure (a cash-flow style line): adds the distance from the true low on up closes and subtracts the distance from the true high on down closes. Divergences from price warn of turns.',
+    placement: 'separate',
+    inputs: [length(20)],
+    plots: [
+      { key: 'wad', title: 'WAD', type: 'line', color: '#26c6da', lineWidth: 2 },
+      { key: 'avg', title: 'Average', type: 'line', color: '#ff9800', lineWidth: 1 },
+    ],
+    compute: (bars, p) => {
+      let total = 0;
+      const wad = bars.map((b, i) => {
+        if (i === 0) return 0;
+        const prev = bars[i - 1].close;
+        if (b.close > prev) total += b.close - Math.min(b.low, prev);
+        else if (b.close < prev) total += b.close - Math.max(b.high, prev);
+        return total;
+      });
+      return { wad, avg: sma(wad, num(p, 'length')) };
+    },
+  },
+  {
     id: 'stdev',
     name: 'Standard Deviation',
     shortName: 'StdDev',

@@ -3724,3 +3724,104 @@ body.ai-window-body #app {
 .inv-out {
   margin-top: 14px;
 }
+
+/* ---------- Portfolio holdings (shares / dollars / cash / alternatives) ---------- */
+
+.holdings-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.holding-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.holding-tag {
+  font-size: 10.5px;
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+.holding-tag.cash {
+  background: #26a69a26;
+  color: #7fd6cc;
+}
+
+.holding-tag.alt {
+  background: var(--accent-soft);
+  color: #9fb8ff;
+}
+
+.holdings-table td.x {
+  white-space: nowrap;
+}
+
+/* ---------- Backtest rule builder ---------- */
+
+.rules-grid {
+  margin-top: 8px;
+}
+
+.rule-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel-2);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.rule-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rule-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.rule-row select.input {
+  max-width: 230px;
+}
+
+.rule-num {
+  width: 90px;
+}
+
+.heat-table td {
+  text-align: center;
+}
+
+.heat-table td.label {
+  text-align: left;
+}
+
+.check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--panel-2);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.settings-toggle {
+  align-self: flex-start;
+}

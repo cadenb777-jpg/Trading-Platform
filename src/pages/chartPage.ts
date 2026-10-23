@@ -97,6 +97,7 @@ export function createChartPage() {
       alertBtn,
       extBtn,
       fitBtn,
+      h('button', { class: 'btn fit-btn', title: 'Backtest this chart: a strategy from its symbol, timeframe and indicators', 'aria-label': 'Backtest this chart', onclick: () => window.dispatchEvent(new Event('tp:backtest-chart')) }, icon('backtest', 18)),
       h('span', { class: 'spacer' }),
       priceEl,
       statusEl,

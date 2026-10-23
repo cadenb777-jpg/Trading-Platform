@@ -15,7 +15,34 @@ export interface Client {
   benchmark?: string;
   commentary?: string;
   reports?: { generated: string; asOf: string }[];
+  /** Deposits minus withdrawals since the start date, for the change-in-value table. */
+  netAdditions?: number;
+  /** Investment objective shown in the summary, e.g. "Growth". */
+  objective?: string;
+  /** The client's alternatives from Investments > Alternatives > My alternatives (ids). */
+  altIds?: string[];
+  /** Which report sections to include (all on by default). */
+  sections?: Partial<Record<ReportSection, boolean>>;
 }
+
+export type ReportSection = 'summary' | 'market' | 'performance' | 'risk' | 'allocation' | 'holdings' | 'income' | 'alternatives' | 'commentary';
+
+export const REPORT_SECTIONS: [ReportSection, string][] = [
+  ['summary', 'Executive summary & change in value'],
+  ['market', 'Market overview'],
+  ['performance', 'Performance & growth'],
+  ['risk', 'Returns, risk & stress tests'],
+  ['allocation', 'Asset allocation & liquidity'],
+  ['holdings', 'Holdings detail'],
+  ['income', 'Projected income'],
+  ['alternatives', 'Alternative investments'],
+  ['commentary', 'Commentary'],
+];
+
+export const OBJECTIVES = ['Capital preservation', 'Income', 'Balanced', 'Growth', 'Aggressive growth'];
+
+export const ALT_DISCLOSURE =
+  'Alternative investments (for example non-traded REITs, BDCs, interval funds and private funds) are illiquid or semi-liquid, may limit or suspend redemptions, and are valued at the most recent net asset value reported by the sponsor, which may be as of a prior date and is not a market price. Their returns in the performance figures are modelled with listed proxies named in this report; actual results differ. TVPI and DPI are based on the commitments, contributions, distributions and values recorded for this report.';
 
 export interface Branding {
   id?: string;

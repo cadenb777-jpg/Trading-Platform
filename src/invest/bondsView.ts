@@ -3,7 +3,7 @@
  * lookup (Schwab), a bond calculator (price, yield, duration, tax-equivalent yield) and a Treasury ladder.
  */
 import { engineRequest } from '../data/schwab';
-import { dataTable, money, numberField, pct, statCards } from '../ui/charts';
+import { dataTable, money, numberField, pct, statCards, pctU } from '../ui/charts';
 import { h } from '../ui/dom';
 import { sparkline } from '../ui/sparkline';
 import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
@@ -220,7 +220,7 @@ export function createBondsView(ctx: InvestContext) {
         { label: 'Price (per $100)', value: r.price ? r.price.toFixed(3) : '—', hint: 'From Schwab' },
         { label: 'Coupon', value: r.coupon != null ? `${r.coupon.toFixed(3)}%` : '—' },
         { label: 'Matures', value: r.maturity ?? '—', hint: years != null ? `${years.toFixed(1)} years` : '' },
-        { label: 'Yield to maturity', value: ytm != null ? pct(ytm, 3).replace('+', '') : '—', hint: 'Calculated from the price' },
+        { label: 'Yield to maturity', value: ytm != null ? pctU(ytm, 3) : '—', hint: 'Calculated from the price' },
         { label: 'Modified duration', value: a ? a.modifiedDuration.toFixed(2) : '—', hint: a ? `Price moves about ${a.modifiedDuration.toFixed(1)}% for each 1% change in rates` : '' },
       ]),
       r.auctions.length
@@ -258,8 +258,8 @@ export function createBondsView(ctx: InvestContext) {
       const a = analyze(bond, y);
       out.replaceChildren(
         statCards([
-          { label: calc.mode === 'price' ? 'Yield to maturity' : 'Price (per $100)', value: calc.mode === 'price' ? pct(a.yieldToMaturity, 3).replace('+', '') : a.cleanPrice.toFixed(3), hint: calc.mode === 'price' ? 'Your yearly return if held to maturity' : 'Clean price (without accrued interest)' },
-          { label: 'Current yield', value: a.currentYield != null ? pct(a.currentYield, 3).replace('+', '') : '—', hint: 'Coupon ÷ price' },
+          { label: calc.mode === 'price' ? 'Yield to maturity' : 'Price (per $100)', value: calc.mode === 'price' ? pctU(a.yieldToMaturity, 3) : a.cleanPrice.toFixed(3), hint: calc.mode === 'price' ? 'Your yearly return if held to maturity' : 'Clean price (without accrued interest)' },
+          { label: 'Current yield', value: a.currentYield != null ? pctU(a.currentYield, 3) : '—', hint: 'Coupon ÷ price' },
           { label: 'Accrued interest', value: a.accrued.toFixed(3), hint: 'Added to the price when you buy between coupon dates' },
           { label: 'Macaulay duration', value: `${a.macaulayDuration.toFixed(2)} yrs`, hint: 'Average time until you get your money back' },
           { label: 'Modified duration', value: a.modifiedDuration.toFixed(2), hint: '% price change for a 1% change in rates' },
@@ -274,12 +274,12 @@ export function createBondsView(ctx: InvestContext) {
           moves.map((dy) => {
             const p = priceFromYield(bond, a.yieldToMaturity + dy);
             const change = p / a.cleanPrice - 1;
-            return [{ v: `${dy > 0 ? '+' : ''}${(dy * 100).toFixed(1)}%`, cls: 'label' }, pct(a.yieldToMaturity + dy, 2).replace('+', ''), p.toFixed(2), { v: pct(change), cls: change >= 0 ? 'up' : 'down' }, pct(priceChangeEstimate(a, dy))];
+            return [{ v: `${dy > 0 ? '+' : ''}${(dy * 100).toFixed(1)}%`, cls: 'label' }, pctU(a.yieldToMaturity + dy, 2), p.toFixed(2), { v: pct(change), cls: change >= 0 ? 'up' : 'down' }, pct(priceChangeEstimate(a, dy))];
           }),
         ),
       );
       const t = taxEquivalentYield(calc.muni, calc.federal, calc.state);
-      tey.replaceChildren(statCards([{ label: 'Tax-equivalent yield', value: pct(t, 2).replace('+', ''), hint: `A taxable bond would need to pay this to match a ${pct(calc.muni, 2).replace('+', '')} tax-free muni` }]));
+      tey.replaceChildren(statCards([{ label: 'Tax-equivalent yield', value: pctU(t, 2), hint: `A taxable bond would need to pay this to match a ${pctU(calc.muni, 2)} tax-free muni` }]));
     };
     const field = (label: string, value: number, set: (v: number) => void, opts: { percent?: boolean; step?: number; hint?: string } = {}) => numberField(label, value, (v) => (set(v), update()), opts);
     const freq = h('select', { class: 'input' }, ...[['2', 'Twice a year (most US bonds)'], ['1', 'Once a year'], ['4', 'Quarterly'], ['12', 'Monthly'], ['0', 'Zero-coupon']].map(([v, l]) => h('option', { value: v, selected: +v === calc.frequency }, l)));
@@ -341,10 +341,10 @@ export function createBondsView(ctx: InvestContext) {
       out.replaceChildren(
         statCards([
           { label: 'Yearly interest', value: money(income), hint: 'Before tax, at today\'s Treasury yields' },
-          { label: 'Average yield', value: pct(plan.amount ? income / plan.amount : null, 2).replace('+', '') },
+          { label: 'Average yield', value: pctU(plan.amount ? income / plan.amount : null, 2) },
           { label: 'Rungs', value: String(rungs.length), hint: 'One bond maturing each year' },
         ]),
-        dataTable(['Matures', 'Amount', 'Treasury yield', 'Yearly interest'], rungs.map((r) => [{ v: `${year + r.year} (in ${r.year} yr${r.year > 1 ? 's' : ''})`, cls: 'label' }, money(r.amount), pct(r.yield, 2).replace('+', ''), money(r.income)])),
+        dataTable(['Matures', 'Amount', 'Treasury yield', 'Yearly interest'], rungs.map((r) => [{ v: `${year + r.year} (in ${r.year} yr${r.year > 1 ? 's' : ''})`, cls: 'label' }, money(r.amount), pctU(r.yield, 2), money(r.income)])),
         h('p', { class: 'muted small' }, 'As each bond matures, reinvest it at the long end to keep the ladder going. Yields are interpolated from today\'s Treasury curve; buy the actual Treasuries (or CDs and munis) at Schwab or TreasuryDirect.'),
       );
     };

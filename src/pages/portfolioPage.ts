@@ -1,11 +1,39 @@
 /** Portfolios: build a portfolio, see its long-run performance and risk, and optimise its weights. */
 import { engineRequest } from '../data/schwab';
 import { deleteDoc, listDocs, saveDoc } from '../data/store';
-import { ASSET_CLASSES, PERIOD_LABELS, TEMPLATES, holdingsPayload, type Analysis, type AssetClass, type Optimisation, type Portfolio, type Rebalance } from '../portfolio/types';
+import { PRIVATE_FUNDS, STRATEGIES, type Strategy } from '../invest/catalog';
+import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
+import {
+  ALT_CLASSES,
+  ASSET_CLASSES,
+  PERIOD_LABELS,
+  TEMPLATES,
+  analysisSymbol,
+  holdingsPayload,
+  isCashOrAlt,
+  positions,
+  pricedSymbols,
+  proxyNotes,
+  type Analysis,
+  type AssetClass,
+  type EntryMode,
+  type Holding,
+  type Optimisation,
+  type Portfolio,
+  type Rebalance,
+} from '../portfolio/types';
 import { createLineChart, dataTable, money, pageFrame, pct, pctU, scatterChart, statCards } from '../ui/charts';
-import { h, toast } from '../ui/dom';
+import { h, openModal, toast } from '../ui/dom';
 
-const blank = (): Portfolio => ({ name: 'New portfolio', benchmark: 'SPY', rebalance: 'quarterly', holdings: [{ symbol: '', weight: 100, assetClass: 'US stocks' }] });
+const STRATEGY_CLASS: Record<Strategy, AssetClass> = {
+  'Private credit': 'Private credit',
+  'Real estate': 'Private real estate',
+  'Private equity': 'Private equity',
+  Infrastructure: 'Infrastructure',
+  'Venture & growth': 'Private equity',
+};
+
+const blank = (): Portfolio => ({ name: 'New portfolio', benchmark: 'SPY', rebalance: 'quarterly', mode: 'weight', holdings: [{ symbol: '', weight: 100, assetClass: 'US stocks', kind: 'security' }] });
 const ratio = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(2));
 const tone = (v: number | null | undefined) => (v == null ? '' : v >= 0 ? 'up' : 'down');
 
@@ -45,34 +73,108 @@ export function createPortfolioPage() {
     results.replaceChildren();
   }
 
+  let prices: Record<string, PriceInfo> = {};
+
+  async function loadPrices(p: Portfolio) {
+    const syms = pricedSymbols(p);
+    if (!syms.length) return;
+    try {
+      prices = { ...prices, ...(await fetchPrices(syms)) };
+    } catch (err) {
+      toast(`Live prices unavailable: ${(err as Error).message}`);
+    }
+  }
+
   function renderEditor() {
     const p = current;
+    const mode: EntryMode = p.mode ?? 'weight';
     const totalEl = h('span', { class: 'weight-total' });
     const updateTotal = () => {
-      const total = p.holdings.reduce((a, x) => a + (x.weight || 0), 0);
-      totalEl.textContent = `Total ${total.toFixed(1)}%${Math.abs(total - 100) > 0.05 ? ' (weights are scaled to 100% when analysed)' : ''}`;
-      totalEl.classList.toggle('bad', Math.abs(total - 100) > 0.05);
+      if (mode === 'weight') {
+        const total = p.holdings.reduce((a, x) => a + (x.weight || 0), 0);
+        totalEl.textContent = `Total ${total.toFixed(1)}%${Math.abs(total - 100) > 0.05 ? ' (weights are scaled to 100% when analysed)' : ''}`;
+        totalEl.classList.toggle('bad', Math.abs(total - 100) > 0.05);
+      } else {
+        const { total } = positions(p, priceMap(prices));
+        const cost = p.holdings.reduce((s, x) => s + (x.cost ?? 0), 0);
+        totalEl.textContent = `Market value ${money(total)}${cost && total ? ` · unrealized ${total - cost >= 0 ? '+' : ''}${money(total - cost)}` : ''}`;
+        totalEl.classList.remove('bad');
+      }
     };
     const rows = h('tbody', {});
+    const num = (value: number | undefined, onInput: (v: number | undefined) => void, opts: { step?: number; label: string; placeholder?: string }) => {
+      const el = h('input', { class: 'input', type: 'number', step: opts.step ?? 1, value: value ?? '', placeholder: opts.placeholder ?? '', 'aria-label': opts.label });
+      el.addEventListener('input', () => {
+        onInput(el.value === '' ? undefined : parseFloat(el.value));
+        updateTotal();
+        refreshDerived();
+      });
+      return el;
+    };
+    const derived: { row: Holding; value: HTMLElement; weight: HTMLElement; price: HTMLElement }[] = [];
+    const refreshDerived = () => {
+      const pos = positions(p, priceMap(prices));
+      for (const d of derived) {
+        const r = pos.rows.find((x) => x.holding === d.row);
+        d.value.textContent = r?.value != null ? money(r.value) : '—';
+        d.weight.textContent = r ? pctU(r.weight, 1) : '—';
+        const pr = prices[d.row.symbol.trim().toUpperCase()]?.price;
+        d.price.textContent = isCashOrAlt(d.row) ? '' : pr != null ? pr.toFixed(2) : '—';
+      }
+    };
     const renderRows = () => {
+      derived.length = 0;
       rows.replaceChildren(
         ...p.holdings.map((x, i) => {
-          const sym = h('input', { class: 'input', value: x.symbol, placeholder: 'e.g. VTI', spellcheck: false, 'aria-label': 'Symbol' });
+          const special = isCashOrAlt(x);
+          const sym = h('input', { class: 'input', value: x.symbol, placeholder: special ? (x.kind === 'cash' ? 'CASH' : 'e.g. BCRED') : 'e.g. VTI', spellcheck: false, 'aria-label': 'Symbol' });
           sym.addEventListener('input', () => (x.symbol = sym.value.toUpperCase()));
-          const w = h('input', { class: 'input', type: 'number', step: 0.5, value: x.weight, 'aria-label': 'Weight %' });
-          w.addEventListener('input', () => ((x.weight = parseFloat(w.value) || 0), updateTotal()));
+          sym.addEventListener('change', () => mode === 'shares' && loadPrices(p).then(refreshDerived).then(updateTotal));
           const cls = h('select', { class: 'input', 'aria-label': 'Asset class' }, ...ASSET_CLASSES.map((c) => h('option', { value: c, selected: c === x.assetClass }, c)));
           cls.addEventListener('change', () => (x.assetClass = cls.value as AssetClass));
+          const value = h('span', { class: 'muted' });
+          const weight = h('span', { class: 'muted' });
+          const price = h('span', { class: 'muted' });
+          derived.push({ row: x, value, weight, price });
+          const label = h(
+            'td',
+            {},
+            h('div', { class: 'holding-cell' }, sym, special ? h('span', { class: `holding-tag ${x.kind}` }, x.kind === 'cash' ? 'Cash' : 'Alt') : null),
+            x.name ? h('div', { class: 'muted small' }, x.name) : null,
+          );
+          const cells: (HTMLElement | null)[] =
+            mode === 'weight'
+              ? [h('td', { class: 'w' }, num(x.weight, (v) => (x.weight = v ?? 0), { step: 0.5, label: 'Weight %' }))]
+              : mode === 'shares' && !special
+                ? [
+                    h('td', { class: 'w' }, num(x.shares, (v) => (x.shares = v), { step: 1, label: 'Shares' })),
+                    h('td', { class: 'num' }, price),
+                    h('td', { class: 'num' }, value),
+                    h('td', { class: 'w' }, num(x.cost, (v) => (x.cost = v), { step: 100, label: 'Cost basis $', placeholder: 'optional' })),
+                    h('td', { class: 'num' }, weight),
+                  ]
+                : [
+                    h('td', { class: 'w' }, num(x.amount, (v) => (x.amount = v), { step: 100, label: 'Amount $' })),
+                    ...(mode === 'shares' ? [h('td', { class: 'num' }, price), h('td', { class: 'num' }, value)] : []),
+                    h('td', { class: 'w' }, num(x.cost, (v) => (x.cost = v), { step: 100, label: 'Cost basis $', placeholder: 'optional' })),
+                    h('td', { class: 'num' }, weight),
+                  ];
           return h(
             'tr',
             {},
-            h('td', {}, sym),
-            h('td', { class: 'w' }, w),
+            label,
+            ...cells,
             h('td', {}, cls),
-            h('td', { class: 'x' }, h('button', { class: 'icon-btn', title: 'Remove', 'aria-label': 'Remove holding', onclick: () => (p.holdings.splice(i, 1), renderRows(), updateTotal()) }, '✕')),
+            h(
+              'td',
+              { class: 'x' },
+              special ? h('button', { class: 'icon-btn', title: 'Details', 'aria-label': 'Details', onclick: () => holdingDetails(x, () => (renderRows(), updateTotal())) }, '⋯') : null,
+              h('button', { class: 'icon-btn', title: 'Remove', 'aria-label': 'Remove holding', onclick: () => (p.holdings.splice(i, 1), renderRows(), updateTotal()) }, '✕'),
+            ),
           );
         }),
       );
+      refreshDerived();
     };
     renderRows();
     updateTotal();
@@ -84,8 +186,21 @@ export function createPortfolioPage() {
     reb.addEventListener('change', () => (p.rebalance = reb.value as Rebalance));
     const since = h('input', { class: 'input', type: 'date', value: p.inception ?? '', 'aria-label': 'Start date', title: 'Optional: only measure from this date' });
     since.addEventListener('change', () => (p.inception = since.value || undefined));
+    const modes: [EntryMode, string][] = [
+      ['weight', 'Percent'],
+      ['shares', 'Shares'],
+      ['dollars', 'Dollars'],
+    ];
+    const modeSeg = h('div', { class: 'segmented' }, ...modes.map(([m, l]) => h('button', { class: m === mode ? 'active' : '', onclick: () => switchMode(m) }, l)));
+    const head =
+      mode === 'weight'
+        ? ['Holding', 'Weight %', 'Asset class', '']
+        : mode === 'shares'
+          ? ['Holding', 'Shares / $', 'Price', 'Value', 'Cost basis $', 'Weight', 'Asset class', '']
+          : ['Holding', 'Amount $', 'Cost basis $', 'Weight', 'Asset class', ''];
+    const notes = proxyNotes(p);
     editor.replaceChildren(
-      h('div', { class: 'panel-head' }, h('h3', {}, 'Portfolio'), h('span', { class: 'spacer' }), totalEl),
+      h('div', { class: 'panel-head' }, h('h3', {}, 'Portfolio'), h('span', { class: 'muted small' }, 'Enter holdings as'), modeSeg, h('span', { class: 'spacer' }), totalEl),
       h(
         'div',
         { class: 'field-grid' },
@@ -94,17 +209,139 @@ export function createPortfolioPage() {
         h('label', { class: 'field' }, h('span', { class: 'muted small' }, 'Rebalancing'), reb),
         h('label', { class: 'field' }, h('span', { class: 'muted small' }, 'Measure from (optional)'), since),
       ),
-      h('table', { class: 'holdings-table' }, h('thead', {}, h('tr', {}, h('th', {}, 'Symbol'), h('th', {}, 'Weight %'), h('th', {}, 'Asset class'), h('th', {}))), rows),
+      h('table', { class: `holdings-table mode-${mode}` }, h('thead', {}, h('tr', {}, ...head.map((t) => h('th', {}, t)))), rows),
+      notes.length ? h('p', { class: 'muted small' }, `For the performance maths, cash and alternatives use listed stand-ins (they have no daily prices): ${notes.join('; ')}. Change one with ⋯.`) : '',
       h(
         'div',
         { class: 'ap-controls', style: 'margin-top:10px' },
-        h('button', { class: 'btn', onclick: () => (p.holdings.push({ symbol: '', weight: 0, assetClass: 'US stocks' }), renderRows()) }, '+ Add holding'),
+        h('button', { class: 'btn', onclick: () => (p.holdings.push({ symbol: '', weight: 0, assetClass: 'US stocks', kind: 'security' }), renderRows()) }, '+ Add holding'),
+        h('button', { class: 'btn', onclick: () => (p.holdings.push({ symbol: 'CASH', name: 'Cash / money market', weight: 0, assetClass: 'Cash', kind: 'cash', yield: 0.04 }), renderRows(), updateTotal()) }, '+ Add cash'),
+        h('button', { class: 'btn', onclick: () => addAlternative(() => (renderRows(), updateTotal(), renderEditor())) }, '+ Add alternative'),
+        mode === 'shares' ? h('button', { class: 'btn', onclick: () => loadPrices(p).then(() => (refreshDerived(), updateTotal())) }, 'Refresh prices') : null,
         h('span', { class: 'spacer' }),
         p.id ? h('button', { class: 'btn danger', onclick: remove }, 'Delete') : null,
         h('button', { class: 'btn', onclick: save }, 'Save'),
         h('button', { class: 'btn primary', onclick: analyse }, 'Analyse'),
       ),
     );
+    if (mode === 'shares' && pricedSymbols(p).some((s) => !prices[s])) loadPrices(p).then(() => (refreshDerived(), updateTotal()));
+  }
+
+  /** Switches between percent, shares and dollars, converting the numbers already entered. */
+  async function switchMode(next: EntryMode) {
+    const p = current;
+    const from = p.mode ?? 'weight';
+    if (from === next) return;
+    if (next === 'shares' || from === 'shares') await loadPrices(p);
+    const pm = priceMap(prices);
+    const pos = positions(p, pm);
+    const total = pos.total ?? 100000;
+    for (const r of pos.rows) {
+      const x = r.holding;
+      const value = r.value ?? r.weight * total;
+      if (next === 'weight') x.weight = +(r.weight * 100).toFixed(2);
+      else if (isCashOrAlt(x) || next === 'dollars') x.amount = Math.round(value);
+      else {
+        const price = pm[x.symbol.trim().toUpperCase()];
+        x.shares = price ? +(value / price).toFixed(3) : x.shares;
+      }
+    }
+    if (from === 'weight' && next !== 'weight') toast(`Converted using a ${money(total)} account. Type in the real amounts.`);
+    p.mode = next;
+    renderEditor();
+  }
+
+  /** Name, fund, stand-in, income and private-fund numbers for a cash or alternative holding. */
+  function holdingDetails(x: Holding, done: () => void) {
+    const text = (label: string, value: string | undefined, set: (v: string) => void, type = 'text', placeholder = '') => {
+      const el = h('input', { class: 'input', type, value: value ?? '', placeholder });
+      el.addEventListener('input', () => set(el.value));
+      return h('label', { class: 'field' }, h('span', { class: 'muted small' }, label), el);
+    };
+    const numF = (label: string, value: number | undefined, set: (v: number | undefined) => void, percent = false) =>
+      text(label, value == null ? '' : String(percent ? +(value * 100).toFixed(3) : value), (v) => set(v === '' ? undefined : percent ? parseFloat(v) / 100 : parseFloat(v)), 'number');
+    const body = h(
+      'div',
+      {},
+      h(
+        'div',
+        { class: 'field-grid' },
+        text('Label', x.symbol, (v) => (x.symbol = v.toUpperCase())),
+        text('Full name', x.name, (v) => (x.name = v)),
+        text('Stand-in ticker for analysis', x.proxy, (v) => (x.proxy = v.toUpperCase() || undefined), 'text', analysisSymbol({ ...x, proxy: undefined })),
+        numF(x.kind === 'cash' ? 'Interest rate (%)' : 'Distribution rate (%)', x.yield, (v) => (x.yield = v), true),
+        ...(x.kind === 'alt'
+          ? [
+              numF('Commitment ($)', x.commitment, (v) => (x.commitment = v)),
+              numF('Paid in / called ($)', x.contributed, (v) => (x.contributed = v)),
+              numF('Distributions received ($)', x.distributed, (v) => (x.distributed = v)),
+              text('Latest valuation date', x.valueDate, (v) => (x.valueDate = v || undefined), 'date'),
+            ]
+          : []),
+      ),
+      h('p', { class: 'muted small' }, 'The stand-in is a listed fund with daily prices that behaves similarly (e.g. BIZD for private credit, VNQ for real estate, BIL for cash). Reports show the real holding and note the stand-in.'),
+      h('div', { class: 'ap-controls' }, h('span', { class: 'spacer' }), h('button', { class: 'btn primary', onclick: () => (close(), done()) }, 'Done')),
+    );
+    const close = openModal(x.name || x.symbol || 'Holding details', body, { wide: true, onClose: done });
+  }
+
+  /** Adds a private/alternative fund: pick one from the directory or type your own. */
+  function addAlternative(done: () => void) {
+    const p = current;
+    const pick = h(
+      'select',
+      { class: 'input' },
+      h('option', { value: '' }, 'Other (type it below)'),
+      ...STRATEGIES.map((s) => h('optgroup', { label: s }, ...PRIVATE_FUNDS.filter((f) => f.strategy === s).map((f) => h('option', { value: f.id }, `${f.short} · ${f.name}`)))),
+    );
+    const own = h('input', { class: 'input', placeholder: 'Fund name, e.g. Acme Growth Fund III' });
+    const cls = h('select', { class: 'input' }, ...ALT_CLASSES.map((c) => h('option', { value: c }, c)));
+    const amount = h('input', { class: 'input', type: 'number', step: 1000, placeholder: 'Current value / NAV ($)' });
+    pick.addEventListener('change', () => {
+      const f = PRIVATE_FUNDS.find((x) => x.id === pick.value);
+      if (f) cls.value = STRATEGY_CLASS[f.strategy];
+    });
+    const body = h(
+      'div',
+      {},
+      h(
+        'div',
+        { class: 'field-grid' },
+        h('label', { class: 'field' }, h('span', { class: 'muted small' }, 'Fund'), pick),
+        h('label', { class: 'field' }, h('span', { class: 'muted small' }, 'Or your own'), own),
+        h('label', { class: 'field' }, h('span', { class: 'muted small' }, 'Asset class'), cls),
+        (p.mode ?? 'weight') === 'weight' ? null : h('label', { class: 'field' }, h('span', { class: 'muted small' }, 'Value ($)'), amount),
+      ),
+      h(
+        'div',
+        { class: 'ap-controls' },
+        h('span', { class: 'spacer' }),
+        h(
+          'button',
+          {
+            class: 'btn primary',
+            onclick: () => {
+              const f = PRIVATE_FUNDS.find((x) => x.id === pick.value);
+              const label = f?.short ?? own.value.trim();
+              if (!label) return toast('Pick a fund or type a name');
+              p.holdings.push({
+                symbol: label.toUpperCase().slice(0, 16),
+                name: f?.name ?? own.value.trim(),
+                fundId: f?.id,
+                kind: 'alt',
+                assetClass: cls.value as AssetClass,
+                weight: 0,
+                amount: amount.value ? parseFloat(amount.value) : undefined,
+              });
+              close();
+              done();
+            },
+          },
+          'Add',
+        ),
+      ),
+    );
+    const close = openModal('Add an alternative investment', body, { wide: true });
   }
 
   async function save() {
@@ -130,9 +367,10 @@ export function createPortfolioPage() {
   }
 
   async function analyse() {
-    const holdings = holdingsPayload(current);
+    if ((current.mode ?? 'weight') === 'shares') await loadPrices(current);
     results.replaceChildren(h('div', { class: 'muted pad' }, 'Crunching up to 20 years of daily prices…'));
     try {
+      const holdings = holdingsPayload(current, priceMap(prices));
       const a = await engineRequest<Analysis>('portfolio.analyze', { holdings, benchmark: current.benchmark, rebalance: current.rebalance, since: current.inception }, 120000);
       renderAnalysis(a);
     } catch (err) {
@@ -220,7 +458,7 @@ export function createPortfolioPage() {
                 ['1-day CVaR (95%)', pct(-s.cvar95), pct(-b.cvar95)],
                 ['Best month', pct(s.bestMonth, 1), pct(b.bestMonth, 1)],
                 ['Worst month', pct(s.worstMonth, 1), pct(b.worstMonth, 1)],
-                ['Positive months', pct(s.positiveMonths, 0).replace('+', ''), pct(b.positiveMonths, 0).replace('+', '')],
+                ['Positive months', pctU(s.positiveMonths, 0), pctU(b.positiveMonths, 0)],
               ] as string[][]
             ).map(([l, x, y]) => [{ v: l, cls: 'label' }, x, y]),
           ),
@@ -232,7 +470,7 @@ export function createPortfolioPage() {
           h('div', { class: 'panel-head' }, h('h3', {}, 'Holdings')),
           dataTable(
             ['Symbol', 'Weight', 'Share of risk', 'CAGR', 'Volatility'],
-            a.assets.map((x) => [h('b', {}, x.symbol), pct(x.weight, 1).replace('+', ''), { v: pct(x.riskContribution, 1).replace('+', ''), cls: x.riskContribution > x.weight * 1.3 ? 'down' : '' }, { v: pct(x.cagr, 1), cls: tone(x.cagr) }, pct(x.volatility, 1).replace('+', '')]),
+            a.assets.map((x) => [h('b', {}, x.symbol), pctU(x.weight, 1), { v: pctU(x.riskContribution, 1), cls: x.riskContribution > x.weight * 1.3 ? 'down' : '' }, { v: pct(x.cagr, 1), cls: tone(x.cagr) }, pctU(x.volatility, 1)]),
           ),
           a.symbols.length > 1
             ? h(
@@ -252,7 +490,7 @@ export function createPortfolioPage() {
         ? h(
             'section',
             { class: 'panel' },
-            h('div', { class: 'panel-head' }, h('h3', {}, `Monte Carlo: $10,000 over the next ${a.monteCarlo.years} years`), h('span', { class: 'muted small' }, `2,000 simulations from past monthly returns · ${pct(a.monteCarlo.lossChance, 0).replace('+', '')} chance of ending below $10,000`)),
+            h('div', { class: 'panel-head' }, h('h3', {}, `Monte Carlo: $10,000 over the next ${a.monteCarlo.years} years`), h('span', { class: 'muted small' }, `2,000 simulations from past monthly returns · ${pctU(a.monteCarlo.lossChance, 0)} chance of ending below $10,000`)),
             mcBox,
           )
         : '',
@@ -307,7 +545,7 @@ export function createPortfolioPage() {
       try {
         const r = await engineRequest<Optimisation>(
           'portfolio.optimize',
-          { holdings: holdingsPayload(current), method: method.value, minWeight: (parseFloat(minW.value) || 0) / 100, maxWeight: (parseFloat(maxW.value) || 100) / 100, years: Number(years.value), views: parsedViews },
+          { holdings: holdingsPayload(current, priceMap(prices)), method: method.value, minWeight: (parseFloat(minW.value) || 0) / 100, maxWeight: (parseFloat(maxW.value) || 100) / 100, years: Number(years.value), views: parsedViews },
           120000,
         );
         renderOptimisation(out, r);
@@ -356,7 +594,7 @@ export function createPortfolioPage() {
           {},
           dataTable(
             ['Symbol', 'Current', 'Optimised', 'Change'],
-            r.symbols.map((s, i) => [h('b', {}, s), pct(r.current[i], 1).replace('+', ''), pct(r.weights[i], 1).replace('+', ''), { v: pct(r.weights[i] - r.current[i], 1), cls: tone(r.weights[i] - r.current[i]) }]),
+            r.symbols.map((s, i) => [h('b', {}, s), pctU(r.current[i], 1), pctU(r.weights[i], 1), { v: pct(r.weights[i] - r.current[i], 1), cls: tone(r.weights[i] - r.current[i]) }]),
           ),
           h(
             'div',
@@ -367,7 +605,11 @@ export function createPortfolioPage() {
                 class: 'btn',
                 onclick: () => {
                   const bySymbol = new Map(r.symbols.map((s, i) => [s, r.weights[i]]));
-                  for (const x of current.holdings) x.weight = +(100 * (bySymbol.get(x.symbol.trim().toUpperCase()) ?? 0)).toFixed(1);
+                  // Holdings sharing a stand-in (e.g. two private credit funds) split its weight.
+                  const counts = new Map<string, number>();
+                  for (const x of current.holdings) counts.set(analysisSymbol(x), (counts.get(analysisSymbol(x)) ?? 0) + 1);
+                  for (const x of current.holdings) x.weight = +((100 * (bySymbol.get(analysisSymbol(x)) ?? 0)) / (counts.get(analysisSymbol(x)) ?? 1)).toFixed(1);
+                  current.mode = 'weight';
                   renderEditor();
                   toast('Weights applied. Press Analyse to see the history, and Save to keep them.');
                 },

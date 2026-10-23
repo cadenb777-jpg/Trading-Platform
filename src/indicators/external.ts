@@ -69,12 +69,14 @@ interface CotRow {
   specIndex: number | null;
   commIndex: number | null;
   specNet: number;
+  commNet: number;
+  smallNet: number;
 }
 
 /** COT for the futures market related to `symbol`. Reports are as of Tuesday and published Friday, so values count from then. */
 export async function loadCot(symbol: string): Promise<ExternalPoint[]> {
   const d = await engineRequest<{ rows: CotRow[]; market: string }>('flow.cot_for_symbol', { symbol: symbol.replace(/^\$/, '') }, 60000);
-  return d.rows.map((r) => ({ time: toTime(r.date, 3), values: { spec: r.specIndex ?? NaN, comm: r.commIndex ?? NaN, specNet: r.specNet } }));
+  return d.rows.map((r) => ({ time: toTime(r.date, 3), values: { spec: r.specIndex ?? NaN, comm: r.commIndex ?? NaN, specNet: r.specNet, commNet: r.commNet, smallNet: r.smallNet } }));
 }
 
 /** FINRA daily short-sale volume ratio (published after the close, so it applies from the next day). */

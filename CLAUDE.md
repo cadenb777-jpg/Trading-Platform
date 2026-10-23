@@ -42,6 +42,15 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   The private fund directory is src/invest/catalog.ts (names only; data is live from the SEC). Bond maths is
   src/invest/bonds.ts. The owner's own alternatives are store collection alt_holdings (iCapital has no public API:
   they import a CSV/Excel export, src/invest/holdings.ts).
+  Backtest (src/pages/backtestPage.ts, src/backtest/research.ts): "My chart's indicators" builds rules (operand
+  operator operand, ALL/ANY) from state.indicators via suggestRules(); the chart's Backtest button fires
+  `tp:backtest-chart`. Research tabs: Monte Carlo (trade bootstrap), random-walk test (shuffled daily moves, p-value),
+  parameter sweep (overrides keyed `uid.inputKey`), monthly returns, deep stats. Seeded RNG so results repeat.
+  Portfolios: Holding.kind security/cash/alt, Portfolio.mode weight/shares/dollars; positions()/holdingsPayload()
+  in src/portfolio/types.ts value holdings (live prices via src/portfolio/prices.ts) and map cash/alts to listed
+  stand-ins (PROXIES) for the maths. holdingsPayload throws when a shares-mode holding has no price.
+  Client reports (src/reports/report.ts): sections toggled by Client.sections; include linked alt_holdings
+  (Client.altIds), SEC fund facts (alts.fund) and a market overview (invest.board). Long tables page-break by chunks.
   Launcher: start files run `splash.py run`, which shows the start screen, runs pip with hidden output behind one
   0-100% bar and starts the helper with TP_SPLASH (seed) and TP_HANDOFF; the helper then continues the bar
   (splash.HelperScreen), logs only to the file and shows one live status line. Interactive steps (Schwab keys,

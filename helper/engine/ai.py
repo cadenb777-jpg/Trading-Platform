@@ -138,7 +138,7 @@ TOOLS = [
             'name': {'type': 'string'},
             'holdings': {'type': 'array', 'items': {'type': 'object', 'properties': {
                 'symbol': {'type': 'string'}, 'weight': {'type': 'number'},
-                'assetClass': {'type': 'string', 'enum': ['US stocks', 'International stocks', 'Bonds', 'Real estate', 'Commodities', 'Cash', 'Crypto', 'Other']},
+                'assetClass': {'type': 'string', 'enum': ['US stocks', 'International stocks', 'Bonds', 'Real estate', 'Commodities', 'Cash', 'Crypto', 'Private credit', 'Private real estate', 'Private equity', 'Infrastructure', 'Hedge funds', 'Other']},
             }, 'required': ['symbol', 'weight', 'assetClass']}},
             'benchmark': {'type': 'string', 'description': 'Default SPY'},
             'rebalance': {'type': 'string', 'enum': ['none', 'monthly', 'quarterly', 'yearly']},

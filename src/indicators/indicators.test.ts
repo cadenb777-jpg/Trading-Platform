@@ -61,7 +61,7 @@ describe('indicator library', () => {
     it(`${def.name} returns a full-length series for every plot`, () => {
       // Outside-data indicators get one dated point per 5 bars, like weekly COT or daily short volume.
       const external = def.external
-        ? bars.filter((_, i) => i % 5 === 0).map((b, i) => ({ time: b.time, values: { spec: 40 + (i % 30), comm: 60 - (i % 30), specNet: i, ratio: 45 + (i % 10) } }))
+        ? bars.filter((_, i) => i % 5 === 0).map((b, i) => ({ time: b.time, values: { spec: 40 + (i % 30), comm: 60 - (i % 30), specNet: i, commNet: 100 - (i % 17) * 3, smallNet: (i % 7) - 3, ratio: 45 + (i % 10) } }))
         : undefined;
       const out = def.compute(bars, defaultParams(def), external);
       for (const plot of def.plots) {

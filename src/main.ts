@@ -46,6 +46,14 @@ const openResearch = (symbol: string) => {
   ensurePage(entry).then((page) => (page as Page & { open?(symbol: string): void }).open?.(symbol));
 };
 
+/** The chart's Backtest button: open the backtester with the chart's symbol, timeframe and indicators. */
+window.addEventListener('tp:backtest-chart', () => {
+  const entry = pages.find((p) => p.route === 'backtest');
+  if (!entry) return;
+  location.hash = '#backtest';
+  ensurePage(entry).then((page) => (page as Page & { fromChart?(): void }).fromChart?.());
+});
+
 /**
  * Each page is built the first time it's opened (and its code downloaded then), so the platform starts
  * quickly instead of building all 13 pages at launch.
