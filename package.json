@@ -21,7 +21,7 @@
   },
   "homepage": "https://github.com/cadenb777-jpg/trading-platform#readme",
   "dependencies": {
-    "fflate": "^0.8.2",
+    "fflate": "^0.8.3",
     "lightweight-charts": "^5.2.1"
   },
   "devDependencies": {
