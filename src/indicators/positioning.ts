@@ -79,7 +79,7 @@ export const POSITIONING_INDICATORS: IndicatorDef[] = [
     inputs: [{ key: 'length', label: 'Average length (days)', type: 'number', default: 10, min: 2, max: 60 }],
     plots: [
       { key: 'ratio', title: 'Short %', type: 'line', color: '#ef5350', lineWidth: 1 },
-      { key: 'avg', title: 'Average', type: 'line', color: '#e1e4ea', lineWidth: 2 },
+      { key: 'avg', title: 'Average', type: 'line', color: '#8a8f9c', lineWidth: 2 },
     ],
     levels: [50],
     external: { load: loadShortVolume },

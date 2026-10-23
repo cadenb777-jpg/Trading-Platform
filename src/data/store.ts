@@ -1,7 +1,7 @@
-/** Saved documents (portfolios, clients, branding) live in the helper's database on your computer. */
+/** Saved documents (portfolios, alternatives) live in the helper's database on your computer. */
 import { engineRequest } from './schwab';
 
-export type Collection = 'portfolios' | 'clients' | 'branding' | 'alt_holdings';
+export type Collection = 'portfolios' | 'alt_holdings';
 
 export async function listDocs<T>(collection: Collection): Promise<(T & { id: string })[]> {
   return (await engineRequest<{ docs: (T & { id: string })[] }>('store.list', { collection })).docs;

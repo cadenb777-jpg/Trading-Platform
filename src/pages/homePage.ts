@@ -1,5 +1,5 @@
 /** The start screen: greeting, the three main US indexes, market news and the watchlist. */
-import { THEME } from '../chart/ChartView';
+import { CandlestickSeries, LineStyle, createChart, type IPriceLine, type UTCTimestamp } from 'lightweight-charts';
 import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
 import { HELPER_OUTDATED, helper, loadNews, schwab, type NewsItem, type NewsSection } from '../data/schwab';
 import { insightButton } from '../ai/insight';
@@ -7,11 +7,11 @@ import { createSetupsPanel } from '../home/setupsPanel';
 import { createUpcomingPanel } from './calendarPage';
 import { openNewsSummary } from '../ui/newsSummary';
 import { persist, state } from '../state';
-import type { Bar } from '../types';
+import { bucketStart, type Bar, type Timeframe } from '../types';
 import { formatPrice, h, timeAgo } from '../ui/dom';
 import { icon } from '../ui/icons';
 import { greeting, marketStatus } from '../ui/marketClock';
-import { sparkline } from '../ui/sparkline';
+import { THEME, chartThemeOptions, followTheme } from '../ui/theme';
 import { createWatchlist } from '../ui/watchlist';
 
 const INDEXES: { symbol: string; name: string }[] = [
@@ -23,70 +23,139 @@ const INDEXES: { symbol: string; name: string }[] = [
 const HELPER_GUIDE = 'https://github.com/cadenb777-jpg/Trading-Platform/blob/main/helper/README.md';
 const NEWS_REFRESH_MS = 2 * 60 * 1000;
 
-/** The bars from the most recent trading day, for the index card mini charts. */
-function lastSession(bars: Bar[]): Bar[] {
+/** The bars from the most recent trading day(s), for the index card charts. */
+function lastSessions(bars: Bar[], sessions: number): Bar[] {
   if (!bars.length) return [];
-  const day = (t: number) => new Date(t * 1000).toLocaleDateString('en-US', { timeZone: 'America/New_York' });
-  const lastDay = day(bars[bars.length - 1].time);
-  return bars.filter((b) => day(b.time) === lastDay);
+  const day = (t: number) => new Date(t * 1000).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const days = [...new Set(bars.map((b) => day(b.time)))].slice(-sessions);
+  return bars.filter((b) => days.includes(day(b.time)));
 }
+
+type CardRange = '1D' | '5D' | '1M';
+const CARD_RANGES: Record<CardRange, { timeframe: Timeframe; sessions: number; label: string }> = {
+  '1D': { timeframe: '10m', sessions: 1, label: '1 day, 10-minute candles' },
+  '5D': { timeframe: '30m', sessions: 5, label: '5 days, 30-minute candles' },
+  '1M': { timeframe: '1D', sessions: 22, label: '1 month, daily candles' },
+};
+
+const nyTime = (t: number, withDay: boolean) =>
+  new Date(t * 1000).toLocaleString('en-US', { timeZone: 'America/New_York', ...(withDay ? { month: 'short', day: 'numeric' } : {}), hour: 'numeric', minute: '2-digit' });
+const nyDate = (t: number) => new Date(t * 1000).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+const signed = (v: number, digits = 2) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 
 function indexCard(index: { symbol: string; name: string }, onOpen: () => void) {
   const price = h('div', { class: 'idx-price' }, '—');
   const change = h('div', { class: 'idx-change' }, '');
   const chartBox = h('div', { class: 'idx-chart' });
-  const rangeHigh = h('span', {}, '');
-  const rangeLow = h('span', {}, '');
+  const legend = h('div', { class: 'idx-legend' });
   const rangePrev = h('span', {}, '');
-  const axis = h('div', { class: 'idx-axis' }, rangeHigh, rangeLow);
+  let range: CardRange = '1D';
+  const rangeButtons = (Object.keys(CARD_RANGES) as CardRange[]).map((r) =>
+    h('button', { class: r === range ? 'active' : '', title: CARD_RANGES[r].label, onclick: (e: Event) => (e.stopPropagation(), setRange(r)) }, r),
+  );
   const card = h(
-    'button',
-    { class: 'idx-card', onclick: onOpen, title: `Open ${index.name} chart` },
+    'div',
+    { class: 'idx-card', role: 'button', tabindex: 0, title: `Open ${index.name} chart`, onclick: onOpen, onkeydown: (e: Event) => (e as KeyboardEvent).key === 'Enter' && onOpen() },
     h('div', { class: 'idx-head' }, h('span', { class: 'idx-name' }, index.name), h('span', { class: 'idx-sym' }, index.symbol.replace('$', ''))),
-    price,
-    change,
-    h('div', { class: 'idx-chart-wrap' }, chartBox, axis),
+    h('div', { class: 'idx-quote' }, h('div', {}, price, change), h('div', { class: 'segmented tiny idx-ranges' }, ...rangeButtons)),
+    h('div', { class: 'idx-chart-wrap' }, chartBox, legend),
     h('div', { class: 'idx-range' }, rangePrev),
   );
 
-  let closes: number[] = [];
+  // ----- Candles -----
+  const daily = () => CARD_RANGES[range].timeframe === '1D';
+  const chart = createChart(chartBox, {
+    autoSize: true,
+    ...chartThemeOptions(true),
+    layout: { ...chartThemeOptions(true).layout, fontFamily: "'Inter', sans-serif", fontSize: 11, attributionLogo: false },
+    grid: { vertLines: { visible: false }, horzLines: { color: THEME.grid } },
+    rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.08 } },
+    timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true, timeVisible: true, tickMarkFormatter: (t: number) => (daily() ? nyDate(t) : nyTime(t, range !== '1D').replace(/:00 /, ' ')) },
+    localization: { timeFormatter: (t: number) => (daily() ? nyDate(t) : nyTime(t, true)), priceFormatter: (v: number) => formatPrice(v) },
+    crosshair: { horzLine: { labelVisible: true }, vertLine: { labelVisible: false } },
+    handleScroll: false,
+    handleScale: false,
+  });
+  followTheme(chart, { transparent: true, hideVertGrid: true });
+  const candles = chart.addSeries(CandlestickSeries, { upColor: THEME.up, downColor: THEME.down, borderVisible: false, wickUpColor: THEME.up, wickDownColor: THEME.down, priceLineVisible: false, lastValueVisible: true });
+  let prevLine: IPriceLine | null = null;
+  let bars: Bar[] = [];
+
+  chart.subscribeCrosshairMove((param) => {
+    const bar = param.time != null ? (param.seriesData.get(candles) as { open: number; high: number; low: number; close: number } | undefined) : undefined;
+    if (!bar) return showLegend();
+    const t = param.time as number;
+    legend.replaceChildren(
+      h('span', { class: 'muted' }, daily() ? nyDate(t) : nyTime(t, range !== '1D')),
+      ` O ${formatPrice(bar.open)} H ${formatPrice(bar.high)} L ${formatPrice(bar.low)} C `,
+      h('b', { class: bar.close >= bar.open ? 'up' : 'down' }, formatPrice(bar.close)),
+    );
+  });
+  const showLegend = () => legend.replaceChildren(h('span', { class: 'muted' }, CARD_RANGES[range].label));
+
   let quote: Quote | undefined;
-  // Between sessions the quote's change is the latest session's move (see subscribeQuote), labelled as such.
   let usingLastSession = false;
-  const fixed = (q: Quote): Quote => ((usingLastSession = !!q.lastSession), q);
-  let raw: Quote | undefined;
   let drawTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** The bars with the live price folded into the newest candle (or a new one when a new period has started). */
+  const liveBars = () => {
+    if (!bars.length || quote?.last == null) return bars;
+    const last = bars[bars.length - 1];
+    const tf = CARD_RANGES[range].timeframe;
+    const start = bucketStart(Math.floor(Date.now() / 1000), tf);
+    const p = quote.last;
+    // Only extend while the market session the bars belong to is still going (no candles after the close).
+    if (start === last.time || (tf === '1D' && start <= last.time)) return [...bars.slice(0, -1), { ...last, close: p, high: Math.max(last.high, p), low: Math.min(last.low, p) }];
+    if (marketStatus(new Date()).phase === 'open' && start > last.time) return [...bars, { time: start, open: last.close, high: Math.max(last.close, p), low: Math.min(last.close, p), close: p, volume: 0 }];
+    return bars;
+  };
 
   const draw = () => {
     drawTimer = undefined;
-    const delta = quoteChange(quote);
-    const up = (delta?.change ?? 0) >= 0;
-    const values = quote?.last != null && closes.length ? [...closes.slice(0, -1), quote.last] : closes;
-    chartBox.replaceChildren(sparkline(values, quote?.prevClose ?? null, up ? THEME.up : THEME.down));
-    if (values.length) {
-      rangeHigh.textContent = formatPrice(Math.max(...values));
-      rangeLow.textContent = formatPrice(Math.min(...values));
-    }
-    rangePrev.textContent = quote?.prevClose ? `${usingLastSession ? 'At close · ' : ''}Prev close ${formatPrice(quote.prevClose)} · Day range ${values.length ? `${formatPrice(Math.min(...values))} – ${formatPrice(Math.max(...values))}` : '—'}` : '';
+    const data = liveBars();
+    candles.applyOptions({ upColor: THEME.up, downColor: THEME.down, wickUpColor: THEME.up, wickDownColor: THEME.down });
+    candles.setData(data.map((b) => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close })));
+    if (prevLine) candles.removePriceLine(prevLine);
+    prevLine = range === '1D' && quote?.prevClose ? candles.createPriceLine({ price: quote.prevClose, color: '#8a8f9c', lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: true, title: 'Prev close' }) : null;
+    chart.timeScale().fitContent();
+    const session = range === '1D' ? data : lastSessions(data, 1);
+    const hi = session.length ? Math.max(...session.map((b) => b.high)) : null;
+    const lo = session.length ? Math.min(...session.map((b) => b.low)) : null;
+    rangePrev.textContent = quote?.prevClose
+      ? `${usingLastSession ? 'At close · ' : ''}Prev close ${formatPrice(quote.prevClose)}${hi != null && lo != null && range === '1D' ? ` · Day range ${formatPrice(lo)} – ${formatPrice(hi)}` : ''}`
+      : '';
+    showLegend();
   };
 
-  const onQuote = (incoming: Quote) => {
-    raw = incoming;
-    const q = fixed(incoming);
+  function setRange(r: CardRange) {
+    range = r;
+    rangeButtons.forEach((b) => b.classList.toggle('active', b.textContent === r));
+    chart.applyOptions({ timeScale: { timeVisible: !daily() } });
+    loadCandles();
+  }
+
+  const onQuote = (q: Quote) => {
     quote = q;
+    usingLastSession = !!q.lastSession;
     const delta = quoteChange(q);
     price.textContent = formatPrice(q.last);
-    change.textContent = delta ? `${delta.change >= 0 ? '+' : ''}${formatPrice(delta.change)} (${delta.percent >= 0 ? '+' : ''}${delta.percent.toFixed(2)}%)` : '';
+    change.textContent = delta ? `${signed(delta.change)} (${signed(delta.percent)}%)` : '';
     card.classList.toggle('up', !!delta && delta.change >= 0);
     card.classList.toggle('down', !!delta && delta.change < 0);
     drawTimer ??= setTimeout(draw, 1000);
   };
 
-  const loadSparkline = async () => {
-    const [intraday] = await Promise.allSettled([schwab.loadHistory(index.symbol, '5m', new AbortController().signal)]);
-    // This can fail while the helper is starting; the card still shows the live price.
-    if (intraday.status === 'fulfilled') closes = lastSession(intraday.value).map((b) => b.close);
-    if (raw) onQuote(raw);
+  let loading = 0;
+  const loadCandles = async () => {
+    const id = ++loading;
+    const cfg = CARD_RANGES[range];
+    try {
+      const all = await schwab.loadHistory(index.symbol, cfg.timeframe, new AbortController().signal);
+      if (id !== loading) return;
+      bars = cfg.timeframe === '1D' ? all.slice(-cfg.sessions) : lastSessions(all, cfg.sessions);
+    } catch {
+      // The helper may still be starting; the card keeps showing the live price.
+    }
     draw();
   };
 
@@ -95,7 +164,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
     return quote?.last != null ? { index: index.name, last: quote.last, prevClose: quote.prevClose ?? null, changePercent: delta ? Number(delta.percent.toFixed(2)) : null } : null;
   };
 
-  return { card, onQuote, loadSparkline, snapshot };
+  return { card, onQuote, loadSparkline: loadCandles, snapshot };
 }
 
 export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCalendar: () => void) {

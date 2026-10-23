@@ -12,7 +12,7 @@ import { loadDrawings, newIndicatorInstance, onStateChange, persist, saveDrawing
 import { TIMEFRAME_SECONDS, applyTrade, type Bar, type Timeframe } from '../types';
 import { formatNumber, h, toast } from '../ui/dom';
 import { icon, type IconName } from '../ui/icons';
-import { openIndicatorPicker, openIndicatorSettings } from '../ui/indicatorDialogs';
+import { openIndicatorManager, openIndicatorSettings } from '../ui/indicatorDialogs';
 import { openIndicatorInfo } from '../ui/indicatorInfo';
 import { externalError } from '../indicators/external';
 import { createTimeframePicker } from '../ui/timeframePicker';
@@ -92,7 +92,7 @@ export function createChartPage() {
       symbolList,
       tfPicker.el,
       typeSelect,
-      h('button', { class: 'btn', onclick: () => openIndicatorPicker(addIndicator) }, h('span', { class: 'fx' }, 'ƒx'), ' Indicators'),
+      h('button', { class: 'btn', onclick: openManager }, h('span', { class: 'fx' }, 'ƒx'), ' Indicators'),
       profileBtn,
       alertBtn,
       extBtn,
@@ -225,12 +225,33 @@ export function createChartPage() {
 
   // ---------- Indicators ----------
 
+  let manager: { refresh: () => void } | null = null;
+  function openManager() {
+    const m = openIndicatorManager({
+      list: () => state.indicators,
+      label: (i) => indicatorLabel(getIndicator(i.defId)!, i),
+      add: addIndicator,
+      edit: editIndicator,
+      toggle: toggleIndicator,
+      remove: removeIndicator,
+      togglePlot,
+    });
+    manager = m;
+  }
+
+  /** After any indicator change: redraw the legend and the manager window if it's open. */
+  function indicatorsChanged() {
+    renderLegend();
+    if (manager && document.querySelector('.mgr')) manager.refresh();
+    else manager = null;
+  }
+
   function addIndicator(def: IndicatorDef) {
     const instance = newIndicatorInstance(def);
     state.indicators.push(instance);
     persist();
     chart.addIndicator(instance);
-    renderLegend();
+    indicatorsChanged();
   }
 
   function editIndicator(uid: string) {
@@ -245,10 +266,22 @@ export function createChartPage() {
         state.indicators = state.indicators.map((i) => (i.uid === uid ? updated : i));
         persist();
         chart.updateIndicator(updated);
-        renderLegend();
+        indicatorsChanged();
       },
       () => removeIndicator(uid),
     );
+  }
+
+  function togglePlot(uid: string, key: string) {
+    const instance = state.indicators.find((i) => i.uid === uid);
+    if (!instance) return;
+    const hidden = new Set(instance.hiddenPlots ?? []);
+    if (hidden.has(key)) hidden.delete(key);
+    else hidden.add(key);
+    instance.hiddenPlots = [...hidden];
+    persist();
+    chart.updateIndicator(instance);
+    indicatorsChanged();
   }
 
   function toggleIndicator(uid: string) {
@@ -257,55 +290,76 @@ export function createChartPage() {
     instance.visible = !instance.visible;
     persist();
     chart.updateIndicator(instance);
-    renderLegend();
+    indicatorsChanged();
   }
 
   function removeIndicator(uid: string) {
     state.indicators = state.indicators.filter((i) => i.uid !== uid);
     persist();
     chart.removeIndicator(uid);
-    renderLegend();
+    indicatorsChanged();
   }
 
   // ---------- Legend (top-left of the chart and of each indicator pane) ----------
 
   let hoverIndex: number | null = null;
+  // The legend is rebuilt only when its layout changes (indicators, visibility, panes). Live prices and the
+  // crosshair just update the numbers in place, so the buttons stay put under the mouse.
+  let legendLayout = '';
+  let legendValues: { uid: string; spans: HTMLElement[] }[] = [];
+  let ohlcValues: HTMLElement | null = null;
+
+  const legendBtn = (iconName: IconName, title: string, onclick: () => void, extra = '') =>
+    h('button', { class: `legend-btn${extra}`, title, 'aria-label': title, onclick: (e: Event) => (e.stopPropagation(), onclick()) }, icon(iconName, 16));
 
   function renderLegend() {
     const index = hoverIndex ?? chart.barCount - 1;
-    const bar = chart.barAt(index);
-    const prev = chart.barAt(index - 1);
+    const layout = JSON.stringify([
+      symbol(),
+      state.timeframe,
+      state.indicators.map((i) => [i.uid, i.visible, i.hiddenPlots ?? [], indicatorLabel(getIndicator(i.defId)!, i), chart.isSeparatePane(i.uid) ? chart.paneTop(i.uid) : -1, externalError(getIndicator(i.defId)!, symbol()) ?? '']),
+    ]);
+    if (layout !== legendLayout) buildLegend(layout);
+    updateLegendValues(index);
+  }
+
+  function buildLegend(layout: string) {
+    legendLayout = layout;
     legendEl.replaceChildren();
     chartWrap.querySelectorAll(':scope > .pane-legend').forEach((n) => n.remove());
-
-    const ohlc = h('div', { class: 'legend-row legend-title' }, h('b', {}, `${displaySymbol(symbol())} · ${state.timeframe} · ${provider().name}`));
-    if (bar) {
-      const color = bar.close >= bar.open ? THEME.up : THEME.down;
-      const change = prev ? ((bar.close - prev.close) / prev.close) * 100 : 0;
-      for (const [label, value] of [['O', bar.open], ['H', bar.high], ['L', bar.low], ['C', bar.close]] as const) {
-        ohlc.append(h('span', { class: 'kv' }, label, h('span', { style: `color:${color}` }, formatNumber(value))));
-      }
-      ohlc.append(h('span', { style: `color:${color}` }, `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`));
-    }
-    legendEl.append(ohlc);
-
+    ohlcValues = h('span', { class: 'legend-ohlc' });
+    legendEl.append(h('div', { class: 'legend-row legend-title' }, h('b', {}, `${displaySymbol(symbol())} · ${state.timeframe} · ${provider().name}`), ohlcValues));
+    legendValues = [];
     for (const instance of state.indicators) {
       const def = getIndicator(instance.defId)!;
+      const error = def.external && externalError(def, symbol());
+      const spans = chart.valuesAt(instance.uid, chart.barCount - 1).map((v) =>
+        h(
+          'button',
+          {
+            class: `legend-value${v.hidden ? ' off' : ''}`,
+            style: `--c:${v.color}`,
+            title: `${v.title}: click to ${v.hidden ? 'show' : 'hide'} this line`,
+            onclick: (e: Event) => (e.stopPropagation(), togglePlot(instance.uid, v.key)),
+          },
+          h('i', {}),
+          h('span', { class: 'legend-num' }),
+        ),
+      );
+      legendValues.push({ uid: instance.uid, spans });
       const row = h(
         'div',
         { class: `legend-row indicator${instance.visible ? '' : ' hidden-ind'}` },
-        h('span', { class: 'legend-name' }, indicatorLabel(def, instance)),
-        def.external && externalError(def, symbol()) ? h('span', { class: 'legend-error', title: externalError(def, symbol()) }, `unavailable: ${externalError(def, symbol())}`) : null,
-        ...chart
-          .valuesAt(instance.uid, index)
-          .map((v) => h('span', { class: 'legend-value', style: `color:${v.color}`, title: v.title }, formatNumber(v.value))),
+        h('button', { class: 'legend-name', title: 'Settings', onclick: () => editIndicator(instance.uid) }, indicatorLabel(def, instance)),
+        error ? h('span', { class: 'legend-error', title: error }, `unavailable: ${error}`) : null,
+        ...spans,
         h(
           'span',
           { class: 'legend-actions' },
-          h('button', { class: 'mini-btn', title: 'What is this and what is it saying?', onclick: () => showIndicatorInfo(instance.uid) }, 'ⓘ'),
-          h('button', { class: 'mini-btn', title: instance.visible ? 'Hide' : 'Show', onclick: () => toggleIndicator(instance.uid) }, instance.visible ? '👁' : '◌'),
-          h('button', { class: 'mini-btn', title: 'Settings', onclick: () => editIndicator(instance.uid) }, '⚙'),
-          h('button', { class: 'mini-btn', title: 'Remove', onclick: () => removeIndicator(instance.uid) }, '✕'),
+          legendBtn(instance.visible ? 'eye' : 'eyeOff', instance.visible ? 'Hide indicator' : 'Show indicator', () => toggleIndicator(instance.uid)),
+          legendBtn('gear', 'Settings: inputs, colours, lines', () => editIndicator(instance.uid)),
+          legendBtn('info', 'What is this and what is it saying?', () => showIndicatorInfo(instance.uid)),
+          legendBtn('trash', 'Remove from chart', () => removeIndicator(instance.uid), ' danger'),
         ),
       );
       if (chart.isSeparatePane(instance.uid)) {
@@ -315,6 +369,28 @@ export function createChartPage() {
       } else {
         legendEl.append(row);
       }
+    }
+  }
+
+  function updateLegendValues(index: number) {
+    const bar = chart.barAt(index);
+    const prev = chart.barAt(index - 1);
+    if (ohlcValues) {
+      ohlcValues.replaceChildren();
+      if (bar) {
+        const color = bar.close >= bar.open ? THEME.up : THEME.down;
+        const change = prev ? ((bar.close - prev.close) / prev.close) * 100 : 0;
+        for (const [label, value] of [['O', bar.open], ['H', bar.high], ['L', bar.low], ['C', bar.close]] as const) {
+          ohlcValues.append(h('span', { class: 'kv' }, label, h('span', { style: `color:${color}` }, formatNumber(value))));
+        }
+        ohlcValues.append(h('span', { style: `color:${color}` }, `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`));
+      }
+    }
+    for (const { uid, spans } of legendValues) {
+      chart.valuesAt(uid, index).forEach((v, i) => {
+        const num = spans[i]?.querySelector('.legend-num');
+        if (num) num.textContent = formatNumber(v.value);
+      });
     }
   }
 

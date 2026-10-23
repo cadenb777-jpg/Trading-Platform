@@ -5,6 +5,7 @@
  */
 import type { IPrimitivePaneView, ISeriesPrimitive, ISeriesPrimitiveAxisView, SeriesAttachedParameter, Time } from 'lightweight-charts';
 import type { ChartView } from './ChartView';
+import { THEME } from '../ui/theme';
 
 export type DrawingType = 'trend' | 'ray' | 'hline' | 'vline' | 'rect' | 'fib' | 'long' | 'short';
 export type Tool = DrawingType | 'cursor';
@@ -483,7 +484,7 @@ export class DrawingManager {
     ctx.fillRect(x1, Math.min(entry.y, target.y), width, Math.abs(target.y - entry.y));
     ctx.fillStyle = LOSS + '33';
     ctx.fillRect(x1, Math.min(entry.y, stop.y), width, Math.abs(stop.y - entry.y));
-    ctx.strokeStyle = '#d1d4dc';
+    ctx.strokeStyle = THEME.text;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(x1, entry.y);
@@ -513,7 +514,7 @@ export class DrawingManager {
   private drawHandle(ctx: CanvasRenderingContext2D, p: Screen, color: string) {
     ctx.beginPath();
     ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#131722';
+    ctx.fillStyle = THEME.background;
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = color;

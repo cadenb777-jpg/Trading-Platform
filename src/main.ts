@@ -12,6 +12,9 @@ import { startAlertWatcher, type PriceAlert } from './ui/alerts';
 import { h, toast } from './ui/dom';
 import { icon, type IconName } from './ui/icons';
 import { openSettings } from './ui/settings';
+import { currentTheme, initTheme, onThemeChange, setTheme } from './ui/theme';
+
+initTheme();
 
 interface Page {
   el: HTMLElement;
@@ -83,7 +86,6 @@ const pages: PageEntry[] = [
   { route: 'research', label: 'Research', icon: 'research', title: 'Research', create: async () => (await import('./pages/researchPage')).createResearchPage() },
   { route: 'macro', label: 'Macro', icon: 'macro', title: 'Macro', create: async () => (await import('./pages/macroPage')).createMacroPage() },
   { route: 'portfolio', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', create: async () => (await import('./pages/portfolioPage')).createPortfolioPage() },
-  { route: 'clients', label: 'Clients', icon: 'clients', title: 'Clients & Reports', create: async () => (await import('./pages/clientsPage')).createClientsPage() },
   { route: 'backtest', label: 'Backtest', icon: 'backtest', title: 'Backtest', create: async () => (await import('./pages/backtestPage')).createBacktestPage() },
   { route: 'calendar', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', create: async () => (await import('./pages/calendarPage')).createCalendarPage() },
   {
@@ -179,7 +181,7 @@ if (isAiWindow) {
     updateBanner.hidden = bannerDismissed || v == null || !helper.outdated;
     if (updateBanner.hidden || v == null) return;
     updateBanner.replaceChildren(
-      h('span', {}, h('b', {}, `Helper update available (you have version ${v}, newest is ${LATEST_HELPER_VERSION}). `), v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Clients, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : 'It includes bug fixes. '),
+      h('span', {}, h('b', {}, `Helper update available (you have version ${v}, newest is ${LATEST_HELPER_VERSION}). `), v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : 'It includes bug fixes. '),
       h('a', { href: 'https://github.com/cadenb777-jpg/Trading-Platform', target: '_blank', rel: 'noopener' }, 'Get it: Code → Download ZIP, replace your helper folder, restart it'),
       h('button', { class: 'icon-btn', 'aria-label': 'Dismiss', title: 'Dismiss', onclick: () => ((bannerDismissed = true), showUpdateBanner()) }, '✕'),
     );
@@ -232,6 +234,7 @@ if (isAiWindow) {
       'nav',
       { class: 'rail', 'aria-label': 'Main' },
       h('div', { class: 'brand', title: 'Trading Platform' }, '◆'),
+      themeButton(),
       ...pages.map((p) =>
         h('a', { class: 'nav-btn', href: `#${p.route}`, 'data-route': p.route, title: p.label, 'aria-label': p.label }, icon(p.icon, 22), h('span', { class: 'nav-label' }, p.label)),
       ),
@@ -250,6 +253,22 @@ if (isAiWindow) {
   window.addEventListener('hashchange', route);
   route();
   startAlertWatcher();
+}
+
+/** Sun/moon button at the top of the menu: switches light and dark mode (remembered in this browser). */
+function themeButton() {
+  const btn = h('button', { class: 'nav-btn theme-btn' });
+  const draw = () => {
+    const dark = currentTheme() === 'dark';
+    const label = dark ? 'Switch to light mode' : 'Switch to dark mode';
+    btn.replaceChildren(icon(dark ? 'sun' : 'moon', 20), h('span', { class: 'nav-label' }, dark ? 'Light' : 'Dark'));
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+  };
+  btn.addEventListener('click', () => setTheme(currentTheme() === 'dark' ? 'light' : 'dark'));
+  onThemeChange(draw);
+  draw();
+  return btn;
 }
 
 function currentPage() {

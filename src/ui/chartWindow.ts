@@ -5,7 +5,7 @@
  * visible period, line toggles and a CSV download. Several windows can be open at once.
  */
 import { ColorType, LineSeries, PriceScaleMode, createChart, type IChartApi, type ISeriesApi, type MouseEventParams, type Time } from 'lightweight-charts';
-import { THEME } from '../chart/ChartView';
+import { THEME, followTheme } from './theme';
 import { h } from './dom';
 
 export interface WindowLine {
@@ -166,6 +166,7 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
     crosshair: { mode: 0 },
     localization: { priceFormatter: format },
   });
+  followTheme(chart);
   const series = lines.map((l) => {
     const s = chart.addSeries(LineSeries, { color: l.color, lineWidth: l.width ?? 2, priceLineVisible: false, lastValueVisible: true, title: lines.length > 1 ? l.name : '' });
     s.setData(dedupe(l.data) as never);

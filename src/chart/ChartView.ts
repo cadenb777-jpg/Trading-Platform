@@ -25,6 +25,7 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts';
 import { externalData } from '../indicators/external';
+import { THEME, followTheme } from '../ui/theme';
 import { defaultParams, getIndicator } from '../indicators/library';
 import type { IndicatorDef, IndicatorInstance, PlotDef } from '../indicators/types';
 import { TIMEFRAME_SECONDS, bucketStart, regroupBars, type Bar, type Timeframe } from '../types';
@@ -53,17 +54,10 @@ interface RenderedIndicator {
   levels: IPriceLine[];
 }
 
-export const THEME = {
-  background: '#131722',
-  text: '#d1d4dc',
-  grid: '#1e222d',
-  border: '#2a2e39',
-  up: '#26a69a',
-  down: '#ef5350',
-  accent: '#2962ff',
-};
+export { THEME } from '../ui/theme';
 
 const time = (t: number) => t as UTCTimestamp;
+const plotVisible = (instance: IndicatorInstance, key: string) => instance.visible && !instance.hiddenPlots?.includes(key);
 
 function pricePrecision(price: number): number {
   if (price >= 1) return 2;
@@ -109,6 +103,7 @@ export class ChartView {
       rightPriceScale: { borderColor: THEME.border, tickMarkDensity: 1.6 },
       timeScale: { borderColor: THEME.border, timeVisible: true, secondsVisible: false, rightOffset: 8 },
     });
+    followTheme(this.chart, { onChange: () => this.chart.applyOptions({ layout: { panes: { separatorColor: THEME.border } } }) });
     this.main = this.createMainSeries('candles');
     this.chart.subscribeCrosshairMove((param) => {
       const idx = param.time === undefined ? undefined : this.timeIndex.get(param.time as number);
@@ -321,7 +316,7 @@ export class ChartView {
     for (const plot of def.plots.filter((p) => p.type !== 'marker')) {
       const options = {
         color: instance.colors[plot.key] ?? plot.color,
-        visible: instance.visible,
+        visible: plotVisible(instance, plot.key),
         priceLineVisible: false,
         lastValueVisible: placement !== 'volume',
         title: '',
@@ -357,7 +352,7 @@ export class ChartView {
       firstSeries.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.1 } });
     }
     r.levels = (def.levels ?? []).map((price) =>
-      firstSeries.createPriceLine({ price, color: '#787b86', lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: '' }),
+      firstSeries.createPriceLine({ price, color: '#787b86', lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: '', lineVisible: instance.visible && !instance.hideLevels }),
     );
     this.indicators.set(instance.uid, r);
     this.renderAll(r);
@@ -378,10 +373,11 @@ export class ChartView {
     for (const plot of r.def.plots) {
       r.series[plot.key]?.applyOptions({
         color: instance.colors[plot.key] ?? plot.color,
-        visible: instance.visible,
+        visible: plotVisible(instance, plot.key),
         ...(plot.type === 'line' ? { lineWidth: this.lineWidth(instance, plot) } : {}),
       });
     }
+    for (const level of r.levels) level.applyOptions({ lineVisible: instance.visible && !instance.hideLevels });
     this.renderAll(r);
   }
 
@@ -404,13 +400,15 @@ export class ChartView {
   }
 
   /** The indicator's plotted values at a bar index, in plot order. */
-  valuesAt(uid: string, index: number): { title: string; value: number; color: string }[] {
+  valuesAt(uid: string, index: number): { key: string; title: string; value: number; color: string; hidden: boolean }[] {
     const r = this.indicators.get(uid);
     if (!r) return [];
     return r.def.plots.filter((p) => p.type !== 'marker').map((p) => ({
+      key: p.key,
       title: p.title,
       value: r.values[p.key]?.[index] ?? NaN,
       color: r.instance.colors[p.key] ?? p.color,
+      hidden: !!r.instance.hiddenPlots?.includes(p.key),
     }));
   }
 
@@ -550,7 +548,7 @@ export class ChartView {
     for (const r of this.indicators.values()) {
       if (!r.instance.visible) continue;
       for (const plot of r.def.plots) {
-        if (plot.type !== 'marker') continue;
+        if (plot.type !== 'marker' || r.instance.hiddenPlots?.includes(plot.key)) continue;
         const color = r.instance.colors[plot.key] ?? plot.color;
         r.values[plot.key]?.forEach((v, i) => {
           const bar = this.bars[i];

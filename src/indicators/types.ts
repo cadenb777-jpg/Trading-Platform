@@ -81,6 +81,10 @@ export interface IndicatorInstance {
   visible: boolean;
   /** Line thickness per plot (1-4); defaults to the plot's own width. */
   lineWidths?: Record<string, number>;
+  /** Plots (lines, histograms, signals) the owner has hidden, e.g. one group of a COT indicator. */
+  hiddenPlots?: string[];
+  /** Hide the indicator's reference levels (e.g. RSI 70/30). */
+  hideLevels?: boolean;
   /** Where to draw it; defaults to the indicator's usual place. Volume always sits under the price. */
   placement?: 'overlay' | 'separate';
   /** Calculate on a higher timeframe than the chart (e.g. a 1h RSI on a 5m chart). Empty = chart timeframe. */
