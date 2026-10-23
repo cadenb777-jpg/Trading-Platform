@@ -20,6 +20,7 @@ import html
 import html.parser
 import json
 import logging
+import logging.handlers
 import re
 import sys
 import time
@@ -788,7 +789,6 @@ def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s  %(message)s', datefmt='%H:%M:%S')
     # Also keep a log file, so problems can be looked at after the window is closed.
     try:
-        import logging.handlers
         DATA_DIR.mkdir(exist_ok=True)
         file_log = logging.handlers.RotatingFileHandler(LOG_PATH, maxBytes=1_000_000, backupCount=1, encoding='utf-8')
         file_log.setFormatter(logging.Formatter('%(asctime)s  %(levelname)s  %(name)s  %(message)s'))
