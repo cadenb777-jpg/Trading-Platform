@@ -234,6 +234,98 @@ def _clean_holdings(msg):
     return symbols, weights / weights.sum()
 
 
+# ---------- Advisory fees (RIA billing) ----------
+
+BILLING_PERIODS = {'monthly': 12, 'quarterly': 4, 'annual': 1}
+
+
+def blended_rate(value, tiers):
+    """Yearly fee in dollars on an account value under a tiered schedule [{upTo: dollars or None, rate: fraction}],
+    each rate applying only to the part of the value inside its tier (like income-tax brackets)."""
+    fee, prev = 0.0, 0.0
+    for t in sorted(tiers, key=lambda t: float('inf') if t.get('upTo') is None else t['upTo']):
+        cap = float('inf') if t.get('upTo') is None else float(t['upTo'])
+        part = min(max(value - prev, 0.0), cap - prev)
+        fee += part * float(t['rate'])
+        prev = cap
+        if value <= cap:
+            break
+    return fee
+
+
+def _period(d, billing):
+    return (d.year, (d.month - 1) // 3) if billing == 'quarterly' else (d.year, d.month - 1) if billing == 'monthly' else (d.year, 0)
+
+
+def _period_bounds(p, billing):
+    """First and last calendar day of a billing period."""
+    year, idx = p
+    if billing == 'annual':
+        return dt.date(year, 1, 1), dt.date(year, 12, 31)
+    months = 3 if billing == 'quarterly' else 1
+    first = dt.date(year, idx * months + 1, 1)
+    nxt = dt.date(year + (first.month + months - 1) // 12, (first.month + months - 1) % 12 + 1, 1)
+    return first, nxt - dt.timedelta(days=1)
+
+
+def apply_fees(dates, gross, schedule, initial):
+    """Deducts an advisory fee from the account the way custodians debit it: once per billing period (monthly,
+    quarterly or yearly), in arrears on the period-end value or in advance on the period-start value, at the
+    tiered rate. A first, partial period is prorated by calendar days. The current unfinished period isn't billed
+    in arrears yet. Returns (net daily returns, [(date, dollars)])."""
+    billing = schedule.get('billing') if schedule.get('billing') in BILLING_PERIODS else 'quarterly'
+    advance = schedule.get('timing') == 'advance'
+    tiers = [t for t in schedule.get('tiers') or [] if float(t.get('rate') or 0) > 0]
+    per_year = BILLING_PERIODS[billing]
+    days = dates[1:]  # gross[k] is the return on days[k]; the account opens at the close of dates[0]
+    periods = [_period(d, billing) for d in days]
+    first_p = periods[0] if periods else None
+
+    def fraction(p):
+        if p != first_p:
+            return 1.0
+        lo, hi = _period_bounds(p, billing)
+        start = max(lo, dates[0] + dt.timedelta(days=1))
+        return max(0.0, min(1.0, ((hi - start).days + 1) / ((hi - lo).days + 1)))
+
+    value, net, events = float(initial), np.empty(len(gross)), []
+    for k, r in enumerate(gross):
+        start_value = value
+        p = periods[k]
+        if advance and (k == 0 or periods[k - 1] != p):
+            fee = blended_rate(value, tiers) / per_year * fraction(p)
+            value -= fee
+            events.append((days[k], fee))
+        value *= 1 + r
+        if not advance and k < len(gross) - 1 and periods[k + 1] != p:
+            fee = blended_rate(value, tiers) / per_year * fraction(p)
+            value -= fee
+            events.append((days[k], fee))
+        net[k] = value / start_value - 1
+    return net, events
+
+
+def fee_summary(dates, gross, net, events, initial):
+    """Fees paid per calendar year (dollars and % of the average account value) and the total."""
+    days = dates[1:]
+    values = float(initial) * np.cumprod(1 + net)
+    by_year = {}
+    for d, fee in events:
+        by_year.setdefault(d.year, 0.0)
+        by_year[d.year] += fee
+    rows = []
+    for y in sorted({d.year for d in days}):
+        vals = [v for d, v in zip(days, values) if d.year == y]
+        avg = float(np.mean(vals)) if vals else 0.0
+        paid = by_year.get(y, 0.0)
+        rows.append({'year': y, 'fees': round(paid, 2), 'averageValue': round(avg, 2), 'rate': paid / avg if avg else None})
+    years = max((dates[-1] - dates[0]).days / 365.25, 1e-9)
+    total = sum(f for _, f in events)
+    avg_all = float(np.mean(values)) if len(values) else 0.0
+    return {'byYear': rows, 'total': round(total, 2), 'initial': float(initial), 'effectiveRate': (total / years) / avg_all if avg_all else None,
+            'endValueGross': round(float(initial) * float(np.prod(1 + gross)), 2), 'endValueNet': round(float(values[-1]), 2) if len(values) else None}
+
+
 @handler('portfolio.analyze')
 async def analyze(ctx, msg):
     symbols, weights = _clean_holdings(msg)
@@ -249,9 +341,17 @@ async def analyze(ctx, msg):
             raise EngineError('Not enough history after the start date.')
         dates, prices = [dates[i] for i in keep], prices[keep]
     port = portfolio_returns(dates, prices[:, : len(symbols)], weights, rebalance)
+    gross = port.copy()
     fee = max(0.0, float(msg.get('fee') or 0))
-    if fee:
-        # Advisory fee taken evenly through the year, so returns are shown net of fees.
+    schedule = msg.get('feeSchedule') if isinstance(msg.get('feeSchedule'), dict) else None
+    initial = float(msg.get('initial') or 0) or 100000.0
+    fees = None
+    if schedule and any(float(t.get('rate') or 0) > 0 for t in schedule.get('tiers') or []):
+        # RIA billing: tiered fee debited from the account each billing period; returns are net of it.
+        port, events = apply_fees(dates, gross, schedule, initial)
+        fees = fee_summary(dates, gross, port, events, initial)
+    elif fee:
+        # Simple flat fee taken evenly through the year, so returns are shown net of fees.
         port = (1 + port) * (1 - fee) ** (1 / TRADING_DAYS) - 1
     b = all_symbols.index(benchmark)
     bench = prices[1:, b] / prices[:-1, b] - 1
@@ -263,7 +363,7 @@ async def analyze(ctx, msg):
     growth = 10000 * np.concatenate([[1], np.cumprod(1 + port)])
     bench_growth = 10000 * np.concatenate([[1], np.cumprod(1 + bench)])
     periods = [('ytd', 0), ('1y', 1), ('3y', 3), ('5y', 5), ('10y', 10)]
-    cal_p, cal_b = calendar_years(port, dates), calendar_years(bench, dates)
+    cal_p, cal_b, cal_g = calendar_years(port, dates), calendar_years(bench, dates), calendar_years(gross, dates)
     asset_stats = []
     for i, s in enumerate(symbols):
         r = asset_returns[:, i]
@@ -284,7 +384,11 @@ async def analyze(ctx, msg):
         'benchmarkStats': stats(bench, bench, dates, rf),
         'trailing': {k: {'portfolio': trailing(port, dates, y), 'benchmark': trailing(bench, dates, y)} for k, y in periods}
         | {'inception': {'portfolio': annualised(port, (dates[-1] - dates[0]).days), 'benchmark': annualised(bench, (dates[-1] - dates[0]).days)}},
-        'calendar': [{'year': y, 'portfolio': cal_p[y], 'benchmark': cal_b.get(y)} for y in sorted(cal_p)],
+        'calendar': [{'year': y, 'portfolio': cal_p[y], 'benchmark': cal_b.get(y), 'gross': cal_g.get(y)} for y in sorted(cal_p)],
+        'gross': {'trailing': {k: trailing(gross, dates, y) for k, y in periods} | {'inception': annualised(gross, (dates[-1] - dates[0]).days)},
+                  'stats': stats(gross, bench, dates, rf)} if (fees or fee) else None,
+        'fees': fees,
+        'feeSchedule': schedule,
         'growth': _sample(dates, growth, step),
         'benchmarkGrowth': _sample(dates, bench_growth, step),
         'drawdown': _sample(dates[1:], dd, step),

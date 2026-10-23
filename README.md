@@ -35,11 +35,13 @@ A personal, customizable charting and trading platform, like your own TradingVie
   Needs your own Anthropic API key (Settings, gear icon)
 - **Stock positioning:** short-sale volume (FINRA), the related futures market's COT, options and insiders for any
   stock, plus COT and short-volume indicators for charts
+- **Clients & reports:** client accounts and white-label PDF performance reports with your
+  logo, colours and disclosures (1, 3, 5, 10-year and since-inception returns)
 
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md): the plan for a personal Bloomberg-style workstation, from smart-money
-flow and fundamentals to portfolio risk, an AI copilot and trading.
+flow and fundamentals to portfolio risk, client reporting, an AI copilot and trading.
 
 ## Using it
 
@@ -81,9 +83,10 @@ src/
   pages/chartPage.ts      Chart toolbar, drawing bar, legend, live updates
   pages/calendarPage.ts   Economic calendar (list and month views)
   pages/scriptsPage.ts    Script editor for your own indicators
-  pages/                  Also multi-chart, flow, research, macro, portfolio, backtest
+  pages/                  Also multi-chart, flow, research, macro, portfolio, backtest, clients
   backtest/               Backtesting engine and ready-made strategies
   research/dcf.ts         DCF and WACC maths
+  reports/                White-label client report builder (print to PDF)
   script/interpreter.ts   The Pine-style script language
   chart/ChartView.ts      Draws price and indicators (TradingView Lightweight Charts)
   chart/drawings.ts       Drawing tools

@@ -86,6 +86,7 @@ const pages: PageEntry[] = [
   { route: 'research', label: 'Research', icon: 'research', title: 'Research', create: async () => (await import('./pages/researchPage')).createResearchPage() },
   { route: 'macro', label: 'Macro', icon: 'macro', title: 'Macro', create: async () => (await import('./pages/macroPage')).createMacroPage() },
   { route: 'portfolio', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', create: async () => (await import('./pages/portfolioPage')).createPortfolioPage() },
+  { route: 'clients', label: 'Clients', icon: 'clients', title: 'Clients & Reports', create: async () => (await import('./pages/clientsPage')).createClientsPage() },
   { route: 'backtest', label: 'Backtest', icon: 'backtest', title: 'Backtest', create: async () => (await import('./pages/backtestPage')).createBacktestPage() },
   { route: 'calendar', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', create: async () => (await import('./pages/calendarPage')).createCalendarPage() },
   {
@@ -181,7 +182,7 @@ if (isAiWindow) {
     updateBanner.hidden = bannerDismissed || v == null || !helper.outdated;
     if (updateBanner.hidden || v == null) return;
     updateBanner.replaceChildren(
-      h('span', {}, h('b', {}, `Helper update available (you have version ${v}, newest is ${LATEST_HELPER_VERSION}). `), v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : 'It includes bug fixes. '),
+      h('span', {}, h('b', {}, `Helper update available (you have version ${v}, newest is ${LATEST_HELPER_VERSION}). `), v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : v < 12 ? 'It adds the Nasdaq-100 swing scanner (weekly swing with COT, z-score and Williams; mean reversion; breakouts) every 5 minutes, RIA fee schedules in client reports and fresher fund data. ' : 'It includes bug fixes. '),
       h('a', { href: 'https://github.com/cadenb777-jpg/Trading-Platform', target: '_blank', rel: 'noopener' }, 'Get it: Code → Download ZIP, replace your helper folder, restart it'),
       h('button', { class: 'icon-btn', 'aria-label': 'Dismiss', title: 'Dismiss', onclick: () => ((bannerDismissed = true), showUpdateBanner()) }, '✕'),
     );

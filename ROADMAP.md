@@ -1,7 +1,7 @@
 # Roadmap: a personal Bloomberg
 
 The goal is an institutional-grade workstation for one person: live charts and analytics,
-smart-money flow, fundamentals and valuation, portfolio and risk tools, an AI
+smart-money flow, fundamentals and valuation, portfolio and risk tools, client reporting, an AI
 market copilot, and trading. It blends two styles: a high-density, AI-assisted market discovery
 screen, and a Bloomberg Terminal-style research and portfolio workstation.
 
@@ -58,10 +58,10 @@ helper/
 | 5 | Flow: options activity, max pain, gamma, insider trades, COT (dark pool on hold) | ✅ |
 | 6 | Research (SEC financials, ratios, DCF, filings) and Macro (FRED, yield curve) | ✅ |
 | 7 | Portfolios: total-return analytics, risk, stress tests, Monte Carlo, optimisation; backtester | ✅ |
-| 8 | Clients and white-label PDF reports | ❌ removed (the owner isn't allowed to send client reports) |
+| 8 | Clients and white-label PDF reports (branding, batch printing) | ✅ |
 | 9 | AI assistant: chat with live data and actions, pop-out, file uploads, AI analysis buttons | ✅ (morning brief and agents later) |
 | 9b | Investments: market boards (stocks, ETFs, bonds, alts, crypto, commodities), bond suite (yields, Treasury auctions, CUSIP lookup, calculator, ladder), private funds from SEC filings (NAV, N-PORT, Form D), own alternatives tracker with iCapital import | ✅ |
-| 9c | Backtest research (chart-linked rules, Monte Carlo, random-walk test, parameter sweep), Williams COT/WAD, portfolios by shares/dollars with cash and alternatives | ✅ |
+| 9c | Backtest research (chart-linked rules, Monte Carlo, random-walk test, parameter sweep), Williams COT/WAD, portfolios by shares/dollars with cash and alternatives, in-depth client reports with alternatives | ✅ |
 | 9d | Interactive pop-out charts (hover values, ranges, % / log scale, CSV), clickable yield curve and rates, accurate index changes, in-depth options put/call, AI summaries per page, background market scanner with backtested setups on Home | ✅ |
 | 10 | Trading through Webull (paper first) & alerts | ⏸ on hold |
 | 11 | Cloud engine, login, phone access | ⏸ on hold (last, by choice) |
@@ -111,10 +111,7 @@ Screens: a **Flow** page (market-wide), a flow panel on each chart, and sentimen
 - Optimisation: mean-variance (efficient frontier), risk parity, Black-Litterman, Monte Carlo
 - **Backtesting**: test strategies (including `strategy()` scripts) on history with costs and slippage
 
-## Stage 8: Client portfolios & white-label reporting (removed)
-
-Removed: the owner found out they aren't allowed to send client reports. Saved client data in the database
-is left untouched but no longer shown. Kept below for reference only.
+## Stage 8: Client portfolios & white-label reporting (new)
 
 - **Clients and accounts**: clients, households and their portfolios, model portfolios, target allocations
 - **Performance reporting**: 1, 3, 5 and 10-year and since-inception returns (annualised),

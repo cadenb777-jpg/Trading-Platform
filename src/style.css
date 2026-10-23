@@ -4264,45 +4264,6 @@ body.ai-window-body #app {
   color: var(--warn);
 }
 
-.setup-strength {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.strength-track {
-  position: relative;
-  flex: 1;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--panel-3);
-}
-
-.strength-track::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: -2px;
-  bottom: -2px;
-  width: 1px;
-  background: var(--muted);
-}
-
-.strength-fill {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  border-radius: 3px;
-}
-
-.strength-fill.bull {
-  background: var(--up);
-}
-
-.strength-fill.bear {
-  background: var(--down);
-}
-
 .setups-banner {
   margin-bottom: 10px;
   padding: 8px 12px;
@@ -4327,11 +4288,6 @@ body.ai-window-body #app {
 .setup-price {
   font-variant-numeric: tabular-nums;
   font-size: 13px;
-}
-
-.setup-why {
-  font-size: 13px;
-  line-height: 1.45;
 }
 
 .setup-levels {
@@ -4583,4 +4539,154 @@ body.ai-window-body #app {
 
 .mgr .picker-row .picker-item {
   padding-right: 8px;
+}
+
+/* ---------- Best setups v2: strategy tabs, summary, checklists ---------- */
+.setups-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.strategy-summary {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.45;
+}
+
+.setup-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.strategy-chip {
+  background: var(--panel-3);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11.5px;
+}
+
+.status-chip {
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11.5px;
+  background: var(--accent-soft);
+  color: var(--link);
+}
+
+.status-chip.status-in-trade {
+  background: #26a69a26;
+  color: var(--up-text);
+}
+
+.status-chip.status-forming {
+  background: #f5a62326;
+  color: var(--warn-text);
+}
+
+.setup-card.forming {
+  border-style: dashed;
+}
+
+.setup-trade {
+  background: var(--panel-3);
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.setup-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.setup-checks li {
+  display: grid;
+  grid-template-columns: 14px auto 1fr;
+  gap: 2px 6px;
+  align-items: baseline;
+}
+
+.setup-checks li > span:last-child {
+  grid-column: 3;
+  min-width: 0;
+}
+
+@media (max-width: 1500px) {
+  .setup-checks li > span:last-child {
+    grid-column: 2 / -1;
+  }
+}
+
+.setup-checks i {
+  font-style: normal;
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+  font-weight: 700;
+}
+
+.setup-checks li.ok i {
+  color: var(--up);
+}
+
+.setup-checks li.bad i {
+  color: var(--down);
+}
+
+.setup-checks li.neutral i {
+  color: var(--muted);
+}
+
+/* ---------- Client fee editor ---------- */
+.fee-editor {
+  margin-top: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fee-editor h4 {
+  margin: 0;
+}
+
+.fee-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.fee-row > .muted.small:first-child {
+  min-width: 130px;
+  padding-bottom: 8px;
+}
+
+.fee-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 140px;
+}
+
+.fee-summary {
+  margin: 0;
+  color: var(--link);
 }

@@ -14,7 +14,8 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from engine import alts, core, flow, invest, scanner  # noqa: E402
+from engine import alts, core, flow, invest, quant, scanner  # noqa: E402
+from engine import strategies as st  # noqa: E402
 
 
 def bar(t, o, h, l, c, v=1_000_000):
@@ -36,129 +37,179 @@ class Indicators(unittest.TestCase):
         # The classic StockCharts RSI(14) example. Average gain 3.34/14 and loss 1.40/14 give RSI 70.46; StockCharts
         # prints 70.53 because it rounds the averages (0.2385 / 0.0996) before dividing.
         closes = [44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84, 46.08, 45.89, 46.03, 45.61, 46.28, 46.28]
-        r = scanner.rsi(closes)
+        r = st.rsi(closes)
         self.assertIsNone(r[13])
         self.assertAlmostEqual(r[14], 100 - 100 / (1 + 3.34 / 1.40), places=6)
-        self.assertAlmostEqual(r[14], 70.46, places=2)
 
-    def test_ema_follows_its_formula(self):
-        e = scanner.ema([10, 11, 12], 3)  # k = 0.5
-        self.assertEqual(e, [10, 10.5, 11.25])
+    def test_ema_and_sma(self):
+        self.assertEqual(st.ema([10, 11, 12], 3), [10, 10.5, 11.25])  # k = 0.5
+        self.assertEqual(st.sma([1, 2, 3, 4], 2), [None, 1.5, 2.5, 3.5])
+
+    def test_zscore_uses_sample_standard_deviation(self):
+        closes = [1, 2, 3, 4, 10]
+        z = st.zscore(closes, 5)
+        mean = 4.0
+        sd = math.sqrt(sum((c - mean) ** 2 for c in closes) / 4)
+        self.assertAlmostEqual(z[4], (10 - mean) / sd)
+        self.assertIsNone(z[3])
+
+    def test_williams_r(self):
+        bars = [bar(i, 10, 12, 8, 11) for i in range(13)] + [bar(13, 10, 12, 8, 8)]
+        self.assertAlmostEqual(st.williams_r(bars)[13], -100.0)  # close at the 14-day low
+        bars[-1]['close'] = 12
+        self.assertAlmostEqual(st.williams_r(bars)[13], 0.0)
+
+    def test_williams_ad(self):
+        bars = [bar(0, 10, 10, 10, 10), bar(1, 10, 12, 9.5, 11), bar(2, 11, 11.5, 10, 10.5)]
+        # Up close: 11 - min(9.5, 10) = 1.5. Down close: 10.5 - max(11.5, 11) = -1.0.
+        self.assertEqual(st.williams_ad(bars), [0.0, 1.5, 0.5])
 
     def test_atr_uses_true_range_with_gaps(self):
-        bars = [bar(i, 10, 11, 9, 10) for i in range(14)] + [bar(14, 15, 16, 14.5, 15)]  # gap up from 10 to 15
-        a = scanner.atr(bars)
-        self.assertIsNone(a[12])
+        bars = [bar(i, 10, 11, 9, 10) for i in range(14)] + [bar(14, 15, 16, 14.5, 15)]
+        a = st.atr(bars)
         self.assertAlmostEqual(a[13], 2.0)
         self.assertAlmostEqual(a[14], (2.0 * 13 + 6.0) / 14)  # true range 16 - 10 = 6
 
+    def test_breakout_levels_exclude_today(self):
+        self.assertEqual(st.rolling_max([1, 5, 3, 9], 2, skip_current=True), [None, None, 5, 5])
 
-class Plans(unittest.TestCase):
-    today = bar(0, 100, 101, 99, 100.5)
-    levels = [{'price': 97.0, 'label': 'Support'}, {'price': 104.0, 'label': 'Resistance'}, {'price': 104.1, 'label': 'R2'},
-              {'price': 107.0, 'label': '52-week high'}]
 
-    def test_long_plan_is_ordered_and_measured_from_the_entry(self):
-        p = scanner.trade_plan(self.levels, 100.5, 2.0, 1, self.today)
-        self.assertEqual(p['entry'], 101)  # today's high: the breakout trigger
-        self.assertLess(p['stop'], p['entry'])
-        self.assertLess(p['entry'], p['target1'])
-        self.assertLess(p['target1'], p['target2'])
-        self.assertAlmostEqual(p['riskReward'], (p['target1'] - p['entry']) / (p['entry'] - p['stop']))
+def day_bars(closes, start=dt.date(2024, 1, 1)):
+    """Daily bars on weekdays, stamped at US midnight (05:00 UTC) like Schwab's."""
+    out, d = [], start
+    for c in closes:
+        while d.weekday() >= 5:
+            d += dt.timedelta(days=1)
+        t = int(dt.datetime(d.year, d.month, d.day, 5, tzinfo=dt.timezone.utc).timestamp())
+        out.append(bar(t, c, c * 1.01, c * 0.99, c))
+        d += dt.timedelta(days=1)
+    return out
 
-    def test_close_levels_are_merged_and_targets_are_distinct(self):
-        p = scanner.trade_plan(self.levels, 100.5, 2.0, 1, self.today)
-        self.assertIn('Resistance + R2', p['target1Note'])
-        self.assertGreaterEqual(p['target2'] - p['target1'], 0.5 * 2.0)
 
-    def test_short_plan_mirrors_the_long_one(self):
-        p = scanner.trade_plan(self.levels, 100.5, 2.0, -1, self.today)
-        self.assertEqual(p['entry'], 99)
-        self.assertGreater(p['stop'], p['entry'])
-        self.assertGreater(p['entry'], p['target1'])
-        self.assertGreater(p['target1'], p['target2'])
+class WeeklyAndCot(unittest.TestCase):
+    def test_weekly_trend_uses_only_finished_weeks(self):
+        bars = day_bars([100 + i for i in range(80)])  # steady rise
+        wk = st.weekly_trend(bars, n=10)
+        self.assertIsNone(wk[20])  # not 10 finished weeks yet
+        self.assertEqual(wk[-1], 1)
+        # Changing the current (unfinished) week can't change today's reading.
+        bars2 = [dict(b) for b in bars]
+        bars2[-1]['close'] = 1
+        self.assertEqual(st.weekly_trend(bars2, n=10)[-1], wk[-1])
+
+    def test_cot_index_range(self):
+        rows = [{'date': f'2024-{1 + k // 4:02d}-{1 + (k % 4) * 7:02d}', 'commNet': float(k)} for k in range(30)]
+        idx = st.cot_index(rows, weeks=26)
+        self.assertEqual(len(idx), 5)
+        self.assertAlmostEqual(idx[-1][1], 100.0)  # the latest net is the 26-week high
+
+    def test_cot_is_used_only_after_its_friday_release(self):
+        cot = [('2024-01-02', 80.0), ('2024-01-09', 20.0)]  # Tuesday data dates
+        bars = day_bars([100] * 10, start=dt.date(2024, 1, 2))
+        aligned = st.align_cot(bars, cot)
+        days = [st._day(b['time']) for b in bars]
+        self.assertIsNone(aligned[days.index(dt.date(2024, 1, 4))])  # Thursday: not published yet
+        self.assertEqual(aligned[days.index(dt.date(2024, 1, 5))], 80.0)  # Friday release
+        self.assertEqual(aligned[days.index(dt.date(2024, 1, 11))], 80.0)
+        self.assertEqual(aligned[days.index(dt.date(2024, 1, 12))], 20.0)
+
+    def test_cot_view(self):
+        self.assertEqual(st.cot_view(75, 1), 'agree')
+        self.assertEqual(st.cot_view(75, -1), 'against')
+        self.assertEqual(st.cot_view(50, 1), 'neutral')
+        self.assertIsNone(st.cot_view(None, 1))
+
+
+def plan(**kw):
+    base = {'entry': 'stop', 'trigger': 101.0, 'validDays': 2, 'stop': 98.0, 'target': 105.0, 'maxHold': 5, 'breakEvenAtR': None, 'exit': None}
+    return {**base, **kw}
+
+
+def ind_for(bars):
+    return {'bars': bars, 'sma5': [None] * len(bars), 'lo10': [None] * len(bars), 'hi10': [None] * len(bars)}
 
 
 class Simulation(unittest.TestCase):
-    plan = {'trigger': 101.0, 'stop': 98.0, 'target1': 104.0, 'target2': 107.0}
-
     def test_no_fill_without_a_break_of_the_trigger(self):
         bars = [bar(0, 100, 100.5, 99, 100)] + [bar(i, 100, 100.9, 99.5, 100) for i in range(1, 6)]
-        self.assertIsNone(scanner.simulate_plan(bars, 0, self.plan, 1))
+        self.assertIsNone(st.simulate(ind_for(bars), 0, plan(), 1))
 
-    def test_half_at_target_one_then_target_two(self):
-        bars = [bar(0, 100, 100.5, 99, 100), bar(1, 100.5, 102, 100, 101.5), bar(2, 102, 104.5, 101.5, 104), bar(3, 104, 107.5, 103.5, 107)]
-        t = scanner.simulate_plan(bars, 0, self.plan, 1)
-        self.assertEqual(t['reason'], 'target')
-        self.assertAlmostEqual(t['r'], (0.5 * 3 + 0.5 * 6) / 3)  # entry 101, risk 3
+    def test_target(self):
+        bars = [bar(0, 100, 100.5, 99, 100), bar(1, 100.5, 102, 100, 101.5), bar(2, 102, 105.5, 101.5, 105)]
+        t = st.simulate(ind_for(bars), 0, plan(), 1)
+        self.assertEqual((t['reason'], t['entry'], t['exitPrice']), ('target', 101.0, 105.0))
+        self.assertAlmostEqual(t['ret'], 105 / 101 - 1 - st.COSTS)
+        self.assertAlmostEqual(t['r'], 4 / 3)
 
     def test_gap_through_the_stop_fills_at_the_open(self):
         bars = [bar(0, 100, 100.5, 99, 100), bar(1, 100.5, 101.5, 100, 101), bar(2, 96, 96.5, 95, 95.5)]
-        t = scanner.simulate_plan(bars, 0, self.plan, 1)
-        self.assertEqual(t['reason'], 'stop')
-        self.assertAlmostEqual(t['r'], (96 - 101) / 3)
+        t = st.simulate(ind_for(bars), 0, plan(), 1)
+        self.assertEqual((t['reason'], t['exitPrice']), ('stop', 96))
 
-    def test_costs_are_charged(self):
-        bars = [bar(0, 100, 100.5, 99, 100), bar(1, 100.5, 102, 100, 101.5), bar(2, 102, 104.5, 101.5, 104), bar(3, 104, 107.5, 103.5, 107)]
-        t = scanner.simulate_plan(bars, 0, self.plan, 1)
-        self.assertAlmostEqual(t['ret'], (0.5 * 3 + 0.5 * 6) / 101 - scanner.COSTS)
+    def test_stop_first_when_both_in_one_bar(self):
+        bars = [bar(0, 100, 100.5, 99, 100), bar(1, 100.5, 106, 97, 103)]
+        self.assertEqual(st.simulate(ind_for(bars), 0, plan(), 1)['reason'], 'stop')
 
-    def test_same_bar_target_and_return_to_entry_is_break_even(self):
-        # Fills at 101, then one bar reaches both targets but also falls back to 100.5: the stop is assumed first.
-        bars = [bar(0, 100, 100.5, 99, 100), bar(1, 100.5, 101.5, 100.8, 101.2), bar(2, 101.5, 107.5, 100.5, 106)]
-        t = scanner.simulate_plan(bars, 0, self.plan, 1)
-        self.assertEqual(t['reason'], 'break-even')
-        self.assertAlmostEqual(t['r'], 0.5 * 3 / 3)
+    def test_time_exit_after_max_hold(self):
+        bars = [bar(0, 100, 100.5, 99, 100)] + [bar(i, 101, 101.5, 100.5, 101.2) for i in range(1, 10)]
+        t = st.simulate(ind_for(bars), 0, plan(), 1)
+        self.assertEqual((t['reason'], t['fill'], t['exit'], t['bars']), ('time', 1, 5, 5))  # 5 sessions incl. the fill day
 
-    def test_gap_past_target_one_fills_at_the_open(self):
-        bars = [bar(0, 100, 100.5, 99, 100), bar(1, 100.5, 101.5, 100.8, 101.2), bar(2, 105, 105.5, 104.5, 105), bar(3, 105, 107.2, 104.8, 107)]
-        t = scanner.simulate_plan(bars, 0, self.plan, 1)
-        self.assertEqual(t['reason'], 'target')
-        self.assertAlmostEqual(t['r'], (0.5 * (105 - 101) + 0.5 * 6) / 3)
+    def test_break_even_after_one_r(self):
+        # Fill 101, risk 3: a close at 104+ moves the stop to 101; then a drop exits at break-even.
+        bars = [bar(0, 100, 100.5, 99, 100), bar(1, 101, 104.5, 100.8, 104.2), bar(2, 103, 103.5, 100, 100.5)]
+        t = st.simulate(ind_for(bars), 0, plan(breakEvenAtR=1.0, target=110.0), 1)
+        self.assertEqual((t['reason'], t['exitPrice']), ('break-even', 101.0))
 
-    def test_break_even_after_target_one(self):
-        bars = [bar(0, 100, 100.5, 99, 100), bar(1, 101, 104.2, 100.8, 104), bar(2, 103, 103.5, 100.5, 100.8)]
-        t = scanner.simulate_plan(bars, 0, self.plan, 1)
-        self.assertEqual(t['reason'], 'break-even')
-        self.assertAlmostEqual(t['r'], 0.5 * 3 / 3)
+    def test_short_side(self):
+        bars = [bar(0, 100, 100.5, 99, 100), bar(1, 99.5, 99.8, 98.5, 98.8), bar(2, 98.5, 98.6, 95.5, 96)]
+        t = st.simulate(ind_for(bars), 0, plan(trigger=99.0, stop=102.0, target=96.0), -1)
+        self.assertEqual((t['reason'], t['entry'], t['exitPrice']), ('target', 99.0, 96.0))
+        self.assertGreater(t['ret'], 0)
+
+    def test_market_on_open_entry_and_close_rule(self):
+        bars = [bar(0, 100, 100.5, 99, 100), bar(1, 99, 100, 98, 99.5), bar(2, 100, 102, 99.5, 101.5)]
+        ind = ind_for(bars)
+        ind['sma5'] = [None, 100.0, 100.5]
+        t = st.simulate(ind, 0, plan(entry='open', validDays=1, stop=90.0, target=None, exit='sma5', maxHold=7), 1)
+        self.assertEqual((t['entry'], t['exitPrice'], t['reason']), (99, 101.5, 'exit rule'))
 
 
-class Backtest(unittest.TestCase):
+class Backtests(unittest.TestCase):
     def test_trades_never_use_future_bars(self):
-        bars = random_walk()
-        cut = 600
+        bars = random_walk(n=900)
+        cut = 650
         changed = bars[:cut] + [dict(b, close=b['close'] * 3, high=b['high'] * 3, low=b['low'] * 3, open=b['open'] * 3) for b in bars[cut:]]
-        early = lambda bs: [t for t in scanner.signal_trades(scanner.prepare(bs), 1, scanner.atr(bs)) if t['exit'] < cut]  # noqa: E731
-        before = early(bars)
-        self.assertTrue(before, 'the random walk should produce some trades before the cut')
-        self.assertEqual(before, early(changed))
+        for key in st.STRATEGIES:
+            early = lambda bs: [t for t in st.trades_for(st.prepare(bs), key) if t['exit'] < cut]  # noqa: E731
+            self.assertEqual(early(bars), early(changed), key)
 
-    def test_grade_and_dates_are_reported(self):
-        bars = random_walk(seed=3)
-        r = scanner.backtest_signal(scanner.prepare(bars), 1, scanner.atr(bars))
-        self.assertEqual(r['grade'], scanner.summarise_trades(scanner.signal_trades(scanner.prepare(bars), 1, scanner.atr(bars)))['grade'])
-        self.assertEqual(r['from'], bars[211]['time'])
-        self.assertEqual(r['to'], bars[-1]['time'])
-
-
-class Grades(unittest.TestCase):
-    t = staticmethod(lambda ret: {'ret': ret, 'r': ret * 10, 'reason': 'x', 'bars': 3, 'exit': 0})
+    def test_some_strategy_trades_on_a_random_walk(self):
+        bars = random_walk(n=900, seed=5)
+        ind = st.prepare(bars)
+        self.assertTrue(any(st.trades_for(ind, k) for k in st.STRATEGIES))
 
     def test_grades_from_known_trades(self):
-        g = lambda rets: scanner.summarise_trades([self.t(x) for x in rets])['grade']  # noqa: E731
-        self.assertEqual(g([0.03, 0.03, 0.03, -0.01, -0.01, -0.01]), 'proven')  # profit factor 3
-        self.assertEqual(g([0.012, 0.012, 0.012, -0.01, -0.01, -0.01]), 'mixed')  # positive, profit factor 1.2
+        t = lambda ret: {'ret': ret, 'r': ret * 10, 'reason': 'x', 'bars': 3}  # noqa: E731
+        g = lambda rets: st.summarise([t(x) for x in rets])['grade']  # noqa: E731
+        self.assertEqual(g([0.03] * 5 + [-0.01] * 3), 'proven')
+        self.assertEqual(g([0.012] * 3 + [-0.01] * 3), 'mixed')
         self.assertEqual(g([0.01, -0.02, 0.01, -0.02]), 'failed')
-        self.assertEqual(g([0.05, 0.05, 0.05]), 'unproven')  # too few trades to judge
-        self.assertEqual(g([]), 'unproven')
-
-    def test_stats(self):
-        s = scanner.summarise_trades([self.t(x) for x in (0.02, -0.01, -0.01, 0.04)])
-        self.assertEqual(s['trades'], 4)
-        self.assertAlmostEqual(s['winRate'], 0.5)
+        self.assertEqual(g([0.05] * 3), 'unproven')
+        s = st.summarise([t(x) for x in (0.02, -0.01, -0.01, 0.04)])
         self.assertAlmostEqual(s['profitFactor'], 3.0)
-        self.assertAlmostEqual(s['expectancy'], 0.01)
+        self.assertAlmostEqual(s['maxDrawdown'], -0.02)
         self.assertEqual(s['maxLosingStreak'], 2)
+
+    def test_random_tests_are_repeatable_and_bounded(self):
+        bars = random_walk(n=600, seed=9)
+        a = st.random_walk_test(bars, None, 'mean_reversion', runs=20)
+        b = st.random_walk_test(bars, None, 'mean_reversion', runs=20)
+        self.assertEqual(a, b)
+        self.assertTrue(0 < a['p'] <= 1)
+        shuffled = st.shuffled_bars(bars, random.Random(1))
+        self.assertEqual(len(shuffled), len(bars))
+        self.assertTrue(all(x['low'] <= x['close'] <= x['high'] for x in shuffled))
 
 
 class SessionChange(unittest.TestCase):
@@ -197,6 +248,41 @@ class FundFacts(unittest.TestCase):
             {'end': '2025-12-31', 'val': 24.9, 'form': '10-K', 'filed': '2026-03-01'},
         ]}}}}}
         self.assertEqual([r['end'] for r in alts.fund_facts_from(cf)['navPerShare']], ['2025-12-31'])
+
+
+class AdvisoryFees(unittest.TestCase):
+    tiers = [{'upTo': 1_000_000, 'rate': 0.01}, {'upTo': None, 'rate': 0.0075}]
+
+    def test_tiers_work_like_brackets(self):
+        self.assertAlmostEqual(quant.blended_rate(500_000, self.tiers), 5_000)
+        self.assertAlmostEqual(quant.blended_rate(1_500_000, self.tiers), 10_000 + 3_750)
+
+    def days(self, start, n):
+        out, d = [], start
+        while len(out) < n:
+            if d.weekday() < 5:
+                out.append(d)
+            d += dt.timedelta(days=1)
+        return out
+
+    def test_quarterly_arrears_with_prorated_first_quarter(self):
+        import numpy as np
+        dates = self.days(dt.date(2025, 1, 2), 400)
+        flat = {'tiers': [{'upTo': None, 'rate': 0.01}], 'billing': 'quarterly', 'timing': 'arrears'}
+        net, events = quant.apply_fees(dates, np.zeros(len(dates) - 1), flat, 100_000)
+        self.assertAlmostEqual(events[0][1], 100_000 * 0.01 / 4 * 88 / 90)  # Jan 3 - Mar 31 of a 90-day quarter
+        self.assertEqual(events[0][0], dt.date(2025, 3, 31))
+        self.assertTrue(all(d.month in (3, 6, 9, 12) for d, _ in events))
+        self.assertAlmostEqual(float(np.prod(1 + net)), (100_000 - sum(f for _, f in events)) / 100_000)
+
+    def test_advance_bills_at_period_start(self):
+        import numpy as np
+        dates = self.days(dt.date(2025, 3, 31), 70)
+        sched = {'tiers': [{'upTo': None, 'rate': 0.012}], 'billing': 'monthly', 'timing': 'advance'}
+        _, events = quant.apply_fees(dates, np.zeros(len(dates) - 1), sched, 120_000)
+        self.assertEqual(events[0][0], dt.date(2025, 4, 1))
+        self.assertAlmostEqual(events[0][1], 120_000 * 0.012 / 12)  # account opened Mar 31: April is a full month
+        self.assertEqual(events[1][0], dt.date(2025, 5, 1))
 
 
 class Resp:

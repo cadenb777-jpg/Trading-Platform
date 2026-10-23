@@ -1,7 +1,7 @@
 """
 The AI assistant (Claude, through Anthropic's official Python SDK). It runs here in the helper so the API
 key never reaches the browser. It answers with live platform data through tools (quotes, news, options,
-insiders, financials, macro, portfolios), can save portfolios, and asks the browser
+insiders, financials, macro, portfolios, clients), can save portfolios and clients, and asks the browser
 to open charts, add indicators or set price alerts. It can never place trades.
 """
 import asyncio
@@ -31,12 +31,12 @@ You have tools for live data from the platform: real-time quotes and price histo
 (Google News and CNBC), options flow, SEC insider trades and financial statements, macro data (FRED), futures \
 positioning (CFTC Commitment of Traders) and stock positioning (FINRA short volume), the bond market (yields, \
 spreads, Treasury auctions), evergreen and private funds from SEC filings (NAV, holdings, Form D), plus the owner's \
-saved portfolios and alternative investments. Always use tools for anything that depends on current data instead of answering from \
+saved portfolios, clients and alternative investments. Always use tools for anything that depends on current data instead of answering from \
 memory, and say when the data is from (for example "as of 2:41 pm ET"). Use web search for recent events the \
 news tool doesn't cover. When explaining why something moved, combine the price action with the news and \
 positioning and say how confident you are.
 
-You can act inside the platform: save or update portfolios, run portfolio analysis and optimisation, \
+You can act inside the platform: save or update portfolios and clients, run portfolio analysis and optimisation, \
 and use ui_action to open a chart or page, add an indicator, or create a price alert. Do these when asked; for \
 anything that changes saved data, say exactly what you saved. You cannot place, change or cancel trades or move \
 money, and you must not claim to.
@@ -171,8 +171,22 @@ TOOLS = [
         }, 'required': ['symbols', 'method']},
     },
     {
+        'name': 'list_clients',
+        'description': "The owner's saved clients and which portfolio each follows.",
+        'input_schema': {'type': 'object', 'properties': {}},
+    },
+    {
+        'name': 'save_client',
+        'description': 'Create a client, or update one when id is given.',
+        'input_schema': {'type': 'object', 'properties': {
+            'id': {'type': 'string'}, 'name': {'type': 'string'}, 'household': {'type': 'string'}, 'account_name': {'type': 'string'},
+            'portfolio_id': {'type': 'string', 'description': 'A saved portfolio id, or a template: "template:Classic 60/40", "template:All-weather style", "template:Growth (90/10)"'}, 'inception': {'type': 'string', 'description': 'YYYY-MM-DD'},
+            'initial_investment': {'type': 'number'}, 'fee_percent': {'type': 'number', 'description': 'Yearly advisory fee in percent, e.g. 1'},
+        }, 'required': ['name']},
+    },
+    {
         'name': 'ui_action',
-        'description': 'Do something in the platform window: open_chart (symbol, optional timeframe like 5m/1h/1D), open_page (page: home, chart, multi, invest, flow, research, macro, portfolio, backtest, calendar, scripts), add_indicator (indicator name, e.g. "RSI" or "VWAP bands"), or create_alert (symbol, price, direction above/below, optional note).',
+        'description': 'Do something in the platform window: open_chart (symbol, optional timeframe like 5m/1h/1D), open_page (page: home, chart, multi, invest, flow, research, macro, portfolio, clients, backtest, calendar, scripts), add_indicator (indicator name, e.g. "RSI" or "VWAP bands"), or create_alert (symbol, price, direction above/below, optional note).',
         'input_schema': {'type': 'object', 'properties': {
             'action': {'type': 'string', 'enum': ['open_chart', 'open_page', 'add_indicator', 'create_alert']},
             'symbol': {'type': 'string'}, 'timeframe': {'type': 'string'}, 'page': {'type': 'string'},
@@ -189,8 +203,8 @@ TOOL_LABELS = {
     'get_company_financials': 'Reading SEC financials', 'get_macro_snapshot': 'Checking the economy',
     'get_positioning': 'Checking positioning', 'get_private_fund': 'Reading the fund\'s SEC filings',
     'search_private_funds': 'Searching private funds', 'get_bond_market': 'Checking the bond market', 'get_my_alternatives': 'Looking at your alternatives', 'list_portfolios': 'Looking at your portfolios', 'save_portfolio': 'Saving the portfolio',
-    'analyze_portfolio': 'Analysing the portfolio', 'optimize_portfolio': 'Optimising weights',
-    'ui_action': 'Updating the platform', 'web_search': 'Searching the web',
+    'analyze_portfolio': 'Analysing the portfolio', 'optimize_portfolio': 'Optimising weights', 'list_clients': 'Looking at your clients',
+    'save_client': 'Saving the client', 'ui_action': 'Updating the platform', 'web_search': 'Searching the web',
 }
 
 _conversations = {}
@@ -420,6 +434,38 @@ async def t_optimize_portfolio(ctx, args, actions):
             'note': 'Expected figures are based on past returns, which may not repeat.'}
 
 
+async def t_list_clients(ctx, args, actions):
+    names = {p['id']: p['name'] for p in store.list_docs('portfolios')}
+    return [{**{k: c.get(k) for k in ('id', 'name', 'household', 'accountName', 'inception', 'initialInvestment', 'fee')},
+             'portfolio': names.get(c.get('portfolioId')) or (c.get('portfolioId') or 'none').replace('template:', 'template ')} for c in store.list_docs('clients')]
+
+
+async def t_save_client(ctx, args, actions):
+    doc = {}
+    if args.get('id'):
+        doc = store.get_doc('clients', str(args['id'])) or {}
+        if not doc:
+            raise EngineError('No client with that id')
+    doc['name'] = _str(args.get('name') or doc.get('name'), 'name')
+    for src, dst in (('household', 'household'), ('account_name', 'accountName'), ('portfolio_id', 'portfolioId'), ('inception', 'inception')):
+        if args.get(src) is not None:
+            doc[dst] = str(args[src])
+    if args.get('initial_investment') is not None:
+        doc['initialInvestment'] = float(args['initial_investment'])
+    if args.get('fee_percent') is not None:
+        doc['fee'] = float(args['fee_percent']) / 100
+    doc.setdefault('fee', 0.01)
+    doc.setdefault('initialInvestment', 100000)
+    doc.setdefault('accountName', '')
+    doc.setdefault('inception', '')
+    doc.setdefault('portfolioId', '')
+    if doc['portfolioId'] and not doc['portfolioId'].startswith('template:') and not store.get_doc('portfolios', doc['portfolioId']):
+        raise EngineError('No portfolio with that id')
+    saved = store.save_doc('clients', doc)
+    actions.append({'action': 'refresh', 'what': 'clients'})
+    return {'saved': True, 'id': saved['id'], 'name': saved['name']}
+
+
 async def t_ui_action(ctx, args, actions):
     action = args.get('action')
     if action not in ('open_chart', 'open_page', 'add_indicator', 'create_alert'):
@@ -437,8 +483,8 @@ TOOL_FUNCS = {
     'get_insider_trades': t_get_insider_trades, 'get_company_financials': t_get_company_financials, 'get_macro_snapshot': t_get_macro_snapshot,
     'get_positioning': t_get_positioning, 'get_private_fund': t_get_private_fund, 'search_private_funds': t_search_private_funds,
     'get_bond_market': t_get_bond_market, 'get_my_alternatives': t_get_my_alternatives, 'list_portfolios': t_list_portfolios, 'save_portfolio': t_save_portfolio,
-    'analyze_portfolio': t_analyze_portfolio, 'optimize_portfolio': t_optimize_portfolio,
-    'ui_action': t_ui_action,
+    'analyze_portfolio': t_analyze_portfolio, 'optimize_portfolio': t_optimize_portfolio, 'list_clients': t_list_clients,
+    'save_client': t_save_client, 'ui_action': t_ui_action,
 }
 
 

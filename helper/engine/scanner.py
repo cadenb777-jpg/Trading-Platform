@@ -1,17 +1,14 @@
 """
-Market scanner: a background job that keeps analysing a list of stocks (plus your watchlist) on several timeframes
-and ranks the strongest setups. It blends well-known, testable methods:
+Market scanner: a background job inside the helper that scans every Nasdaq-100 stock (plus your watchlist) every 5
+minutes for swing-trade setups, using the strategies in strategies.py:
 
-- Trend following: price vs its 50- and 200-day averages (Dow theory, trend following)
-- Breakouts: new 20-day highs / lows (Donchian channels, the Turtle traders)
-- Relative strength vs the S&P 500 (William O'Neil)
-- Momentum: MACD and RSI; buying pullbacks inside an uptrend (Alexander Elder's triple screen)
-- Volume confirmation (Richard Wyckoff) and trend strength (ADX, Welles Wilder)
-- Timeframe agreement: daily and 30-minute trends pointing the same way
-- For the top names: options flow (put/call by premium) and headline tone
+- Weekly swing (the primary strategy): enter on the daily chart, exit on a one-week horizon, with Larry Williams'
+  COT index for commercial hedgers, the z-score, Williams %R and Williams Accumulation/Distribution lined up.
+- Mean reversion and trend breakouts as alternatives you can switch to.
 
-Each idea comes with ATR-based levels and, so nothing is taken on faith, how the same signal actually did on that
-stock over the past year (daily) or past days (next-30-minute bias). These are signals, not certainties.
+Every setup comes with its exact plan (when to buy, the stop, the target, when to get out), the strategy's tested
+record on all Nasdaq-100 stocks and on this stock, a random-entry and a random-walk test (could luck explain it?),
+earnings dates inside the holding period, news, insider buying and big options trades. Signals, not certainties.
 """
 import asyncio
 import datetime as dt
@@ -20,14 +17,27 @@ import time
 from zoneinfo import ZoneInfo
 
 from . import flow, positioning, sec
+from . import strategies as st
 from .core import EngineError, handler, market_session
 
 log = logging.getLogger('engine.scanner')
 EASTERN = ZoneInfo('America/New_York')
 
-UNIVERSE = ['SPY', 'QQQ', 'IWM', 'NVDA', 'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'META', 'TSLA', 'AVGO', 'AMD', 'NFLX', 'JPM',
-            'LLY', 'XOM', 'COST', 'PLTR', 'UBER', 'CRM', 'ORCL', 'MU', 'COIN', 'BA', 'DIS', 'V', 'UNH', 'WMT', 'GS', 'SMH']
-MAX_SYMBOLS = 45
+# Nasdaq-100 members (2025-26 list; the index is rebalanced every December, so edit this when it changes).
+# GOOG is left out because GOOGL is the same company.
+NASDAQ_100 = [
+    'AAPL', 'MSFT', 'NVDA', 'AMZN', 'META', 'GOOGL', 'AVGO', 'TSLA', 'COST', 'NFLX', 'TMUS', 'ASML', 'CSCO', 'AMD', 'PEP',
+    'LIN', 'AZN', 'ADBE', 'INTU', 'QCOM', 'TXN', 'ISRG', 'BKNG', 'AMGN', 'AMAT', 'PDD', 'HON', 'CMCSA', 'ARM', 'GILD',
+    'ADP', 'PANW', 'LRCX', 'VRTX', 'MU', 'SBUX', 'ADI', 'MELI', 'KLAC', 'INTC', 'APP', 'CRWD', 'PLTR', 'MSTR', 'CTAS',
+    'MDLZ', 'CEG', 'SNPS', 'CDNS', 'ORLY', 'MAR', 'FTNT', 'PYPL', 'DASH', 'REGN', 'ABNB', 'ADSK', 'WDAY', 'CSX', 'ROP',
+    'CHTR', 'MRVL', 'NXPI', 'PCAR', 'AEP', 'CPRT', 'PAYX', 'TTD', 'FANG', 'ROST', 'KDP', 'MNST', 'AXON', 'FAST', 'TEAM',
+    'ODFL', 'EA', 'XEL', 'DDOG', 'BKR', 'VRSK', 'CTSH', 'EXC', 'KHC', 'IDXX', 'CCEP', 'GEHC', 'ZS', 'CSGP', 'TTWO',
+    'LULU', 'DXCM', 'ON', 'MCHP', 'CDW', 'WBD', 'BIIB', 'GFS', 'MDB', 'SHOP', 'TRI',
+]
+UNIVERSE = NASDAQ_100
+CONTEXT = ['QQQ']  # read for the market regime, not traded
+MAX_EXTRA = 25  # watchlist symbols added on top of the Nasdaq-100
+NDX_COT = '209742'  # Nasdaq-100 E-mini futures: the COT market for Nasdaq stocks
 # Schwab allows about 120 requests a minute for the whole app, and the charts share it: the scanner sends one
 # request at a time, at most one every 0.7 s (about 85 a minute), so the owner's own charts always have room.
 REQUEST_GAP = 0.7
@@ -98,401 +108,13 @@ NEGATIVE_WORDS = ('miss', 'misses', 'downgrade', 'downgraded', 'cuts', 'cut', 'p
 
 # ---------- Indicator maths (plain Python, so the scanner works even without numpy) ----------
 
-def ema(values, n):
-    out, k, prev = [], 2 / (n + 1), None
-    for v in values:
-        prev = v if prev is None else prev + k * (v - prev)
-        out.append(prev)
-    return out
-
-
-def rsi(closes, n=14):
-    out = [None] * len(closes)
-    gain = loss = 0.0
-    for i in range(1, len(closes)):
-        d = closes[i] - closes[i - 1]
-        g, l = max(d, 0), max(-d, 0)
-        if i <= n:
-            gain += g / n
-            loss += l / n
-        else:
-            gain = (gain * (n - 1) + g) / n
-            loss = (loss * (n - 1) + l) / n
-        if i >= n:
-            out[i] = 100.0 if loss == 0 else 100 - 100 / (1 + gain / loss)
-    return out
-
-
-def atr(bars, n=14):
-    out, prev = [None] * len(bars), None
-    for i, b in enumerate(bars):
-        tr = b['high'] - b['low'] if i == 0 else max(b['high'] - b['low'], abs(b['high'] - bars[i - 1]['close']), abs(b['low'] - bars[i - 1]['close']))
-        prev = tr if prev is None else (prev * (n - 1) + tr) / n
-        out[i] = prev if i >= n - 1 else None
-    return out
-
-
-def adx(bars, n=14):
-    """Average directional index: trend strength (above ~25 = trending)."""
-    out = [None] * len(bars)
-    tr_s = pdm_s = ndm_s = None
-    dx_vals = []
-    for i in range(1, len(bars)):
-        up = bars[i]['high'] - bars[i - 1]['high']
-        down = bars[i - 1]['low'] - bars[i]['low']
-        pdm = up if up > down and up > 0 else 0
-        ndm = down if down > up and down > 0 else 0
-        tr = max(bars[i]['high'] - bars[i]['low'], abs(bars[i]['high'] - bars[i - 1]['close']), abs(bars[i]['low'] - bars[i - 1]['close']))
-        if tr_s is None:
-            tr_s, pdm_s, ndm_s = tr, pdm, ndm
-        else:
-            tr_s, pdm_s, ndm_s = tr_s - tr_s / n + tr, pdm_s - pdm_s / n + pdm, ndm_s - ndm_s / n + ndm
-        if tr_s:
-            pdi, ndi = 100 * pdm_s / tr_s, 100 * ndm_s / tr_s
-            dx_vals.append(100 * abs(pdi - ndi) / (pdi + ndi) if pdi + ndi else 0)
-            if len(dx_vals) >= n:
-                out[i] = sum(dx_vals[-n:]) / n
-    return out
-
-
-# ---------- Signals ----------
-
-def prepare(bars, spy_closes=None):
-    """Every indicator the daily score needs, computed once over the whole history (all are causal, so the value at
-    bar i only uses bars up to i: scoring old bars this way is the same as scoring them on that day)."""
-    closes = [b['close'] for b in bars]
-    macd = [x - y for x, y in zip(ema(closes, 12), ema(closes, 26))]
-    sig = ema(macd, 9)
-    spy = None
-    if spy_closes:
-        # Line SPY up with this stock by trading day (a day missing from either side just has no comparison).
-        day = lambda t: time.strftime('%Y-%m-%d', time.gmtime(t + 12 * 3600))
-        by_day = {day(t): c for t, c in spy_closes}
-        spy = [by_day.get(day(b['time'])) for b in bars]
-    # Williams Accumulation/Distribution: buying vs selling pressure from closes against the true range.
-    wad, total = [0.0], 0.0
-    for i in range(1, len(bars)):
-        pc = closes[i - 1]
-        if closes[i] > pc:
-            total += closes[i] - min(bars[i]['low'], pc)
-        elif closes[i] < pc:
-            total += closes[i] - max(bars[i]['high'], pc)
-        wad.append(total)
-    # Chaikin money flow (20 days): volume-weighted position of each close in its range.
-    mfv = [((b['close'] - b['low']) - (b['high'] - b['close'])) / (b['high'] - b['low']) * b['volume'] if b['high'] > b['low'] else 0 for b in bars]
-    cmf = [None] * len(bars)
-    for i in range(19, len(bars)):
-        vol = sum(b['volume'] for b in bars[i - 19: i + 1])
-        cmf[i] = sum(mfv[i - 19: i + 1]) / vol if vol else None
-    return {'bars': bars, 'closes': closes, 'e20': ema(closes, 20), 'e50': ema(closes, 50), 'e200': ema(closes, 200), 'rsi': rsi(closes),
-            'hist': [x - y for x, y in zip(macd, sig)], 'adx': adx(bars), 'spy': spy, 'wad': wad, 'cmf': cmf}
-
-
-def daily_score(ind, i):
-    """Score (about -10..10) and reasons for the daily (swing) setup as of bar i."""
-    bars, closes = ind['bars'], ind['closes']
-    if i < 210:
-        return 0, []
-    c = closes[i]
-    e20, e50, e200, r = ind['e20'][i], ind['e50'][i], ind['e200'][i], ind['rsi'][i]
-    hist_now, hist_prev = ind['hist'][i], ind['hist'][i - 1]
-    window = bars[i - 20: i]
-    highs, lows = max(b['high'] for b in window), min(b['low'] for b in window)
-    avg_vol = sum(b['volume'] for b in window) / len(window)
-    vol_ratio = bars[i]['volume'] / avg_vol if avg_vol else 1
-    score, reasons = 0, []
-
-    def add(points, text):
-        nonlocal score
-        score += points
-        reasons.append({'text': text, 'points': points})
-
-    if c > e50 > e200:
-        add(2, 'Uptrend: above the 50- and 200-day averages')
-    elif c < e50 < e200:
-        add(-2, 'Downtrend: below the 50- and 200-day averages')
-    if c >= highs:
-        add(2, 'Breakout to a 20-day high (Donchian)')
-    elif c <= lows:
-        add(-2, 'Breakdown to a 20-day low (Donchian)')
-    spy = ind['spy']
-    if spy and spy[i] and spy[i - 21]:
-        rel = (c / closes[i - 21]) - (spy[i] / spy[i - 21])
-        if rel > 0.03:
-            add(1, f'Beating the S&P 500 by {rel * 100:.1f}% over a month')
-        elif rel < -0.03:
-            add(-1, f'Lagging the S&P 500 by {abs(rel) * 100:.1f}% over a month')
-    if r is not None:
-        if c > e50 and 38 <= r <= 52:
-            add(1, f'Pullback in an uptrend (RSI {r:.0f})')
-        elif r > 75:
-            add(-1, f'Overbought (RSI {r:.0f}): extended, risk of a pause')
-        elif r < 25 and c > e200:
-            add(1, f'Oversold above the 200-day (RSI {r:.0f}): bounce setup')
-        elif r < 30:
-            add(-1, f'Weak momentum (RSI {r:.0f})')
-    if hist_now > 0 >= hist_prev:
-        add(1, 'MACD turned up')
-    elif hist_now < 0 <= hist_prev:
-        add(-1, 'MACD turned down')
-    if vol_ratio > 1.5:
-        up = c > closes[i - 1]
-        add(1 if up else -1, f'Volume {vol_ratio:.1f}x normal on an {"up" if up else "down"} day (Wyckoff)')
-    # Money flow: are the big buyers accumulating or distributing? (Williams A/D trend and divergence, Chaikin money flow)
-    wad = ind['wad']
-    wad_up = wad[i] > wad[i - 20]
-    price_up = c > closes[i - 20]
-    if wad_up and not price_up:
-        add(1, 'Accumulation: Williams A/D rising while price lags (bullish divergence)')
-    elif not wad_up and price_up:
-        add(-1, 'Distribution: Williams A/D falling while price rises (bearish divergence)')
-    cmf = ind['cmf'][i]
-    if cmf is not None and cmf > 0.1:
-        add(1, f'Money flowing in (Chaikin money flow {cmf:+.2f})')
-    elif cmf is not None and cmf < -0.1:
-        add(-1, f'Money flowing out (Chaikin money flow {cmf:+.2f})')
-    a = ind['adx'][i]
-    if a and a > 25 and abs(score) >= 2:
-        add(1 if score > 0 else -1, f'Strong trend (ADX {a:.0f})')
-    if e20 and abs(c - e20) / e20 > 0.08:
-        reasons.append({'text': f'{(c / e20 - 1) * 100:+.1f}% from the 20-day average: better entries on a pullback', 'points': 0})
-    return score, reasons
-
-
-def signal_history(ind, direction, days=5, lookback=250):
-    """How the same daily signal did on this stock over the past year: count, % moving the right way after `days`."""
-    bars = ind['bars']
-    hits, n, total = 0, 0, 0.0
-    i = max(210, len(bars) - lookback - days)
-    while i < len(bars) - days:
-        s, _ = daily_score(ind, i)
-        if (direction > 0 and s >= 3) or (direction < 0 and s <= -3):
-            ret = bars[i + days]['close'] / bars[i]['close'] - 1
-            n += 1
-            total += ret * direction
-            hits += 1 if ret * direction > 0 else 0
-            i += days  # don't count the same move several times
-        else:
-            i += 1
-    return {'count': n, 'winRate': hits / n if n else None, 'avgReturn': total / n if n else None, 'days': days}
-
-
-STOP_ATR, MAX_HOLD, FILL_WINDOW, COSTS = 1.5, 15, 3, 0.001
-
-
-def simulate_plan(bars, i, plan, direction):
-    """Trades the plan the card shows, from the bar after the signal: fills only if price breaks the trigger
-    within 3 days (at the trigger, or the open if it gaps past), takes half at target 1 and moves the stop on the
-    rest to break-even, exits the rest at target 2, the stop, or after 15 days. Stops are filled at the open when
-    price gaps through them, and when a stop and a target fall in the same bar the stop is assumed first."""
-    trigger, stop, t1, t2 = plan['trigger'], plan['stop'], plan['target1'], plan['target2']
-    d = direction
-    fill_i = entry = None
-    for j in range(i + 1, min(len(bars), i + 1 + FILL_WINDOW)):
-        b = bars[j]
-        if (b['high'] >= trigger) if d > 0 else (b['low'] <= trigger):
-            fill_i, entry = j, (max(b['open'], trigger) if d > 0 else min(b['open'], trigger))
-            break
-    if fill_i is None:
-        return None
-    risk = (entry - stop) * d
-    if risk <= 0:
-        return None
-    half_done, realised, current_stop, exit_i, reason = False, 0.0, stop, None, 'time'
-    last = min(len(bars) - 1, fill_i + MAX_HOLD)
-    for j in range(fill_i, last + 1):
-        b = bars[j]
-        lo, hi = (b['low'], b['high'])
-        gap_open = b['open'] if j > fill_i else entry
-        hit_stop = (lo <= current_stop) if d > 0 else (hi >= current_stop)
-        if hit_stop:
-            through = (gap_open < current_stop) if d > 0 else (gap_open > current_stop)
-            price = gap_open if through and j > fill_i else current_stop
-            realised += (0.5 if half_done else 1.0) * (price - entry) * d
-            exit_i, reason = j, ('break-even' if half_done else 'stop')
-            break
-        # A target is filled at its price, or at the open when price gaps past it (never worse than the fill).
-        better = (lambda target: max(target, gap_open)) if d > 0 else (lambda target: min(target, gap_open))
-        if not half_done and ((hi >= t1) if d > 0 else (lo <= t1)):
-            realised += 0.5 * (better(t1) - entry) * d
-            half_done, current_stop = True, entry
-            # The bar that hit target 1 also came back to the entry: assume the break-even stop came first.
-            if (lo <= entry) if d > 0 else (hi >= entry):
-                exit_i, reason = j, 'break-even'
-                break
-        if half_done and ((hi >= t2) if d > 0 else (lo <= t2)):
-            realised += 0.5 * (better(t2) - entry) * d
-            exit_i, reason = j, 'target'
-            break
-    if exit_i is None:
-        exit_i = last
-        realised += (0.5 if half_done else 1.0) * (bars[last]['close'] - entry) * d
-    return {'ret': realised / entry - COSTS, 'r': realised / risk, 'reason': reason, 'bars': exit_i - fill_i, 'exit': exit_i}
-
-
-def signal_trades(ind, direction, atrs):
-    """Each time the score first crosses the threshold, builds the same plan the card shows (trigger, level-based
-    stop and targets, from data up to that day only) and trades it with simulate_plan. One trade at a time."""
-    bars = ind['bars']
-    trades = []
-    i = 211
-    prev = daily_score(ind, i - 1)[0]
-    while i < len(bars) - 1:
-        s, _ = daily_score(ind, i)
-        crossed = (direction > 0 and s >= 3 > prev) or (direction < 0 and s <= -3 < prev)
-        prev = s
-        if not crossed or not atrs[i]:
-            i += 1
-            continue
-        plan = trade_plan(key_levels(ind, atrs[i], i), bars[i]['close'], atrs[i], direction, bars[i])
-        t = simulate_plan(bars, i, plan, direction)
-        if t is None:
-            i += 1
-            continue
-        trades.append(t)
-        i = t['exit'] + 1
-        prev = daily_score(ind, i - 1)[0] if i - 1 < len(bars) else prev
-    return trades
-
-
-def backtest_signal(ind, direction, atrs):
-    """The setup's track record on this stock (signal_trades), graded. Costs 0.1% a round trip."""
-    bars = ind['bars']
-    return {**summarise_trades(signal_trades(ind, direction, atrs)),
-            'from': bars[211]['time'] if len(bars) > 211 else None, 'to': bars[-1]['time'],
-            'rules': f'Same plan as the card: enter only on a break of the trigger within {FILL_WINDOW} days, stop and targets from support and resistance, half off at target 1 with the stop moved to break-even, the rest at target 2 or after {MAX_HOLD} days; {COSTS * 100:.1f}% costs'}
-
-
-def summarise_trades(trades):
-    """Win rate, profit factor, expectancy and a grade: proven (6+ trades, positive expectancy, profit factor 1.25+),
-    mixed (4+ trades, positive), failed (4+ trades, losing) or unproven (too few to judge)."""
-    wins = [t for t in trades if t['ret'] > 0]
-    losses = [t for t in trades if t['ret'] <= 0]
-    gross_win, gross_loss = sum(t['ret'] for t in wins), -sum(t['ret'] for t in losses)
-    streak = worst = 0
-    for t in trades:
-        streak = streak + 1 if t['ret'] <= 0 else 0
-        worst = max(worst, streak)
-    n = len(trades)
-    pf = gross_win / gross_loss if gross_loss else (float('inf') if wins else None)
-    exp = sum(t['ret'] for t in trades) / n if n else None
-    grade = 'unproven'
-    if n >= 6 and exp is not None and exp > 0 and pf is not None and pf >= 1.25:
-        grade = 'proven'
-    elif n >= 4 and exp is not None and exp > 0:
-        grade = 'mixed'
-    elif n >= 4:
-        grade = 'failed'
-    return {'trades': n, 'winRate': len(wins) / n if n else None, 'profitFactor': None if pf is None else (round(pf, 2) if pf != float('inf') else 99),
-            'expectancy': exp, 'avgR': sum(t['r'] for t in trades) / n if n else None, 'avgBars': sum(t['bars'] for t in trades) / n if n else None,
-            'targets': sum(1 for t in trades if t['reason'] == 'target'), 'stops': sum(1 for t in trades if t['reason'] == 'stop'),
-            'maxLosingStreak': worst, 'total': sum(t['ret'] for t in trades), 'grade': grade}
-
-
-def swing_levels(bars, atr_now, lookback=180, width=3):
-    """Support/resistance from swing highs and lows (a bar higher/lower than the 3 on each side), clustered within
-    0.6 ATR. More touches = stronger level; each level keeps its last-touch date."""
-    recent = bars[-lookback:]
-    points = []
-    for i in range(width, len(recent) - width):
-        hi, lo = recent[i]['high'], recent[i]['low']
-        if all(hi >= recent[j]['high'] for j in range(i - width, i + width + 1)):
-            points.append((hi, recent[i]['time']))
-        if all(lo <= recent[j]['low'] for j in range(i - width, i + width + 1)):
-            points.append((lo, recent[i]['time']))
-    clusters = []
-    for price, t in sorted(points):
-        if clusters and price - clusters[-1]['prices'][-1] <= 0.6 * atr_now:
-            clusters[-1]['prices'].append(price)
-            clusters[-1]['last'] = max(clusters[-1]['last'], t)
-        else:
-            clusters.append({'prices': [price], 'last': t})
-    return [{'price': sum(c['prices']) / len(c['prices']), 'touches': len(c['prices']), 'last': c['last'], 'kind': 'swing'} for c in clusters]
-
-
-def key_levels(ind, atr_now, end=None):
-    """Every level that matters as of bar `end` (default: the latest), tagged by source: swing clusters, floor
-    pivots, 52-week range, 50/200-day averages. Only uses bars up to `end`, so the backtest can replay it."""
-    end = len(ind['bars']) - 1 if end is None else end
-    bars = ind['bars'][:end + 1]
-    prev = bars[-2] if len(bars) > 1 else bars[-1]
-    p = (prev['high'] + prev['low'] + prev['close']) / 3
-    year = bars[-252:]
-    levels = swing_levels(bars, atr_now) + [
-        {'price': p, 'kind': 'pivot', 'label': 'Pivot'},
-        {'price': 2 * p - prev['low'], 'kind': 'pivot', 'label': 'R1'},
-        {'price': 2 * p - prev['high'], 'kind': 'pivot', 'label': 'S1'},
-        {'price': p + (prev['high'] - prev['low']), 'kind': 'pivot', 'label': 'R2'},
-        {'price': p - (prev['high'] - prev['low']), 'kind': 'pivot', 'label': 'S2'},
-        {'price': max(b['high'] for b in year), 'kind': '52w', 'label': '52-week high'},
-        {'price': min(b['low'] for b in year), 'kind': '52w', 'label': '52-week low'},
-        {'price': ind['e50'][end], 'kind': 'ma', 'label': '50-day average'},
-        {'price': ind['e200'][end], 'kind': 'ma', 'label': '200-day average'},
-    ]
-    for lv in levels:
-        n = lv.get('touches', 1)
-        lv.setdefault('label', f"Swing level ({n} touch{'' if n == 1 else 'es'})")
-    return levels
-
-
-def dedupe_levels(levels, atr_now, origin):
-    """Merges levels closer than 0.25 ATR (keeping the nearer-to-origin one's label plus the other's), nearest first."""
-    out = []
-    for lv in sorted(levels, key=lambda x: abs(x['price'] - origin)):
-        twin = next((o for o in out if abs(o['price'] - lv['price']) < 0.25 * atr_now), None)
-        if twin:
-            if lv['label'] not in twin['label']:
-                twin['label'] = f"{twin['label']} + {lv['label']}"
-        else:
-            out.append({'price': lv['price'], 'label': lv['label']})
-    return out
-
-
-def trade_plan(levels, price, atr_now, direction, today):
-    """Entry, stop and targets from real levels, all measured from the entry trigger (where the trade would really
-    be filled): stop just past the nearest level 0.75-2.5 ATR behind the entry, targets at the next distinct levels
-    at least 1 ATR ahead of it (falling back to ATR distances), and reward-to-risk from the entry."""
-    trigger = max(today['high'], price) if direction > 0 else min(today['low'], price)
-    entry = trigger
-    behind = sorted((lv for lv in levels if (lv['price'] < entry if direction > 0 else lv['price'] > entry) and 0.75 * atr_now <= abs(entry - lv['price']) <= 2.5 * atr_now),
-                    key=lambda lv: abs(entry - lv['price']))
-    if behind:
-        stop = behind[0]['price'] - 0.25 * atr_now * direction
-        stop_note = f"just past {behind[0]['label']} at {behind[0]['price']:.2f}"
-    else:
-        stop = entry - STOP_ATR * atr_now * direction
-        stop_note = f'{STOP_ATR} ATR below the entry' if direction > 0 else f'{STOP_ATR} ATR above the entry'
-    risk = abs(entry - stop) or atr_now
-    ahead = dedupe_levels([lv for lv in levels if (lv['price'] - entry) * direction >= 1.0 * atr_now], atr_now, entry)
-    t1 = ahead[0] if ahead else {'price': entry + 2 * atr_now * direction, 'label': '2 ATR'}
-    rest = [lv for lv in ahead[1:] if (lv['price'] - t1['price']) * direction >= 0.5 * atr_now]
-    if rest:
-        t2 = rest[0]
-    elif (3.5 * atr_now) - abs(t1['price'] - entry) >= 0.5 * atr_now:
-        t2 = {'price': entry + 3.5 * atr_now * direction, 'label': '3.5 ATR'}
-    else:  # target 1 is already far away: aim 1.5 ATR past it
-        t2 = {'price': t1['price'] + 1.5 * atr_now * direction, 'label': f"1.5 ATR past {t1['label']}"}
-    side = 'above' if direction > 0 else 'below'
-    return {
-        'entry': entry, 'trigger': trigger, 'price': price,
-        'entryNote': f"Buy only on a move {side} {trigger:.2f} (today's {'high' if direction > 0 else 'low'}): the breakout confirms the signal. A pullback that holds support is a second chance, with the same stop" if direction > 0
-                     else f"Sell short only on a move {side} {trigger:.2f} (today's low): the breakdown confirms the signal. A bounce that fails at resistance is a second chance, with the same stop",
-        'stop': stop, 'stopNote': stop_note,
-        'target1': t1['price'], 'target1Note': t1['label'],
-        'target2': t2['price'], 'target2Note': t2['label'],
-        'riskReward': abs(t1['price'] - entry) / risk, 'riskPct': risk / entry, 'atr': atr_now,
-        'exitNote': 'Take some profit at target 1 and move the stop to break-even; exit the rest at target 2, on a daily close back through the 20-day average, or with a stop trailed 2 ATR behind the best close (chandelier exit)',
-        'supports': dedupe_levels([x for x in levels if x['price'] < price], atr_now, price)[:4],
-        'resistances': dedupe_levels([x for x in levels if x['price'] > price], atr_now, price)[:4],
-    }
-
 
 def intraday_bias(bars5):
     """Next-30-minute lean from 5-minute bars (trend, VWAP, momentum, RSI) and how often it was right recently."""
     if len(bars5) < 60:
         return None
     closes = [b['close'] for b in bars5]
-    e9, e21, r = ema(closes, 9), ema(closes, 21), rsi(closes)
+    e9, e21, r = st.ema(closes, 9), st.ema(closes, 21), st.rsi(closes)
     day = lambda t: dt.datetime.fromtimestamp(t, EASTERN).date()  # noqa: E731
     vwap, pv, vv, cur = [], 0.0, 0.0, None
     for b in bars5:
@@ -528,6 +150,7 @@ def headline_tone(items):
     return score
 
 
+
 # ---------- Data ----------
 
 async def _history(ctx, symbol, method, days, key, max_age):
@@ -546,173 +169,16 @@ async def _history(ctx, symbol, method, days, key, max_age):
     return await ctx.cached((key, symbol), max_age, load, persist=True)
 
 
-def daily_age(session):
-    # While the market is open the last daily bar is still forming: re-read it every 30 minutes.
-    return 1800 if session == 'open' else 4 * 3600
-
-
-async def analyse(ctx, symbol, spy_closes, session):
-    daily = await _history(ctx, symbol, 'get_price_history_every_day', 1100, 'scan-daily3y', daily_age(session))
-    if len(daily) < 260:
-        return None
-    ind = prepare(daily, spy_closes)
-    score, reasons = daily_score(ind, len(daily) - 1)
-    atrs = atr(daily)
-    a = atrs[-1] or 0
-    c = daily[-1]['close']
-    direction = 1 if score >= 3 else -1 if score <= -3 else 0
-    m30 = await _history(ctx, symbol, 'get_price_history_every_thirty_minutes', 15, 'scan-30m', 600 if session != 'closed' else 6 * 3600)
-    if len(m30) > 60:
-        closes = [b['close'] for b in m30]
-        trend30 = 1 if ema(closes, 20)[-1] > ema(closes, 50)[-1] else -1
-        if direction and trend30 == direction:
-            score += direction
-            reasons.append({'text': 'Daily and 30-minute trends agree (triple screen)', 'points': direction})
-        elif direction and trend30 != direction:
-            reasons.append({'text': '30-minute trend disagrees: wait for it to turn', 'points': 0})
-    bias = None
-    if session != 'closed':
-        m5 = await _history(ctx, symbol, 'get_price_history_every_five_minutes', 5, 'scan-5m', 240)
-        bias = intraday_bias(m5)
-    levels = key_levels(ind, a) if a else []
-    plan = trade_plan(levels, c, a, direction, daily[-1]) if direction and a else None
-    # Long and short both get tested, so the scanner knows whether this stock rewards the signal at all.
-    tested = await asyncio.to_thread(backtest_signal, ind, direction, atrs) if direction else None
-    history = signal_history(ind, direction) if direction else None
-    if not direction and a:
-        both = trade_plan(levels, c, a, 1, daily[-1])
-        plan = {'supports': both['supports'], 'resistances': both['resistances'], 'atr': a}
-    week = c / daily[-6]['close'] - 1 if len(daily) > 6 else None
-    return {'symbol': symbol, 'price': c, 'asOf': daily[-1]['time'], 'score': score, 'direction': direction,
-            'reasons': sorted(reasons, key=lambda r: -abs(r['points'])), 'levels': plan, 'backtest': tested, 'history': history, 'bias': bias,
-            'week': week, 'day': c / daily[-2]['close'] - 1 if len(daily) > 2 else None}
-
-
-async def scan(ctx, news=None):
-    session = market_session()
-    pctx = _PacedContext(ctx)
-    bad = bad_symbols()
-    symbols = list(dict.fromkeys(UNIVERSE + sorted(_state['extra'] - bad)))[:MAX_SYMBOLS]
-    spy = await _history(ctx, 'SPY', 'get_price_history_every_day', 1100, 'scan-daily3y', daily_age(session))
-    spy_closes = [(b['time'], b['close']) for b in spy]
-    results, skipped = [], []
-    for sym in symbols:
-        try:
-            r = await analyse(ctx, sym, spy_closes, session)
-            if r:
-                results.append(r)
-        except EngineError:
-            raise  # expired login: nothing else will work either
-        except Exception as err:
-            log.info('Scanner skipped %s: %s', sym, err)
-            if isinstance(err, SymbolError):
-                skipped.append({'symbol': sym, 'reason': 'unknown'})
-                if sym in _state['extra']:
-                    _state['bad'][sym] = time.time()  # stop asking every scan; tried again in a day
-            else:
-                skipped.append({'symbol': sym, 'reason': 'temporary'})
-    if not results:
-        raise EngineError('The scanner could not load price history from Schwab.')
-    ranked = sorted([r for r in results if r['direction']], key=lambda r: -abs(r['score']))
-    # Options flow and headlines for the strongest few (these cost more requests).
-    for r in ranked[:6]:
-        try:
-            o = await flow.options(pctx, {'symbol': r['symbol']})
-            pc = o['summary'].get('putCallPremium') or o['summary'].get('putCallVolume')
-            if pc is not None:
-                r['options'] = {'putCallPremium': pc, 'expectedMove': o['summary'].get('expectedMove'), 'expiration': o['expiration']}
-                if (pc < 0.7 and r['direction'] > 0) or (pc > 1.2 and r['direction'] < 0):
-                    r['score'] += r['direction']
-                    r['reasons'].append({'text': f'Options money agrees (put/call by premium {pc:.2f})', 'points': r['direction']})
-                elif (pc > 1.2 and r['direction'] > 0) or (pc < 0.7 and r['direction'] < 0):
-                    r['reasons'].append({'text': f'Options money disagrees (put/call by premium {pc:.2f})', 'points': 0})
-        except Exception as err:
-            log.info('Scanner options for %s failed: %s', r['symbol'], err)
-    for r in ranked[:6]:
-        await smart_money(pctx, r)
-    if news is not None and ranked:
-        try:
-            items, _ = await news.get([r['symbol'] for r in ranked[:6]])
-            for r in ranked[:6]:
-                mine = [it for it in items if r['symbol'] in it.get('title', '').upper().split() or f"{r['symbol']} stock" in it.get('title', '')]
-                if mine:
-                    tone = headline_tone(mine)
-                    r['news'] = {'headline': mine[0]['title'], 'link': mine[0].get('link'), 'source': mine[0].get('source'), 'count': len(mine), 'tone': tone}
-        except Exception as err:
-            log.info('Scanner news failed: %s', err)
-    await live_prices(pctx, results)
-    above50 = sum(1 for r in results if r['reasons'] and any('Uptrend' in x['text'] for x in r['reasons']))
-    spy_row = next((r for r in results if r['symbol'] == 'SPY'), None)
-    vix = None
-    try:
-        resp = await pctx.schwab.get_quotes(['$VIX'])
-        q = (resp.json().get('$VIX') or {}).get('quote', {}) if resp.status_code == 200 else {}
-        vix = q.get('lastPrice') or q.get('closePrice')
-    except Exception:
-        pass
-    for r in results:
-        grade_setup(r)
-    weight = {'proven': 1.0, 'mixed': 0.6, 'unproven': 0.3, 'failed': 0.0}
-    def rank(r):
-        bt = r.get('backtest') or {}
-        rr = (r.get('levels') or {}).get('riskReward') or 0
-        return abs(r['score']) * weight.get(bt.get('grade'), 0.3) * (1 if rr >= 1.5 else 0.6) * (0.1 if r.get('stale') else 1)
-    candidates = [r for r in results if r['direction']]
-    ranked = sorted([r for r in candidates if (r.get('backtest') or {}).get('grade') != 'failed'], key=lambda r: -rank(r))
-    return {
-        'filteredOut': [{'symbol': r['symbol'], 'direction': r['direction'], 'backtest': r['backtest']} for r in candidates if (r.get('backtest') or {}).get('grade') == 'failed'],
-        'method': {'fallbackStopAtr': STOP_ATR, 'maxHold': MAX_HOLD, 'fillWindow': FILL_WINDOW, 'threshold': 3},
-        'updated': time.time(),
-        'session': session,
-        'scanned': len(results),
-        'skipped': skipped + [{'symbol': b, 'reason': 'unknown'} for b in sorted(bad) if b in _state['extra']],
-        'regime': {'spyScore': spy_row['score'] if spy_row else None, 'spyWeek': spy_row['week'] if spy_row else None, 'vix': vix,
-                   'uptrendShare': above50 / len(results)},
-        'setups': ranked[:12],
-        'all': sorted(results, key=lambda r: -r['score']),
-    }
-
-
-async def live_prices(ctx, results):
-    """Shows Schwab's live quote (price and today's change, same as the rest of the platform) instead of the last
-    daily bar, which can lag during the session. Signals and levels stay based on the daily bars."""
-    try:
-        resp = await ctx.schwab.get_quotes([r['symbol'] for r in results])
-        data = resp.json() if resp.status_code == 200 else {}
-    except Exception as err:
-        log.info('Scanner quotes failed: %s', err)
-        return
-    for r in results:
-        q = (data.get(r['symbol']) or {}).get('quote') or {}
-        last, net = q.get('lastPrice'), q.get('netChange')
-        if isinstance(last, (int, float)) and last > 0:
-            r['price'] = float(last)
-            if isinstance(net, (int, float)) and last - net > 0:
-                r['day'] = net / (last - net)
-
 
 async def smart_money(ctx, r):  # ctx is the scanner's paced context
-    """Institutional positioning for a top setup: commercial hedgers in the related futures (Williams COT index, 26
-    weeks), insiders' open-market buying, and big options trades paid at the ask."""
+    """Institutional flow for a top setup: insiders' open-market buying and big options trades paid at the ask.
+    (Commercial hedgers' COT positioning is already part of every setup.)"""
     d = r['direction']
 
     def add(points, text):
         r['score'] += points
-        r['reasons'].append({'text': text, 'points': points})
-        r.setdefault('smartMoney', []).append(text)
+        r.setdefault('smartMoney', []).append({'text': text, 'points': points})
 
-    try:
-        cot = await positioning.cot_for_symbol(ctx, {'symbol': r['symbol']})
-        nets = [x['commNet'] for x in cot['rows'][-26:]]
-        if len(nets) >= 10 and max(nets) > min(nets):
-            idx = 100 * (nets[-1] - min(nets)) / (max(nets) - min(nets))
-            r['cot'] = {'market': cot['market'], 'commercialIndex': idx}
-            if idx >= 75:
-                add(1 if d > 0 else 0, f"Commercial hedgers near a 6-month long extreme in {cot['market']} (Williams COT {idx:.0f})")
-            elif idx <= 25:
-                add(-1 if d < 0 else 0, f"Commercial hedgers near a 6-month short extreme in {cot['market']} (Williams COT {idx:.0f})")
-    except Exception as err:
-        log.info('Scanner COT for %s failed: %s', r['symbol'], err)
     try:
         ins = await sec.insiders(ctx, {'symbol': r['symbol']})
         buys = ins['summary']['buyValue']
@@ -735,35 +201,447 @@ async def smart_money(ctx, r):  # ctx is the scanner's paced context
         log.info('Scanner big trades for %s failed: %s', r['symbol'], err)
 
 
-def grade_setup(r):
-    """A simple conviction tier and a one-line reason, so the dashboard can show only what matters.
 
-    A: the signal made money on this stock in testing (proven), reward is at least 1.5x the risk, and several
-       independent signals agree (score 5+). B: tested positive or a decent plan. C: everything else."""
-    bt = r.get('backtest') or {}
-    rr = (r.get('levels') or {}).get('riskReward') or 0
-    strong = abs(r['score']) >= 5
-    if not r['direction']:
-        r['tier'] = None
-    elif bt.get('grade') == 'proven' and rr >= 1.5 and strong:
-        r['tier'] = 'A'
-    elif bt.get('grade') in ('proven', 'mixed') and (rr >= 1.3 or strong):
-        r['tier'] = 'B'
+def ny_today(now=None):
+    return (now or dt.datetime.now(EASTERN)).date()
+
+
+def bar_day(t):
+    return dt.datetime.fromtimestamp(t, dt.timezone.utc).date()  # daily bars are stamped at US midnight (04-07 UTC)
+
+
+def session_finished(now=None):
+    """Has today's regular session ended (so today's daily bar is final)?"""
+    now = now or dt.datetime.now(EASTERN)
+    return now.weekday() >= 5 or now.hour * 60 + now.minute >= 16 * 60
+
+
+async def daily_history(ctx, symbol):
+    """About 3 years of daily bars, fetched once per day (the live quote supplies today's bar during the day)."""
+    return await _history(ctx, symbol, 'get_price_history_every_day', 1100, ('scan-daily', str(ny_today())), 20 * 3600)
+
+
+async def live_quotes(ctx, symbols):
+    """Schwab's quotes for many symbols at once (one request per 100)."""
+    out = {}
+    for k in range(0, len(symbols), 100):
+        try:
+            resp = await ctx.schwab.get_quotes(symbols[k:k + 100])
+            if resp.status_code == 200:
+                out.update(resp.json() or {})
+        except Exception as err:
+            log.info('Scanner quotes failed: %s', err)
+    return out
+
+
+def today_bar(quote, template_time):
+    """Today's (forming or final) daily bar from a Schwab quote, or None when the stock hasn't traded today."""
+    q = (quote or {}).get('quote') or {}
+    o, hi, lo, last = q.get('openPrice'), q.get('highPrice'), q.get('lowPrice'), q.get('lastPrice')
+    when = q.get('tradeTime') or q.get('quoteTime')
+    if not all(isinstance(x, (int, float)) and x > 0 for x in (o, hi, lo, last)) or not when:
+        return None
+    if dt.datetime.fromtimestamp(when / 1000, EASTERN).date() != ny_today():
+        return None
+    # Same time-of-day stamp as Schwab's daily bars (US midnight), on today's date.
+    stamp = dt.datetime.combine(ny_today(), dt.datetime.fromtimestamp(template_time, dt.timezone.utc).time(), dt.timezone.utc)
+    return {'time': int(stamp.timestamp()), 'open': o, 'high': max(hi, last), 'low': min(lo, last), 'close': last, 'volume': q.get('totalVolume') or 0}
+
+
+def split_bars(history, quote):
+    """(completed bars, bars including today's forming bar or None). Today's bar counts as completed only after 4 PM."""
+    if not history:
+        return [], None
+    done = [b for b in history if bar_day(b['time']) < ny_today()]
+    tb = today_bar(quote, history[-1]['time'])
+    if tb is None:
+        history_today = [b for b in history if bar_day(b['time']) == ny_today()]
+        tb = history_today[-1] if history_today else None
+    if tb is None:
+        return done, None
+    if session_finished():
+        return done + [tb], None
+    return done, done + [tb]
+
+
+async def cot_for(ctx, code):
+    rows = await positioning.cot_rows(ctx, code)
+    return st.cot_index(rows) if rows else []
+
+
+async def market_for(ctx, symbol):
+    if symbol in NASDAQ_100 and symbol not in positioning.SYMBOL_MARKET:
+        return NDX_COT
+    try:
+        code, _ = await positioning.related_market(ctx, symbol)
+        return code
+    except Exception:
+        return None
+
+
+async def earnings_dates(ctx):
+    """{symbol: 'YYYY-MM-DD'} for companies reporting in the next two weeks (Nasdaq's public earnings calendar)."""
+    async def load():
+        out, ok, failed = {}, 0, 0
+        day = ny_today()
+        for _ in range(16):
+            if day.weekday() < 5:
+                try:
+                    resp = await ctx.http.get('https://api.nasdaq.com/api/calendar/earnings', params={'date': day.isoformat()},
+                                              headers={'User-Agent': 'Mozilla/5.0 (trading-platform)', 'Accept': 'application/json'}, timeout=15)
+                    if resp.status_code != 200:
+                        raise ValueError(f'HTTP {resp.status_code}')
+                    rows = ((resp.json() or {}).get('data') or {}).get('rows') or []
+                    ok += 1
+                    for r in rows:
+                        sym = str(r.get('symbol', '')).upper()
+                        if sym:
+                            out.setdefault(sym, {'date': day.isoformat(), 'time': r.get('time', '')})
+                except Exception as err:
+                    failed += 1
+                    log.info('Earnings calendar for %s failed: %s', day, err)
+            day += dt.timedelta(days=1)
+        if failed:
+            # A day we couldn't read could hide an earnings date: report the calendar as unavailable, never as "none".
+            raise ValueError(f'earnings calendar incomplete ({ok} days read, {failed} failed)')
+        return out
+    if time.time() - _state.get('earningsFailed', 0) < 3600:
+        return None  # it failed recently: try again in an hour, not every scan
+    try:
+        return await ctx.cached(('earnings-2w', str(ny_today())), 12 * 3600, load, persist=True)
+    except Exception as err:
+        log.info('Earnings calendar unavailable: %s', err)
+        _state['earningsFailed'] = time.time()
+        return None
+
+
+def add_sessions(day, n):
+    """The date n trading days (weekdays) after `day`."""
+    while n > 0:
+        day += dt.timedelta(days=1)
+        if day.weekday() < 5:
+            n -= 1
+    return day
+
+
+# ---------- Analysis (pure, runs in a worker thread) ----------
+
+_bt_cache = {}  # (symbol, strategy, last completed day) -> trades
+
+
+def stock_trades(symbol, key, ind):
+    day = bar_day(ind['bars'][-1]['time']) if ind['bars'] else None
+    ck = (symbol, key, day)
+    if len(_bt_cache) > 5000:
+        _bt_cache.clear()  # a new day: yesterday's results are no longer used
+    if ck not in _bt_cache:
+        _bt_cache[ck] = st.trades_for(ind, key)
+    return _bt_cache[ck]
+
+
+def setup_state(ind_all, s, plan, d):
+    """Where a signal from bar s stands now: ('ready' | 'waiting' | 'in trade', detail) or None if done/expired."""
+    bars = ind_all['bars']
+    last = len(bars) - 1
+    if s == last:
+        return 'ready', None
+    t = st.simulate(ind_all, s, plan, d)
+    if t is None:
+        return ('waiting', None) if last - s < plan['validDays'] else None
+    still_open = t['exit'] == last and t['reason'] == 'time' and t['bars'] < plan['maxHold']
+    return ('in trade', t) if still_open else None
+
+
+def analyse_symbol(symbol, done, live, cot, strategy_keys):
+    """All current setups for one stock, plus its backtests. `done` = completed daily bars, `live` = with today."""
+    if len(done) < 260:
+        return {'symbol': symbol, 'setups': [], 'trades': {}}
+    ind_done = st.prepare(done, cot)
+    ind_live = st.prepare(live, cot) if live else None
+    ind_now = ind_live or ind_done
+    found, trades = [], {}
+    for key in strategy_keys:
+        strat = st.STRATEGIES[key]
+        trades[key] = stock_trades(symbol, key, ind_done)
+        candidates = []
+        n = len(done)
+        for s in (n - 1, n - 2, n - 3):  # signals from the last few completed days may still be valid or open
+            sig = strat['signal'](ind_done, s)
+            if sig:
+                candidates.append((s, sig, None))
+                break
+        if ind_live:  # forming today: only final at the close
+            sig = strat['signal'](ind_live, len(live) - 1)
+            if sig:
+                candidates.append((len(live) - 1, sig, 'forming'))
+        for s, sig, forced in candidates:
+            src = ind_live if forced else ind_done
+            plan = strat['plan'](src, s, sig['dir'])
+            if not plan:
+                continue
+            if forced:
+                state, trade = 'forming', None
+            else:
+                res = setup_state(ind_now, s, plan, sig['dir'])
+                if res is None:
+                    continue
+                state, trade = res
+            found.append(build_setup(symbol, key, src, s, sig, plan, state, trade, ind_now))
+            break
+    return {'symbol': symbol, 'setups': found, 'trades': trades,
+            'closes': ind_done['closes'], 'opens': [b['open'] for b in done]}
+
+
+def build_setup(symbol, key, ind, s, sig, plan, state, trade, ind_now):
+    d = sig['dir']
+    bars = ind['bars']
+    now_bars = ind_now['bars']
+    price = now_bars[-1]['close']
+    a = ind['atr'][s]
+    entry = plan['trigger'] if plan['entry'] == 'stop' else bars[s]['close']
+    risk = abs(entry - plan['stop'])
+    rr = abs(plan['target'] - entry) / risk if plan['target'] is not None and risk else None
+    signal_day = bar_day(bars[s]['time'])
+    valid_until = add_sessions(signal_day, plan['validDays'])
+    exit_by = add_sessions(signal_day, plan['validDays'] + plan['maxHold'] - 1)
+    z, wr, cot = ind['z20'][s], ind['willr'][s], ind['cot'][s]
+    week_ago = now_bars[-6]['close'] if len(now_bars) > 6 else None
+    status_text = {
+        'forming': 'Forming today: only confirmed if it still holds at the 4 PM close',
+        'ready': (f"Ready: {'buy' if d > 0 else 'sell short'} if price trades {'above' if d > 0 else 'below'} {entry:.2f} by {valid_until:%a %b %d}"
+                  if plan['entry'] == 'stop' else f"Ready: {'buy' if d > 0 else 'sell short'} at the next open"),
+        'waiting': f"Waiting for the trigger: {'above' if d > 0 else 'below'} {entry:.2f}, valid through {valid_until:%a %b %d}",
+        'in trade': 'Triggered: the trade is on',
+    }[state]
+    out = {
+        'symbol': symbol, 'strategy': key, 'strategyName': st.STRATEGIES[key]['short'], 'direction': d,
+        'status': state, 'statusText': status_text, 'signalDate': signal_day.isoformat(),
+        'price': price, 'day': None, 'week': price / week_ago - 1 if week_ago else None,
+        'reasons': sig['reasons'], 'score': 0, 'tier': None,
+        'plan': {
+            'entryType': plan['entry'], 'trigger': entry, 'validUntil': valid_until.isoformat(), 'stop': plan['stop'],
+            'target': plan['target'], 'targetNote': plan['targetNote'], 'maxHold': plan['maxHold'], 'exitBy': exit_by.isoformat(),
+            'exitRule': plan['exitRule'], 'riskReward': rr, 'riskPct': risk / entry if entry else None, 'atr': a,
+            'horizon': st.STRATEGIES[key]['horizon'],
+        },
+        'indicators': {'z': z, 'willr': wr, 'cot': cot, 'cotView': st.cot_view(cot, d), 'weekly': ind['weekly'][s],
+                       'wadRising': ind['wad'][s] >= ind['wad_ema'][s] if ind['wad_ema'][s] is not None else None,
+                       'rsi2': ind['rsi2'][s], 'adx': ind['adx'][s]},
+        'levels': levels_around(ind_now, price),
+    }
+    if trade:
+        out['trade'] = {'entry': trade['entry'], 'filled': bar_day(now_bars[trade['fill']]['time']).isoformat(),
+                        'pnl': (price / trade['entry'] - 1) * d, 'daysHeld': trade['bars']}
+    return out
+
+
+def levels_around(ind, price):
+    a = next((x for x in reversed(ind['atr']) if x), None)
+    if not a:
+        return {'supports': [], 'resistances': []}
+    lv = st.swing_levels(ind['bars'], a)
+    extra = [{'price': ind['sma50'][-1], 'label': '50-day average'}, {'price': ind['sma200'][-1], 'label': '200-day average'},
+             {'price': ind['sma20'][-1], 'label': '20-day average'}]
+    pts = [{'price': x['price'], 'label': f"Swing level ({x['touches']} touch{'' if x['touches'] == 1 else 'es'})"} for x in lv]
+    pts += [x for x in extra if x['price']]
+    return {'supports': sorted((x for x in pts if x['price'] < price), key=lambda x: price - x['price'])[:4],
+            'resistances': sorted((x for x in pts if x['price'] > price), key=lambda x: x['price'] - price)[:4]}
+
+
+def strategy_stats(per_symbol):
+    """Each strategy's pooled record across all scanned stocks, with the random-entry test."""
+    out = {}
+    for key, strat in st.STRATEGIES.items():
+        by_sym = {r['symbol']: r['trades'].get(key, []) for r in per_symbol if r.get('trades')}
+        pooled = [t for ts in by_sym.values() for t in ts]
+        closes = {r['symbol']: r['closes'] for r in per_symbol if r.get('closes')}
+        opens = {r['symbol']: r['opens'] for r in per_symbol if r.get('opens')}
+        test = st.random_entry_test({k: v for k, v in by_sym.items() if k in closes}, closes, opens)
+        out[key] = {'name': strat['name'], 'short': strat['short'], 'horizon': strat['horizon'], 'stats': st.summarise(pooled),
+                    'randomEntry': test, 'stocks': len(by_sym)}
+    return out
+
+
+def grade(setup, stock, strat, earnings):
+    """Tier A: the strategy beats random entries across the Nasdaq-100 (profit factor 1.2+, p <= 0.10), this stock's
+    own record isn't losing, commercials (COT) aren't against it, no earnings inside the holding period, and (for the
+    weekly swing) the target is at least 1.5x the risk. B: positive strategy, nothing against. C: the rest."""
+    s, d = setup, setup['direction']
+    ps, re = strat['stats'], strat['randomEntry'] or {}
+    edge = (ps['expectancy'] or 0) > 0 and (ps['profitFactor'] or 0) >= 1.2 and (re.get('p') or 1) <= 0.10
+    positive = (ps['expectancy'] or 0) > 0
+    stock_ok = stock['grade'] != 'failed'
+    cot_ok = s['indicators']['cotView'] != 'against'
+    e = (earnings or {}).get(s['symbol'])
+    in_window = bool(e and s['signalDate'] <= e['date'] <= s['plan']['exitBy'])
+    rr_ok = s['strategy'] != 'weekly_swing' or (s['plan']['riskReward'] or 0) >= 1.5
+    s['earnings'] = {'date': e['date'], 'time': e.get('time', ''), 'inWindow': in_window} if e else ({'unknown': True} if earnings is None else None)
+    z = s['indicators']['z']
+    checks = [
+        {'label': 'Strategy edge on the Nasdaq-100', 'ok': edge if ps['trades'] else None,
+         'detail': (f"{ps['trades']} past trades, {round((ps['winRate'] or 0) * 100)}% winners, profit factor {ps['profitFactor']}, "
+                    f"random-entry p = {re['p']:.2f}" if re else f"{ps['trades']} past trades (too few for the random test)") if ps['trades'] else 'No past trades to judge'},
+        {'label': "This stock's record", 'ok': None if stock['grade'] == 'unproven' else stock_ok,
+         'detail': f"{stock['trades']} trades, {round((stock['winRate'] or 0) * 100)}% winners ({stock['grade']})" if stock['trades'] else 'No past trades on this stock'},
+        {'label': 'COT: commercial hedgers', 'ok': None if s['indicators']['cotView'] in (None, 'neutral') else s['indicators']['cotView'] == 'agree',
+         'detail': f"Williams COT index {s['indicators']['cot']:.0f}/100 ({s['indicators']['cotView']})" if s['indicators']['cot'] is not None else 'No COT data for this market'},
+        {'label': 'Z-score', 'ok': None if z is None else ((z <= -1) if d > 0 else (z >= 1)) if s['strategy'] != 'breakout' else abs(z) < 2.5,
+         'detail': f"{z:+.2f} standard deviations from the 20-day average" if z is not None else '—'},
+        {'label': 'Earnings', 'ok': None if s['earnings'] is None or s['earnings'].get('unknown') else not in_window,
+         'detail': (f"Reports {e['date']} {'(inside the holding period: skip or size down)' if in_window else '(after the planned exit)'}" if e
+                    else 'Earnings calendar unavailable' if earnings is None else 'No earnings in the next two weeks')},
+    ]
+    if s['plan']['riskReward'] is not None:
+        checks.append({'label': 'Reward:risk', 'ok': (s['plan']['riskReward'] >= 1.5) if s['strategy'] == 'weekly_swing' else None,
+                       'detail': f"{s['plan']['riskReward']:.1f}x to the target"})
+    s['checks'] = checks
+    s['score'] += sum(2 if c['ok'] else -2 if c['ok'] is False else 0 for c in checks)
+    if not stock_ok:
+        s['tier'] = None
+    elif edge and cot_ok and not in_window and rr_ok and s['status'] != 'forming':
+        s['tier'] = 'A'
+    elif positive and cot_ok:
+        s['tier'] = 'B'
     else:
-        r['tier'] = 'C'
-    agree = [x['text'].split(':')[0].split(' (')[0] for x in r['reasons'] if x['points'] * (r['direction'] or 1) > 0][:3]
-    r['summary'] = ', '.join(agree) if agree else 'No clear signal'
-    # The plan is from the last daily bar; if the live price has already hit the stop or the first target, it's stale.
-    lv, d = r.get('levels') or {}, r['direction']
-    if d and lv.get('stop') is not None and (r['price'] - lv['stop']) * d <= 0:
-        r['tier'], r['stale'] = 'C', True
-        r['summary'] = 'Live price is already through the stop: setup failed, wait for a new one'
-    elif d and lv.get('target1') is not None and (r['price'] - lv['target1']) * d >= 0:
-        r['tier'], r['stale'] = 'C', True
-        r['summary'] = 'Live price already reached the first target: too late to chase'
+        s['tier'] = 'C'
+    s['stock'] = stock
+    s['strategyStats'] = {'trades': ps['trades'], 'winRate': ps['winRate'], 'profitFactor': ps['profitFactor'],
+                          'expectancy': ps['expectancy'], 'randomEntryP': re.get('p')}
 
 
-SCAN_EVERY = 600  # the owner wants a fresh scan every 10 minutes (cached daily bars keep quiet hours cheap)
+def compute(rows, strategy_keys, earnings):
+    """CPU part of a scan: analyse every stock, pool the backtests, grade the setups."""
+    per_symbol = [analyse_symbol(sym, done, live, cot, strategy_keys) for sym, done, live, cot in rows]
+    stats = strategy_stats(per_symbol)
+    setups, filtered = [], []
+    for r in per_symbol:
+        for s in r['setups']:
+            stock = st.summarise(r['trades'].get(s['strategy'], []))
+            grade(s, stock, stats[s['strategy']], earnings)
+            (setups if s['tier'] else filtered).append(s)
+    return per_symbol, stats, setups, filtered
+
+
+_rw_cache = {}
+
+
+def random_walk_for(symbol, key, done, cot):
+    """Per-stock random-walk test for a current setup (cached for the day; needs 5+ past trades to mean anything)."""
+    ck = (symbol, key, bar_day(done[-1]['time']))
+    if len(_rw_cache) > 500:
+        _rw_cache.clear()
+    if ck not in _rw_cache:
+        _rw_cache[ck] = st.random_walk_test(done, cot, key, runs=100)
+    return _rw_cache[ck]
+
+
+# ---------- The scan ----------
+
+SCAN_EVERY = 300  # the owner wants a fresh scan every 5 minutes
+
+
+async def scan(ctx, news=None):
+    session = market_session()
+    pctx = _PacedContext(ctx)
+    bad = bad_symbols()
+    extras = [s for s in sorted(_state['extra'] - bad) if s not in UNIVERSE][:MAX_EXTRA]
+    symbols = list(dict.fromkeys(UNIVERSE + extras))
+    quotes = await live_quotes(pctx, symbols + CONTEXT + ['$VIX'])
+    cot_cache, histories, skipped = {}, {}, []
+    for sym in symbols + CONTEXT:
+        try:
+            histories[sym] = await daily_history(ctx, sym)
+        except EngineError:
+            raise  # expired login: nothing else will work either
+        except Exception as err:
+            log.info('Scanner skipped %s: %s', sym, err)
+            if sym in CONTEXT:
+                continue
+            if isinstance(err, SymbolError):
+                skipped.append({'symbol': sym, 'reason': 'unknown'})
+                if sym in _state['extra']:
+                    _state['bad'][sym] = time.time()
+            else:
+                skipped.append({'symbol': sym, 'reason': 'temporary'})
+    rows = []
+    for sym in symbols:
+        if sym not in histories:
+            continue
+        code = await market_for(pctx, sym)
+        if code and code not in cot_cache:
+            try:
+                cot_cache[code] = await cot_for(ctx, code)
+            except Exception as err:
+                log.info('Scanner COT %s failed: %s', code, err)
+                cot_cache[code] = []
+        done, live = split_bars(histories[sym], quotes.get(sym))
+        rows.append((sym, done, live, cot_cache.get(code) or None))
+    if not rows:
+        raise EngineError('The scanner could not load price history from Schwab.')
+    earnings = await earnings_dates(ctx)
+    keys = list(st.STRATEGIES)
+    per_symbol, stats, setups, filtered = await asyncio.to_thread(compute, rows, keys, earnings)
+
+    # Day change from the live quote (same as the rest of the platform).
+    for s in setups:
+        q = (quotes.get(s['symbol']) or {}).get('quote') or {}
+        last, net = q.get('lastPrice'), q.get('netChange')
+        if isinstance(last, (int, float)) and isinstance(net, (int, float)) and last - net > 0:
+            s['day'] = net / (last - net)
+    tier_rank = {'A': 0, 'B': 1, 'C': 2}
+    setups.sort(key=lambda s: (tier_rank[s['tier']], s['status'] == 'forming', -s['score']))
+
+    # Extra checks for the best few per strategy: random-walk test, news, insiders and big options trades, 30-minute lean.
+    top = []
+    for key in keys:
+        top += [s for s in setups if s['strategy'] == key][:4]
+    by_sym = {sym: (done, cot) for sym, done, _, cot in rows}
+    for s in top:
+        done, cot = by_sym[s['symbol']]
+        if s['stock']['trades'] >= 5:
+            s['randomWalk'] = await asyncio.to_thread(random_walk_for, s['symbol'], s['strategy'], done, cot)
+        await smart_money(pctx, s)
+        if session != 'closed':
+            try:
+                m5 = await _history(ctx, s['symbol'], 'get_price_history_every_five_minutes', 5, 'scan-5m', 240)
+                s['bias'] = intraday_bias(m5)
+            except EngineError:
+                raise
+            except Exception as err:
+                log.info('Scanner 5-minute bars for %s failed: %s', s['symbol'], err)
+    if news is not None and top:
+        try:
+            items, _ = await news.get(list(dict.fromkeys(s['symbol'] for s in top))[:12])
+            for s in top:
+                mine = [it for it in items if s['symbol'] in it.get('title', '').upper().split() or f"{s['symbol']} stock" in it.get('title', '')]
+                if mine:
+                    tone = headline_tone(mine)
+                    s['news'] = {'headline': mine[0]['title'], 'link': mine[0].get('link'), 'source': mine[0].get('source'), 'count': len(mine), 'tone': tone}
+                    agrees = tone * s['direction'] > 0
+                    s['checks'].append({'label': 'News tone', 'ok': None if tone == 0 else agrees,
+                                        'detail': f"{len(mine)} recent headline{'s' if len(mine) != 1 else ''}, {'positive' if tone > 0 else 'negative' if tone < 0 else 'neutral'}"})
+        except Exception as err:
+            log.info('Scanner news failed: %s', err)
+
+    # Market regime: Nasdaq-100 trend, breadth, VIX and where commercials sit in Nasdaq futures.
+    regime = {'qqqWeekly': None, 'qqqWeek': None, 'above50': None, 'vix': None, 'ndxCot': None}
+    if 'QQQ' in histories:
+        done, live = split_bars(histories['QQQ'], quotes.get('QQQ'))
+        q_ind = st.prepare(live or done, cot_cache.get(NDX_COT))
+        regime['qqqWeekly'] = q_ind['weekly'][-1]
+        regime['qqqWeek'] = q_ind['closes'][-1] / q_ind['closes'][-6] - 1 if len(q_ind['closes']) > 6 else None
+        regime['ndxCot'] = q_ind['cot'][-1]
+    above = [r for r in per_symbol if r.get('closes') and len(r['closes']) > 50]
+    if above:
+        regime['above50'] = sum(1 for r in above if r['closes'][-1] > sum(r['closes'][-50:]) / 50) / len(above)
+    vq = (quotes.get('$VIX') or {}).get('quote') or {}
+    regime['vix'] = vq.get('lastPrice') or vq.get('closePrice')
+    return {
+        'updated': time.time(), 'session': session, 'universe': 'Nasdaq-100', 'scanned': len(rows),
+        'skipped': skipped + [{'symbol': b, 'reason': 'unknown'} for b in sorted(bad) if b in _state['extra']],
+        'regime': regime, 'strategies': stats, 'primary': 'weekly_swing',
+        'setups': setups[:60], 'filteredOut': [{'symbol': s['symbol'], 'strategy': s['strategy'], 'stock': s['stock']} for s in filtered][:30],
+    }
 
 
 def next_interval():
@@ -771,7 +649,7 @@ def next_interval():
 
 
 async def background(ctx, news=None, first_delay=15):
-    """Runs forever inside the helper: scans, waits (10 minutes in market hours), scans again."""
+    """Runs forever inside the helper: scans, waits 5 minutes, scans again."""
     await asyncio.sleep(first_delay)
     while True:
         try:

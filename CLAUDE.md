@@ -27,7 +27,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Engine (helper/engine/): `@handler('name')` registers request types (flow.*, research.company, macro.*,
   portfolio.analyze/optimize, store.*); the browser calls them with `engineRequest()` and replies come back as
   type engine. Uses numpy/scipy, SEC EDGAR (contact email asked once), FRED CSV, CFTC, Yahoo dividends (total
-  return). Portfolios and alternatives live in SQLite ~/.trading-platform/platform.db, never the browser.
+  return). Clients, portfolios and branding live in SQLite ~/.trading-platform/platform.db, never the browser.
+  Client firm branding (logo etc.) is imported from a file; never commit a real firm's branding to the repo.
   `id` and `type` are reserved in every helper message (request id / kind): name engine parameters otherwise
   (e.g. `series`, `docId`). Long requests stream `engine_event` messages before the reply (`onEvent`).
   Settings (Anthropic key, model, SEC email, FRED key) are set in the Settings window and saved by the helper in
@@ -48,8 +49,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Portfolios: Holding.kind security/cash/alt, Portfolio.mode weight/shares/dollars; positions()/holdingsPayload()
   in src/portfolio/types.ts value holdings (live prices via src/portfolio/prices.ts) and map cash/alts to listed
   stand-ins (PROXIES) for the maths. holdingsPayload throws when a shares-mode holding has no price.
-  Client reporting (Clients page, src/reports/) was removed: the owner isn't allowed to send client reports. Don't
-  re-add it. Old client/branding rows may remain in platform.db; leave them alone.
+  Client reports (src/reports/report.ts): sections toggled by Client.sections; include linked alt_holdings
+  (Client.altIds), SEC fund facts (alts.fund) and a market overview (invest.board). Long tables page-break by chunks.
   Engine modules load on a background thread (engine.start_loading in main; engine.wait_loaded for requests
   that arrive early). After start the helper warms caches (news, headline board, curve, bond market) and opens
   the platform in Chrome (settings open_browser, flag --no-browser) unless a tab connects within 3 s.
@@ -101,7 +102,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 
 ## Planned
 
-The full plan (a personal Bloomberg) is in ROADMAP.md. Follow its stage
+The full plan (a personal Bloomberg, including client reporting) is in ROADMAP.md. Follow its stage
 order and architecture rules; update its Status table when a stage is done.
 
 Later stages (trading via Webull, AI agents) will need a small backend so secrets are

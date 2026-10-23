@@ -12,10 +12,10 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 11;
+export const LATEST_HELPER_VERSION = 12;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
-/** The analysis engine (Flow, Research, Macro, Portfolios, AI) needs at least this version. */
+/** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
 const ENGINE_HELPER_VERSION = 6;
 const CORE_REQUESTS = new Set(['history', 'news', 'calendar', 'summary']);
 /** The Investments page (markets, bonds, private funds) needs at least this version. */

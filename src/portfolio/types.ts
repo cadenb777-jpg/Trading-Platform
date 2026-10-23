@@ -112,6 +112,28 @@ export interface PortfolioStats {
 
 export type PeriodKey = 'ytd' | '1y' | '3y' | '5y' | '10y' | 'inception';
 
+/** An RIA advisory fee: tiers like tax brackets (each rate applies to the part of the account inside its tier),
+ * debited from the account each billing period, in arrears (period-end value) or in advance (period-start value). */
+export interface FeeSchedule {
+  tiers: { upTo: number | null; rate: number }[];
+  billing: 'monthly' | 'quarterly' | 'annual';
+  timing: 'arrears' | 'advance';
+}
+
+/** "1.00% on the first $1,000,000, 0.75% above; billed quarterly in arrears". */
+export function describeFees(f: FeeSchedule): string {
+  const money = (v: number) => v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+  const tiers = [...f.tiers].filter((t) => t.rate > 0).sort((a, b) => (a.upTo ?? Infinity) - (b.upTo ?? Infinity));
+  const parts = tiers.map((t, i) => {
+    const rate = `${(t.rate * 100).toFixed(2)}%`;
+    if (tiers.length === 1) return `${rate} a year`;
+    if (i === 0) return `${rate} on the first ${money(t.upTo ?? 0)}`;
+    const prev = tiers[i - 1].upTo ?? 0;
+    return t.upTo == null ? `${rate} above ${money(prev)}` : `${rate} from ${money(prev)} to ${money(t.upTo)}`;
+  });
+  return `${parts.join(', ')}; billed ${f.billing} in ${f.timing}`;
+}
+
 export interface Analysis {
   symbols: string[];
   benchmark: string;
@@ -128,7 +150,12 @@ export interface Analysis {
   stats: PortfolioStats;
   benchmarkStats: PortfolioStats;
   trailing: Record<PeriodKey, { portfolio: number | null; benchmark: number | null }>;
-  calendar: { year: number; portfolio: number; benchmark: number | null }[];
+  calendar: { year: number; portfolio: number; benchmark: number | null; gross?: number | null }[];
+  /** Returns before fees (only when a fee was applied). */
+  gross?: { trailing: Record<PeriodKey, number | null>; stats: PortfolioStats } | null;
+  /** RIA billing results: fees debited per calendar year, total and effective yearly rate. */
+  fees?: { byYear: { year: number; fees: number; averageValue: number; rate: number | null }[]; total: number; initial: number; effectiveRate: number | null; endValueGross: number; endValueNet: number | null } | null;
+  feeSchedule?: FeeSchedule | null;
   growth: Point[];
   benchmarkGrowth: Point[];
   drawdown: Point[];

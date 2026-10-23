@@ -271,12 +271,14 @@ def nav_sentences(page, limit=3):
 
 async def nav_notes(ctx, cik, filings):
     # Big non-traded funds file many prospectus supplements; the monthly NAV one isn't always among the newest few.
+    # The newest quarterly and annual reports (10-Q / 10-K) state NAV per share for every share class too.
     picks = [f for f in filings if f['form'] in ('424B3', '8-K', '497')][:10]
+    picks += [f for f in filings if f['form'] == '10-Q'][:1] + [f for f in filings if f['form'] == '10-K'][:1]
 
     async def one(f):
         url = sec.filing_url(cik, f['accession'], f['document'])
         async def load():
-            page = (await sec.sec_get(ctx, url)).text[:800_000]
+            page = (await sec.sec_get(ctx, url)).text[:4_000_000 if f['form'] in ('10-Q', '10-K') else 800_000]
             return nav_sentences(page)
         try:
             found = await ctx.cached(('nav-notes', f['accession']), 365 * 86400, load, persist=True)
@@ -289,7 +291,8 @@ async def nav_notes(ctx, cik, filings):
         if n['text'] not in seen:  # the same NAV sentence is often repeated in the next filing
             seen.add(n['text'])
             notes.append(n)
-    return notes[:5]
+    notes.sort(key=lambda n: n['filed'], reverse=True)  # newest first, whichever kind of filing it came from
+    return notes[:6]
 
 
 async def schwab_classes(ctx, name, ticker=None):
