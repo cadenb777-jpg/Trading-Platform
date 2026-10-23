@@ -1,6 +1,6 @@
 import type { Bar, Timeframe } from '../types';
 
-export type IndicatorCategory = 'Moving Averages' | 'Bands & Channels' | 'Trend' | 'Momentum' | 'Volatility' | 'Volume' | 'My scripts';
+export type IndicatorCategory = 'Moving Averages' | 'Bands & Channels' | 'Trend' | 'Momentum' | 'Volatility' | 'Volume' | 'Positioning' | 'My scripts';
 
 export interface NumberInput {
   key: string;
@@ -56,7 +56,18 @@ export interface IndicatorDef {
   plots: PlotDef[];
   /** Horizontal reference lines, e.g. RSI 30 / 70. */
   levels?: number[];
-  compute(bars: Bar[], params: IndicatorParams): Record<string, number[]>;
+  /**
+   * Indicators that need data from outside the chart (e.g. futures positioning) load it here once per
+   * symbol; the chart passes it to `compute` as `external` and redraws when it arrives.
+   */
+  external?: { load(symbol: string): Promise<ExternalPoint[]> };
+  compute(bars: Bar[], params: IndicatorParams, external?: ExternalPoint[]): Record<string, number[]>;
+}
+
+/** A dated value from outside the chart; `time` is when it became known (UTC seconds). */
+export interface ExternalPoint {
+  time: number;
+  values: Record<string, number>;
 }
 
 export type IndicatorParams = Record<string, number | string>;

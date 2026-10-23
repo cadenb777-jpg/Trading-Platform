@@ -19,13 +19,13 @@ _sec_slots = asyncio.Semaphore(5)
 
 async def sec_get(ctx, url):
     if not ctx.sec_contact:
-        raise EngineError('SEC data needs a contact email. Close the helper, start it with --reset, and enter an email when asked.')
+        raise EngineError('SEC data needs a contact email: open Settings (the gear at the bottom of the left menu) and add your email under "SEC email".')
     async with _sec_slots:
         response = await ctx.sec_http.get(url)
     if response.status_code == 404:
         raise EngineError('The SEC has no data for this company.')
     if response.status_code == 403:
-        raise EngineError('The SEC refused the request. Check the contact email in the helper settings.')
+        raise EngineError('The SEC refused the request. Check the SEC email in Settings (gear icon, bottom left).')
     response.raise_for_status()
     return response
 
@@ -35,7 +35,7 @@ async def company(ctx, symbol):
     async def load():
         data = (await sec_get(ctx, TICKERS_URL)).json()
         return {row['ticker'].upper(): {'cik': int(row['cik_str']), 'name': row['title']} for row in data.values()}
-    tickers = await ctx.cached('sec-tickers', 86400, load)
+    tickers = await ctx.cached('sec-tickers', 86400, load, persist=True, stale_ok=True)
     found = tickers.get(symbol.upper().replace('.', '-')) or tickers.get(symbol.upper())
     if not found:
         raise EngineError(f'"{symbol}" isn\'t in the SEC\'s company list (ETFs, indexes and foreign companies often aren\'t).')
@@ -43,7 +43,7 @@ async def company(ctx, symbol):
 
 
 async def submissions(ctx, cik):
-    return await ctx.cached(('sec-subs', cik), 3600, lambda: _json(ctx, SUBMISSIONS_URL.format(cik=cik)))
+    return await ctx.cached(('sec-subs', cik), 3600, lambda: _json(ctx, SUBMISSIONS_URL.format(cik=cik)), persist=True, stale_ok=True)
 
 
 async def _json(ctx, url):
@@ -137,7 +137,7 @@ async def insiders(ctx, msg):
         async def load():
             return parse_form4((await sec_get(ctx, url)).text)
         try:
-            trades = await ctx.cached(('form4', f['accession']), 7 * 86400, load)
+            trades = await ctx.cached(('form4', f['accession']), 365 * 86400, load, persist=True)
         except Exception:
             return []
         link = filing_url(info['cik'], f['accession'], f['document'])

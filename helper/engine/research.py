@@ -238,11 +238,15 @@ async def company(ctx, msg):
     if not symbol:
         raise EngineError('Enter a symbol')
     info = await sec.company(ctx, symbol)
-    facts_task = ctx.cached(('sec-facts', info['cik']), 6 * 3600, lambda: sec._json(ctx, sec.FACTS_URL.format(cik=info['cik'])))
-    subs, company_facts, q, b = await asyncio.gather(sec.submissions(ctx, info['cik']), facts_task, quote(ctx, symbol), beta(ctx, symbol))
-    st = statements(company_facts)
+    async def load_core():
+        # Company facts files are large, so only the finished statements are kept on disk.
+        company_facts = await sec._json(ctx, sec.FACTS_URL.format(cik=info['cik']))
+        return {'statements': statements(company_facts), 'shares': _latest_shares(company_facts)}
+    core_task = ctx.cached(('sec-core', info['cik']), 6 * 3600, load_core, persist=True, stale_ok=True)
+    subs, core, q, b = await asyncio.gather(sec.submissions(ctx, info['cik']), core_task, quote(ctx, symbol), beta(ctx, symbol))
+    st = core['statements']
     annual, quarterly = st['annual'], st['quarterly']
-    shares = _latest_shares(company_facts) or ttm(quarterly, annual, 'dilutedShares')
+    shares = core['shares'] or ttm(quarterly, annual, 'dilutedShares')
     price = q.get('price')
     t = {k: ttm(quarterly, annual, k) for k in ('revenue', 'netIncome', 'operatingIncome', 'freeCashFlow', 'operatingCashFlow', 'dna', 'epsDiluted', 'interestExpense', 'incomeTax', 'pretaxIncome')}
     debt = ttm(quarterly, annual, 'longTermDebt') or 0

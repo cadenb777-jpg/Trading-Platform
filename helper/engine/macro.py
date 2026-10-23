@@ -4,6 +4,8 @@ Economy dashboard from FRED (the St. Louis Fed's free data service; the CSV down
 import asyncio
 import datetime as dt
 
+import httpx
+
 from .core import EngineError, handler
 
 FRED_CSV = 'https://fred.stlouisfed.org/graph/fredgraph.csv'
@@ -33,7 +35,14 @@ SERIES = [
 ]
 CURVE = [('DGS1MO', '1M'), ('DGS3MO', '3M'), ('DGS6MO', '6M'), ('DGS1', '1Y'), ('DGS2', '2Y'), ('DGS5', '5Y'), ('DGS10', '10Y'), ('DGS30', '30Y')]
 
-_fred_slots = asyncio.Semaphore(4)
+FRED_API = 'https://api.stlouisfed.org/fred/series/observations'
+TREASURY_CSV = ('https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/'
+                '{year}/all?type=daily_treasury_yield_curve&field_tdr_date_value={year}&page&_format=csv')
+TREASURY_COLUMNS = {'DGS1MO': '1 Mo', 'DGS3MO': '3 Mo', 'DGS6MO': '6 Mo', 'DGS1': '1 Yr', 'DGS2': '2 Yr',
+                    'DGS5': '5 Yr', 'DGS10': '10 Yr', 'DGS30': '30 Yr'}
+FRESH_SECONDS = 3600
+
+_fred_slots = asyncio.Semaphore(8)
 
 
 def parse_fred_csv(text):
@@ -49,16 +58,61 @@ def parse_fred_csv(text):
     return rows
 
 
+async def _fred_download(ctx, series_id):
+    from . import settings
+    key = settings.get('fred_key')
+    async with _fred_slots:
+        if key:
+            # The free FRED API (with a key) is faster and more reliable than the CSV download.
+            response = await ctx.http.get(FRED_API, params={'series_id': series_id, 'api_key': key, 'file_type': 'json', 'observation_start': START})
+            response.raise_for_status()
+            return [(o['date'], float(o['value'])) for o in response.json().get('observations', []) if o.get('value') not in ('.', '', None)]
+        last = None
+        for attempt in range(2):
+            try:
+                response = await ctx.http.get(FRED_CSV, params={'id': series_id, 'cosd': START}, headers={'Accept': 'text/csv,*/*'})
+                response.raise_for_status()
+                return parse_fred_csv(response.text)
+            except httpx.HTTPError as err:
+                last = err
+                await asyncio.sleep(0.5 * (attempt + 1))
+        raise last
+
+
+async def treasury_yields(ctx):
+    """Daily Treasury yield curve from treasury.gov (backup when FRED can't be reached): {series id: rows}."""
+    async def load():
+        year = dt.date.today().year
+        out = {sid: [] for sid in TREASURY_COLUMNS}
+        for y in (year - 1, year):
+            response = await ctx.http.get(TREASURY_CSV.format(year=y))
+            response.raise_for_status()
+            lines = response.text.strip().splitlines()
+            header = [h.strip().strip('"') for h in lines[0].split(',')]
+            for line in lines[1:]:
+                cells = [c.strip().strip('"') for c in line.split(',')]
+                m, d, yy = cells[0].split('/')
+                date = f'{yy}-{m}-{d}'
+                for sid, col in TREASURY_COLUMNS.items():
+                    if col in header and cells[header.index(col)]:
+                        out[sid].append((date, float(cells[header.index(col)])))
+        return {k: sorted(v) for k, v in out.items()}
+    return await ctx.cached('treasury-curve', FRESH_SECONDS, load, persist=True, stale_ok=True)
+
+
 async def fred(ctx, series_id):
     async def load():
-        async with _fred_slots:
-            response = await ctx.http.get(FRED_CSV, params={'id': series_id, 'cosd': START})
-        response.raise_for_status()
-        rows = parse_fred_csv(response.text)
+        try:
+            rows = await _fred_download(ctx, series_id)
+        except Exception as err:
+            if series_id in TREASURY_COLUMNS:
+                rows = (await treasury_yields(ctx)).get(series_id, [])
+            else:
+                raise EngineError(f'Could not reach FRED for {series_id} ({type(err).__name__}).') from err
         if not rows:
             raise EngineError(f'FRED returned no data for {series_id}')
         return rows
-    return await ctx.cached(('fred', series_id), 6 * 3600, load)
+    return await ctx.cached(('fred', series_id), FRESH_SECONDS, load, persist=True, stale_ok=True)
 
 
 def _shift_back(rows, i, days):
@@ -103,42 +157,61 @@ def summarise(rows):
     return {'date': latest[0], 'value': latest[1], 'previous': prev, 'monthAgo': ago(28), 'yearAgo': ago(365)}
 
 
-@handler('macro.dashboard')
-async def dashboard(ctx, msg):
-    ids = [s[0] for s in SERIES] + [c[0] for c in CURVE if c[0] not in {s[0] for s in SERIES}]
-    results = await asyncio.gather(*(fred(ctx, i) for i in ids), return_exceptions=True)
-    data = dict(zip(ids, results))
-    series, failed = [], []
-    for sid, name, group, unit, kind, up_good in SERIES:
-        rows = data.get(sid)
-        if isinstance(rows, Exception) or not rows:
-            failed.append(name)
-            continue
-        rows = transform(rows, kind)
-        if not rows:
-            failed.append(name)
-            continue
-        if len(rows) > 1 and (dt.date.fromisoformat(rows[-1][0]) - dt.date.fromisoformat(rows[-2][0])).days < 7:
-            rows = weekly(rows)
-        series.append({'id': sid, 'name': name, 'group': group, 'unit': unit, 'upGood': up_good, **summarise(rows),
-                       'data': [{'time': d, 'value': round(v, 4)} for d, v in rows]})
-    curve = []
-    for sid, label in CURVE:
-        rows = data.get(sid)
-        if isinstance(rows, Exception) or not rows:
-            continue
-        s = summarise(rows)
-        curve.append({'label': label, 'now': s['value'], 'monthAgo': s['monthAgo'], 'yearAgo': s['yearAgo'], 'date': s['date']})
-    if not series:
-        raise EngineError('Could not reach FRED (the St. Louis Fed data site). Check your internet connection.')
-    return {'series': series, 'curve': curve, 'failed': failed}
+def _definition(sid):
+    return next((x for x in SERIES if x[0] == sid), None)
+
+
+async def series_payload(ctx, sid, with_data=True):
+    d = _definition(sid)
+    if not d:
+        raise EngineError('Unknown series')
+    _, name, group, unit, kind, up_good = d
+    rows = transform(await fred(ctx, sid), kind)
+    if not rows:
+        raise EngineError(f'No data for {name}')
+    if len(rows) > 1 and (dt.date.fromisoformat(rows[-1][0]) - dt.date.fromisoformat(rows[-2][0])).days < 7:
+        rows = weekly(rows)
+    out = {'id': sid, 'name': name, 'group': group, 'unit': unit, 'upGood': up_good, **summarise(rows)}
+    if with_data:
+        out['data'] = [{'time': day, 'value': round(v, 4)} for day, v in rows]
+    return out
+
+
+@handler('macro.catalog')
+async def catalog(ctx, msg):
+    return {'series': [{'id': s[0], 'name': s[1], 'group': s[2], 'unit': s[3]} for s in SERIES]}
 
 
 @handler('macro.series')
 async def one_series(ctx, msg):
-    """Any FRED series by id, e.g. for the risk-free rate."""
-    sid = str(msg.get('id', '')).upper()
+    """One dashboard series (transformed, e.g. inflation as a yearly %), or any FRED series by id when raw is set."""
+    # The series id travels as 'series' because 'id' is the request id.
+    sid = str(msg.get('series', '')).upper()
     if not sid.replace('_', '').isalnum():
         raise EngineError('Bad series id')
+    if _definition(sid) and not msg.get('raw'):
+        return await series_payload(ctx, sid)
     rows = await fred(ctx, sid)
-    return {'id': sid, **summarise(rows), 'data': [{'time': d, 'value': v} for d, v in rows[-int(msg.get('limit', 1000)):]]}
+    return {'id': sid, **summarise(rows), 'data': [{'time': day, 'value': v} for day, v in rows[-int(msg.get('limit', 1000)):]]}
+
+
+@handler('macro.curve')
+async def curve(ctx, msg):
+    results = await asyncio.gather(*(fred(ctx, sid) for sid, _ in CURVE), return_exceptions=True)
+    points = []
+    for (sid, label), rows in zip(CURVE, results):
+        if isinstance(rows, Exception) or not rows:
+            continue
+        s = summarise(rows)
+        points.append({'label': label, 'now': s['value'], 'monthAgo': s['monthAgo'], 'yearAgo': s['yearAgo'], 'date': s['date']})
+    if not points:
+        raise EngineError('Could not load Treasury yields from FRED or treasury.gov.')
+    return {'curve': points}
+
+
+@handler('macro.dashboard')
+async def dashboard(ctx, msg):
+    """Latest reading of every series (no history), e.g. for the AI assistant."""
+    results = await asyncio.gather(*(series_payload(ctx, s[0], with_data=False) for s in SERIES), return_exceptions=True)
+    return {'series': [r for r in results if not isinstance(r, Exception)],
+            'failed': [s[1] for s, r in zip(SERIES, results) if isinstance(r, Exception)]}

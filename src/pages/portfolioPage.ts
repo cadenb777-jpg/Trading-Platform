@@ -381,6 +381,8 @@ export function createPortfolioPage() {
     );
   }
 
+  window.addEventListener('tp:data-changed', () => started && refreshList());
+
   let started = false;
   return {
     el: frame.el,

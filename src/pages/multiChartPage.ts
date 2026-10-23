@@ -65,6 +65,7 @@ function createCell(index: number, onOpen: (ref: MarketRef) => void) {
       view.addIndicator(newIndicatorInstance(getIndicator('volume')!));
       return view;
     })();
+    chart.symbol = symbol;
     try {
       bars = await getProvider(provider).loadHistory(symbol, timeframe, ctl.signal);
     } catch (err) {

@@ -12,6 +12,7 @@ import { TIMEFRAME_SECONDS, applyTrade, type Bar, type Timeframe } from '../type
 import { formatNumber, h, toast } from '../ui/dom';
 import { icon, type IconName } from '../ui/icons';
 import { openIndicatorPicker, openIndicatorSettings } from '../ui/indicatorDialogs';
+import { openIndicatorInfo } from '../ui/indicatorInfo';
 import { createTimeframePicker } from '../ui/timeframePicker';
 import { activeAlertCount, openAlertsDialog } from '../ui/alerts';
 import { createWatchlist, displaySymbol } from '../ui/watchlist';
@@ -292,6 +293,7 @@ export function createChartPage() {
         h(
           'span',
           { class: 'legend-actions' },
+          h('button', { class: 'mini-btn', title: 'What is this and what is it saying?', onclick: () => showIndicatorInfo(instance.uid) }, 'ⓘ'),
           h('button', { class: 'mini-btn', title: instance.visible ? 'Hide' : 'Show', onclick: () => toggleIndicator(instance.uid) }, instance.visible ? '👁' : '◌'),
           h('button', { class: 'mini-btn', title: 'Settings', onclick: () => editIndicator(instance.uid) }, '⚙'),
           h('button', { class: 'mini-btn', title: 'Remove', onclick: () => removeIndicator(instance.uid) }, '✕'),
@@ -305,6 +307,14 @@ export function createChartPage() {
         legendEl.append(row);
       }
     }
+  }
+
+  function showIndicatorInfo(uid: string) {
+    const instance = state.indicators.find((i) => i.uid === uid);
+    const def = instance && getIndicator(instance.defId);
+    const snap = chart.indicatorSnapshot(uid);
+    if (!instance || !def) return;
+    openIndicatorInfo(def, snap ? { symbol: displaySymbol(symbol()), timeframe: state.timeframe, bars: snap.bars, values: snap.values, params: instance.params, label: indicatorLabel(def, instance) } : undefined);
   }
 
   // ---------- Data loading and live updates ----------
@@ -355,6 +365,7 @@ export function createChartPage() {
     const drawingsKey = refKey(currentRef());
     document.title = `${displaySymbol(sym)} · Trading Platform`;
 
+    chart.symbol = sym;
     try {
       bars = await p.loadHistory(sym, tf, controller.signal);
     } catch (err) {

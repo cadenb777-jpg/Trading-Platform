@@ -1,7 +1,9 @@
 /** Research: a company's financial statements, ratios, valuation (DCF) and SEC filings. */
+import { insightButton } from '../ai/insight';
+import { subscribeQuote } from '../data/quotes';
 import { engineRequest } from '../data/schwab';
 import { dcf, impliedGrowth, sensitivity, wacc, type DcfInputs } from '../research/dcf';
-import { compact, createLineChart, dataTable, money, numberField, pageFrame, pct, statCards } from '../ui/charts';
+import { compact, createLineChart, dataTable, money, numberField, pageFrame, pct, rangeBar, statCards } from '../ui/charts';
 import { formatPrice, h } from '../ui/dom';
 
 type Values = Record<string, (number | null)[]>;
@@ -75,7 +77,21 @@ export function createResearchPage() {
   let riskFree = 0.042;
   const symbolInput = h('input', { class: 'input symbol', value: 'AAPL', 'aria-label': 'Symbol', spellcheck: false });
   const tabs = h('div', { class: 'tabs', role: 'tablist' }, ...TABS.map(([t, label]) => h('button', { class: `tab${t === tab ? ' active' : ''}`, 'data-tab': t, onclick: () => setTab(t) }, label)));
-  const frame = pageFrame('Research', 'Company financials from SEC filings, key ratios and a valuation calculator.', [tabs, symbolInput, h('button', { class: 'btn primary', onclick: () => load() }, 'Load')]);
+  const ai = insightButton(() => {
+    if (!data) return null;
+    const d = data;
+    const a = d.annual;
+    return {
+      topic: 'research',
+      symbol: d.symbol,
+      title: `Investment summary: ${d.profile.name}`,
+      data: { profile: d.profile, quote: d.quote, valuation: d.valuation, ttm: d.ttm, fiscalYears: a.periods, annual: Object.fromEntries(['revenue', 'grossProfit', 'operatingIncome', 'netIncome', 'epsDiluted', 'freeCashFlow', 'cash', 'longTermDebt', 'equity'].map((k) => [k, a.values[k]])), ratios: d.ratios },
+    };
+  });
+  const frame = pageFrame('Research', 'Company financials from SEC filings, key ratios and a valuation calculator.', [tabs, symbolInput, h('button', { class: 'btn primary', onclick: () => load() }, 'Load'), ai.button]);
+  const livePrice = h('b', { class: 'big-value' });
+  const liveChange = h('b', {});
+  let stopQuote = () => {};
   symbolInput.addEventListener('keydown', (e) => e.key === 'Enter' && load());
 
   function setTab(t: Tab) {
@@ -88,8 +104,18 @@ export function createResearchPage() {
     const symbol = symbolInput.value.trim().toUpperCase();
     if (!symbol) return;
     frame.loading(`Loading ${symbol} from the SEC…`);
+    ai.panel.hidden = true;
     try {
       data = await engineRequest<CompanyData>('research.company', { symbol }, 90000);
+      livePrice.textContent = formatPrice(data.valuation.price);
+      setChange(data.quote.change ?? null);
+      // Keep the price live while the page is open.
+      stopQuote();
+      stopQuote = subscribeQuote({ provider: 'schwab', symbol: data.symbol }, (q) => {
+        if (q.last == null) return;
+        livePrice.textContent = formatPrice(q.last);
+        if (q.prevClose) setChange(((q.last - q.prevClose) / q.prevClose) * 100);
+      });
       render();
     } catch (err) {
       data = null;
@@ -97,22 +123,27 @@ export function createResearchPage() {
     }
   }
 
+  function setChange(change: number | null) {
+    liveChange.textContent = change == null ? '' : `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
+    liveChange.className = change == null ? '' : change >= 0 ? 'up' : 'down';
+  }
+
   function render() {
     if (!data) return;
     const d = data;
     const header = h(
       'section',
-      { class: 'panel' },
-      h('div', { class: 'panel-head' }, h('h3', {}, `${d.profile.name} (${d.symbol})`), h('span', { class: 'spacer' }), h('b', { class: 'big-value' }, formatPrice(d.valuation.price)), d.quote.change != null ? h('b', { class: d.quote.change >= 0 ? 'up' : 'down' }, `${d.quote.change >= 0 ? '+' : ''}${d.quote.change.toFixed(2)}%`) : null),
+      { class: 'panel company-head' },
+      h('div', { class: 'panel-head' }, h('h3', {}, `${d.profile.name} (${d.symbol})`), h('span', { class: 'spacer' }), livePrice, liveChange),
       h('div', { class: 'profile-line muted small' }, h('span', {}, d.profile.industry || 'Industry n/a'), h('span', {}, d.profile.exchange), d.profile.fiscalYearEnd ? h('span', {}, `Fiscal year ends ${d.profile.fiscalYearEnd.slice(0, 2)}/${d.profile.fiscalYearEnd.slice(2)}`) : null, h('span', {}, `SEC CIK ${d.profile.cik}`)),
     );
     const body = tab === 'overview' ? overview(d) : tab === 'financials' ? financials(d) : tab === 'valuation' ? valuation(d) : filings(d);
-    frame.body.replaceChildren(header, ...body);
+    frame.body.replaceChildren(header, ...body, ai.panel);
   }
 
   function overview(d: CompanyData): Node[] {
     const v = d.valuation;
-    const range = d.quote.low52 && d.quote.high52 ? `${formatPrice(d.quote.low52)} – ${formatPrice(d.quote.high52)}` : '—';
+    const range = d.quote.low52 && d.quote.high52 ? rangeBar(d.quote.low52, d.quote.high52, v.price, formatPrice) : undefined;
     const chartBox = h('div', {});
     const a = d.annual;
     const lastRatio = (k: string) => [...(d.ratios[k] ?? [])].reverse().find((x) => x != null) ?? null;
@@ -125,7 +156,7 @@ export function createResearchPage() {
         { label: 'EV / EBITDA', value: fmtX(v.evEbitda), hint: 'A debt-neutral valuation multiple' },
         { label: 'Free cash flow yield', value: pct(v.fcfYield), hint: 'Yearly free cash flow as a % of market cap' },
         { label: 'Beta (5y vs S&P 500)', value: v.beta != null ? v.beta.toFixed(2) : '—', hint: '1 = moves with the market; 2 = twice as much' },
-        { label: '52-week range', value: range },
+        { label: '52-week range', value: '—', node: range },
         { label: 'Dividend yield', value: d.quote.divYield ? `${d.quote.divYield.toFixed(2)}%` : '—' },
         { label: 'Revenue (TTM)', value: money(d.ttm.revenue) },
         { label: 'Net income (TTM)', value: money(d.ttm.netIncome), tone: (d.ttm.netIncome ?? 0) >= 0 ? '' : 'down' },
@@ -328,10 +359,26 @@ export function createResearchPage() {
       started = true;
       load();
     },
+    stop() {
+      stopQuote();
+      stopQuote = () => {};
+    },
     async start() {
-      if (started) return;
+      if (started) {
+        // Coming back to the page: resume the live price.
+        if (data) {
+          const sym = data.symbol;
+          stopQuote();
+          stopQuote = subscribeQuote({ provider: 'schwab', symbol: sym }, (q) => {
+            if (q.last == null) return;
+            livePrice.textContent = formatPrice(q.last);
+            if (q.prevClose) setChange(((q.last - q.prevClose) / q.prevClose) * 100);
+          });
+        }
+        return;
+      }
       started = true;
-      engineRequest<{ value: number }>('macro.series', { id: 'DGS10', limit: 1 })
+      engineRequest<{ value: number }>('macro.series', { series: 'DGS10' })
         .then((r) => (riskFree = r.value / 100))
         .catch(() => {});
       load();

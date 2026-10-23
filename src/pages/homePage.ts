@@ -116,7 +116,8 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     ['watchlist', 'My watchlist'],
   ];
   let newsTab: NewsTab = 'top';
-  let importantOnly = true;
+  let importantOnly = false;
+  let sortBy: 'latest' | 'impact' = 'latest';
   let general: { items: NewsItem[]; failed: string[] } | null = null;
   const newsList = h('div', { class: 'news-list', 'aria-live': 'polite' });
   const newsFooter = h('div', { class: 'news-foot muted small' });
@@ -130,6 +131,14 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     importantOnly = importantToggle.checked;
     showNews();
   });
+  const sortButtons = (['latest', 'impact'] as const).map((k) =>
+    h('button', { class: k === sortBy ? 'active' : '', onclick: () => setSort(k) }, k === 'latest' ? 'Latest' : 'Most important'),
+  );
+  function setSort(k: 'latest' | 'impact') {
+    sortBy = k;
+    sortButtons.forEach((b, i) => b.classList.toggle('active', (['latest', 'impact'] as const)[i] === k));
+    showNews();
+  }
   const refreshBtn = h('button', { class: 'icon-btn', title: 'Refresh news', 'aria-label': 'Refresh news', onclick: () => refreshNews(true) }, icon('refresh', 18));
 
   function setTab(id: NewsTab) {
@@ -159,12 +168,12 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     );
   }
 
-  /** Picks and orders headlines for the current tab. "Top stories" ranks by market impact. */
+  /** Picks and orders headlines for the current tab: newest first, or by market impact. */
   function visibleNews(items: NewsItem[]): NewsItem[] {
     let list = newsTab === 'top' || newsTab === 'watchlist' ? items : items.filter((i) => i.section === newsTab);
     if (importantOnly) list = list.filter((i) => i.impact !== 'low');
-    if (newsTab === 'top') list = [...list].sort((a, b) => b.score - a.score);
-    return list.slice(0, 40);
+    list = [...list].sort((a, b) => (sortBy === 'latest' ? b.published - a.published : b.score - a.score || b.published - a.published));
+    return list.slice(0, 50);
   }
 
   function renderNews(items: NewsItem[], failed: string[]) {
@@ -228,6 +237,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
           { class: 'panel-head' },
           h('h3', {}, icon('news', 20), ' Market news'),
           h('span', { class: 'spacer' }),
+          h('div', { class: 'segmented small' }, ...sortButtons),
           h('label', { class: 'toggle', title: 'Show only stories likely to move the market' }, importantToggle, ' Important only'),
           refreshBtn,
         ),

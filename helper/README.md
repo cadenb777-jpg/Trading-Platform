@@ -67,10 +67,11 @@ market dropdown.
 When the platform gets new features, you may need a new copy of the helper. Download the ZIP
 again (step 2), replace your old folder, and start it as usual. Your keys and login are kept.
 
-Version 5 adds the analysis engine (Flow, Research, Macro, Portfolios, Clients). The first start
-installs a few more parts, so it takes a couple of minutes. It also asks once for an **email
-address**: the SEC asks tools that download its filings to include a contact email. It is only sent
-to the SEC.
+Version 6 adds the AI assistant and stock positioning. The first start after updating installs a few
+more parts, so it takes a couple of minutes. Keys and emails are no longer typed into this window:
+open **Settings** (gear icon, bottom of the left menu in the platform) to add your SEC email (needed
+for company financials and insider trades), your Anthropic API key (for the AI) and, optionally, a free
+FRED key. The helper saves them in `~/.trading-platform/settings.json`.
 
 Your portfolios, clients and report branding are saved on your computer in
 `~/.trading-platform/platform.db` (in your user folder), not in the browser or online.

@@ -24,6 +24,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from 'lightweight-charts';
+import { externalData } from '../indicators/external';
 import { defaultParams, getIndicator } from '../indicators/library';
 import type { IndicatorDef, IndicatorInstance, PlotDef } from '../indicators/types';
 import { TIMEFRAME_SECONDS, bucketStart, regroupBars, type Bar, type Timeframe } from '../types';
@@ -77,6 +78,8 @@ export class ChartView {
   private bars: Bar[] = [];
   private heikin: Bar[] = [];
   private timeframe: Timeframe = '15m';
+  /** The symbol on the chart, for indicators that load outside data (e.g. COT positioning). */
+  symbol = '';
   private readonly timeIndex = new Map<number, number>();
   private readonly indicators = new Map<string, RenderedIndicator>();
   private readonly primitives: ISeriesPrimitive<Time>[] = [];
@@ -384,6 +387,12 @@ export class ChartView {
     }));
   }
 
+  /** Everything needed to explain an indicator on this chart: its bars and the full value series per plot. */
+  indicatorSnapshot(uid: string): { bars: Bar[]; values: Record<string, number[]> } | null {
+    const r = this.indicators.get(uid);
+    return r ? { bars: this.bars, values: r.values } : null;
+  }
+
   /** Pixel offset from the top of the chart to the top of the pane an indicator is drawn in. */
   paneTop(uid: string): number {
     const r = this.indicators.get(uid);
@@ -463,10 +472,15 @@ export class ChartView {
     if (!this.bars.length) return {};
     // Any setting missing from a saved layout (e.g. a script gained a new input) uses its default.
     const params = { ...defaultParams(r.def), ...r.instance.params };
+    const symbol = this.symbol;
+    const ext = externalData(r.def, symbol, () => {
+      // Redraw when the outside data arrives, if the chart still shows the same symbol.
+      if (this.symbol === symbol && this.indicators.get(r.instance.uid) === r) this.renderAll(r);
+    });
     const tf = r.instance.timeframe;
-    if (!tf || TIMEFRAME_SECONDS[tf] <= TIMEFRAME_SECONDS[this.timeframe]) return r.def.compute(this.bars, params);
+    if (!tf || TIMEFRAME_SECONDS[tf] <= TIMEFRAME_SECONDS[this.timeframe]) return r.def.compute(this.bars, params, ext);
     const higher = regroupBars(this.bars, tf);
-    const values = r.def.compute(higher, params);
+    const values = r.def.compute(higher, params, ext);
     const out: Record<string, number[]> = Object.fromEntries(Object.keys(values).map((k) => [k, []]));
     let j = 0;
     for (const bar of this.bars) {

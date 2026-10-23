@@ -71,5 +71,6 @@ async def _save(ctx, msg):
 
 @handler('store.delete')
 async def _delete(ctx, msg):
-    delete_doc(str(msg.get('collection')), str(msg.get('id')))
+    # 'id' is taken by the request id the browser adds to every message.
+    delete_doc(str(msg.get('collection')), str(msg.get('docId')))
     return {'ok': True}

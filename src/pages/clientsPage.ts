@@ -1,7 +1,7 @@
 /** Clients: client accounts, report branding, and printable white-label performance reports. */
 import { engineRequest } from '../data/schwab';
 import { deleteDoc, listDocs, saveDoc } from '../data/store';
-import { holdingsPayload, type Analysis, type Portfolio } from '../portfolio/types';
+import { TEMPLATES, holdingsPayload, type Analysis, type Portfolio } from '../portfolio/types';
 import { buildReport } from '../reports/report';
 import '../reports/report.css';
 import { DEFAULT_BRANDING, type Branding, type Client } from '../reports/types';
@@ -64,7 +64,10 @@ function readLogo(file: File): Promise<string> {
 
 export function createClientsPage() {
   let clients: (Client & { id: string })[] = [];
-  let portfolios: (Portfolio & { id: string })[] = [];
+  let savedPortfolios: (Portfolio & { id: string })[] = [];
+  /** Templates (e.g. Classic 60/40) can be picked straight away, without saving them first. */
+  const templates = TEMPLATES.map((t) => ({ ...t, id: `template:${t.name}` }));
+  let portfolios: (Portfolio & { id: string })[] = templates;
   let branding: Branding = { ...DEFAULT_BRANDING };
   let current: Client = blankClient();
   const list = h('div', { class: 'pf-list' });
@@ -78,7 +81,8 @@ export function createClientsPage() {
 
   async function refresh() {
     try {
-      [clients, portfolios] = await Promise.all([listDocs<Client>('clients'), listDocs<Portfolio>('portfolios')]);
+      [clients, savedPortfolios] = await Promise.all([listDocs<Client>('clients'), listDocs<Portfolio>('portfolios')]);
+      portfolios = [...savedPortfolios, ...templates];
       const saved = await listDocs<Branding>('branding');
       branding = { ...DEFAULT_BRANDING, ...(saved.find((b) => b.id === 'default') ?? {}) };
     } catch (err) {
@@ -121,7 +125,8 @@ export function createClientsPage() {
     const pfSelect = h(
       'select',
       { class: 'input' },
-      ...(portfolios.length ? portfolios.map((p) => h('option', { value: p.id, selected: p.id === c.portfolioId }, p.name)) : [h('option', { value: '' }, 'Save a portfolio on the Portfolios page first')]),
+      savedPortfolios.length ? h('optgroup', { label: 'My portfolios' }, ...savedPortfolios.map((p) => h('option', { value: p.id, selected: p.id === c.portfolioId }, p.name))) : null,
+      h('optgroup', { label: 'Templates' }, ...templates.map((p) => h('option', { value: p.id, selected: p.id === c.portfolioId }, p.name))),
     );
     pfSelect.addEventListener('change', () => (c.portfolioId = pfSelect.value));
     const inception = h('input', { class: 'input', type: 'date', value: c.inception });
@@ -181,7 +186,7 @@ export function createClientsPage() {
 
   async function build(c: Client) {
     const portfolio = portfolios.find((p) => p.id === c.portfolioId);
-    if (!portfolio) throw new Error(`${c.name}: choose a saved portfolio for this client.`);
+    if (!portfolio) throw new Error(`${c.name}: choose a portfolio for this client (its old portfolio may have been deleted).`);
     const analysis = await engineRequest<Analysis>(
       'portfolio.analyze',
       { holdings: holdingsPayload(portfolio), benchmark: c.benchmark?.trim() || portfolio.benchmark, rebalance: portfolio.rebalance, since: c.inception || undefined, fee: c.fee },
@@ -329,6 +334,8 @@ export function createClientsPage() {
     );
     const close = openModal('Report branding', body, { wide: true });
   }
+
+  window.addEventListener('tp:data-changed', () => started && refresh());
 
   let started = false;
   return {

@@ -85,54 +85,95 @@ function yieldCurve(points: CurvePoint[]) {
   return h('div', { class: 'curve-wrap' }, legend, svg);
 }
 
+interface CatalogEntry {
+  id: string;
+  name: string;
+  group: string;
+  unit: string;
+}
+
+/** Runs async jobs with at most `limit` at a time. */
+async function pool<T>(items: T[], limit: number, job: (item: T) => Promise<void>) {
+  const queue = [...items];
+  await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length) await job(queue.shift()!);
+  }));
+}
+
 export function createMacroPage() {
   let range: Range = '5y';
-  let series: Series[] = [];
+  const loaded = new Map<string, Series>();
+  const cards = new Map<string, { el: HTMLElement; chart: ReturnType<typeof createLineChart> | null; box: HTMLElement }>();
   let curve: CurvePoint[] = [];
-  let failed: string[] = [];
-  const rangeButtons = (['1y', '5y', 'max'] as Range[]).map((r) => h('button', { 'data-range': r, onclick: () => setRange(r) }, r === 'max' ? 'Since 2006' : r.replace('y', ' years').replace('1 years', '1 year')));
-  const frame = pageFrame('Macro', 'The economy at a glance, from the St. Louis Fed (FRED). Updated as new data is released.', [
+  let catalog: CatalogEntry[] = [];
+  const curvePanel = h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Treasury yield curve')), h('div', { class: 'skeleton', style: 'height:260px' }));
+  const note = h('p', { class: 'ap-note' });
+  const stamp = h('span', { class: 'muted small' });
+  const rangeButtons = (['1y', '5y', 'max'] as Range[]).map((r) => h('button', { 'data-range': r, onclick: () => setRange(r) }, r === 'max' ? 'Since 2006' : r === '1y' ? '1 year' : '5 years'));
+  const frame = pageFrame('Macro', 'The economy at a glance, from the St. Louis Fed (FRED) and the US Treasury. Updates automatically.', [
+    stamp,
     h('div', { class: 'segmented' }, ...rangeButtons),
     h('button', { class: 'btn', onclick: () => load() }, 'Refresh'),
   ]);
 
   function setRange(r: Range) {
     range = r;
-    render();
+    rangeButtons.forEach((b) => b.classList.toggle('active', b.dataset.range === range));
+    for (const id of loaded.keys()) drawChart(id);
   }
 
-  async function load() {
-    frame.loading('Loading economic data…');
+  const cutoff = () => new Date(Date.now() - RANGE_DAYS[range] * 86400000).toISOString().slice(0, 10);
+
+  function drawChart(id: string) {
+    const s = loaded.get(id);
+    const card = cards.get(id);
+    if (!s || !card) return;
+    if (!card.chart) {
+      card.box.classList.remove('skeleton');
+      card.box.replaceChildren();
+      card.chart = createLineChart(card.box, { height: 130, format: (v) => fmt(v, s.unit === 'K' ? '' : s.unit) });
+      card.chart.chart.applyOptions({ rightPriceScale: { visible: false }, timeScale: { visible: false }, crosshair: { horzLine: { visible: false } } });
+    }
+    card.chart.set([{ name: '', color: '#2962ff', width: 2, data: s.data.filter((p) => p.time >= cutoff()) }]);
+  }
+
+  function fillCard(s: Series) {
+    const card = cards.get(s.id);
+    if (!card) return;
+    card.el.classList.remove('loading');
+    card.el.querySelector('.macro-value')!.replaceChildren(h('b', {}, fmt(s.value, s.unit)), h('span', { class: 'muted small' }, s.date));
+    card.el.querySelector('.macro-changes')!.replaceChildren(...[change(s, s.monthAgo, '1m'), change(s, s.yearAgo, '1y')].filter((n): n is HTMLSpanElement => !!n));
+    drawChart(s.id);
+  }
+
+  function failCard(id: string, err: unknown) {
+    const card = cards.get(id);
+    if (!card) return;
+    card.el.classList.remove('loading');
+    card.box.classList.remove('skeleton');
+    card.chart = null;
+    card.box.replaceChildren(
+      h('div', { class: 'macro-error' }, h('span', {}, (err as Error).message || 'Unavailable'), h('button', { class: 'btn small', onclick: () => loadSeries(id) }, 'Retry')),
+    );
+  }
+
+  async function loadSeries(id: string) {
     try {
-      const d = await engineRequest<{ series: Series[]; curve: CurvePoint[]; failed: string[] }>('macro.dashboard', {}, 90000);
-      ({ series, curve, failed } = d);
-      render();
+      const s = await engineRequest<Series>('macro.series', { series: id }, 45000);
+      loaded.set(id, s);
+      fillCard(s);
+      return true;
     } catch (err) {
-      frame.error(err);
+      failCard(id, err);
+      return false;
     }
   }
 
-  function render() {
-    rangeButtons.forEach((b) => b.classList.toggle('active', b.dataset.range === range));
-    if (!series.length) return;
-    const cutoff = new Date(Date.now() - RANGE_DAYS[range] * 86400000).toISOString().slice(0, 10);
-    const groups = [...new Set(series.map((s) => s.group))];
-    const charts: [HTMLElement, Series][] = [];
-    const spread = series.find((s) => s.id === 'T10Y2Y');
-    const nodes: (Node | null)[] = [
-      curve.length
-        ? h(
-            'section',
-            { class: 'panel' },
-            h(
-              'div',
-              { class: 'panel-head' },
-              h('h3', {}, 'Treasury yield curve'),
-              h('span', { class: 'muted small' }, spread && spread.value < 0 ? 'Inverted: short-term rates above long-term ones, which has often come before recessions.' : 'Normal shape: longer loans pay more than short ones.'),
-            ),
-            yieldCurve(curve),
-          )
-        : null,
+  function skeleton() {
+    cards.clear();
+    const groups = [...new Set(catalog.map((c) => c.group))];
+    frame.body.replaceChildren(
+      curvePanel,
       ...groups.map((g) =>
         h(
           'section',
@@ -141,42 +182,90 @@ export function createMacroPage() {
           h(
             'div',
             { class: 'macro-grid' },
-            ...series
-              .filter((s) => s.group === g)
-              .map((s) => {
-                const box = h('div', {});
-                charts.push([box, s]);
-                return h(
+            ...catalog
+              .filter((c) => c.group === g)
+              .map((c) => {
+                const box = h('div', { class: 'skeleton', style: 'height:130px' });
+                const el = h(
                   'div',
-                  { class: 'panel macro-card' },
-                  h('div', { class: 'muted small' }, s.name),
-                  h('div', { class: 'macro-value' }, h('b', {}, fmt(s.value, s.unit)), h('span', { class: 'muted small' }, s.date)),
-                  h('div', { class: 'macro-changes small' }, change(s, s.monthAgo, '1m'), change(s, s.yearAgo, '1y')),
+                  { class: 'panel macro-card loading' },
+                  h('div', { class: 'muted small' }, c.name),
+                  h('div', { class: 'macro-value' }, h('span', { class: 'skeleton', style: 'width:90px;height:28px' })),
+                  h('div', { class: 'macro-changes small' }),
                   box,
                 );
+                cards.set(c.id, { el, box, chart: null });
+                return el;
               }),
           ),
         ),
       ),
-      failed.length ? h('p', { class: 'ap-note' }, `Couldn't load: ${failed.join(', ')}.`) : null,
-      h('p', { class: 'ap-note' }, 'Source: Federal Reserve Bank of St. Louis (FRED). Green/red shows whether a change is usually good or bad news for the economy.'),
-    ];
-    frame.body.replaceChildren(...nodes.filter((n): n is Node => n !== null));
-    for (const [box, s] of charts) {
-      const chart = createLineChart(box, { height: 130, format: (v) => fmt(v, s.unit === 'K' ? '' : s.unit) });
-      chart.chart.applyOptions({ rightPriceScale: { visible: false }, timeScale: { visible: false }, crosshair: { horzLine: { visible: false } } });
-      chart.set([{ name: '', color: '#2962ff', width: 2, data: s.data.filter((p) => p.time >= cutoff) }]);
+      note,
+      h('p', { class: 'ap-note' }, 'Sources: Federal Reserve Bank of St. Louis (FRED) and treasury.gov. Green/red shows whether a change is usually good or bad news for the economy.'),
+    );
+  }
+
+  async function loadCurve() {
+    try {
+      ({ curve } = await engineRequest<{ curve: CurvePoint[] }>('macro.curve', {}, 45000));
+      const spread = curve.find((p) => p.label === '10Y')!.now - (curve.find((p) => p.label === '2Y')?.now ?? 0);
+      curvePanel.replaceChildren(
+        h(
+          'div',
+          { class: 'panel-head' },
+          h('h3', {}, 'Treasury yield curve'),
+          h('span', { class: 'muted small' }, spread < 0 ? 'Inverted: short-term rates are above long-term ones, which has often come before recessions.' : 'Normal shape: longer loans pay more than short ones.'),
+        ),
+        yieldCurve(curve),
+      );
+    } catch (err) {
+      curvePanel.replaceChildren(h('div', { class: 'panel-head' }, h('h3', {}, 'Treasury yield curve')), h('div', { class: 'macro-error' }, (err as Error).message, h('button', { class: 'btn small', onclick: loadCurve }, 'Retry')));
+    }
+  }
+
+  let loading = false;
+  async function load() {
+    if (loading) return;
+    loading = true;
+    try {
+      if (!catalog.length) {
+        frame.loading('Connecting…');
+        catalog = (await engineRequest<{ series: CatalogEntry[] }>('macro.catalog', {}, 15000)).series;
+        skeleton();
+      }
+      note.textContent = '';
+      const failures: string[] = [];
+      await Promise.all([
+        loadCurve(),
+        pool(catalog, 6, async (c) => {
+          if (!(await loadSeries(c.id))) failures.push(c.name);
+        }),
+      ]);
+      stamp.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+      if (failures.length) note.textContent = `Couldn't load ${failures.length} series. If this keeps happening, add a free FRED API key in Settings (gear icon) for a faster, more reliable connection.`;
+    } catch (err) {
+      frame.error(err);
+    } finally {
+      loading = false;
     }
   }
 
   let started = false;
+  let timer: ReturnType<typeof setInterval> | undefined;
   return {
     el: frame.el,
     start() {
       rangeButtons.forEach((b) => b.classList.toggle('active', b.dataset.range === range));
-      if (started) return;
-      started = true;
-      load();
+      if (!started) {
+        started = true;
+        load();
+      }
+      // Economic data changes at most daily; check again every 30 minutes while the page is open.
+      timer ??= setInterval(load, 30 * 60 * 1000);
+    },
+    stop() {
+      clearInterval(timer);
+      timer = undefined;
     },
   };
 }

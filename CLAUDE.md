@@ -25,6 +25,14 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   type engine. Uses numpy/scipy, SEC EDGAR (contact email asked once), FRED CSV, CFTC, Yahoo dividends (total
   return). Clients, portfolios and branding live in SQLite ~/.trading-platform/platform.db, never the browser.
   Client firm branding (logo etc.) is imported from a file; never commit a real firm's branding to the repo.
+  `id` and `type` are reserved in every helper message (request id / kind): name engine parameters otherwise
+  (e.g. `series`, `docId`). Long requests stream `engine_event` messages before the reply (`onEvent`).
+  Settings (Anthropic key, model, SEC email, FRED key) are set in the Settings window and saved by the helper in
+  ~/.trading-platform/settings.json; keys are never stored in or sent back to the browser.
+  AI (engine/ai.py): official `anthropic` SDK, default model claude-opus-5-5 with server-side fallbacks, tools over
+  engine data plus `ui_action` (browser carries out open_chart/add_indicator/create_alert). It must never trade.
+  Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).
+  Indicators can load outside data via `IndicatorDef.external` (COT for the related futures market, FINRA short volume).
   It is market-data only: never add order placement to it (the Schwab app's order limit is 0).
   Trading is planned through Webull.
 

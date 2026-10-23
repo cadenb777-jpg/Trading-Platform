@@ -12,7 +12,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The helper version this site needs. Must match HELPER_VERSION in helper/schwab_helper.py. */
-const REQUIRED_HELPER_VERSION = 5;
+const REQUIRED_HELPER_VERSION = 6;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
@@ -90,16 +90,20 @@ type HelperMessage =
   | { type: 'calendar'; id: number; events: CalendarEvent[]; failed: string[] }
   | { type: 'summary'; id: number; points: string[]; description: string; url: string; words: number }
   | { type: 'engine'; id: number; data: unknown }
+  | { type: 'engine_event'; id: number; event: EngineEvent }
   | { type: 'error'; id: number | null; message: string }
   | { type: 'trade'; symbol: string; price: number; size: number; time: number }
   | { type: 'quote'; symbol: string; last: number | null; prevClose: number | null };
+
+/** Progress sent by a long-running engine request before its final reply (e.g. AI text as it is written). */
+export type EngineEvent = { type: 'text'; text: string } | { type: 'status'; text: string };
 
 /** One shared connection to the helper, reused by charts, the watchlist and the home page. */
 class HelperConnection {
   private ws: WebSocket | null = null;
   private opening: Promise<WebSocket> | null = null;
   private nextId = 1;
-  private readonly pending = new Map<number, { resolve: (msg: HelperMessage) => void; reject: (err: Error) => void }>();
+  private readonly pending = new Map<number, { resolve: (msg: HelperMessage) => void; reject: (err: Error) => void; event?: (e: EngineEvent) => void }>();
   private readonly listeners = new Map<string, Set<HelperListener>>();
   private readonly availability = new Set<(up: boolean) => void>();
   private helperStatus: { status: ConnectionStatus; message: string } = { status: 'connecting', message: 'Connecting' };
@@ -156,13 +160,20 @@ class HelperConnection {
     return this.opening;
   }
 
-  /** Sends a request and waits for the helper's reply with the same id. */
-  async request(msg: Record<string, unknown>, signal?: AbortSignal, timeoutMs = REQUEST_TIMEOUT_MS): Promise<HelperMessage> {
+  /**
+   * Sends a request and waits for the helper's reply with the same id. `onEvent` receives progress
+   * messages; each one restarts the timeout, so long answers that keep streaming never time out.
+   */
+  async request(msg: Record<string, unknown>, signal?: AbortSignal, timeoutMs = REQUEST_TIMEOUT_MS, onEvent?: (e: EngineEvent) => void): Promise<HelperMessage> {
     await this.connect();
     if (this.outdated) throw new Error(HELPER_OUTDATED);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {
-      const timer = setTimeout(() => finish(new Error('The Schwab helper took too long to answer. Try again.')), timeoutMs);
+      let timer: ReturnType<typeof setTimeout>;
+      const arm = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => finish(new Error('The Schwab helper took too long to answer. Try again.')), timeoutMs);
+      };
       const finish = (err: Error | null, reply?: HelperMessage) => {
         clearTimeout(timer);
         this.pending.delete(id);
@@ -172,7 +183,15 @@ class HelperConnection {
       };
       const onAbort = () => finish(new DOMException('Aborted', 'AbortError'));
       signal?.addEventListener('abort', onAbort);
-      this.pending.set(id, { resolve: (reply) => finish(null, reply), reject: (err) => finish(err) });
+      arm();
+      this.pending.set(id, {
+        resolve: (reply) => finish(null, reply),
+        reject: (err) => finish(err),
+        event: (e) => {
+          arm();
+          onEvent?.(e);
+        },
+      });
       this.send({ ...msg, id });
     });
   }
@@ -228,6 +247,9 @@ class HelperConnection {
       case 'summary':
       case 'engine':
         this.pending.get(msg.id)?.resolve(msg);
+        break;
+      case 'engine_event':
+        this.pending.get(msg.id)?.event?.(msg.event);
         break;
       case 'error':
         if (msg.id !== null) this.pending.get(msg.id)?.reject(new Error(msg.message));
@@ -290,8 +312,10 @@ export async function loadNews(symbols: string[] = [], query = ''): Promise<{ it
  * Asks the helper's analysis engine for something (fundamentals, options flow, portfolio maths...).
  * `type` is the engine handler name, e.g. 'sec.financials'.
  */
-export async function engineRequest<T>(type: string, params: Record<string, unknown> = {}, timeoutMs = 60000): Promise<T> {
-  const reply = await helper.request({ ...params, type }, undefined, timeoutMs);
+export async function engineRequest<T>(type: string, params: Record<string, unknown> = {}, timeoutMs = 60000, onEvent?: (e: EngineEvent) => void, signal?: AbortSignal): Promise<T> {
+  // Every message carries its request number as `id`, so parameters must use other names.
+  if ('id' in params || 'type' in params) throw new Error(`engineRequest("${type}"): "id" and "type" are reserved parameter names`);
+  const reply = await helper.request({ ...params, type }, signal, timeoutMs, onEvent);
   if (reply.type !== 'engine') throw new Error('Unexpected reply from the helper');
   return reply.data as T;
 }

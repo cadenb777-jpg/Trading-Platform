@@ -5,6 +5,7 @@
 import type { Bar } from '../types';
 import { ema, highest, lowest, rma, rsi, sma, stdev, trueRange, wma } from './math';
 import { MORE_INDICATORS, QUANT_INDICATORS } from './more';
+import { POSITIONING_INDICATORS } from './positioning';
 import type { IndicatorDef, IndicatorInput, IndicatorInstance, IndicatorParams, PriceSource } from './types';
 
 function source(bars: Bar[], src: PriceSource): number[] {
@@ -307,7 +308,7 @@ export const INDICATORS: IndicatorDef[] = [
   },
 ];
 
-INDICATORS.push(...MORE_INDICATORS, ...QUANT_INDICATORS);
+INDICATORS.push(...MORE_INDICATORS, ...QUANT_INDICATORS, ...POSITIONING_INDICATORS);
 
 /** Indicators the user wrote in the script editor, registered at runtime. */
 const custom = new Map<string, IndicatorDef>();

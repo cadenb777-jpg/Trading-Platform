@@ -2,6 +2,8 @@ import { allIndicators, defaultColors, defaultParams } from '../indicators/libra
 import { PRICE_SOURCES, type IndicatorDef, type IndicatorInstance } from '../indicators/types';
 import { TIMEFRAME_DEFS, TIMEFRAME_SECONDS, type Timeframe } from '../types';
 import { h, openModal, toast } from './dom';
+import { icon } from './icons';
+import { openIndicatorInfo } from './indicatorInfo';
 
 /** The searchable list of every built-in indicator. Clicking one adds it to the chart. */
 export function openIndicatorPicker(onAdd: (def: IndicatorDef) => void) {
@@ -18,16 +20,21 @@ export function openIndicatorPicker(onAdd: (def: IndicatorDef) => void) {
       for (const def of matches.filter((d) => d.category === category)) {
         list.append(
           h(
-            'button',
-            {
-              class: 'picker-item',
-              onclick: () => {
-                onAdd(def);
-                toast(`Added ${def.name}`);
+            'div',
+            { class: 'picker-row' },
+            h(
+              'button',
+              {
+                class: 'picker-item',
+                onclick: () => {
+                  onAdd(def);
+                  toast(`Added ${def.name}`);
+                },
               },
-            },
-            h('span', { class: 'picker-name' }, def.name, h('span', { class: 'picker-short' }, def.shortName)),
-            h('span', { class: 'picker-desc' }, def.description),
+              h('span', { class: 'picker-name' }, def.name, h('span', { class: 'picker-short' }, def.shortName)),
+              h('span', { class: 'picker-desc' }, def.description),
+            ),
+            h('button', { class: 'picker-info', title: `What is ${def.shortName}?`, 'aria-label': `About ${def.name}`, onclick: () => openIndicatorInfo(def) }, icon('info', 18)),
           ),
         );
       }

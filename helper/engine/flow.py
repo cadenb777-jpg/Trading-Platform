@@ -216,7 +216,7 @@ async def cot(ctx, msg):
         response = await ctx.http.get(COT_URL, params=params)
         response.raise_for_status()
         return parse_cot(response.json())
-    rows = await ctx.cached(('cot', code), 6 * 3600, load)
+    rows = await ctx.cached(('cot', code), 6 * 3600, load, persist=True, stale_ok=True)
     if not rows:
         raise EngineError('The CFTC returned no data for this market.')
     latest, prev = rows[-1], rows[-2] if len(rows) > 1 else rows[-1]

@@ -71,11 +71,30 @@ export function barList(rows: { label: string; value: number; highlight?: string
 }
 
 /** A grid of headline numbers ("stat cards"). */
-export function statCards(items: { label: string; value: string; hint?: string; tone?: 'up' | 'down' | '' }[]) {
+export function statCards(items: { label: string; value: string; hint?: string; tone?: 'up' | 'down' | ''; node?: Node }[]) {
   return h(
     'div',
     { class: 'stat-cards' },
-    ...items.map((i) => h('div', { class: 'stat-card', title: i.hint ?? '' }, h('span', { class: 'muted small' }, i.label), h('b', { class: i.tone ?? '' }, i.value), i.hint ? h('span', { class: 'muted small stat-hint' }, i.hint) : null)),
+    ...items.map((i) =>
+      h(
+        'div',
+        { class: 'stat-card', title: i.hint ?? '' },
+        h('span', { class: 'stat-label' }, i.label),
+        i.node ?? h('b', { class: `stat-value ${i.tone ?? ''}` }, i.value),
+        i.hint ? h('span', { class: 'muted small stat-hint' }, i.hint) : null,
+      ),
+    ),
+  );
+}
+
+/** A low-to-high range with a marker for the current value (e.g. a 52-week range). */
+export function rangeBar(low: number, high: number, current: number | null | undefined, format: (v: number) => string) {
+  const pos = current != null && high > low ? Math.min(100, Math.max(0, ((current - low) / (high - low)) * 100)) : null;
+  return h(
+    'div',
+    { class: 'range-bar' },
+    h('div', { class: 'range-track' }, pos != null ? h('span', { class: 'range-dot', style: `left:${pos}%` }) : null),
+    h('div', { class: 'range-labels' }, h('span', {}, format(low)), pos != null ? h('span', { class: 'range-pos' }, `${pos.toFixed(0)}%`) : null, h('span', {}, format(high))),
   );
 }
 

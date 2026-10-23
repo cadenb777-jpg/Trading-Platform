@@ -40,7 +40,7 @@ import engine  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 5
+HELPER_VERSION = 6
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -141,14 +141,7 @@ class HelperError(Exception):
 
 
 def ask_sec_contact(config):
-    """The SEC asks tools that download its data (company financials, insider trades) for a contact email."""
-    if 'sec_contact' in config:
-        return config
-    print()
-    print('Company financials and insider trades come from the SEC, which asks for a contact email.')
-    print('It is sent only to sec.gov with those requests. Press Enter to skip (those features may not work).')
-    config['sec_contact'] = input('Email for SEC requests: ').strip()
-    CONFIG_PATH.write_text(json.dumps(config, indent=2))
+    """Older versions asked for the SEC contact email here; it now lives in the platform's Settings window."""
     return config
 
 
@@ -549,9 +542,11 @@ class Market:
 
     def __init__(self, client, stream_factory=StreamClient, news=None, engine_ctx=None):
         self.client = client
-        self.engine = engine_ctx or engine.EngineContext(client)
-        self.stream_factory = stream_factory
         self.news = news or NewsFetcher()
+        self.engine = engine_ctx or engine.EngineContext(client)
+        if self.engine.news is None:
+            self.engine.news = self.news
+        self.stream_factory = stream_factory
         self.browsers = set()
         self.listeners = {}  # symbol -> set of browser connections
         self.status = {'type': 'status', 'status': 'connecting', 'message': 'Connecting to Schwab', 'version': HELPER_VERSION}
@@ -590,6 +585,7 @@ class Market:
                     symbols = [str(s).upper() for s in msg.get('symbols') or [] if isinstance(s, str)]
                     asyncio.create_task(self.reply(ws, msg.get('id'), self.news_reply(symbols, str(msg.get('query') or ''))))
                 elif kind in engine.HANDLERS:
+                    msg['_emit'] = self.emitter(ws, msg.get('id'))
                     asyncio.create_task(self.reply(ws, msg.get('id'), self.engine_reply(kind, msg)))
                 elif kind == 'subscribe':
                     self.listeners.setdefault(symbol, set()).add(ws)
@@ -614,6 +610,15 @@ class Market:
         bars = await fetch_history(self.client, symbol, resolution, days)
         log.info('Sent %d %s bars for %s', len(bars), resolution, symbol)
         return {'type': 'history', 'bars': bars}
+
+    def emitter(self, ws, request_id):
+        """Lets a long-running engine request (like an AI answer) send progress before its final reply."""
+        async def emit(event):
+            try:
+                await ws.send(json.dumps({'type': 'engine_event', 'id': request_id, 'event': event}))
+            except Exception:
+                pass
+        return emit
 
     async def engine_reply(self, kind, msg):
         try:
@@ -742,7 +747,8 @@ class Market:
 async def run(client, sec_contact=''):
     market = Market(client, engine_ctx=engine.EngineContext(client, sec_contact))
     try:
-        server = await serve(market.handle_browser, HOST, PORT, origins=ALLOWED_ORIGINS)
+        # Room for files attached to AI questions (spreadsheets, PDFs, images).
+        server = await serve(market.handle_browser, HOST, PORT, origins=ALLOWED_ORIGINS, max_size=40 * 2**20)
     except OSError:
         sys.exit(f'Port {PORT} is already in use. Is the helper already running in another window?')
     async with server:

@@ -12,5 +12,5 @@ export async function saveDoc<T extends { id?: string }>(collection: Collection,
 }
 
 export async function deleteDoc(collection: Collection, id: string): Promise<void> {
-  await engineRequest('store.delete', { collection, id });
+  await engineRequest('store.delete', { collection, docId: id });
 }

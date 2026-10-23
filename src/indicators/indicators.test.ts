@@ -59,7 +59,11 @@ describe('indicator library', () => {
 
   for (const def of INDICATORS) {
     it(`${def.name} returns a full-length series for every plot`, () => {
-      const out = def.compute(bars, defaultParams(def));
+      // Outside-data indicators get one dated point per 5 bars, like weekly COT or daily short volume.
+      const external = def.external
+        ? bars.filter((_, i) => i % 5 === 0).map((b, i) => ({ time: b.time, values: { spec: 40 + (i % 30), comm: 60 - (i % 30), specNet: i, ratio: 45 + (i % 10) } }))
+        : undefined;
+      const out = def.compute(bars, defaultParams(def), external);
       for (const plot of def.plots) {
         expect(out[plot.key]).toHaveLength(bars.length);
         // Some plots are intentionally blank on some bars (e.g. SuperTrend's up/down lines).
@@ -68,6 +72,14 @@ describe('indicator library', () => {
       expect(def.plots.some((plot) => Number.isFinite(out[plot.key].at(-1)))).toBe(true);
     });
   }
+
+  it('outside data carries forward until the next point', async () => {
+    const { alignExternal } = await import('./external');
+    const b = makeBars(6);
+    const values = alignExternal(b, [{ time: b[1].time, values: { x: 1 } }, { time: b[4].time, values: { x: 2 } }], 'x');
+    expect(values.slice(0, 1).every(Number.isNaN)).toBe(true);
+    expect(values.slice(1)).toEqual([1, 1, 1, 2, 2]);
+  });
 
   it('indicator ids are unique', () => {
     expect(new Set(INDICATORS.map((d) => d.id)).size).toBe(INDICATORS.length);
