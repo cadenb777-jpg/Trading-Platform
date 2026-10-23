@@ -11,6 +11,8 @@ export interface PlatformSettings {
   secContact: string;
   model: string;
   models: { id: string; name: string }[];
+  /** Open the platform in Chrome when the helper finishes starting (helper version 9+). */
+  openBrowser?: boolean;
 }
 
 let cached: PlatformSettings | null = null;
@@ -26,7 +28,7 @@ export function onSettingsChange(fn: (s: PlatformSettings) => void) {
   return () => listeners.delete(fn);
 }
 
-async function save(changes: Record<string, string>) {
+async function save(changes: Record<string, string | boolean>) {
   cached = await engineRequest<PlatformSettings>('settings.set', changes, 10000);
   for (const fn of listeners) fn(cached);
   return cached;
@@ -177,6 +179,20 @@ export async function openSettings(focus?: 'ai') {
         '32 letters and numbers',
         render,
       ),
+      h('h3', { class: 'settings-section' }, 'Helper'),
+      (() => {
+        const box = h('input', { type: 'checkbox', checked: s.openBrowser !== false });
+        box.addEventListener('change', async () => {
+          await save({ openBrowser: box.checked }).catch((err) => toast((err as Error).message));
+          toast(box.checked ? 'The helper will open the platform when it starts' : 'The helper won’t open the browser');
+        });
+        return h(
+          'div',
+          { class: 'settings-row' },
+          h('label', { class: 'check-item' }, box, h('b', {}, 'Open the platform in Chrome when the helper starts')),
+          h('p', { class: 'muted small' }, 'Skipped automatically when the platform is already open in a tab. Uses your default browser if Chrome isn’t installed.'),
+        );
+      })(),
       h('p', { class: 'muted small' }, 'Everything here is saved by the helper in your user folder (.trading-platform), not in the browser or online.'),
     );
     if (focus === 'ai' && !s.aiKeySet) body.querySelector<HTMLInputElement>('input[type=password]')?.focus();

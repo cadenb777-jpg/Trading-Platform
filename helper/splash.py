@@ -186,7 +186,7 @@ def rgb(color, text, bold=False):
     return f"\033[{'1;' if bold else ''}38;2;{r};{g};{b}m{text}{RESET}"
 
 
-def matrix_rain(seconds=1.6):
+def matrix_rain(seconds=1.1):
     """Green code falling down the screen, then cleared away."""
     cols, rows = shutil.get_terminal_size((80, 24))
     width = min(cols - 1, 110)
@@ -224,7 +224,7 @@ def matrix_rain(seconds=1.6):
         sys.stdout.flush()
 
 
-def starfield(seconds=1.4):
+def starfield(seconds=1.0):
     """A warp-speed jump: stars streak out from the middle of the screen."""
     cols, rows = shutil.get_terminal_size((80, 24))
     width, height = min(cols - 1, 110), min(max(rows - 4, 8), 14)
@@ -251,7 +251,7 @@ def starfield(seconds=1.4):
         sys.stdout.flush()
 
 
-def ticker_tape(seconds=1.6):
+def ticker_tape(seconds=1.1):
     """A stock ticker scrolling across the screen with random prices."""
     cols, _ = shutil.get_terminal_size((80, 24))
     width = min(cols - 1, 110)
@@ -285,7 +285,7 @@ def ticker_tape(seconds=1.6):
         sys.stdout.flush()
 
 
-def glitch_in(rows, palette, seconds=1.0):
+def glitch_in(rows, palette, seconds=0.7):
     """Reveals the big name out of random glitch characters."""
     noise = '#$%&@*+=?/\\|<>~^'
     height = len(rows)
@@ -351,7 +351,7 @@ def banner(look=None, intro=True):
         for i, row in enumerate(rows):
             print(rgb(palette[i], '  ' + row, bold=True))
             if intro and fancy():
-                time.sleep(0.04)
+                time.sleep(0.03)
     print('  ' + rgb(palette[0], 'T R A D I N G   P L A T F O R M'.center(width), bold=True))
     print('  ' + rgb((90, 100, 130), '─' * width))
     art = ART[look['creature']].strip('\n').split('\n')
@@ -359,7 +359,7 @@ def banner(look=None, intro=True):
         color = palette[min(len(palette) - 1, i * len(palette) // max(1, len(art)))]
         print('  ' + rgb(color, line))
         if intro and fancy():
-            time.sleep(0.02)
+            time.sleep(0.012)
     print()
     print('  ' + rgb((235, 235, 245), '“' + look['tagline'] + '”'))
     print('  ' + rgb((120, 130, 160), f"boot sequence #{look['boot']} · theme {look['theme']} · {look['creature']} · Schwab data · analysis engine · AI"))
@@ -466,7 +466,7 @@ class Bar:
             with self._lock:
                 goal = self.goal()
                 if self.shown < goal:
-                    self.shown = min(goal, self.shown + max(0.08, (goal - self.shown) * 0.12))
+                    self.shown = min(goal, self.shown + max(0.1, (goal - self.shown) * 0.18))
                 self.draw()
             self.frame += 1
             time.sleep(0.04)
@@ -680,7 +680,7 @@ def launch(args):
     log = open_log()
     try:
         warning = prepare(bar, log)
-        bar.stage('Starting the helper (loading the analysis engine)...', 94, expect_seconds=6)
+        bar.stage('Starting the helper...', 94, expect_seconds=3)
     except LaunchError as err:
         bar.stop(failed=True)
         print()
@@ -772,7 +772,9 @@ class HelperScreen:
         enable_colors()
         self.look = pick(seed)
         self.palette = PALETTES[self.look['theme']]
-        self.bar = Bar(self.palette, start).start()
+        self.bar = Bar(self.palette, start)
+        self.bar.label = 'Starting the helper...'
+        self.bar.start()
         self.ready_shown = False
         self.paused = False
         self.state = ('connecting', 'Connecting to Schwab')

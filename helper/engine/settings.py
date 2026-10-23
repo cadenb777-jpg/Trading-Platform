@@ -53,6 +53,7 @@ def public():
         'fredKeySet': bool(data.get('fred_key')),
         'secContact': data.get('sec_contact', ''),
         'model': data.get('model') or DEFAULT_MODEL,
+        'openBrowser': data.get('open_browser') is not False,
         'models': [{'id': k, 'name': v} for k, v in AI_MODELS.items()],
     }
 
@@ -80,6 +81,8 @@ async def set_settings(ctx, msg):
         if email and ('@' not in email or ' ' in email):
             raise EngineError('Enter a valid email address.')
         changes['sec_contact'] = email
+    if 'openBrowser' in msg:
+        changes['open_browser'] = bool(msg['openBrowser'])
     if 'model' in msg:
         if msg['model'] not in AI_MODELS:
             raise EngineError('Unknown model')

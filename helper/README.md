@@ -56,6 +56,10 @@ Press Enter when asked and a browser window opens.
 The helper window then goes back to the start screen, finishes the loading bar and shows a live
 status line at the bottom (for example **"● LIVE Streaming from Schwab · 1 platform tab connected"**).
 Behind-the-scenes messages go to `~/.trading-platform/helper.log` instead of filling the window.
+A few seconds later it opens the platform in Google Chrome (or your default browser), unless the platform is
+already open in a tab. Turn that off in the platform's Settings window (Helper section), or start the helper
+with `--no-browser`. The AI and portfolio maths load in the background while the helper starts, so charts are
+ready first; anything that needs them waits a moment the first time.
 
 ### 6. Use it
 
@@ -78,7 +82,8 @@ folder downloads everything once (about 150 MB), which takes a few minutes; the 
 progress for each step.
 
 Version 6 added the AI assistant and stock positioning; version 7 is a bug-fix update; version 8 adds the
-Investments page (market boards, bonds, alternatives and private funds) and the new start screen. If an optional part
+Investments page (market boards, bonds, alternatives and private funds) and the new start screen; version 9
+starts faster and opens the platform in Chrome when it's ready. If an optional part
 (the AI or portfolio maths) fails to install, the helper still starts and charts and prices keep working; the
 platform's Settings window shows what's unavailable, and the helper writes a log to `~/.trading-platform/helper.log`. The first start after updating installs a few
 more parts, so it takes a couple of minutes. Keys and emails are no longer typed into this window:

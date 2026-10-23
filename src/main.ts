@@ -179,7 +179,7 @@ if (isAiWindow) {
     updateBanner.hidden = bannerDismissed || v == null || !helper.outdated;
     if (updateBanner.hidden || v == null) return;
     updateBanner.replaceChildren(
-      h('span', {}, h('b', {}, `Helper update available (you have version ${v}, newest is ${LATEST_HELPER_VERSION}). `), v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Clients, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : 'It includes bug fixes. '),
+      h('span', {}, h('b', {}, `Helper update available (you have version ${v}, newest is ${LATEST_HELPER_VERSION}). `), v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Clients, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : 'It includes bug fixes. '),
       h('a', { href: 'https://github.com/cadenb777-jpg/Trading-Platform', target: '_blank', rel: 'noopener' }, 'Get it: Code → Download ZIP, replace your helper folder, restart it'),
       h('button', { class: 'icon-btn', 'aria-label': 'Dismiss', title: 'Dismiss', onclick: () => ((bannerDismissed = true), showUpdateBanner()) }, '✕'),
     );

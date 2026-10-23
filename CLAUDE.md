@@ -51,6 +51,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   stand-ins (PROXIES) for the maths. holdingsPayload throws when a shares-mode holding has no price.
   Client reports (src/reports/report.ts): sections toggled by Client.sections; include linked alt_holdings
   (Client.altIds), SEC fund facts (alts.fund) and a market overview (invest.board). Long tables page-break by chunks.
+  Engine modules load on a background thread (engine.start_loading in main; engine.wait_loaded for requests
+  that arrive early). After start the helper warms caches (news, headline board, curve, bond market) and opens
+  the platform in Chrome (settings open_browser, flag --no-browser) unless a tab connects within 3 s.
   Launcher: start files run `splash.py run`, which shows the start screen, runs pip with hidden output behind one
   0-100% bar and starts the helper with TP_SPLASH (seed) and TP_HANDOFF; the helper then continues the bar
   (splash.HelperScreen), logs only to the file and shows one live status line. Interactive steps (Schwab keys,

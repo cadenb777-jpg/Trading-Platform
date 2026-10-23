@@ -13,6 +13,8 @@ Run with --reset to enter new Schwab keys.
 
 import argparse
 import asyncio
+import shutil
+import subprocess
 import datetime as dt
 import email.utils
 import getpass
@@ -27,6 +29,7 @@ import sys
 import time
 import urllib.parse
 import warnings
+import webbrowser
 import xml.etree.ElementTree as ET
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -41,11 +44,11 @@ import httpx  # noqa: E402
 from schwab.auth import easy_client  # noqa: E402
 from schwab.streaming import StreamClient  # noqa: E402
 from websockets.asyncio.server import broadcast, serve  # noqa: E402
-import engine  # noqa: E402
+import engine  # noqa: E402  (light: its big modules load in the background, see engine.start_loading)
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 8
+HELPER_VERSION = 9
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -642,6 +645,9 @@ class Market:
                         await ws.send(json.dumps(self.quote_message(symbol)))
                 elif kind == 'unsubscribe':
                     self.remove_listener(ws, symbol)
+                elif not engine.READY.is_set():
+                    # The analysis engine is still loading in the background: answer once it's ready.
+                    asyncio.create_task(self.after_engine_loads(ws, msg))
                 else:
                     await ws.send(json.dumps({'type': 'error', 'id': msg.get('id'), 'message': unknown_request_message(kind)}))
         finally:
@@ -650,6 +656,18 @@ class Market:
                 SCREEN.status(browsers=len(self.browsers))
             for symbol in list(self.listeners):
                 self.remove_listener(ws, symbol)
+
+    async def after_engine_loads(self, ws, msg):
+        await engine.wait_loaded()
+        kind = msg.get('type')
+        if kind in engine.HANDLERS:
+            msg['_emit'] = self.emitter(ws, msg.get('id'))
+            await self.reply(ws, msg.get('id'), self.engine_reply(kind, msg))
+        else:
+            try:
+                await ws.send(json.dumps({'type': 'error', 'id': msg.get('id'), 'message': unknown_request_message(kind)}))
+            except Exception:
+                pass
 
     def remove_listener(self, ws, symbol):
         listeners = self.listeners.get(symbol)
@@ -813,7 +831,88 @@ def needs_login():
         return True
 
 
-async def run(client, sec_contact=''):
+async def engine_ready(market):
+    """Once the background engine load finishes: log any feature that failed and tell open tabs."""
+    await engine.wait_loaded()
+    for name, err in engine.LOAD_ERRORS.items():
+        log.warning('Feature unavailable: %s (%s)', name, err)
+    market.set_status(market.status['status'], market.status['message'])
+
+
+# Warmed up after start, so the platform's first pages open instantly (each is cached on disk afterwards).
+WARM_UP = [
+    ('invest.board', {'symbols': ['$SPX', '$COMPX', 'VTI', 'AGG', 'PSP', 'IBIT', 'GLD']}),
+    ('macro.curve', {}),
+    ('bonds.market', {}),
+]
+
+
+async def warm_up(market):
+    await asyncio.sleep(2)
+    try:
+        await market.news.get([])
+    except Exception as err:
+        log.info('News warm-up failed: %s', err)
+    await engine.wait_loaded()
+    for kind, params in WARM_UP:
+        if kind in engine.HANDLERS:
+            try:
+                await engine.HANDLERS[kind](market.engine, dict(params))
+            except Exception as err:
+                log.info('Warm-up of %s failed: %s', kind, err)
+
+
+def chrome_command(url):
+    """The command that opens `url` in Google Chrome on this computer, or None if Chrome isn't installed."""
+    if sys.platform == 'win32':
+        roots = [os.environ.get(k, '') for k in ('PROGRAMFILES', 'PROGRAMFILES(X86)', 'LOCALAPPDATA')]
+        for root in filter(None, roots):
+            exe = Path(root) / 'Google' / 'Chrome' / 'Application' / 'chrome.exe'
+            if exe.exists():
+                return [str(exe), url]
+    elif sys.platform == 'darwin':
+        if Path('/Applications/Google Chrome.app').exists() or (Path.home() / 'Applications' / 'Google Chrome.app').exists():
+            return ['open', '-a', 'Google Chrome', url]
+    else:
+        exe = shutil.which('google-chrome') or shutil.which('google-chrome-stable') or shutil.which('chromium')
+        if exe:
+            return [exe, url]
+    return None
+
+
+def open_platform(url=PLATFORM_URL):
+    """Opens the platform in Chrome (or the default browser if Chrome isn't installed)."""
+    cmd = chrome_command(url)
+    try:
+        if cmd:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return 'Chrome'
+        webbrowser.open(url)
+        return 'your browser'
+    except Exception as err:
+        log.warning('Could not open the browser: %s', err)
+        return None
+
+
+async def open_when_ready(market, enabled):
+    """Opens the platform once the helper is ready, unless a platform tab connects by itself (it reconnects
+    automatically when it was already open), so you don't get a second tab."""
+    if not enabled:
+        return
+    from engine import settings
+    if settings.load().get('open_browser') is False:
+        return
+    await asyncio.sleep(3)
+    if market.browsers:
+        return
+    where = await asyncio.to_thread(open_platform)
+    if where and SCREEN:
+        SCREEN.message(f'Opened the platform in {where}.', tone='ok')
+    elif where:
+        print(f'Opened the platform in {where}.')
+
+
+async def run(client, sec_contact='', open_browser=True):
     market = Market(client, engine_ctx=engine.EngineContext(client, sec_contact))
     try:
         # Room for files attached to AI questions (spreadsheets, PDFs, images).
@@ -823,9 +922,10 @@ async def run(client, sec_contact=''):
             SCREEN.pause()
         sys.exit(f'Port {PORT} is already in use. Is the helper already running in another window?')
     async with server:
+        background = [engine_ready(market), warm_up(market), open_when_ready(market, open_browser)]
         if SCREEN:
             SCREEN.ready(PLATFORM_URL, LOG_PATH, os.environ.get('TP_LAUNCH_WARNING', ''))
-            await asyncio.gather(market.run_stream(), market.send_quotes(), screen_clock())
+            await asyncio.gather(market.run_stream(), market.send_quotes(), screen_clock(), *background)
             return
         print()
         print('=' * 64)
@@ -835,7 +935,7 @@ async def run(client, sec_contact=''):
         print('  To stop the helper, press Ctrl+C or close this window.')
         print('=' * 64)
         print()
-        await asyncio.gather(market.run_stream(), market.send_quotes())
+        await asyncio.gather(market.run_stream(), market.send_quotes(), *background)
 
 
 def start_screen():
@@ -854,7 +954,10 @@ def start_screen():
 def main():
     parser = argparse.ArgumentParser(description='Serve Schwab market data to the Trading Platform charts.')
     parser.add_argument('--reset', action='store_true', help='enter new Schwab keys and log in again')
+    parser.add_argument('--no-browser', action='store_true', help="don't open the platform in the browser when ready")
     args = parser.parse_args()
+    # Big libraries (AI, numpy, scipy) load while we log in and start the server.
+    engine.start_loading()
     start_screen()
     if SCREEN:
         # Messages go to the log file only; the start screen shows what matters.
@@ -871,8 +974,6 @@ def main():
     except OSError:
         pass
     log.info('Helper version %s starting (Python %s)', HELPER_VERSION, sys.version.split()[0])
-    for name, err in engine.LOAD_ERRORS.items():
-        log.warning('Feature unavailable: %s (%s)', name, err)
     logging.getLogger('httpx').setLevel(logging.WARNING)
     logging.getLogger('websockets').setLevel(logging.WARNING)
     try:
@@ -895,7 +996,7 @@ def main():
 
 def serve_forever(args):
     if SCREEN:
-        SCREEN.step('Loading the analysis engine...', 91, 0.5)
+        SCREEN.step('Getting ready...', 91, 0.3)
         if args.reset or not CONFIG_PATH.exists():
             SCREEN.pause()  # first-time setup asks for your Schwab keys
     config = load_config(args.reset)
@@ -920,7 +1021,7 @@ def serve_forever(args):
     if SCREEN:
         SCREEN.resume()  # puts the start screen back after the login steps
         SCREEN.step('Starting the live data server...', 99, 1)
-    asyncio.run(run(client, config.get('sec_contact', '')))
+    asyncio.run(run(client, config.get('sec_contact', ''), open_browser=not args.no_browser))
 
 
 if __name__ == '__main__':
