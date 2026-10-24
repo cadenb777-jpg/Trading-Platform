@@ -56,6 +56,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   operator operand, ALL/ANY) from state.indicators via suggestRules(); the chart's Backtest button fires
   `tp:backtest-chart`. Research tabs: Monte Carlo (trade bootstrap), random-walk test (shuffled daily moves, p-value),
   parameter sweep (overrides keyed `uid.inputKey`), monthly returns, deep stats. Seeded RNG so results repeat.
+  Dividends (v24, engine/dividends.py `dividends.portfolio`, src/portfolio/dividendsView.ts): shares-mode portfolio ->
+  yields, yield on cost, income, 5y growth, 12-month calendar; forward = last regular payment x frequency (specials
+  > 1.5x median ignored); ex/pay dates are estimates (pay = ex + 21 days; Yahoo has no pay dates). Statement import
+  (src/portfolio/statement.ts) matches CSV/Excel columns; a PDF goes through ai.chat when the AI key is set.
   Portfolios: Holding.kind security/cash/alt, Portfolio.mode weight/shares/dollars; positions()/holdingsPayload()
   in src/portfolio/types.ts value holdings (live prices via src/portfolio/prices.ts) and map cash/alts to listed
   stand-ins (PROXIES) for the maths. holdingsPayload throws when a shares-mode holding has no price.

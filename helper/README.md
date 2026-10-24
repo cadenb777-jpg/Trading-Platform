@@ -107,7 +107,9 @@ every 30-minute bar is kept for good (and, with Alpaca keys in Settings, about 3
 loaded once; hourly grades stay at B until 2 years of hourly history); simpler rules (pullback = z-score stretch and
 turn, mean reversion = z-score only, breakout = 52-week high, one 200-day trend filter; COT is a reading unless the
 edge study on your data shows it helps); lab survivors are judged only on trades after the day they were first
-shown; and a weekly "rule tests" report on your own data. Heavy maths runs in separate worker processes so prices
+shown; and a weekly "rule tests" report on your own data. Version 23 lets the AI see the page you're on. Version 24 adds
+dividend tracking on the Portfolios page (import a brokerage statement, then see yields, yearly income and a 12-month
+dividend calendar; future dates are estimates from each stock's dividend history). Heavy maths runs in separate worker processes so prices
 keep flowing during a scan; the first scan after updating takes longer while 15 years of history download. If an optional part
 (the AI or portfolio maths) fails to install, the helper still starts and charts and prices keep working; the
 platform's Settings window shows what's unavailable, and the helper writes a log to `~/.trading-platform/helper.log`. The first start after updating installs a few
