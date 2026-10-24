@@ -64,6 +64,9 @@ def market_session(now=None):
     return 'closed'
 
 
+NAT64 = ipaddress.ip_network('64:ff9b::/96')
+
+
 def is_public_address(host):
     """True when every address `host` resolves to is a public internet address (not loopback, private,
     link-local, multicast or reserved), so a fetch cannot be pointed at the owner's own computer or network."""
@@ -77,6 +80,8 @@ def is_public_address(host):
         if getattr(ip, 'ipv4_mapped', None):
             ip = ip.ipv4_mapped
         if not ip.is_global or ip.is_multicast:
+            return False
+        if ip.version == 6 and (ip.packed[:12] == bytes(12) or ip in NAT64):  # IPv4 hidden inside IPv6
             return False
     return bool(addresses)
 

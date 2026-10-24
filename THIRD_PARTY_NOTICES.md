@@ -17,7 +17,7 @@ Attribution notice (from the library's NOTICE file):
 
 The licence requires naming TradingView as the product creator and a link to https://www.tradingview.com/
 on a page users can see. The charts keep the library's `attributionLogo` (a small TradingView link on each
-chart), and this notice is linked from the site footer.
+chart), and this notice is linked from Settings → About.
 
 ## Browser app (npm)
 

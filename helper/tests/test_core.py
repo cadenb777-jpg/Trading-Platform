@@ -82,7 +82,7 @@ class SafeUrls(unittest.TestCase):
     def test_blocks_local_private_and_odd_schemes(self):
         for url in ('http://127.0.0.1:8765/', 'http://localhost/admin', 'http://10.0.0.5/', 'http://192.168.1.1/',
                     'http://172.16.0.1/', 'http://169.254.169.254/latest/meta-data/', 'http://[::1]/',
-                    'http://[::ffff:127.0.0.1]/', 'http://0.0.0.0/', 'file:///etc/passwd', 'ftp://8.8.8.8/',
+                    'http://[::ffff:127.0.0.1]/', 'http://[::127.0.0.1]/', 'http://[64:ff9b::7f00:1]/', 'http://[fd12::1]/', 'http://100.64.0.1/', 'http://0.0.0.0/', 'file:///etc/passwd', 'ftp://8.8.8.8/',
                     'javascript:alert(1)', 'http:///nohost', 'not a url'):
             self.assertFalse(core.is_safe_url(url), url)
 
