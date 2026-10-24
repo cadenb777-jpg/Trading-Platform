@@ -1,6 +1,6 @@
-# Status (updated Oct 24, 3:12 PM Central)
+# Status (updated Oct 24, 3:46 PM Central)
 
-**Now:** paused to save credit. Restarts automatically at about **5:15 PM Central** (after the usage reset).
+**Now:** resumed at your request — finishing the Setups rework (lean). Table filters are built and waiting for review.
 
 **Live on the site (v21):** new look, speed fixes, Alpaca free history (Settings), research notes.
 
