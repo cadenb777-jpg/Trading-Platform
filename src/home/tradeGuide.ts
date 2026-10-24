@@ -24,7 +24,7 @@ function readSize(): { account: number; risk: number } {
   } catch {
     /* private window or nothing saved yet */
   }
-  return { account: 10000, risk: 1 };
+  return { account: 10000, risk: 0.5 };
 }
 
 function saveSize(v: { account: number; risk: number }) {
@@ -49,7 +49,7 @@ function verdict(s: Setup): { tone: 'good' | 'ok' | 'wait' | 'no'; title: string
       text: `${s.conflict.strategy} says ${s.conflict.direction > 0 ? 'BUY' : 'SELL'} on ${s.symbol} at the same time${s.conflict.tier ? ` (${s.conflict.tier}-grade)` : ''}. The strategies look at different time frames, so both can be "right", but they can't both work. Most traders wait, or take only the higher grade at a small size.${why}`,
     };
   if (s.tier === 'A')
-    return { tone: 'good', title: 'Yes, this meets every rule', text: 'The strategy has beaten random entries across the Nasdaq-100, this stock\'s own record isn\'t losing, the big hedgers aren\'t against it, no earnings get in the way and the target is worth the risk. Take it at your normal size if the entry triggers.' };
+    return { tone: 'good', title: 'Yes, this meets every rule', text: 'The strategy has beaten random entries across the Nasdaq-100 after costs and after correcting for every strategy tested, it survives double costs and worked in both halves of its history, this stock\'s own record isn\'t losing, no earnings get in the way and the target is worth the risk. Take it at your normal size if the entry triggers.' };
   if (s.tier === 'B')
     return { tone: 'ok', title: 'Reasonable, at a smaller size', text: `Nothing about this setup is against it and the strategy has made money overall, but it hasn't cleared every A-grade test.${why} A common approach is half your normal size.` };
   return { tone: 'no', title: 'Watch only: not a trade yet', text: `This is the closest candidate, not a trade.${why}` };
@@ -57,13 +57,10 @@ function verdict(s: Setup): { tone: 'good' | 'ok' | 'wait' | 'no'; title: string
 
 /** What each reading means, in one line. */
 const READING_HELP: Record<string, string> = {
-  cot: 'Williams COT index: where commercial hedgers (the big, usually right, players) sit in Nasdaq-100 futures versus the last 26 weeks. 60+ leans bullish, 40 or less bearish.',
-  z: 'Z-score: how far the price is from its 20-day average, in standard deviations. Below -1 is stretched down (cheap), above +1 stretched up.',
-  willr: 'Williams %R: where the close sits in the last 14 days\' range. Below -80 is oversold, above -20 overbought; turning back out of those zones is the trigger.',
-  wad: 'Williams Accumulation/Distribution: whether money is flowing in (accumulating) or out (distributing).',
-  weekly: 'Weekly trend: the direction of finished weekly bars. Trades go with it.',
-  rsi2: 'RSI(2): a very short-term overbought/oversold gauge. Under 10 is a deep short-term dip.',
-  adx: 'ADX: trend strength. Above 20-25 means the stock is trending, not drifting.',
+  cot: 'Williams COT index: where commercial hedgers sit in Nasdaq-100 futures versus the last 3 years (0-100). A reading only, unless the COT edge study on your data passed; then it counts in the grade.',
+  z: 'Z-score: how far the price is from its 20-bar average, in standard deviations. Below -1 is stretched down, above +1 stretched up.',
+  weekly: 'Trend: whether the price is above or below its 200-day average. Pullbacks and mean reversion trade only with it; breakouts buy only above it.',
+  rsi2: 'RSI(2): a very short-term overbought/oversold gauge, shown for context (the strategies no longer use it).',
 };
 
 /** A folded section: the basics stay visible, the detail opens on a click. */
@@ -110,7 +107,7 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
   const drawSize = () => {
     const a = Math.max(0, parseFloat(account.value) || 0);
     const r = Math.min(5, Math.max(0, parseFloat(risk.value) || 0));
-    saveSize({ account: a || 10000, risk: r || 1 });
+    saveSize({ account: a || 10000, risk: r || 0.5 });
     const dollars = (a * r) / 100;
     const shares = riskPerShare > 0 ? Math.floor(dollars / riskPerShare) : 0;
     const cost = shares * entry;
@@ -152,7 +149,7 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
         h('label', {}, h('span', { class: 'muted tiny' }, 'Account size ($)'), account),
         h('label', {}, h('span', { class: 'muted tiny' }, 'Risk per trade (%)'), risk),
         sizeOut,
-        h('p', { class: 'muted tiny' }, 'Professionals risk about 0.5-2% of the account per trade, so a losing streak can\'t do real damage.'),
+        h('p', { class: 'muted tiny' }, 'Default 0.5% of the account per trade (the research behind the scanner suggests 0.25-1%), so a losing streak can\'t do real damage.'),
       ),
     ],
   ];
@@ -183,11 +180,8 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
     [
       i.cot != null ? ['cot', 'COT commercials', `${i.cot.toFixed(0)}/100`] : null,
       i.z != null ? ['z', 'Z-score', i.z.toFixed(2)] : null,
-      i.willr != null ? ['willr', 'Williams %R', i.willr.toFixed(0)] : null,
-      i.wadRising != null ? ['wad', 'Williams A/D', i.wadRising ? 'accumulating' : 'distributing'] : null,
-      i.weekly != null ? ['weekly', 'Weekly trend', i.weekly > 0 ? 'up' : i.weekly < 0 ? 'down' : 'flat'] : null,
+      i.weekly != null ? ['weekly', 'Trend (200-day average)', i.weekly > 0 ? 'above' : i.weekly < 0 ? 'below' : 'flat'] : null,
       i.rsi2 != null ? ['rsi2', 'RSI(2)', i.rsi2.toFixed(0)] : null,
-      i.adx != null ? ['adx', 'ADX', i.adx.toFixed(0)] : null,
     ] as ([string, string, string] | null)[]
   ).filter((x): x is [string, string, string] => !!x);
 
@@ -230,9 +224,9 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
       st.trades
         ? h('p', {}, `On ${s.symbol}: ${st.trades} past trades in its backtest, ${Math.round((st.winRate ?? 0) * 100)}% winners, ${pct(st.expectancy, 2)} per trade after costs, held ${st.avgBars?.toFixed(1) ?? '—'} ${s.unit ?? 'day'}s on average (${st.grade}).`)
         : h('p', { class: 'muted' }, `No past trades on ${s.symbol} with this strategy, so the record below is for all Nasdaq-100 stocks.`),
-      rec ? h('p', {}, termLabel(`Across the Nasdaq-100 (${long ? 'buys' : 'sells'} only${strat?.lab ? ', unseen period' : ''})`, strat?.lab ? 'lab' : 'trades'), `: ${rec.stats.trades} trades, ${Math.round((rec.stats.winRate ?? 0) * 100)}% winners, ${pct(rec.stats.expectancy, 2)} per trade, profit factor ${rec.stats.profitFactor ?? '—'}.`) : '',
+      rec ? h('p', {}, termLabel(`Across the Nasdaq-100 (${long ? 'buys' : 'sells'} only${strat?.lab ? `, trades since ${strat.forward?.since ?? 'it was first shown'}` : ''})`, strat?.lab ? 'forward' : 'trades'), `: ${rec.stats.trades} trades, ${Math.round((rec.stats.winRate ?? 0) * 100)}% winners, ${pct(rec.stats.expectancy, 2)} per trade, profit factor ${rec.stats.profitFactor ?? '—'}.`) : '',
       re
-        ? h('p', {}, termLabel('Random-entry test', 'randomentry'), ` (${re.runs?.toLocaleString() ?? '1,000'} runs): `, h('b', { class: re.verdict === 'edge' ? 'up' : re.verdict === 'maybe' ? 'warn' : 'down' }, re.verdict === 'edge' ? 'the strategy beat chance' : re.verdict === 'maybe' ? 'inconclusive' : 'not clearly better than chance'), ` (p = ${re.p.toFixed(2)}).`)
+        ? h('p', {}, termLabel('Random-entry test', 'randomentry'), ` (${re.runs?.toLocaleString() ?? '1,000'} runs): `, h('b', { class: re.verdict === 'edge' ? 'up' : re.verdict === 'maybe' ? 'warn' : 'down' }, re.verdict === 'edge' ? 'the strategy beat chance' : re.verdict === 'maybe' ? 'inconclusive' : 'not clearly better than chance'), ` (p = ${re.p.toFixed(2)}${re.pAdjusted != null ? `; ${re.pAdjusted.toFixed(2)} after correcting for ${re.family} tests` : ''}; trades in the same week count as one draw).`)
         : '',
       rw && 'pending' in rw
         ? h('p', { class: 'muted' }, termLabel('Random-walk test', 'randomwalk'), `: running ${rw.runs.toLocaleString()} shuffled histories in the background.`)
@@ -241,6 +235,9 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
           : '',
       mc ? mcLine(mc, 'This stock') : '',
       smc ? mcLine(smc, 'The strategy on all stocks') : '',
+      rec?.monteCarloR ? h('p', {}, `At ${readSize().risk}% risk per trade, the worst dip along the next ${rec.monteCarloR.horizon} trades in the bad 1 of 20 simulations is about ${(Math.abs(rec.monteCarloR.worstDrop) * readSize().risk).toFixed(1)}% of the account (${rec.monteCarloR.worstDrop.toFixed(1)} R, after costs).`) : '',
+      rec?.robust ? h('p', {}, termLabel('Robust to costs and time', 'outofsample'), `: ${rec.robust.costs ? 'still profitable' : 'not profitable'} at double costs plus stop slippage; ${rec.robust.halves ? 'profitable in both halves of its history' : 'not profitable in both halves of its history'}.`) : '',
+      s.gradeBasis ? h('p', { class: 'muted small' }, `Grade based on: ${s.gradeBasis}.`) : '',
       h('p', { class: 'muted tiny' }, termLabel('Reading p', 'pvalue'), ' Under 0.05 is strong evidence, 0.05-0.20 a maybe, above 0.20 could easily be luck.'),
     ),
 
