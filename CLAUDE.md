@@ -1,5 +1,8 @@
 # Notes for Claude
 
+**Mantra: simplicity scales.** Fewer rules, indicators and settings; remove before adding; anything that doesn't earn
+its place in honest tests goes.
+
 The owner is a beginner. Explain changes in plain language, keep steps small, and prefer free services.
 
 ## Stack
