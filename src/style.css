@@ -5438,3 +5438,8 @@ a.btn {
     width: 100%;
   }
 }
+
+/* Inputs inside tinted settings rows use the card colour so they stand out. */
+.settings-row .input {
+  background-color: var(--panel);
+}
