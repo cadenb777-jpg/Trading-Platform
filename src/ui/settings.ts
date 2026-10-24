@@ -114,7 +114,7 @@ function alpacaRow(isSet: boolean, refresh: () => void): HTMLElement {
     h(
       'p',
       { class: 'muted small' },
-      'Free account at alpaca.markets; used only for intraday price history back to 2016, so charts (30-minute and hourly, about 3 years) and the AI assistant can look further back than Schwab keeps. Never used for trading. Get the two keys at ',
+      'Free account at alpaca.markets; used only for intraday price history back to 2016, so charts (30-minute and hourly, about 3 years), the hourly time frame of the Setups scanner (about 3 years of 30-minute bars) and the AI assistant can look further back than Schwab keeps. Never used for trading. Get the two keys at ',
       h('a', { href: 'https://app.alpaca.markets/dashboard/overview', target: '_blank', rel: 'noopener' }, 'app.alpaca.markets'),
       ' (sign up, then on the Home page find "API Keys" and click Generate New Keys; copy both before closing).',
     ),

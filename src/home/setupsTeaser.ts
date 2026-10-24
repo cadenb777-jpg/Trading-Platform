@@ -2,7 +2,7 @@
  * Home's small "Best setups" box: how many A and B setups each time frame has right now and the best three,
  * with a button to the Setups page where the full list, evidence and trade guides live.
  */
-import { engineRequest } from '../data/schwab';
+import { engineRequest, helper } from '../data/schwab';
 import { formatPrice, h, timeAgo } from '../ui/dom';
 import { icon } from '../ui/icons';
 import type { Setup } from './setupsPanel';
@@ -12,7 +12,9 @@ const LABEL: Record<Horizon, string> = { short: 'Short swing', swing: 'Swing', p
 const REFRESH_MS = 60_000;
 
 export function createSetupsTeaser() {
-  const body = h('div', { class: 'teaser-body' }, h('div', { class: 'skeleton', style: 'height:80px' }));
+  // No skeleton bar: when nothing is loaded yet the box says so in words (an empty loading bar looked broken).
+  const waiting = () => h('p', { class: 'empty-state muted small' }, helper.isConnected ? 'Loading the latest scan…' : 'Waiting for the helper: start it on your computer to see setups here.');
+  const body = h('div', { class: 'teaser-body' }, waiting());
   const el = h(
     'section',
     { class: 'panel setups-teaser' },
@@ -20,10 +22,20 @@ export function createSetupsTeaser() {
     body,
   );
 
+  let loaded = false;
   async function load() {
+    if (!helper.isConnected) {
+      if (!loaded) body.replaceChildren(waiting());
+      return;
+    }
     try {
-      const r = await engineRequest<{ updated: number; horizons?: Partial<Record<Horizon, { setups: Setup[] }>>; setups: Setup[] }>('scanner.results', {}, 600_000);
-      const hz = r.horizons ?? { swing: { setups: r.setups } };
+      const r = await engineRequest<{ updated: number; loading?: boolean; horizons?: Partial<Record<Horizon, { setups: Setup[] }>>; setups: Setup[] }>('scanner.results', {}, 30_000);
+      if (r.loading) {
+        body.replaceChildren(h('p', { class: 'empty-state muted small' }, 'The first scan is running (a few minutes after the helper starts).'));
+        return;
+      }
+      loaded = true;
+      const hz = r.horizons ?? { swing: { setups: r.setups ?? [] } };
       const good = (Object.keys(LABEL) as Horizon[]).flatMap((k) => (hz[k]?.setups ?? []).filter((s) => (s.tier === 'A' || s.tier === 'B') && s.status !== 'forming').map((s) => ({ ...s, horizon: k })));
       const rank = { A: 0, B: 1, C: 2 } as const;
       good.sort((a, b) => rank[a.tier ?? 'C'] - rank[b.tier ?? 'C'] || b.score - a.score);
@@ -39,7 +51,7 @@ export function createSetupsTeaser() {
           : h('p', { class: 'muted small' }, 'No A or B setups right now on any time frame. The Setups page shows the closest candidates and why they fall short.'),
       );
     } catch (err) {
-      body.replaceChildren(h('p', { class: 'muted small' }, (err as Error).message));
+      if (!loaded) body.replaceChildren(h('p', { class: 'empty-state muted small' }, (err as Error).message));
     }
   }
 

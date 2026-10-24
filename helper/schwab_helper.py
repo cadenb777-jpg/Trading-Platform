@@ -49,7 +49,7 @@ from engine.core import is_safe_url  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 21
+HELPER_VERSION = 22
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -977,7 +977,7 @@ async def market_scanner(market):
     if 'scanner' in engine.LOAD_ERRORS:
         return
     from engine import scanner
-    await scanner.background(market.engine, market.news)
+    await scanner.background_loop(market.engine, market.news)
 
 
 def chrome_command(url):
@@ -1139,7 +1139,12 @@ def serve_forever(args):
     if SCREEN:
         SCREEN.resume()  # puts the start screen back after the login steps
         SCREEN.step('Starting the live data server...', 99, 1)
-    asyncio.run(run(client, config.get('sec_contact', ''), open_browser=not args.no_browser))
+    try:
+        asyncio.run(run(client, config.get('sec_contact', ''), open_browser=not args.no_browser))
+    finally:
+        scanner = sys.modules.get('engine.scanner')
+        if scanner is not None:
+            scanner.shutdown()  # stop the scanner's worker processes too
 
 
 if __name__ == '__main__':

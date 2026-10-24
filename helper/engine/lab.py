@@ -2,26 +2,29 @@
 The strategy lab: searches combinations of theory-based rules for ones that hold up on data they were not
 chosen on, then turns the survivors into live strategies for the scanner.
 
-How it avoids fooling itself (see docs/research/setups-statistics.md):
+How it avoids fooling itself (see docs/research/setups-statistics.md and setups-v21-results.md):
   1. Building blocks come from market theory, not from the data: short-term reversal (z-score / RSI(2)
-     stretches, Williams %R turns), time-series momentum (higher-timeframe trend, 20-bar breakouts), the long-term
-     trend (200-bar average), money flow (Williams A/D), hedging pressure (COT) and trend strength / participation
-     (ADX, volume). Each trigger keeps the exit its theory implies (reversals exit at the mean, breakouts trail).
+     stretches, Williams %R turns), time-series momentum (higher-timeframe trend, 20-bar breakouts, 52-week highs),
+     the long-term trend (200-day average), money flow (Williams A/D divergence) and trend strength / participation
+     (ADX, volume). Each trigger keeps the exit its theory implies (reversals exit at the mean, momentum trails).
   2. Walk-forward: three test windows (55-70%, 70-85%, 85-100% of each stock's history). For each, every combination
      (trigger x up to two filters x buys or sells) is scored only on the data BEFORE it, minus an embargo gap as long
      as the longest holding period (so no trade straddles the line), and the best few by t-statistic go forward.
   3. Each forwarded combination is judged on its pooled unseen-window trades: average trade, a 1,000-run
-     random-entry test in those windows (Holm-corrected for everything forwarded), the deflated Sharpe ratio
-     (Bailey & Lopez de Prado: corrected for how many combinations were tried) and the probability of backtest
-     overfitting (how often the search's in-sample winner lands in the bottom half out of sample).
+     random-entry test in those windows (clustered by date, Holm-corrected for everything forwarded), the deflated
+     Sharpe ratio and the probability of backtest overfitting.
   4. Survivors (chosen in at least 2 of 3 windows, positive, enough trades, corrected p <= 0.10 on the unseen
-     windows, and the search not overfitting) become strategies, graded on that unseen record. The deflated Sharpe
-     ratio is reported alongside: with a true holdout the unseen-data test is the decisive one, and in testing the
-     deflated Sharpe alone could not tell planted edges from luck. Everything rejected
-     goes to the graveyard with its reason. Pure maths: no network.
+     windows, and the search not overfitting) become strategies. The windows that chose them are NOT evidence: from
+     the day a survivor is first shown (saved, so a restart keeps it) it is graded only on trades signalled after
+     that day, and it can't be better than grade B until it has 30 such forward trades. Survivors stay fixed; the
+     lab re-runs once a week to add new ones, and a survivor leaves only when its own forward record fails.
+     Everything rejected goes to the graveyard with its reason. Pure maths: no network.
 """
+import datetime as dt
 import itertools
+import json
 import math
+import os
 from statistics import NormalDist
 
 from . import strategies as st
@@ -41,32 +44,38 @@ TRIGGERS = {
     'gapgo': {'text': 'gapping half an ATR its way on 1.5x volume and closing strong', 'family': 'momentum', 'theory': 'news momentum / post-gap drift'},
 }
 FILTERS = {
-    'trend': 'with the higher-timeframe trend',
-    'above200': 'on the right side of the 200-bar average',
-    'flow': 'money flow agreeing (Williams A/D)',
-    'cot': 'commercial hedgers agreeing (COT 60+)',
+    'trend': 'with the higher-timeframe trend (10-bar average)',
+    'above200': 'on the right side of the 200-day average',
+    'adiv': 'Williams A/D diverging its way (a 20-bar A/D breakout the price has not followed, last 5 bars)',
     'adx': 'a trending market (ADX 20+)',
     'volume': 'above-average volume',
     'lowvol': 'a calm market for this stock (volatility below its usual level)',
-    'tom': 'the turn of the month (last 2 / first 3 days)',
-    'reverting': 'a mean-reverting regime (variance ratio below 0.9)',
-    'trending': 'a trending regime (variance ratio above 1.1)',
-    'market': 'the Nasdaq-100 trending the same way',
+    'tom': 'the turn of the month (last trading day or first 3 trading days)',
+    'market': 'the Nasdaq-100 on the same side of its 200-day average',
 }
+# Removed in v21 (docs/research/setups-v21-results.md): the variance-ratio regimes 'reverting' / 'trending' (on pure
+# random walks they switched on 42% / 24% of the time: tries without a regime), 'cot' (the COT edge study decides
+# COT's role) and 'flow' = A/D above its average (replaced by the divergence rule 'adiv').
+NO_WEEKLY = ('tom',)  # a weekly bar can't isolate the 4-day turn-of-the-month window
 TRAIN_SHARE = 0.55  # the first test window starts here
 FOLDS = ((0.55, 0.70), (0.70, 0.85), (0.85, 1.0))
 TAKE_FORWARD = 6
 MIN_FOLDS = 2
 MIN_TRAIN_TRADES = 40
 MIN_TEST_TRADES = 30
+MIN_FORWARD_TRADES = 30  # a survivor can't be graded above B before this many trades after it was first shown
 
 
-def candidates():
+def filters_for(horizon=None):
+    return [f for f in FILTERS if not (horizon == 'position' and f in NO_WEEKLY)]
+
+
+def candidates(horizon=None):
     """Every combination the lab tries: (trigger, filters, side)."""
     out = []
     for trig in TRIGGERS:
         for k in range(3):
-            for combo in itertools.combinations(FILTERS, k):
+            for combo in itertools.combinations(filters_for(horizon), k):
                 for d in (1, -1):
                     out.append((trig, combo, d))
     return out
@@ -81,9 +90,47 @@ def describe(trig, combo, d):
 def short_name(trig, combo, d):
     names = {'stretch': 'Z-stretch', 'rsi2': 'RSI(2)', 'willr': '%R turn', 'breakout': 'Breakout', 'down3': '3-bar dip', 'gapfade': 'Gap fade',
              'climax': 'Volume climax', 'mapull': 'MA pullback', 'high52': '52-week extreme', 'nr7': 'NR7 squeeze', 'gapgo': 'Gap and go'}
-    extra = {'trend': 'trend', 'above200': '200', 'flow': 'flow', 'cot': 'COT', 'adx': 'ADX', 'volume': 'vol', 'lowvol': 'calm', 'tom': 'month-turn',
-             'reverting': 'reverting', 'trending': 'trending', 'market': 'market'}
+    extra = {'trend': 'trend', 'above200': '200', 'adiv': 'A/D divergence', 'adx': 'ADX', 'volume': 'vol', 'lowvol': 'calm', 'tom': 'month-turn', 'market': 'market'}
     return f"Lab: {names[trig]}{''.join(' + ' + extra[f] for f in combo)} ({'buys' if d > 0 else 'sells'})"
+
+
+def turn_of_month(bars):
+    """True on the last trading day of a month and the first 3 trading days of the next (the published window,
+    counted in trading days, not calendar days). First days are counted from the bars; the last day is the one whose
+    next weekday falls in a new month (a calendar fact, so no peeking; holidays are ignored)."""
+    out, count, month, prev = [False] * len(bars), 0, None, None
+    for i, b in enumerate(bars):
+        d = st._day(b['time'])
+        if (d.year, d.month) != month:
+            month, count = (d.year, d.month), 0
+        if d != prev:
+            count += 1
+            prev = d
+        nxt = d + dt.timedelta(days=3 if d.weekday() == 4 else 1)
+        out[i] = count <= 3 or nxt.month != d.month
+    return out
+
+
+def ad_divergence(bars, closes, n=20, within=5):
+    """+1 / -1 / 0 per bar: on any of the last `within` bars, Williams A/D rose above its highest of the previous n
+    bars while the close stayed below its highest close of those bars (+1: accumulation the price hasn't followed),
+    or the mirror image (-1). Uses bars up to i only."""
+    wad = st.williams_ad(bars)
+    wh, wl = st.rolling_max(wad, n, skip_current=True), st.rolling_min(wad, n, skip_current=True)
+    ch, cl = st.rolling_max(closes, n, skip_current=True), st.rolling_min(closes, n, skip_current=True)
+    raw = [0] * len(bars)
+    for i in range(len(bars)):
+        if wh[i] is None:
+            continue
+        if wad[i] > wh[i] and closes[i] < ch[i]:
+            raw[i] = 1
+        elif wad[i] < wl[i] and closes[i] > cl[i]:
+            raw[i] = -1
+    out = [0] * len(bars)
+    for i in range(len(bars)):
+        w = raw[max(0, i - within + 1): i + 1]
+        out[i] = 1 if 1 in w and -1 not in w else -1 if -1 in w and 1 not in w else 0
+    return out
 
 
 def _extras(ind):
@@ -97,26 +144,11 @@ def _extras(ind):
     atrpct = [(a / c) if a and c else None for a, c in zip(ind['atr'], closes)]
     ind['_atrmed'] = st.rolling_quantile(atrpct, 250, 0.5)
     ind['_atrpct'] = atrpct
-    ind['_dom'] = [st._day(b['time']).day for b in bars]
-    ind['_vr'] = variance_ratio(closes)
+    ind['_tom'] = turn_of_month(bars)
+    ind['_adiv'] = ad_divergence(bars, closes)
+    ind['_adx14'] = st.adx(bars, 14)
     mkt = ind.get('_market') or {}
     ind['_mkt'] = [mkt.get(st._day(b['time'])) for b in bars]
-
-
-def variance_ratio(closes, window=100, q=5):
-    """Lo & MacKinlay's variance ratio over the last `window` bars (None before): the variance of q-bar returns over
-    q times the variance of 1-bar returns. Below 1 the stock has been mean-reverting, above 1 trending."""
-    r = [math.log(closes[i] / closes[i - 1]) if closes[i - 1] > 0 and closes[i] > 0 else 0.0 for i in range(1, len(closes))]
-    out = [None] * len(closes)
-    for i in range(window + q, len(closes)):
-        w = r[i - window: i]
-        m1 = sum(w) / window
-        v1 = sum((x - m1) ** 2 for x in w) / (window - 1)
-        rq = [sum(w[k: k + q]) for k in range(window - q + 1)]
-        mq = sum(rq) / len(rq)
-        vq = sum((x - mq) ** 2 for x in rq) / (len(rq) - 1)
-        out[i] = vq / (q * v1) if v1 > 0 else None
-    return out
 
 
 def _trigger(ind, i, trig, d):
@@ -170,30 +202,19 @@ def _trigger(ind, i, trig, d):
 
 def _filter(ind, i, f, d):
     if f == 'trend':
-        return ind['weekly'][i] == d
+        return st.trend_array(ind, 'htf10')[i] == d
     if f == 'above200':
-        s = ind['sma200'][i]
-        return s is not None and (ind['closes'][i] > s if d > 0 else ind['closes'][i] < s)
-    if f == 'flow':
-        e = ind['wad_ema'][i]
-        return e is not None and (ind['wad'][i] >= e if d > 0 else ind['wad'][i] <= e)
-    if f == 'cot':
-        c = ind['cot'][i]
-        return c is not None and (c if d > 0 else 100 - c) >= 60
+        return st.trend_array(ind, 'ma200')[i] == d
+    if f == 'adiv':
+        return ind['_adiv'][i] == d
     if f == 'adx':
-        a = ind['adx'][i]
+        a = ind['_adx14'][i]
         return a is not None and a >= 20
     if f == 'lowvol':
         a, m = ind['_atrpct'][i], ind['_atrmed'][i]
         return a is not None and m is not None and a < m
     if f == 'tom':
-        return ind['_dom'][i] >= 28 or ind['_dom'][i] <= 3
-    if f == 'reverting':
-        v = ind['_vr'][i]
-        return v is not None and v < 0.9
-    if f == 'trending':
-        v = ind['_vr'][i]
-        return v is not None and v > 1.1
+        return ind['_tom'][i]
     if f == 'market':
         return ind['_mkt'][i] == d
     v = ind['vol20'][i]
@@ -211,7 +232,7 @@ def _masks(ind):
     for d in (1, -1):
         for t in TRIGGERS:
             m[('t', t, d)] = [i for i in range(3, n) if _trigger(ind, i, t, d)]
-        for f in FILTERS:
+        for f in filters_for(ind.get('horizon')):
             m[('f', f, d)] = [False] * 3 + [_filter(ind, i, f, d) for i in range(3, n)]
     ind['_masks'] = m
     return m
@@ -239,9 +260,9 @@ def make_plan(ind, i, d, trig):
                 'exitRule': f"Take profit at the target, exit at the stop, or after {hold} {u}s; move the stop to break-even once up by the risk."}
     hold = H['maxHold']['breakout']
     trigger = b['high'] if d > 0 else b['low']
-    return {'entry': 'stop', 'trigger': trigger, 'validDays': H['valid']['breakout'], 'stop': trigger - d * 2.0 * a, 'target': None,
-            'maxHold': hold, 'breakEvenAtR': None, 'exit': 'donchian10', 'targetNote': f'no fixed target: the stop trails at the 10-{u} {"low" if d > 0 else "high"}',
-            'exitRule': f"Enter on a break of the signal {u}'s {'high' if d > 0 else 'low'}; exit on a close beyond the 10-{u} {'low' if d > 0 else 'high'}, at the 2 ATR stop, or after {hold} {u}s."}
+    return {'entry': 'stop', 'trigger': trigger, 'validDays': H['valid']['breakout'], 'stop': trigger - d * 2.0 * (ind['atr20'][i] or a), 'target': None,
+            'maxHold': hold, 'breakEvenAtR': None, 'exit': 'chandelier', 'trailAtr': 3.0, 'targetNote': 'no fixed target: the stop trails 3 ATR behind the best price',
+            'exitRule': f"Enter on a break of the signal {u}'s {'high' if d > 0 else 'low'}; exit on a close beyond the best price since entry minus 3 ATR(22), at the 2 ATR stop, or after {hold} {u}s."}
 
 
 def signal_fn(trig, combo, d):
@@ -278,14 +299,7 @@ def _trades(ind, cand, start, end):
     return out
 
 
-def holm(pvalues):
-    """Holm step-down adjusted p-values."""
-    order = sorted(range(len(pvalues)), key=lambda i: pvalues[i])
-    out, running, m = [1.0] * len(pvalues), 0.0, len(pvalues)
-    for rank, i in enumerate(order):
-        running = max(running, min(1.0, (m - rank) * pvalues[i]))
-        out[i] = running
-    return out
+holm = st.holm
 
 
 def deflated_sharpe(rets, trials, sr_variance):
@@ -310,24 +324,26 @@ def deflated_sharpe(rets, trials, sr_variance):
     return nd.cdf((sr - sr0) * math.sqrt(n - 1) / math.sqrt(denom))
 
 
-def run(inds, market=None):
+def run(inds, market=None, horizon=None):
     """The full walk-forward search on prepared indicator sets {symbol: ind} of one time frame. `market` maps a date
     to the Nasdaq-100's trend (+1/-1) for the market filter."""
     for ind in inds.values():
         ind['_market'] = market or {}
         ind.pop('_hi250', None)  # recompute extras with the market data
         ind.pop('_masks', None)
-    cands = candidates()
     any_ind = next(iter(inds.values()), None)
+    horizon = horizon or (any_ind.get('horizon') if any_ind else None)
+    cands = candidates(horizon)
     embargo = (max(st._h(any_ind)['maxHold'].values()) + 1) if any_ind else 20
     lens = {sym: len(ind['bars']) for sym, ind in inds.items()}
+    cluster = st.HORIZONS.get(horizon or 'swing', st.HORIZONS['swing'])['cluster']
     forwarded = {}  # cand -> {'folds': n, 'trades': {sym: [...]}}
     pbo_hits, folds_run, trials, sr_by_cand = 0, 0, set(), {}
     for lo, hi in FOLDS:
         is_scores, oos_avg = [], {}
         for cand in cands:
-            train = [t for sym, ind in inds.items() for t in _trades(ind, cand, 210, int(lo * lens[sym]) - embargo)]
-            s = st.summarise(train)
+            train = [t for sym, ind in inds.items() for t in _trades(ind, cand, st.WARMUP, int(lo * lens[sym]) - embargo)]
+            s = st.summarise(train, cluster)
             if s['trades'] >= MIN_TRAIN_TRADES:  # counts as a trial for the deflated Sharpe ratio
                 trials.add(cand)
                 rets = [t['ret'] for t in train]
@@ -357,28 +373,24 @@ def run(inds, market=None):
                 rec['trades'].setdefault(sym, []).extend(ts)
     pbo = pbo_hits / folds_run if folds_run else None
     # Effective number of tries for the deflated Sharpe ratio: combinations that share a trigger and side are near
-    # copies of each other, so each (trigger, side) family counts once (clustering, as Lopez de Prado recommends),
-    # and the spread of Sharpe ratios is measured between families.
+    # copies of each other, so each (trigger, side) family counts once (clustering, as Lopez de Prado recommends).
     families = {}
     for cand, sr in sr_by_cand.items():
         families.setdefault((cand[0], cand[2]), []).append(sr)
     fam_sr = [sum(v) / len(v) for v in families.values()]
     eff_trials = max(2, len(fam_sr))
     sr_var = (sum((x - sum(fam_sr) / len(fam_sr)) ** 2 for x in fam_sr) / (len(fam_sr) - 1)) if len(fam_sr) > 1 else 0.0
+    series = {sym: st.series_of(ind['bars']) for sym, ind in inds.items()}
     results = []
     for cand, rec in forwarded.items():
-        by_sym, closes, opens = {}, {}, {}
-        for sym, ind in inds.items():
-            base = int(FOLDS[0][0] * lens[sym]) - 210  # random entries fall in the unseen windows
-            by_sym[sym] = [{**t, 'signal': t['signal'] - base} for t in rec['trades'].get(sym, [])]
-            closes[sym] = ind['closes'][base:]
-            opens[sym] = [b['open'] for b in ind['bars'][base:]]
+        by_sym = rec['trades']
         pooled = [t for ts in by_sym.values() for t in ts]
-        s_test = st.summarise(pooled)
-        re = st.random_entry_test(by_sym, closes, opens) if s_test['trades'] >= 10 else None
-        full_train = [t for sym, ind in inds.items() for t in _trades(ind, cand, 210, int(FOLDS[-1][0] * lens[sym]) - embargo)]
+        s_test = st.summarise(pooled, cluster)
+        # Random dates come from the unseen windows only: the test draws them from the trades' own period.
+        re = st.random_entry_test(by_sym, series) if s_test['trades'] >= 10 else None
+        full_train = [t for sym, ind in inds.items() for t in _trades(ind, cand, st.WARMUP, int(FOLDS[-1][0] * lens[sym]) - embargo)]
         dsr = deflated_sharpe([t['ret'] for t in full_train], eff_trials, sr_var)  # on the record it was chosen on
-        results.append({'cand': cand, 'folds': rec['folds'], 'train': st.summarise(full_train), 'test': s_test, 'p': re['p'] if re else 1.0, 'dsr': dsr})
+        results.append({'cand': cand, 'folds': rec['folds'], 'train': st.summarise(full_train, cluster), 'test': s_test, 'p': re['p'] if re else 1.0, 'dsr': dsr})
     results.sort(key=lambda r: (-r['folds'], -(r['test']['tStat'] or -9)))
     adj = holm([r['p'] for r in results]) if results else []
     overfit = pbo is not None and pbo > 0.5
@@ -396,25 +408,95 @@ def run(inds, market=None):
             reasons.append(f'not better than random entries (corrected p {pa:.2f})')
         if overfit:
             reasons.append('the search as a whole looks overfit (PBO above 50%)')
-        out.append({'id': f"{trig}|{'+'.join(combo)}|{d}", 'trigger': trig, 'filters': list(combo), 'direction': d, 'theory': TRIGGERS[trig]['theory'],
+        out.append({'id': cand_id(trig, combo, d), 'trigger': trig, 'filters': list(combo), 'direction': d, 'theory': TRIGGERS[trig]['theory'],
                     'name': short_name(trig, combo, d), 'description': describe(trig, combo, d), 'folds': r['folds'],
                     'train': {k: r['train'][k] for k in ('trades', 'winRate', 'expectancy', 'profitFactor', 'tStat')},
                     'test': {k: r['test'][k] for k in ('trades', 'winRate', 'expectancy', 'profitFactor', 'tStat')},
                     'p': r['p'], 'pAdjusted': pa, 'dsr': r['dsr'], 'validated': not reasons, 'rejected': reasons})
-    return {'tried': len(cands), 'trials': len(trials), 'effectiveTrials': eff_trials, 'folds': len(FOLDS), 'foldsRun': folds_run, 'embargo': embargo, 'trainShare': TRAIN_SHARE,
-            'forward': len(forwarded), 'pbo': pbo, 'results': out[:12], 'validated': sum(1 for x in out if x['validated'])}
+    return {'tried': len(cands), 'filters': filters_for(horizon), 'trials': len(trials), 'effectiveTrials': eff_trials, 'folds': len(FOLDS), 'foldsRun': folds_run,
+            'embargo': embargo, 'trainShare': TRAIN_SHARE, 'forward': len(forwarded), 'pbo': pbo, 'results': out[:12],
+            'validated': sum(1 for x in out if x['validated'])}
 
 
-def register(horizon, lab_result):
-    """Turns validated lab strategies into scanner strategies for one time frame (replacing yesterday's)."""
-    for key in [k for k, v in st.STRATEGIES.items() if v.get('lab') and v.get('horizon_only') == horizon]:
+# ---------- Survivors: fixed, saved, graded only on their forward record ----------
+
+def cand_id(trig, combo, d):
+    return f"{trig}|{'+'.join(combo)}|{d}"
+
+
+def strategy_key(horizon, sid):
+    trig, combo, d = sid.split('|')
+    return f"lab_{horizon}_{trig}{'_' + combo.replace('+', '_') if combo else ''}_{'b' if int(d) > 0 else 's'}"
+
+
+def load_state(path):
+    """{horizon: {id: survivor}} saved by save_state ({} when missing or unreadable)."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_json_atomic(path, data):
+    """Writes JSON to a temporary file and renames it over the old one, so a crash mid-write never leaves a broken
+    file (the rename is atomic on Windows, macOS and Linux)."""
+    path = str(path)
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    tmp = f'{path}.tmp{os.getpid()}'
+    try:
+        with open(tmp, 'w') as f:
+            json.dump(data, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def add_survivors(state, horizon, lab_result, stamp):
+    """Adds newly validated combinations to the saved survivors with the time they were first shown (`stamp` = the
+    newest finished bar). Existing survivors are kept as they are (their first-shown time never changes)."""
+    mine = state.setdefault(horizon, {})
+    added = []
+    for r in lab_result['results']:
+        if r['validated'] and r['id'] not in mine:
+            mine[r['id']] = {'id': r['id'], 'trigger': r['trigger'], 'filters': r['filters'], 'direction': r['direction'], 'name': r['name'],
+                             'description': r['description'], 'theory': r.get('theory'), 'firstShown': stamp,
+                             'firstShownDate': dt.datetime.fromtimestamp(stamp, dt.timezone.utc).date().isoformat(),
+                             'chosen': {'test': r['test'], 'pAdjusted': r['pAdjusted']}}
+            added.append(r['id'])
+    return added
+
+
+def forward_failed(stats):
+    """A survivor leaves when its own forward record fails: 30+ trades after it was first shown and losing money,
+    or a t-statistic below -1."""
+    return stats['trades'] >= MIN_FORWARD_TRADES and ((stats['expectancy'] or 0) <= 0 or (stats['tStat'] is not None and stats['tStat'] < -1))
+
+
+def install(state, horizon=None):
+    """Registers the saved survivors as scanner strategies (all time frames, or one), replacing earlier ones."""
+    for key in [k for k, v in st.STRATEGIES.items() if v.get('lab') and (horizon is None or v.get('horizon_only') == horizon)]:
         del st.STRATEGIES[key]
     keys = []
-    for n, r in enumerate(x for x in lab_result['results'] if x['validated']):
-        trig, combo, d = r['trigger'], tuple(r['filters']), r['direction']
-        key = f"lab_{horizon}_{n}"
-        st.STRATEGIES[key] = {'name': r['name'], 'short': r['name'], 'horizon': st.HORIZONS[horizon]['hold'], 'lab': True,
-                              'horizon_only': horizon, 'oos_from': TRAIN_SHARE, 'description': r['description'],
-                              'signal': signal_fn(trig, combo, d), 'plan': (lambda trig: lambda ind, i, dd: make_plan(ind, i, dd, trig))(trig)}
-        keys.append(key)
+    for h, survivors in state.items():
+        if horizon is not None and h != horizon or h not in st.HORIZONS:
+            continue
+        H = st.HORIZONS[h]
+        for sid, r in survivors.items():
+            trig, combo, d = r['trigger'], tuple(r['filters']), r['direction']
+            if trig not in TRIGGERS or any(f not in FILTERS for f in combo):
+                continue  # a rule removed in a later version
+            key = strategy_key(h, sid)
+            st.STRATEGIES[key] = {'name': r['name'], 'short': r['name'], 'horizon': H['hold'], 'lab': True, 'labId': sid,
+                                  'horizon_only': h, 'since': r['firstShown'], 'sinceDate': r.get('firstShownDate'), 'description': r['description'],
+                                  'sides': (d,), 'signal': signal_fn(trig, combo, d), 'plan': (lambda trig: lambda ind, i, dd: make_plan(ind, i, dd, trig))(trig),
+                                  'lookback': max(H['valid'].values()) + max(H['maxHold'].values()) + 1}
+            keys.append(key)
     return keys

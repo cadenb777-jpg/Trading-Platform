@@ -114,3 +114,10 @@ only repeat the same answer.
 
 What is deliberately not done: the AI does not invent rules or numbers, and the platform never places orders.
 FINRA dark-pool data is shown per setup but not searched, because years of daily files would be needed.
+
+## 10. Helper v22: honest tests and simpler rules
+
+See `docs/research/setups-v21-results.md`: clustered random-entry test (one random date per real signal date),
+week-shuffled COT study with a Holm correction over its 6 versions, t-statistics counting same-week trades as one
+bet, Holm correction across every strategy record for Tier A, after-cost R, robustness ticks, lab survivors graded
+only on their forward record, and the weekly rule tests on your own data. Sections 4 and 9 above describe v20.

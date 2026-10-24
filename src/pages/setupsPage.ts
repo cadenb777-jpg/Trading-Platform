@@ -21,10 +21,22 @@ import { THEME, followTheme } from '../ui/theme';
 type Horizon = 'short' | 'swing' | 'position';
 type StrategyKey = 'weekly_swing' | 'mean_reversion' | 'breakout';
 
+/** The COT edge study (helper v21): 2 index lengths x 3 thresholds, weeks shuffled, Holm-corrected. */
 interface EdgeStudy {
   events: number;
-  groups: Record<string, { n: number; avg: number; win: number }>;
-  test: { gap: number; p: number; runs: number; verdict: string } | null;
+  passed: boolean;
+  chosen: { weeks: number; hi: number; lo: number; sign: number } | null;
+  variants: { weeks: number; hi: number; lo: number; pAdjusted: number; groups: Record<string, { n: number; avg: number; win: number }>; test: { gap: number; p: number; runs: number; verdict: string } | null }[];
+}
+
+interface RuleRow { id: string; label: string; trades: number; effectiveTrades: number; expectancy: number | null; p: number | null; excess: number | null; survives: boolean }
+interface RuleTests {
+  source: string;
+  ran?: number;
+  stocks: number;
+  bars: number;
+  agrees?: boolean;
+  questions: Record<string, { title: string; note?: string; sides: Record<string, { rows: RuleRow[]; winner: string; anySurvives: boolean }> }>;
 }
 
 interface HorizonResult {
@@ -37,6 +49,11 @@ interface HorizonResult {
   error?: string;
   lab?: LabResult | null;
   labRunning?: boolean;
+  ruleTests?: RuleTests | null;
+  rulesRunning?: boolean;
+  /** Hourly time frame: days of hourly history kept so far, and the 2 years needed before hourly A grades. */
+  historyDays?: number | null;
+  fullHistoryDays?: number | null;
 }
 
 interface LabResult {
@@ -50,6 +67,8 @@ interface LabResult {
   effectiveTrials?: number;
   graveyard?: number | null;
   ran?: number;
+  minForward?: number;
+  survivors?: { id: string; name: string; description: string; firstShownDate: string }[];
   results: { id: string; name: string; description: string; direction: number; validated: boolean; p: number; pAdjusted: number;
     theory?: string; folds?: number; dsr?: number | null; rejected?: string[];
     train: { trades: number; expectancy: number | null; tStat: number | null }; test: { trades: number; expectancy: number | null; winRate: number | null; tStat: number | null } }[];
@@ -60,21 +79,28 @@ interface Scan {
   session: string;
   scanned: number;
   partial?: boolean;
+  /** The last saved scan, shown at once after a helper restart while a fresh one runs. */
+  stale?: boolean;
+  /** No scan finished yet (the first one after installing takes a few minutes). */
+  loading?: boolean;
+  error?: string | null;
   scanning?: boolean;
   nextScan?: number | null;
-  regime: { qqqWeekly: number | null; qqqWeek: number | null; above50: number | null; vix: number | null; ndxCot: number | null };
+  regime: { qqqWeekly: number | null; qqqWeek: number | null; above50: number | null; vix: number | null; ndxCot: number | null; qqqAbove200?: number | null };
+  alpaca?: boolean;
   horizons?: Partial<Record<Horizon, HorizonResult>>;
   horizonInfo?: Record<Horizon, { label: string; hold: string; bar: string; unit: string; higher: string }>;
   skipped?: { symbol: string; reason: string }[];
 }
 
 const HORIZONS: { key: Horizon; label: string; hold: string; tf: Timeframe; bars: string }[] = [
-  { key: 'short', label: 'Short swing', hold: '1-3 days', tf: '1h', bars: 'hourly bars, daily trend filter' },
-  { key: 'swing', label: 'Swing', hold: 'about 1 week', tf: '1D', bars: 'daily bars, weekly trend filter' },
-  { key: 'position', label: 'Position', hold: '2-8 weeks', tf: '1W', bars: 'weekly bars, monthly trend filter' },
+  { key: 'short', label: 'Short swing', hold: '1-3 days', tf: '1h', bars: 'hourly bars, 200-day trend filter' },
+  { key: 'swing', label: 'Swing', hold: 'about 1 week', tf: '1D', bars: 'daily bars, 200-day trend filter' },
+  { key: 'position', label: 'Position', hold: '2-8 weeks', tf: '1W', bars: 'weekly bars, 40-week trend filter' },
 ];
-const STRATEGY_LABEL: Record<StrategyKey, string> = { weekly_swing: 'COT pullback', mean_reversion: 'Mean reversion', breakout: 'Breakout' };
+const STRATEGY_LABEL: Record<StrategyKey, string> = { weekly_swing: 'Pullback', mean_reversion: 'Mean reversion', breakout: '52-week-high breakout' };
 const REFRESH_MS = 60_000;
+let soon: ReturnType<typeof setTimeout> | undefined;
 const WATCH_KEY = 'tp-setups-watch';
 const PREFS_KEY = 'tp-setups-prefs';
 const pct = (v: number | null | undefined, d = 1) => fmtPct(v, d);
@@ -120,10 +146,11 @@ function evidenceStrength(st: SideRecord): { label: string; tone: 'up' | 'down' 
   if (!s.trades) return { label: 'no trades yet', tone: '', plain: 'Its rules never triggered in the history available, so there is nothing to judge yet.' };
   if ((s.expectancy ?? 0) <= 0) return { label: 'loses money', tone: 'down', plain: `Its ${s.trades} past trades lost money on average after costs, so its signals are never graded above C here.` };
   const t = s.tStat ?? 0;
-  const p = st.randomEntry?.p ?? 1;
-  if (t >= 3 && p <= 0.05) return { label: 'strong evidence', tone: 'up', plain: `Made money over ${s.trades} trades and clearly beat random entries. Its A setups are the ones to take.` };
-  if (t >= 2 && p <= 0.1) return { label: 'good evidence', tone: 'up', plain: `Made money over ${s.trades} trades and beat random entries, though not by a wide margin.` };
-  return { label: 'weak evidence', tone: 'warn', plain: `Made money over ${s.trades} trades, but not clearly more than luck would. Treat its setups as B at best.` };
+  const p = st.randomEntry?.pAdjusted ?? st.randomEntry?.p ?? 1;
+  const robust = !st.robust || (st.robust.costs && st.robust.halves);
+  if (t >= 3 && p <= 0.05 && robust) return { label: 'strong evidence', tone: 'up', plain: `Made money after costs over ${s.trades} trades and clearly beat random entries, even after correcting for every strategy tested. Its A setups are the ones to take.` };
+  if (t >= 2 && p <= 0.1 && robust) return { label: 'good evidence', tone: 'up', plain: `Made money after costs over ${s.trades} trades and beat random entries after the correction for many tests, though not by a wide margin.` };
+  return { label: 'weak evidence', tone: 'warn', plain: `Made money after costs over ${s.trades} trades, but not clearly more than luck would${robust ? '' : ', and it fails the double-cost or two-halves check'}. Treat its setups as B at best.` };
 }
 
 /** "≤5 days", "≤21 hrs", "≤6 wks". */
@@ -144,10 +171,10 @@ function dailyRoutine() {
       'ol',
       { class: 'sp-routine small' },
       step('Before the open (around 9:00 AM New York).', 'Pick a time frame: Swing for trades lasting about a week, Short swing for 1-3 days, Position for weeks. Look at "trades worth a look". Click one to read its summary and steps.'),
-      step('Decide and size it.', 'Only A (normal size) and B (half size). Use the "How much to buy" calculator: risk 0.5-1% of your account per trade. Star ☆ the ones you want, or tick "Alert me on A & B entries".'),
+      step('Decide and size it.', 'Only A (normal size) and B (half size). Use the "How much to buy" calculator: risk about 0.5% of your account per trade. Star ☆ the ones you want, or tick "Alert me on A & B entries".'),
       step('Place the orders at your broker.', 'For a "buy above" entry use a buy-stop order at the entry price, with a stop-loss at the stop price (many brokers let you attach both at once as a bracket order, with the target as the take-profit). This platform never places orders.'),
       step('During the day.', 'Leave this tab open: you\'ll hear an alert when price gets close to or reaches an entry. If it says "Too far to chase", don\'t buy: wait for a pullback or skip it.'),
-      step('Managing an open trade.', 'Keep the stop where it is. For the COT pullback, move the stop up to your entry once the trade is up by its risk. Take profit at the target, or close it by the "Out by" date, whichever comes first.'),
+      step('Managing an open trade.', 'Keep the stop where it is and follow the exit in the setup\'s guide (pullbacks: stop to break-even once up by the risk, then the target or the "Out by" date; breakouts: trail the stop, no fixed target).'),
       step('After 4 PM.', 'New setups appear (marked New) once the day\'s bar closes. Repeat tomorrow. Hourly setups appear through the day; weekly ones after Friday\'s close.'),
     ),
   );
@@ -168,16 +195,18 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   const horizonTabs = h('div', { class: 'segmented sp-horizons' }, ...HORIZONS.map((x) => h('button', { 'data-h': x.key, onclick: () => setPref('horizon', x.key) }, h('b', {}, x.label), h('span', { class: 'muted tiny' }, ` ${x.hold}`))));
   const notifyBtn = h('button', { class: 'btn', title: 'Let the platform show desktop notifications for entry alerts', onclick: askNotify }, 'Enable alerts');
   const refreshBtn = h('button', { class: 'btn', title: 'Scan again now', onclick: () => refresh(true) }, 'Scan now');
-  const frame = pageFrame('Setups', 'Nasdaq-100 trade setups on three time frames, each tested with 1,000 simulations and checked against COT positioning.', [horizonTabs, notifyBtn, refreshBtn]);
+  const frame = pageFrame('Setups', 'Nasdaq-100 trade setups on three time frames. Every result is after costs and tested against 1,000 random entries.', [horizonTabs, notifyBtn, refreshBtn]);
   const today = h('section', { class: 'sp-today' });
   const howTo = dailyRoutine();
   const evidenceBody = h('div', { class: 'sp-evidence' });
   const evidence = h('details', { class: 'sp-fold' }, h('summary', {}, 'Strategy report card: how each strategy has done, and whether COT helps', infoTip('trades')), evidenceBody);
+  const researchBody = h('div', {});
+  const research = h('details', { class: 'sp-fold' }, h('summary', {}, 'Research: the strategy lab and the rule tests on your data', infoTip('rules')), researchBody);
   const filters = h('div', { class: 'sp-filters' });
   const list = h('div', { class: 'sp-list' });
   const detail = h('div', { class: 'sp-detail' }, h('p', { class: 'muted pad' }, 'Pick a setup on the left to see its live entry status, chart and step-by-step guide.'));
   const alertLog = h('div', { class: 'sp-alerts' });
-  frame.body.replaceChildren(status, today, howTo, evidence, filters, h('div', { class: 'sp-main' }, h('div', { class: 'sp-left' }, list, alertLog), detail));
+  frame.body.replaceChildren(status, today, filters, h('div', { class: 'sp-main' }, h('div', { class: 'sp-left' }, list, alertLog), detail), evidence, research, howTo);
 
   function setPref<K extends keyof typeof prefs>(k: K, v: (typeof prefs)[K]) {
     prefs[k] = v;
@@ -203,9 +232,12 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       status.textContent = 'Waiting for the helper…';
     }
     try {
-      data = await engineRequest<Scan>('scanner.results', force ? { refresh: true } : {}, force ? 900_000 : 600_000);
+      data = await engineRequest<Scan>('scanner.results', force ? { refresh: true } : {}, 30_000);
       render();
       syncWatches();
+      // While a scan is running (or only a saved one is shown), check again soon: each time frame appears when done.
+      clearTimeout(soon);
+      if (data.scanning || (data.loading && !data.error)) soon = setTimeout(() => refresh(), 5_000); // otherwise the 60 s timer
     } catch (err) {
       status.replaceChildren(h('span', { class: 'down' }, (err as Error).message));
     }
@@ -229,13 +261,14 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     const r = data.regime;
     status.replaceChildren(
       h('span', {}, `${info.label}: ${info.bars}, hold ${info.hold}.`),
-      h('span', {}, 'Nasdaq-100 ', h('b', { class: r.qqqWeekly === 1 ? 'up' : r.qqqWeekly === -1 ? 'down' : '' }, r.qqqWeekly === 1 ? 'weekly uptrend' : r.qqqWeekly === -1 ? 'weekly downtrend' : 'no clear trend'), r.qqqWeek != null ? ` (week ${pct(r.qqqWeek)})` : ''),
-      r.ndxCot != null ? h('span', {}, 'Futures commercials ', h('b', { class: r.ndxCot >= 60 ? 'up' : r.ndxCot <= 40 ? 'down' : '' }, `${r.ndxCot.toFixed(0)}/100`)) : '',
+      h('span', {}, 'Nasdaq-100 ', h('b', { class: r.qqqAbove200 === 1 ? 'up' : r.qqqAbove200 === -1 ? 'down' : '' }, r.qqqAbove200 === 1 ? 'above its 200-day average' : r.qqqAbove200 === -1 ? 'below its 200-day average' : 'trend unknown'), r.qqqWeek != null ? ` (week ${pct(r.qqqWeek)})` : ''),
+      r.ndxCot != null ? h('span', { title: 'COT reading (3-year index): shown for context; it counts in grades only if the edge study passes' }, 'Futures commercials ', h('b', {}, `${r.ndxCot.toFixed(0)}/100`)) : '',
       r.vix != null ? h('span', {}, `VIX ${r.vix.toFixed(1)}`) : '',
-      h('span', {}, hr ? `${hr.scanned} stocks · scanned ${timeAgo(hr.updated)}` : 'this time frame is still loading…', data.scanning ? ' · scanning now…' : data.nextScan ? ` · next scan in ${Math.max(1, Math.round((data.nextScan - Date.now() / 1000) / 60))} min` : ''),
+      h('span', {}, hr ? `${hr.scanned} stocks · scanned ${timeAgo(hr.updated)}` : 'this time frame is still loading…', data.stale ? h('b', { class: 'warn' }, ' · saved scan, refreshing…') : data.scanning ? ' · scanning now…' : data.nextScan ? ` · next scan in ${Math.max(1, Math.round((data.nextScan - Date.now() / 1000) / 60))} min` : '', data.error ? h('span', { class: 'down' }, ` · last scan failed: ${data.error}`) : ''),
     );
     renderToday(hr);
     renderEvidence(hr);
+    researchBody.replaceChildren(...(hr && !hr.error ? [labPanel(hr), rulesPanel(hr)] : []));
     renderFilters();
     renderList(hr);
     renderDetail();
@@ -243,7 +276,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   }
 
   function renderEvidence(hr: HorizonResult | undefined) {
-    if (!hr) return evidenceBody.replaceChildren(h('div', { class: 'skeleton', style: 'height:90px' }));
+    if (!hr) return evidenceBody.replaceChildren(h('p', { class: 'empty-state' }, data?.loading ? 'The first scan is running: it downloads 15 years of history for every Nasdaq-100 stock, so it takes a few minutes after the helper starts. This page fills in by itself.' : 'This time frame is still being scanned; it appears here as soon as it is done.'));
     const cards = (Object.keys(hr.strategies) as StrategyKey[]).filter((k) => !hr.strategies[k].lab).map((k) => {
       const st = hr.strategies[k];
       if (!st) return '';
@@ -257,14 +290,15 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       const re = st.randomEntry;
       const mc = st.monteCarlo;
       // Headline: the stronger side (buys or sells), since setups are graded side by side.
-      const best = st.sides ? ([st.sides.long, st.sides.short].sort((a, b) => (b.stats.expectancy ?? -1) - (a.stats.expectancy ?? -1))[0]) : st;
+      const sideRecs = st.sides ? [st.sides.long, st.sides.short].filter((x): x is SideRecord => !!x) : [];
+      const best: SideRecord = sideRecs.sort((a, b) => (b.stats.expectancy ?? -1) - (a.stats.expectancy ?? -1))[0] ?? st;
       const ev = evidenceStrength(best);
       const verdict = st.sides ? `best: ${ev.label}` : ev.label;
       const tone = ev.tone;
       return h(
         'div',
-        { class: `sp-card${prefs.strategy === k ? ' on' : ''}`, onclick: () => setPref('strategy', prefs.strategy === k ? 'all' : k), title: 'Show only this strategy' },
-        h('div', { class: 'sp-card-head' }, h('b', {}, st.short || STRATEGY_LABEL[k]), h('span', { class: `sp-verdict ${tone}` }, verdict)),
+        { class: `sp-card stat-card${prefs.strategy === k ? ' on' : ''}`, onclick: () => setPref('strategy', prefs.strategy === k ? 'all' : k), title: 'Show only this strategy' },
+        h('div', { class: 'sp-card-head' }, h('b', {}, st.short || STRATEGY_LABEL[k]), st.sides ? '' : h('span', { class: `sp-verdict ${tone}` }, verdict)),
         st.sides ? h('div', {}, sideLine('long'), sideLine('short'), h('p', { class: 'muted tiny' }, termLabel('Why buys and sells are separate', 'sides'))) : h('p', { class: 'small' }, ev.plain),
         h('div', { class: 'sp-card-stats small' },
           h('span', {}, termLabel('Trades', 'trades'), ` ${s.trades}`),
@@ -273,33 +307,33 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
           h('span', {}, termLabel('PF', 'pf'), ` ${s.profitFactor != null ? String(s.profitFactor) : '—'}`),
         ),
         h('details', { class: 'guide-more inline' }, h('summary', {}, 'Test details'),
-          s.tStat != null ? h('p', { class: 'tiny' }, termLabel('t', 'tstat'), ` = ${s.tStat.toFixed(1)}`, s.tradesNeeded ? h('span', {}, ' · ', termLabel('trades needed', 'needed'), ` ≈ ${s.tradesNeeded.toLocaleString()} (has ${s.trades.toLocaleString()})`) : '') : '',
-          re ? h('p', { class: 'tiny' }, termLabel('Random-entry test', 'randomentry'), ` (${(re.runs ?? 1000).toLocaleString()} runs): p = ${re.p.toFixed(3)}`) : '',
+          s.tStat != null ? h('p', { class: 'tiny' }, termLabel('t (same week = one bet)', 'tstat'), ` = ${s.tStat.toFixed(1)} over ${(s.effectiveTrades ?? s.trades).toLocaleString()} independent weeks`, s.tradesNeeded ? h('span', {}, ' · ', termLabel('weeks needed', 'needed'), ` ≈ ${s.tradesNeeded.toLocaleString()} (one-sided p 0.10, 80% power)`) : '') : '',
+          re ? h('p', { class: 'tiny' }, termLabel('Random-entry test', 'randomentry'), ` (${(re.runs ?? 1000).toLocaleString()} runs): p = ${re.p.toFixed(3)}${re.pAdjusted != null ? `, ${re.pAdjusted.toFixed(3)} after correcting for ${re.family} tests` : ''}`, h('span', {}, ' ', infoTip('holm'))) : '',
           mc ? h('p', { class: 'tiny' }, termLabel('Monte Carlo', 'montecarlo'), `: next ${mc.horizon} trades end ahead in ${Math.round(mc.profitable * 100)}% of ${mc.runs.toLocaleString()} runs; typical ${pct(mc.median)}, bad case ${pct(mc.bad)}`) : '',
-          st.recent?.trades ? h('p', { class: `tiny ${(st.recent.expectancy ?? 0) > 0 ? 'up' : 'down'}` }, termLabel('Recent 30% of history', 'outofsample'), `: ${st.recent.trades} trades, ${pct(st.recent.expectancy, 2)} per trade${(st.recent.expectancy ?? 0) > 0 !== (s.expectancy ?? 0) > 0 ? ' (differs from the full test: treat with care)' : ''}`) : '',
+          ...(['long', 'short'] as const).map((side) => {
+            const rb = st.sides?.[side]?.robust;
+            return rb ? h('p', { class: `tiny ${rb.costs && rb.halves ? 'up' : 'down'}` }, termLabel(`${side === 'long' ? 'Buys' : 'Sells'}: robust`, 'outofsample'), `: double costs ${rb.costs ? '✓' : '✗'} · both halves ${rb.halves ? '✓' : '✗'}`) : '';
+          }),
+          st.forward ? h('p', { class: 'tiny' }, termLabel('Forward record', 'forward'), ` since ${st.forward.since ?? 'first shown'}: ${s.trades} of ${st.forward.needed} trades needed before it can be graded A`) : '',
         ),
       );
     });
     const e = hr.edge;
-    const g = (k: string) => e?.groups[k];
-    const row = (k: string, label: string) => {
-      const x = g(k);
-      return x ? h('tr', {}, h('td', {}, label), h('td', {}, String(x.n)), h('td', { class: x.avg >= 0 ? 'up' : 'down' }, pct(x.avg, 2)), h('td', {}, `${Math.round(x.win * 100)}%`)) : '';
-    };
     const edge = h(
       'div',
-      { class: 'sp-edge' },
-      h('div', { class: 'sp-card-head' }, h('b', {}, termLabel('COT + z-score edge study', 'edge')), e?.test ? h('span', { class: `sp-verdict ${e.test.verdict === 'COT adds an edge' ? 'up' : e.test.verdict === 'COT may help' ? 'warn' : ''}` }, e.test.verdict) : h('span', { class: 'muted tiny' }, e ? 'not enough history yet' : '—')),
-      h('p', { class: 'muted tiny' }, 'Every past time a stock stretched beyond its own z-score band in the trend\'s direction and turned back, split by what commercial hedgers were doing, with the return over the holding period after costs.'),
-      e && Object.keys(e.groups).length
-        ? h('table', { class: 'sp-edge-table small' }, h('thead', {}, h('tr', {}, h('th', {}, 'Commercials'), h('th', {}, 'Times'), h('th', {}, 'Avg'), h('th', {}, 'Win'))), h('tbody', {}, row('agree', 'Agreed'), row('neutral', 'Neutral'), row('against', 'Against'), row('none', 'No COT data')))
+      { class: 'sp-edge stat-card' },
+      h('div', { class: 'sp-card-head' }, h('b', {}, termLabel('COT edge study', 'edge')), e?.variants ? h('span', { class: `sp-verdict ${e.passed ? 'up' : ''}` }, e.passed && e.chosen ? `counts in the grade${e.chosen.sign < 0 ? ' (works in reverse)' : ''}` : 'reading only') : h('span', { class: 'muted tiny' }, 'no COT data yet')),
+      h('p', { class: 'small' }, e?.passed && e.chosen ? `COT counts in the grade: on your data the ${e.chosen.weeks}-week index at ${e.chosen.hi}/${e.chosen.lo} showed an edge${e.chosen.sign < 0 ? ', but in REVERSE (setups do better when commercials lean the other way)' : ''}.` : 'COT: reading only until it shows an edge on your data.'),
+      h('p', { class: 'muted tiny' }, 'Every past stretch-and-turn, split by what commercial hedgers were doing, for a 26-week and a 3-year COT index at three thresholds. Whole weeks are shuffled (one COT reading per week) and the 6 versions are corrected for being tried together. COT counts in grades only if one passes; a missing reading then never counts as a pass.'),
+      e?.variants?.length
+        ? h('table', { class: 'data-table sp-edge-table small' }, h('thead', {}, h('tr', {}, h('th', {}, 'Index'), h('th', {}, 'Agree / against'), h('th', {}, 'Gap'), h('th', {}, 'p'), h('th', {}, termLabel('p corrected', 'holm')))),
+            h('tbody', {}, ...e.variants.map((v) => h('tr', {}, h('td', {}, `${v.weeks} weeks, ${v.hi}/${v.lo}`), h('td', {}, `${v.groups.agree?.n ?? 0} / ${v.groups.against?.n ?? 0}`),
+              h('td', { class: (v.test?.gap ?? 0) >= 0 ? 'up' : 'down' }, v.test ? pct(v.test.gap, 2) : '—'), h('td', {}, v.test ? v.test.p.toFixed(3) : '—'), h('td', {}, v.pAdjusted.toFixed(3))))))
         : '',
-      e?.test ? h('p', { class: 'tiny' }, `Agreed minus against: ${pct(e.test.gap, 2)} per trade; ${e.test.runs.toLocaleString()}-run permutation p = ${e.test.p.toFixed(3)}.`) : '',
     );
     evidenceBody.replaceChildren(
       h('p', { class: 'muted small' }, 'How each strategy\'s rules would have done on every Nasdaq-100 stock in this time frame\'s history. "Trades" are real past signals; each result is then tested with 1,000 random simulations. Click a card to show only that strategy\'s setups.'),
       h('div', { class: 'sp-cards' }, ...cards, edge),
-      labPanel(hr),
     );
   }
 
@@ -309,7 +343,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     const r = data!.regime;
     const good = visibleAll(hr).filter((s) => (s.tier === 'A' || s.tier === 'B') && s.status !== 'forming');
     const live = good.map((s) => ({ s, z: entryZone(s, prices.get(s.symbol) ?? s.price) })).filter((x) => ['waiting', 'approaching', 'entry'].includes(x.z.zone) || x.s.trade);
-    const lean = r.qqqWeekly === 1 ? 'The Nasdaq-100 is in a weekly uptrend: buys go with it, sells against it.' : r.qqqWeekly === -1 ? 'The Nasdaq-100 is in a weekly downtrend: sells go with it, buys against it (use smaller size on buys).' : 'The Nasdaq-100 has no clear weekly trend: be pickier and use smaller size.';
+    const lean = r.qqqAbove200 === 1 ? 'The Nasdaq-100 is above its 200-day average: buys go with the long-term trend.' : r.qqqAbove200 === -1 ? 'The Nasdaq-100 is below its 200-day average: sells go with the long-term trend; use smaller size on buys.' : r.qqqWeekly === 1 ? 'The Nasdaq-100 is in a weekly uptrend.' : r.qqqWeekly === -1 ? 'The Nasdaq-100 is in a weekly downtrend.' : 'The Nasdaq-100 has no clear trend: be pickier and use smaller size.';
     const info = HORIZONS.find((x) => x.key === prefs.horizon)!;
     today.replaceChildren(
       h('div', { class: 'sp-today-head' }, h('b', {}, live.length ? `${live.length} trade${live.length === 1 ? '' : 's'} worth a look on the ${info.label.toLowerCase()} time frame` : `Nothing to act on in ${info.label.toLowerCase()} right now`)),
@@ -319,21 +353,57 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
             h('span', { class: 'muted' }, s.trade ? ` · in since ${s.trade.filled}` : ` · ${s.direction > 0 ? 'above' : 'below'} ${usd(s.plan.trigger)}, stop ${usd(s.plan.stop)}`)))))
         : h('p', { class: 'small muted' }, hr.setups.length ? 'No A or B setup is waiting for an entry. That\'s normal: good setups don\'t appear every day. Check the other time frames, or come back after the next close.' : 'No stock has every condition lined up. Sitting out is a position.'),
       h('p', { class: 'small' }, lean),
+      sectorRisk(live.map((x) => x.s)),
+      hr.fullHistoryDays && (hr.historyDays ?? 0) < hr.fullHistoryDays
+        ? h('p', { class: 'small warn' }, `Hourly grades are capped at B: only ${Math.round(hr.historyDays ?? 0)} days of hourly history so far (2 years needed, unless the same strategy also passes on daily bars). The helper keeps every 30-minute bar from now on${data?.alpaca ? ' and has added older bars from Alpaca' : '; add free Alpaca keys in Settings to load about 3 years at once'}.`)
+        : '',
     );
   }
 
+  /** Total open risk per sector if every listed A/B trade is on at the guide's risk per trade (display only). */
+  function sectorRisk(list: Setup[]) {
+    if (!list.length) return '';
+    let risk = 0.5;
+    try {
+      risk = JSON.parse(localStorage.getItem('tp-guide-size') || '{}').risk || 0.5;
+    } catch {
+      /* default */
+    }
+    const by = new Map<string, number>();
+    for (const s of list) by.set(s.sector ?? 'Other', (by.get(s.sector ?? 'Other') ?? 0) + 1);
+    const parts = [...by].sort((a, b) => b[1] - a[1]).map(([sec, n]) => `${sec}: ${n} trade${n === 1 ? '' : 's'}, ${(n * risk).toFixed(1)}% at risk`);
+    return h('p', { class: 'small' }, termLabel('Open risk per sector', 'sector'), ` (at ${risk}% a trade): ${parts.join('; ')}; whole book ${(list.length * risk).toFixed(1)}%.`);
+  }
+
   /** What the strategy lab tried today, what went forward and what survived the unseen-data test. */
+  /** The weekly rule tests on the owner's own data: which version of each rule wins, and does it match the rules in use? */
+  function rulesPanel(hr: HorizonResult) {
+    const R = hr.ruleTests;
+    if (!R) return h('div', { class: 'sp-lab muted small' }, termLabel('Rule tests on your real data', 'rules'), hr.rulesRunning ? ': running in the background (a few minutes)…' : ': run once a week per time frame in the background; results appear here.');
+    const qs = Object.values(R.questions);
+    return h('details', { class: 'sp-lab' },
+      h('summary', {}, termLabel(`Rule tests on your real data (${R.stocks} stocks, ${R.bars.toLocaleString()} bars)`, 'rules'), ' ',
+        h('span', { class: `sp-verdict ${R.agrees ? 'up' : 'warn'}` }, R.agrees ? 'agrees with the rules in use' : 'differs from the rules in use: see below'), R.ran ? h('span', { class: 'muted tiny' }, ` · ran ${timeAgo(R.ran)}`) : ''),
+      h('p', { class: 'muted tiny' }, 'Each question tries its versions simplest first. A version survives if it makes money after costs and beats random entries (p ≤ 0.10). The simplest survivor wins; if none survives, the simplest one that is as good. The rules in use never switch by themselves.'),
+      h('table', { class: 'data-table small' }, h('thead', {}, h('tr', {}, h('th', {}, 'Question'), h('th', {}, 'Side'), h('th', {}, 'Winner'), h('th', {}, 'Versions: avg after costs · p'))),
+        h('tbody', {}, ...qs.flatMap((q) => Object.entries(q.sides).map(([side, x]) => h('tr', {}, h('td', {}, q.title), h('td', {}, side === 'long' ? 'buys' : 'sells'), h('td', { class: x.anySurvives ? 'up' : 'muted' }, x.winner),
+          h('td', { class: 'tiny' }, x.rows.map((r) => `${r.id}: ${pct(r.expectancy, 2)} · ${r.p != null ? r.p.toFixed(2) : '—'}${r.survives ? ' ✓' : ''}`).join('  |  '))))))),
+    );
+  }
+
+  /** What the strategy lab tried, and its saved survivors with their forward records. */
   function labPanel(hr: HorizonResult) {
     const L = hr.lab;
-    if (!L) return h('div', { class: 'sp-lab muted small' }, termLabel('Strategy lab', 'lab'), hr.labRunning ? ': testing rule combinations in the background (a minute or two)…' : ': runs whenever this time frame has a new finished bar.');
+    if (!L) return h('div', { class: 'sp-lab muted small' }, termLabel('Strategy lab', 'lab'), hr.labRunning ? ': testing rule combinations in the background (a few minutes)…' : ': runs once a week per time frame.');
     const unseen = `${Math.round((1 - L.trainShare) * 100)}%`;
     return h(
       'div',
       { class: 'sp-lab' },
       h('div', { class: 'sp-card-head' }, h('b', {}, termLabel('Strategy lab', 'lab')), h('span', { class: `sp-verdict ${L.validated ? 'up' : ''}` }, L.validated ? `${L.validated} passed` : 'nothing passed')),
       h('p', { class: 'small' },
-        `Tried ${L.tried.toLocaleString()} rule combinations from ${11} trading theories. ${L.folds ? `Walk-forward: each combination was picked on older data and judged on ${L.folds} later windows it had never seen (the newest ${unseen} of history), with a ${L.embargo}-bar gap so no trade crosses the line.` : ''} `,
-        L.validated ? 'Passing ones now appear in the list as "Lab: …" setups, graded on their unseen-data record.' : 'None held up on unseen data, so none are traded: that is the lab protecting you from luck.'),
+        `Tried ${(L.tried ?? 0).toLocaleString()} rule combinations from 11 trading theories (re-run weekly). ${L.folds ? `Walk-forward: each combination was picked on older data and judged on ${L.folds} later windows it had never seen (the newest ${unseen} of history), with a ${L.embargo}-bar gap so no trade crosses the line.` : ''} `,
+        L.validated ? 'Passing ones are saved and appear as "Lab: …" setups, judged only on trades after the day they were first shown (B at most until 30 such trades).' : 'None held up on unseen data, so nothing new was added: that is the lab protecting you from luck.'),
+      L.survivors?.length ? h('ul', { class: 'small' }, ...L.survivors.map((x) => h('li', {}, h('b', {}, x.name.replace('Lab: ', '')), h('span', { class: 'muted' }, ` · first shown ${x.firstShownDate}; graded on trades since then only`)))) : '',
       h('div', { class: 'sp-lab-stats small' },
         L.pbo != null ? h('span', {}, termLabel('Overfitting risk (PBO)', 'pbo'), ` ${Math.round(L.pbo * 100)}%`) : '',
         L.effectiveTrials ? h('span', {}, termLabel('Independent ideas tried', 'efftrials'), ` ${L.effectiveTrials}`) : '',
@@ -390,20 +460,21 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   }
 
   function renderList(hr: HorizonResult | undefined) {
-    if (!hr) return list.replaceChildren(h('div', { class: 'skeleton', style: 'height:240px' }));
+    if (!hr) return list.replaceChildren(h('p', { class: 'empty-state' }, data?.loading ? 'The first scan is running: it downloads 15 years of history for every Nasdaq-100 stock, so it takes a few minutes after the helper starts. This page fills in by itself.' : 'This time frame is still being scanned; it appears here as soon as it is done.'));
     if (hr.error) return list.replaceChildren(h('p', { class: 'muted pad' }, hr.error));
     const rows = visible(hr);
     if (!rows.length) {
       const all = hr.setups.length;
       return list.replaceChildren(
-        h('div', { class: 'setups-empty' }, h('b', {}, all ? 'No A or B setups on this time frame right now.' : 'No setups on this time frame right now.'),
+        h('div', { class: 'empty-state setups-empty' }, h('b', {}, all ? 'No A or B setups on this time frame right now.' : 'No setups on this time frame right now.'),
           h('span', { class: 'muted small' }, all ? ` ${all} lower-grade idea${all === 1 ? '' : 's'} under "All grades". ` : ' Nothing has every condition lined up. Sitting out is a position. '),
           all ? h('button', { class: 'btn small', onclick: () => setPref('grade', 'all') }, 'Show all grades') : ''),
       );
     }
     if (!selected || !rows.some((s) => idOf(s) === selected)) selected = idOf(rows[0]);
+    // TODO(conductor/2b-tables): tableTools(table, { id: 'setups' }) once src/ui/tableTools.ts is merged.
     list.replaceChildren(
-      h('table', { class: 'sp-table' },
+      h('table', { class: 'data-table sp-table' },
         h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'Stock'), h('th', {}, termLabel('Grade', 'grade')), h('th', {}, termLabel('Right now', 'entryzone')), h('th', { class: 'num' }, 'Entry'), h('th', { class: 'num' }, termLabel('Stop', 'stop')), h('th', { class: 'num' }, 'Target'), h('th', { class: 'num' }, 'Hold'))),
         h('tbody', {}, ...rows.map(row)),
       ),
@@ -454,7 +525,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       h('div', { class: 'sp-detail-head' }, h('h2', {}, s.symbol), h('span', { class: 'muted' }, `${s.strategyName} · ${HORIZONS.find((x) => x.key === prefs.horizon)!.label} · ${s.plan.holdText ?? s.plan.horizon}`), h('span', { class: 'spacer' }), watchBtn, h('button', { class: 'btn small', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, 'Open chart')),
       live,
       chartBox,
-      tradeGuideBody(s, strat, onOpenChart, data?.regime.qqqWeekly),
+      tradeGuideBody(s, strat, onOpenChart, data?.regime.qqqAbove200 ?? null),
     );
     updateLive(s);
     drawChart(chartBox, s);
@@ -479,7 +550,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       if (!box.isConnected) return;
       chart = createChart(box, {
         autoSize: true,
-        layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text, attributionLogo: false },
+        layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text },
         grid: { vertLines: { visible: false }, horzLines: { color: THEME.grid } },
         rightPriceScale: { borderColor: THEME.border },
         timeScale: { borderColor: THEME.border, timeVisible: tf === '1h' },
