@@ -5,7 +5,7 @@
  * Nothing here places an order on its own: the trade guide only pre-fills the ticket.
  */
 import { engineRequest } from '../data/schwab';
-import { dataTable, money, statCards } from '../ui/charts';
+import { dataTable, statCards } from '../ui/charts';
 import { h, openModal, toast } from '../ui/dom';
 import { termLabel } from '../ui/glossary';
 import type { Portfolio } from './types';
@@ -71,7 +71,8 @@ interface Preview {
   placedToday: number;
 }
 
-const usd = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+const usd = (v: number | null | undefined) =>
+  v == null || !Number.isFinite(v) ? '—' : `${v < 0 ? '−' : ''}$${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const TYPE_LABELS: Record<OrderType, string> = { MARKET: 'Market', LIMIT: 'Limit', STOP: 'Stop', STOP_LIMIT: 'Stop-limit' };
 const OPEN = /SUBMITTED|PARTIAL|PENDING|WORKING|NEW/;
 
@@ -168,7 +169,7 @@ export async function renderWebull(out: HTMLElement, onSynced: (p: Portfolio & {
             { label: 'Account value', value: usd(bal.value.value) },
             { label: 'Cash', value: usd(bal.value.cash) },
             { label: 'Buying power', value: usd(bal.value.buyingPower), hint: 'What you can spend on new orders now' },
-            { label: 'Limits', value: `${money(status.limits.maxOrder)} · ${status.limits.maxPerDay}/day`, hint: 'Max order value and orders per day (Settings)' },
+            { label: 'Limits', value: `$${status.limits.maxOrder.toLocaleString('en-US', { maximumFractionDigits: 0 })} · ${status.limits.maxPerDay}/day`, hint: 'Max order value and orders per day (Settings)' },
           ])
         : fail(bal),
       h('h4', { class: 'section-label' }, 'Order ticket'),

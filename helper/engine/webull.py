@@ -282,16 +282,22 @@ async def accounts(ctx):
     return out
 
 
-async def _account_id(ctx, msg):
+async def _account(ctx, msg):
+    """The chosen account ({id, label}); the first one when none is named. Refuses an id that isn't the owner's."""
     found = await accounts(ctx)
     if not found:
         raise EngineError('Webull returned no accounts for these keys.')
     wanted = str(msg.get('accountId') or '')
     if not wanted:
-        return found[0]['id']
-    if wanted not in {a['id'] for a in found}:
-        raise EngineError('That account is not one of yours on Webull.')
-    return wanted
+        return found[0]
+    for a in found:
+        if a['id'] == wanted:
+            return a
+    raise EngineError('That account is not one of yours on Webull.')
+
+
+async def _account_id(ctx, msg):
+    return (await _account(ctx, msg))['id']
 
 
 async def balances(ctx, account_id):
@@ -464,12 +470,19 @@ def normalise(msg):
 
 
 def describe(order):
-    words = f"{'Buy' if order['side'] == 'BUY' else 'Sell'} {order['qty']} {order['symbol']} {TYPE_NAMES[order['orderType']].lower()}"
-    if order['stopPrice'] is not None:
-        words += f" stop ${order['stopPrice']:,.2f}"
-    if order['limitPrice'] is not None:
-        words += f" limit ${order['limitPrice']:,.2f}"
-    return f"{words}, {'good till cancelled' if order['tif'] == 'GTC' else 'day only'}"
+    """The order in plain words, e.g. "Buy 3 AAPL at a limit of $228.50, day only"."""
+    head = f"{'Buy' if order['side'] == 'BUY' else 'Sell'} {order['qty']} {order['symbol']}"
+    lp, sp = order['limitPrice'], order['stopPrice']
+    kind = order['orderType']
+    if kind == 'MARKET':
+        how = 'at market'
+    elif kind == 'LIMIT':
+        how = f'at a limit of ${lp:,.2f}'
+    elif kind == 'STOP':
+        how = f'with a stop at ${sp:,.2f} (then market)'
+    else:
+        how = f'with a stop at ${sp:,.2f}, then a limit of ${lp:,.2f}'
+    return f"{head} {how}, {'good till cancelled' if order['tif'] == 'GTC' else 'day only'}"
 
 
 def webull_order(order, client_order_id):
@@ -599,7 +612,8 @@ async def sync(ctx, msg):
 @handler('webull.preview_order')
 async def preview_order(ctx, msg):
     order = normalise(msg)
-    account_id = await _account_id(ctx, msg)
+    chosen = await _account(ctx, msg)
+    account_id = chosen['id']
     lim = limits()
     held = None
     if order['side'] == 'SELL':
@@ -618,13 +632,13 @@ async def preview_order(ctx, msg):
     _previews[token] = {'order': order, 'body': body, 'env': env(), 'fp': _fingerprint(), 'expires': time.monotonic() + TOKEN_SECONDS,
                         'value': value, 'account': account_id}
     return {'token': token, 'expiresIn': TOKEN_SECONDS, 'order': order, 'summary': describe(order), 'estimate': estimate,
-            'env': env(), 'account': _mask(account_id), 'warnings': warnings, 'marketNote': note,
+            'env': env(), 'account': chosen['label'], 'warnings': warnings, 'marketNote': note,
             'limits': lim, 'placedToday': placed_today()}
 
 
 @handler('webull.place_order')
 async def place_order(ctx, msg):
-    extra = set(msg) - {'id', 'type', 'token'}
+    extra = {k for k in msg if k not in ('id', 'type', 'token') and not str(k).startswith('_')}  # '_emit' is added by the helper
     token = msg.get('token')
     preview = _previews.pop(token, None) if isinstance(token, str) else None  # one use: gone even if placing fails
     if extra:

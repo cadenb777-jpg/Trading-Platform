@@ -188,9 +188,10 @@ class Orders(Base):
         p = self.preview()
         self.assertEqual(p['env'], 'test')
         self.assertEqual(p['estimate']['value'], 390.0)
+        self.assertEqual(p['summary'], 'Buy 2 AAPL at a limit of $195.00, day only')
         self.assertNotIn('/trading/orders/place', self.fake.paths())
         sent = next(c for c in self.fake.calls if c['path'] == '/trading/orders/preview')['body']['new_orders'][0]
-        r = run(webull.place_order(self.ctx, {'id': 1, 'type': 'webull.place_order', 'token': p['token']}))
+        r = run(webull.place_order(self.ctx, {'id': 1, 'type': 'webull.place_order', 'token': p['token'], '_emit': print}))
         self.assertTrue(r['placed'])
         placed = [c for c in self.fake.calls if c['path'] == '/trading/orders/place']
         self.assertEqual(len(placed), 1)
