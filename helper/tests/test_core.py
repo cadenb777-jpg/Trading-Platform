@@ -74,3 +74,45 @@ class DiskCacheTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SafeUrls(unittest.TestCase):
+    """The article `summary` request must not fetch local or private addresses (SSRF)."""
+
+    def test_blocks_local_private_and_odd_schemes(self):
+        for url in ('http://127.0.0.1:8765/', 'http://localhost/admin', 'http://10.0.0.5/', 'http://192.168.1.1/',
+                    'http://172.16.0.1/', 'http://169.254.169.254/latest/meta-data/', 'http://[::1]/',
+                    'http://[::ffff:127.0.0.1]/', 'http://[::127.0.0.1]/', 'http://[64:ff9b::7f00:1]/', 'http://[fd12::1]/', 'http://100.64.0.1/', 'http://0.0.0.0/', 'file:///etc/passwd', 'ftp://8.8.8.8/',
+                    'javascript:alert(1)', 'http:///nohost', 'not a url'):
+            self.assertFalse(core.is_safe_url(url), url)
+
+    def test_allows_public_addresses(self):
+        self.assertTrue(core.is_safe_url('https://8.8.8.8/article'))
+        self.assertTrue(core.is_safe_url('http://1.1.1.1/'))
+
+
+class MarketSession(unittest.TestCase):
+    def at(self, *args):
+        from zoneinfo import ZoneInfo
+        import datetime as dt
+        return core.market_session(dt.datetime(*args, tzinfo=ZoneInfo('America/New_York')))
+
+    def test_normal_weekday(self):
+        self.assertEqual(self.at(2026, 10, 22, 10, 0), 'open')
+        self.assertEqual(self.at(2026, 10, 22, 17, 0), 'extended')
+        self.assertEqual(self.at(2026, 10, 24, 10, 0), 'closed')  # Saturday
+
+    def test_holidays_are_closed(self):
+        self.assertEqual(self.at(2026, 11, 26, 10, 0), 'closed')  # Thanksgiving
+        self.assertEqual(self.at(2026, 12, 25, 11, 0), 'closed')  # Christmas
+        self.assertEqual(self.at(2027, 3, 26, 11, 0), 'closed')  # Good Friday
+        self.assertEqual(self.at(2027, 7, 5, 11, 0), 'closed')  # Independence Day observed
+
+    def test_early_close(self):
+        self.assertEqual(self.at(2026, 11, 27, 12, 59), 'open')
+        self.assertEqual(self.at(2026, 11, 27, 13, 0), 'extended')
+        self.assertEqual(self.at(2026, 11, 27, 17, 0), 'closed')
+
+    def test_holiday_list_is_on_weekdays(self):
+        for day in core.NYSE_HOLIDAYS | core.NYSE_EARLY_CLOSES:
+            self.assertLess(day.weekday(), 5, day)

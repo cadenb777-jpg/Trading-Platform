@@ -1,11 +1,14 @@
 """Shared pieces for engine modules: the handler registry, errors, caching and price history."""
 import asyncio
 import datetime as dt
+import ipaddress
 import json
 import logging
 import sqlite3
 import threading
+import socket
 import time
+import urllib.parse
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -32,18 +35,65 @@ BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTM
 
 
 
+#: NYSE full-day closures (https://www.nyse.com/markets/hours-calendars). Add the next year each December.
+NYSE_HOLIDAYS = {
+    dt.date(2026, 1, 1), dt.date(2026, 1, 19), dt.date(2026, 2, 16), dt.date(2026, 4, 3), dt.date(2026, 5, 25),
+    dt.date(2026, 6, 19), dt.date(2026, 7, 3), dt.date(2026, 9, 7), dt.date(2026, 11, 26), dt.date(2026, 12, 25),
+    dt.date(2027, 1, 1), dt.date(2027, 1, 18), dt.date(2027, 2, 15), dt.date(2027, 3, 26), dt.date(2027, 5, 31),
+    dt.date(2027, 6, 18), dt.date(2027, 7, 5), dt.date(2027, 9, 6), dt.date(2027, 11, 25), dt.date(2027, 12, 24),
+}
+#: Days the stock market closes early, at 1:00 pm New York time.
+NYSE_EARLY_CLOSES = {
+    dt.date(2026, 11, 27), dt.date(2026, 12, 24),
+    dt.date(2027, 11, 26),
+}
+
+
 def market_session(now=None):
-    """US stock market session in New York time: 'open' (9:30-16:00), 'extended' (4:00-20:00) or 'closed'.
-    Holidays are not known here, so a holiday reads as a normal weekday."""
+    """US stock market session in New York time: 'open' (9:30-16:00, 13:00 on early-close days),
+    'extended' (4:00-20:00) or 'closed' (weekends and NYSE holidays)."""
     now = now or dt.datetime.now(ZoneInfo('America/New_York'))
-    if now.weekday() >= 5:
+    if now.weekday() >= 5 or now.date() in NYSE_HOLIDAYS:
         return 'closed'
     minutes = now.hour * 60 + now.minute
-    if 570 <= minutes < 960:
+    close = 780 if now.date() in NYSE_EARLY_CLOSES else 960
+    if 570 <= minutes < close:
         return 'open'
-    if 240 <= minutes < 1200:
+    if 240 <= minutes < (1020 if close == 780 else 1200):
         return 'extended'
     return 'closed'
+
+
+NAT64 = ipaddress.ip_network('64:ff9b::/96')
+
+
+def is_public_address(host):
+    """True when every address `host` resolves to is a public internet address (not loopback, private,
+    link-local, multicast or reserved), so a fetch cannot be pointed at the owner's own computer or network."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except (socket.gaierror, UnicodeError):
+        return False
+    addresses = {info[4][0] for info in infos}
+    for address in addresses:
+        ip = ipaddress.ip_address(address.split('%')[0])
+        if getattr(ip, 'ipv4_mapped', None):
+            ip = ip.ipv4_mapped
+        if not ip.is_global or ip.is_multicast:
+            return False
+        if ip.version == 6 and (ip.packed[:12] == bytes(12) or ip in NAT64):  # IPv4 hidden inside IPv6
+            return False
+    return bool(addresses)
+
+
+def is_safe_url(url):
+    """True for an http(s) link whose host is a public internet address (blocks SSRF to local services)."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    return parts.scheme in ('http', 'https') and bool(parts.hostname) and is_public_address(parts.hostname)
+
 
 class EngineError(Exception):
     """A problem worth showing to the user as-is (e.g. "No data for XYZ")."""

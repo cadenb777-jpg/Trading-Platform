@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Content Security Policy: the page may only load its own files, Google Fonts, Coinbase market data and the local helper. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' ws://127.0.0.1:8765 https://api.exchange.coinbase.com wss://ws-feed.exchange.coinbase.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
     <meta name="theme-color" content="#0f1218" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

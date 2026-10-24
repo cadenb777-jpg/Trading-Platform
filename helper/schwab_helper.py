@@ -45,6 +45,7 @@ from schwab.auth import easy_client  # noqa: E402
 from schwab.streaming import StreamClient  # noqa: E402
 from websockets.asyncio.server import broadcast, serve  # noqa: E402
 import engine  # noqa: E402  (light: its big modules load in the background, see engine.start_loading)
+from engine.core import is_safe_url  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
@@ -486,8 +487,7 @@ class NewsFetcher:
                 url = await self._resolve_google(link) if 'news.google.com' in link else link
                 if not url:
                     continue
-                response = await self.http.get(url)
-                response.raise_for_status()
+                response = await self._get_public(url)
                 page = parse_article(response.text)
                 points = summarize_text(page['paragraphs'], title)
                 if points or page['description']:
@@ -498,6 +498,20 @@ class NewsFetcher:
             except Exception as err:
                 last_error = str(err)
         raise HelperError(f'Could not open the article: {last_error}')
+
+    async def _get_public(self, url, max_hops=5):
+        """Fetches an article link, checking it and every redirect is a public http(s) address first, so a
+        crafted link cannot reach the owner's own computer or home network (SSRF)."""
+        for _hop in range(max_hops + 1):
+            if not await asyncio.to_thread(is_safe_url, url):
+                raise HelperError('That link points to a private or unsupported address.')
+            response = await self.http.get(url, follow_redirects=False)
+            if response.is_redirect and response.next_request is not None:
+                url = str(response.next_request.url)
+                continue
+            response.raise_for_status()
+            return response
+        raise HelperError('Too many redirects.')
 
     async def _resolve_google(self, link):
         """Google News hides the publisher's address behind its own link; ask Google for the real one."""
