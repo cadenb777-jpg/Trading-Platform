@@ -13,8 +13,9 @@ not: WebFetch failed with a DNS error and curl got a 403 from the proxy for IDEA
 So **no paper here was read in full text.** Every claim comes from abstracts, publisher or archive landing pages
 and catalogue records, as reported by the search tool. Where a number appears in an abstract, it is given as the
 abstract states it. Numbers from secondary summaries are marked *(unverified)*. Numbers marked *(computed here)*
-come from a small simulation written for this note (assumptions stated next to them). No quotes are given, because
-no page could be read word for word.
+come from a small simulation written for this note (assumptions stated next to them). No quotes from the papers
+are given, because no page could be read word for word. The only quotation marks around source text quote this
+repository's own notes.
 
 ---
 
@@ -63,7 +64,7 @@ no page could be read word for word.
 
 - **Fama (1970)** defined three information sets: past prices (weak form), public information (semi-strong) and
   any information (strong). He concluded that, with few exceptions, the efficient-markets model held up well
-  [Fama 1970]. **Fama (1991)** revisited the evidence. Its key point for us is the *joint-hypothesis problem*: an
+  [Fama 1970; paraphrased from the introduction as reported by search]. **Fama (1991)** revisited the evidence. Its key point for us is the *joint-hypothesis problem*: an
   apparent edge is always also a test of the model of "normal" return, so a backtest that beats a naive benchmark
   may only have taken more risk [Fama 1991; landing page only, abstract not retrieved. The joint-hypothesis
   framing is standard textbook content, BKM].
@@ -166,7 +167,8 @@ replies).
 **Reading:** the academic literature (four papers, three author groups) mostly says hedgers *pay* speculators,
 which is the opposite of Williams' "commercials are the insiders". Bessembinder's financial-futures result is
 weaker than de Roon et al.'s, which is a genuine disagreement. Both use hedging pressure as a premium, not as
-information. williams-cot.md already concludes "measure it, don't assume it". The scanner's COT + z-score edge
+information. williams-cot.md already concludes: "This is why the scanner measures COT (the edge study) instead of
+trusting it." The scanner's COT + z-score edge
 study (setups-statistics.md, section 4) is the right tool, and this literature adds a prior: **expect the edge
 study to find little or the opposite sign** for Nasdaq-100 E-mini commercials.
 
@@ -229,11 +231,17 @@ study to find little or the opposite sign** for Nasdaq-100 E-mini commercials.
 - **The Fed.** Large average US equity returns came in the 24 hours before scheduled FOMC decisions
   (1994-2011) [Lucca & Moench 2015]. **Extended to 2019, the drift essentially disappeared after 2015** [Kurov,
   Wolfe & Gilbert 2021]. Cieslak, Morse & Vissing-Jorgensen (2019) found that since 1994 the equity premium was
-  earned in even weeks of the FOMC cycle, linked to Fed news [CMVJ 2019]. These are **three sources with a time
-  disagreement**: the best-known effect has faded. Do not build an FOMC filter. Showing FOMC dates as event
+  earned in even weeks of the FOMC cycle, linked to Fed news [CMVJ 2019]. The original authors' own update on the
+  NY Fed's Liberty Street Economics blog (November 2018) reported that the drift **persisted, but only at meetings
+  followed by a Chair press conference** [Lucca & Moench 2018]. Kurov et al. (2021), with data to December 2019,
+  found it gone after 2015 with or without press conferences. These are **four sources with a time
+  disagreement**: the best-known effect has faded, or at best narrowed. Do not build an FOMC filter. Showing FOMC dates as event
   risk (the calendar already has them) is enough.
 - **Volatility regimes, and why they matter in opposite ways.**
   - Reversal / liquidity provision: expected returns and Sharpe ratios **rise** when VIX is high [Nagel 2012].
+    Drechsler, Moreira & Savov (NBER w27959, "Liquidity and Volatility") confirm that reversal returns are
+    predictable by VIX. They explain it as pay for volatility risk: reversal portfolios have large negative betas
+    to volatility shocks. Whether their tests focus on large stocks could not be checked from the abstract.
   - Momentum: crashes happen in high-volatility "panic" states after market declines, when the market rebounds;
     forecasting momentum's mean and variance roughly doubled its Sharpe ratio [Daniel & Moskowitz 2016].
   - Volatility-managed portfolios (scale exposure down when recent volatility is high) improved alphas in Moreira
@@ -242,7 +250,7 @@ study to find little or the opposite sign** for Nasdaq-100 E-mini commercials.
     defend a multifactor version. **Disputed.**
   - So a volatility-regime switch is the **one** macro-type condition with a theory that predicts *opposite*
     signs for our two strategy families. That makes it falsifiable, which is why it is the only regime idea in the
-    recommendations (7.4).
+    recommendations (7.3, report-only first).
 
 ---
 
@@ -273,7 +281,10 @@ study to find little or the opposite sign** for Nasdaq-100 E-mini commercials.
   2010].
 - **Worked example *(computed here)*.** A strategy wins 45% of the time, averages +1.8R on wins and loses 1R.
   Expectancy = 0.45 x 1.8 - 0.55 = **+0.26R**. Kelly fraction = 0.45 - 0.55 / 1.8 = **14.4% of the account at risk
-  per trade**. 20,000 simulated runs of 100 independent trades:
+  per trade**. 20,000 simulated runs of 100 trades. **Assumptions:** every outcome is exactly +1.8R or -1R (no
+  gaps past stops, no partial exits); risk is a fixed % of *current* equity; trades are independent and taken one
+  at a time; the win rate and payoff are known exactly; no costs; drawdown is measured on equity after each trade
+  closes (not during a trade).
 
   | Risk per trade | Median max drawdown | 95th-percentile max drawdown | Median ending equity |
   |---|---|---|---|
@@ -345,99 +356,149 @@ the √-annualisation and serial-correlation errors above without adding informa
 
 ## 7. What this means for our scanner and trade guide
 
-Five recommendations, simplest first. Two are fixes to existing calculations, one is a guard on what we show,
-one is a single optional filter for the lab, and one is a reminder of what not to add. Each comes with a test
-using the existing tools.
+Five recommendations, simplest first: two fixes to existing calculations, one report-only regime check, one
+reminder of what not to add, and one display of total risk. Each comes with a test using the existing tools.
+Section 7.6 lists where this note and the other research notes disagree, and how a test settles each conflict.
 
 ### 7.1 Fix: make R net of costs, and size at 0.5% risk
 
 **Change.** In `simulate`, compute `r` after costs (subtract `COSTS * entry / risk` in R units, matching `ret`) so
-`avgR`, expectancy and the trade guide's numbers are net. Change the trade guide's default risk from 1% to 0.5%
-(agreeing with trend-and-charts.md 6.5). Show beside the size calculator the 95th-percentile drawdown of the next
-20 trades at the chosen risk, from the existing Monte Carlo in R units.
+`avgR` and any future R-based numbers are net. Change the trade guide's default risk from 1% to 0.5% (agreeing
+with trend-and-charts.md 6.5). Give `monte_carlo` (strategies.py:579 onward) a `key='r'` option: today it
+resamples only `t['ret']`, so it cannot produce R-unit drawdowns yet. Once it can, show the 95th-percentile
+drawdown of the next 20 trades at the chosen risk beside the size calculator.
+
+**Scope.** `avgR` (strategies.py:516) is computed but **not displayed anywhere today** (src/ never uses it).
+Grades and the random-entry test use `ret`, which already includes costs. So this fix changes nothing a user sees
+now. It matters before any R-based display or sizing is built on it. trend-and-charts.md 6.5 makes the same
+`avgR` claim, so both notes depend on this fix.
 
 **Why.** Costs are a large share of a small edge (6.1). Kelly reasoning with a discounted edge puts 0.5% far
 inside the safe zone (6.2).
 
-**Test.** (a) Unit test: a trade that exits at entry has `r` = -cost/risk, not 0. (b) Re-run `summarise` and the
-pooled random-entry test for each strategy and side. The p-values must not change (the test uses `ret`, which
-already includes costs), but `avgR` will fall. Any strategy whose net `avgR` drops below +0.1R should be
-flagged in its evidence card. (c) Run `monte_carlo` in R units at 0.5% and 1% and check that the drawdown shown
-matches the table in 6.2 for a similar trade distribution.
+**Test.** (a) The existing unit test helper/tests/test_engine.py:142 (`assertAlmostEqual(t['r'], 4 / 3)`) must
+change to the net value (4/3 minus `COSTS * 101 / 3`, entry 101 and risk 3 in that test). A new case checks that
+a trade exiting at its entry price has `r = -COSTS * entry / risk`, not 0. (b) Re-run the pooled random-entry test
+for each strategy and side: the p-values must not change, because they use `ret`. (c) `monte_carlo(..., key='r')`
+on trades drawn from the 6.2 illustration should give drawdowns in line with that table. They should be somewhat
+worse, because the stationary bootstrap keeps streaks.
 
 ### 7.2 Fix: cluster-aware random-entry test (honest p-values)
 
-**Change.** In `random_entry_test`, draw **one random date offset per signal date** and apply it to every trade
-that signalled on that date (each stock keeps its own direction and holding time), instead of an independent
-random date per trade. That keeps the real trades' clustering in the null distribution. The lab uses the same
-test on its unseen windows, so it inherits the fix.
+**This is the same item as backtest-statistics.md R1** (branch conductor/1c-stats), reached here from the
+concentration side. Follow R1's design rather than inventing a second one:
+
+- Group real trades by the **calendar week** of their signal bar. In each simulation, draw one random week per
+  real signal week and re-enter every trade of that week on its own stock, on the **same weekday** of the drawn
+  week (same side, same hold). This keeps "how many trades happen together".
+- Draw random weeks only from the period the trades come from; for lab strategies that is the unseen period.
+  Today the scanner passes **full-history** closes to the test (scanner.py:594), while lab strategies' trades are
+  filtered to the unseen period (scanner.py:600). So random entries are drawn from a different period than the
+  trades, and the fix must close that mismatch.
+- Shared dates need **bar times aligned across symbols**. Map each trade's signal bar to its calendar day or week
+  through the bar's timestamp, not its index, because stocks with shorter histories have different index offsets.
 
 **Why.** Same-day signals across correlated Nasdaq-100 stocks are not independent (6.4). The current null is too
-narrow and overstates significance, the testing version of the "20 positions are not 20 bets" problem.
+narrow and overstates significance. It is the testing version of the "20 positions are not 20 bets" problem.
 
-**Test.** Synthetic check in helper/tests, as the lab's existing validation does: generate 100 stocks from a
-one-factor model (a common market return plus stock noise, average correlation about 0.5, upward drift, **no
-edge**), run `mean_reversion` and the reversal triggers, and repeat for 50 seeds. At the 10% level, a correct test
-rejects about 10% of the time. Expect the current test to reject noticeably more often and the clustered test to
-be near 10%. Then re-grade the real strategies. Any tier-A status that depended on p just under 0.10 should be
-re-examined.
+**Test (R1's acceptance rule).** Use synthetic data: 100 stocks built from one shared market random walk plus
+stock noise, and a no-edge rule that fires on market-wide conditions. Over **200 seeds** the share with p <= 0.10
+must be **<= 0.14** (0.10 plus two binomial standard errors), and the existing planted-edge tests must still pass.
+Then re-grade the real strategies, and re-examine any tier-A status that depended on p just under 0.10.
 
-### 7.3 Guard: limit correlated exposure in "Today" and the trade guide
+### 7.3 Report-only regime split before any new filter
 
-**Change.** When more than one A/B setup is open or triggering, group them by 60-day return correlation (pairs
-with correlation of 0.7 or more in one group; no new data needed) and show **total open risk per group** in the
-"Today" summary, with a soft cap: at most **2 positions or 1% total risk per correlated group**, and **3% total
-open risk** for the whole book. The guide says "This adds to your existing semiconductor exposure (2 trades, 1.0%
-at risk)." Display and warning only; it never blocks anything.
+**Change.** No new lab filter yet. For each main strategy and side, split its pooled trades by two regimes known
+as of the signal's previous day. Both use QQQ data the scanner already loads for the lab's `market` filter
+(market_trend_by_date):
 
-**Why.** About 58-59% tech weight and higher correlations in sell-offs (6.4) mean that unchecked signals become
-one leveraged sector bet exactly when stops are most likely to gap.
+- (a) QQQ above or below its 200-day average.
+- (b) QQQ's 20-day realised volatility above or below its own 250-day median.
 
-**Test.** Portfolio replay over the swing history (no lab change): take every A/B signal in date order at 0.5%
-risk, once with no cap and once with the cap (skip the lowest-ranked setup when a group is full). Compare total R,
-worst drawdown and 95th-percentile drawdown from a stationary bootstrap of **daily portfolio P&L** (not of
-trades, because trades overlap). Keep the cap if it cuts the 95th-percentile drawdown by clearly more than it cuts
-total R, for example a drawdown/return ratio that improves by 20% or more. Report the cap's neighbourhood (0.6 /
-0.7 / 0.8 correlation) only to show a plateau.
+Report the average net return in each regime, with a 1,000-run permutation p-value for the difference (the method
+of `edge_summary`, permuting by week as in R1). Show it on the strategy evidence card as "works better in calm /
+turbulent markets" only when p <= 0.10. Do **not** add FOMC, credit-spread or macro filters.
 
-### 7.4 One regime idea, tested in the lab, not hard-wired: market volatility
+**Why.** Theory predicts *opposite* signs for our two strategy families:
 
-**Change.** Add a single lab filter, `calmmarket`: QQQ's 20-day realised volatility, known as of the previous day,
-below its own 250-day median (the inverse condition is the same filter's "false" side). It uses QQQ data the lab
-already loads for `market` (market_trend_by_date). Do **not** add FOMC, credit-spread or macro filters.
+- Reversal and liquidity provision pay more in turbulent markets (Nagel 2012). Drechsler, Moreira & Savov tie
+  this to volatility risk.
+- Momentum crashes in high-volatility rebounds (Daniel & Moskowitz 2016).
 
-**Why.** Theory predicts *opposite* effects: reversal and liquidity provision pay more in turbulent markets
-(Nagel 2012), while momentum crashes in high-volatility rebounds (Daniel & Moskowitz 2016). Volatility timing in
-general is disputed out of sample (Cederburg et al. 2020), and macro predictors and the pre-FOMC drift have
-failed or faded (section 5). A filter with a signed prediction can be falsified, which a generic regime switch
-cannot.
+Volatility timing in general is disputed out of sample (Cederburg et al. 2020), and macro predictors and the
+pre-FOMC drift have failed or faded (section 5). A signed prediction can be shown wrong, which makes it worth
+testing.
 
-**Test.** Run the lab as usual (walk-forward, embargo, Holm, PBO; nothing changes there). The prediction passes
-only if survivors that use the filter follow theory: momentum triggers (`breakout`, `high52`, `gapgo`) with
-`calmmarket` and reversal triggers (`stretch`, `rsi2`, `down3`) **without** it (turbulent side). Survivors with the
-wrong sign, or a filter chosen in only one fold, count as noise, and the filter is removed after two lab cycles
-with no theory-consistent survivor. In the pooled random-entry test, split each main strategy's trades by regime
-and compare the two sides' average returns with a 1,000-run permutation (the method of `edge_summary`).
+**Why not a lab filter first.** Lab filters are "must be true" conditions, combined with `itertools.combinations`
+(lab.py:67-69).
 
-### 7.5 Keep the earnings rule, and add nothing that needs data we cannot get
+- Leaving a `calmmarket` filter out does **not** mean "turbulent". The reversal half of the prediction could not
+  be tested without a second, paired `turbulent` filter.
+- One extra filter raises the search from about 1,474 to about 1,738 combinations, 18% more trials *(computed
+  here: 11 triggers x (1 + 12 + 66) filter sets x 2 sides)*. A second filter adds more, and more trials raise
+  the multiple-testing bar for everything.
+- A market-volatility filter overlaps with the existing `lowvol` filter, because a stock's own volatility moves
+  with the market's.
 
-**Change.** None in code. Keep "no earnings inside the hold" as a risk rule (and "unavailable" never meaning
-"none"). **Do not** add PEAD, analyst-revision, short-interest, FINRA-short-volume or option-flow signals to grades.
+**Test and next step.** Add a paired `calmmarket` / `turbulent` lab filter **only if** the report-only split
+shows the theory's signs at p <= 0.10 on at least two time frames (momentum strategies better in calm markets,
+reversal strategies better in turbulent ones). If the signs are wrong or nothing is significant, record the
+result and stop.
 
-**Why.** Announcement days carry extra systematic risk and big gaps (Savor & Wilson 2016), which blow through
-ATR stops. PEAD in large caps is gone or disputed (Martineau 2022 vs the 2025 replies). Revision data is not free.
-Short-selling evidence relies on proprietary order data and is weak value-weighted (APR 2005), and FINRA's own
-notes warn against reading the public file as short interest. Option-flow predictability relies on non-public
-open/close classification (Pan & Poteshman 2006). Da, Liu & Schaumburg (2014) also suggest that news-driven moves
-reverse less, another reason not to fade an earnings gap.
+### 7.4 Keep the earnings rule, and add nothing that needs data we cannot get
 
-**Test.** Check the rule's value with data already on hand. In the swing history, mark trades whose holding
-period contains an overnight gap larger than 3 ATR (a proxy for an earnings or news gap, since there is no free
-history of earnings dates). Compare the R distribution of those trades with the rest: mean R, 5th-percentile R and
-the share of stops filled beyond the stop price. The rule is supported if gap trades have similar or lower mean R
-and a much worse 5th percentile. For reversal strategies, also compare stretches that *started* with a 3-ATR gap
-against those that did not. Theory (DLS 2014) predicts that gap-started stretches reverse less. If so, the
-existing `gapfade` trigger is suspect and should face its own lab evidence.
+**Change.** None in code. Keep "no earnings inside the hold" as a risk rule, with "unavailable" never meaning
+"none". **Do not** add PEAD, analyst-revision, short-interest, FINRA-short-volume or option-flow signals to grades.
+
+**Why.**
+
+- Announcement days carry extra systematic risk and big gaps (Savor & Wilson 2016), which blow through ATR stops.
+- PEAD in large caps is gone or disputed (Martineau 2022 vs the 2025 replies).
+- Analyst-revision data is not free.
+- Short-selling evidence relies on proprietary order data and is weak value-weighted (APR 2005). FINRA's own
+  notes warn against reading the public file as short interest.
+- Option-flow predictability relies on a non-public open/close classification (Pan & Poteshman 2006).
+- News-driven moves reverse less (Da, Liu & Schaumburg 2014), another reason not to fade an earnings gap.
+
+**Test.** Use data already on hand. In the swing history, mark trades whose holding period contains an overnight
+gap larger than 3 ATR. This is a proxy for an earnings or news gap, because there is no free history of earnings
+dates. Compare those trades with the rest on mean R, 5th-percentile R and the share of stops filled beyond the
+stop price. The rule is supported if gap trades have similar or lower mean R and a much worse 5th percentile.
+
+For reversal strategies, also compare stretches that *started* with a 3-ATR gap against those that did not. DLS
+2014 predicts that gap-started stretches reverse less. If they do, the existing `gapfade` trigger is suspect and
+should face its own lab evidence.
+
+### 7.5 Show total open risk per sector (caps tested later)
+
+**Change (first step only).** In the "Today" summary, show **total open risk per sector** for open and triggering
+A/B setups at the chosen risk per trade, for example "Semiconductors: 2 trades, 1.0% at risk; whole book 2.5%".
+It is a display only and never blocks anything. Each Nasdaq-100 stock's sector is a fixed list that changes only
+at rebalances, like `NASDAQ_100`.
+
+**Why.** The index is about 58-59% tech, and correlations rise in sell-offs (6.4). Unchecked signals can turn into
+one leveraged sector bet exactly when stops are most likely to gap. Seeing the total is the simplest guard.
+
+**Test (later, one replay).** Caps (for example at most 2 positions or 1% risk per sector, 3% for the whole book)
+are tested together with the 0.5% default in **one** portfolio replay over the swing history:
+
+1. Take every A/B signal in date order, once uncapped and once capped. When a sector is full, skip the
+   lowest-ranked setup.
+2. Compare total R, worst drawdown and the 95th-percentile drawdown, using a stationary bootstrap of **daily
+   portfolio P&L**. Bootstrap days, not trades, because trades overlap.
+3. Adopt a cap only if the drawdown/return ratio improves by about 20% or more. Report neighbouring caps only to
+   show a plateau.
+
+### 7.6 Conflicts with the other research notes, settled by test
+
+| Conflict | Notes involved | How it is settled |
+|---|---|---|
+| **COT direction.** Williams treats commercials as informed; the academic papers (Wang; Moskowitz, Ooi & Pedersen; Bessembinder; de Roon et al.) mostly say hedgers *pay* speculators | williams-cot.md vs this note, 4.1 | The COT + z-score edge study, read **both ways** (agree better than against, *or* the opposite sign), with R1's week-level permutation. If neither direction reaches p <= 0.10 on any time frame, drop the COT check from Tier A and the lab's `cot` filter |
+| **Random-entry test design.** Several notes propose fixing clustering | backtest-statistics.md R1, this note 7.2 | One test only: R1's week-block, same-weekday design, drawn from the trades' own period, accepted by the 200-seed false-positive rule (<= 0.14 at the 10% level) |
+| **Sizing default and caps** | trend-and-charts.md 6.5, this note 6.2 / 7.1 / 7.5 | All agree on a 0.5% default. Sector and book caps are tested in the single replay of 7.5, not decided separately |
+| **Regime filters.** Proposals for market trend or volatility filters | trend-and-charts.md 6.1, lab `market` filter, this note 7.3 | Report-only regime split (QQQ vs 200-day; QQQ volatility) first; new lab filters only if signs match theory |
+| **Cost checks.** R is gross today | this note 7.1, trend-and-charts.md 6.5, any proposed double-cost robustness check | Make R net (7.1) first, then run any double-cost check on the net figures, so costs are not counted twice or missed |
+
 
 ---
 
@@ -468,7 +529,7 @@ Access column: "Abstract" = abstract or summary seen via search on that landing 
 
 | # | Source | Type | Archive / publisher (link) | Access | What it contributed |
 |---|---|---|---|---|---|
-| 1 | Fama (1970), Efficient Capital Markets: A Review, *J. Finance* 25(2) | Peer-reviewed | [JSTOR-derived PDF copy](https://datagolf.com/static/blogs/fl_bias/fama_1970.pdf), [Econlib](https://www.econlib.org/library/Enc/EfficientCapitalMarkets.html) | Abstract / intro | Weak, semi-strong and strong forms; efficiency "stands up well" |
+| 1 | Fama (1970), Efficient Capital Markets: A Review, *J. Finance* 25(2) | Peer-reviewed | [DOI 10.2307/2325486 (JSTOR)](https://doi.org/10.2307/2325486), [Econlib](https://www.econlib.org/library/Enc/EfficientCapitalMarkets.html) | Catalogue + summary | Weak, semi-strong and strong forms; efficiency held up well, with few exceptions (paraphrase) |
 | 2 | Fama (1991), Efficient Capital Markets: II, *J. Finance* 46(5) | Peer-reviewed | [IDEAS/RePEc](https://ideas.repec.org/p/hal/journl/hal-01618347.html) | Catalogue | Revisited semi-strong evidence; joint-hypothesis framing (with BKM) |
 | 3 | Grossman & Stiglitz (1980), *AER* 70(3) | Peer-reviewed | [IDEAS/RePEc](https://ideas.repec.org:443/p/cla/levarc/1908.html), [CiNii](https://cir.nii.ac.jp/crid/1130000794301884928) | Catalogue + summaries | Why some inefficiency must persist |
 | 4 | Shleifer & Vishny (1997), The Limits of Arbitrage, *J. Finance* 52(1) | Peer-reviewed | [NBER w5167](https://www.nber.org/papers/w5167), [Harvard](https://shleifer.scholars.harvard.edu/publications/limits-arbitrage) | Abstract | Arbitrage is risky and capital-limited; where anomalies persist |
@@ -497,7 +558,7 @@ Access column: "Abstract" = abstract or summary seen via search on that landing 
 | 27 | Savor & Wilson (2016), *J. Finance* 71(1) | Peer-reviewed | [Wharton working paper](https://faculty.wharton.upenn.edu/wp-content/uploads/2012/04/Draft20111215p_edited.pdf), [SUFE index](https://academicnewsletter.sufe.edu.cn/info/359814) | Abstract | Earnings-announcement premium as systematic risk |
 | 28 | Bessembinder (1992), *RFS* 5(4) | Peer-reviewed | [IDEAS/RePEc](https://ideas.repec.org/a/oup/rfinst/v5y1992i4p637-67.html) | Abstract | Hedging pressure in currency and farm futures |
 | 29 | de Roon, Nijman & Veld (2000), *J. Finance* 55(3) | Peer-reviewed | [Tilburg](https://research.tilburguniversity.edu/en/publications/hedging-pressure-effects-in-futures-markets/), [IDEAS](https://ideas.repec.org/a/bla/jfinan/v55y2000i3p1437-1456.html) | Abstract | Own- and cross-market hedging pressure in 20 futures |
-| 30 | Moskowitz, Ooi & Pedersen (2012), Time Series Momentum, *JFE* 104(2) | Peer-reviewed | [SSRN 2089463](https://papers.ssrn.com/abstract=2089463), [Yale course copy](https://fairmodel.econ.yale.edu/ec439/jpde.pdf) | Abstract | Speculators profit at hedgers' expense (CFTC data) |
+| 30 | Moskowitz, Ooi & Pedersen (2012), Time Series Momentum, *JFE* 104(2) | Peer-reviewed | [SSRN 2089463](https://papers.ssrn.com/abstract=2089463) | Abstract | Speculators profit at hedgers' expense (CFTC data) |
 | 31 | Coval & Stafford (2007), *JFE* 86(2) | Peer-reviewed | [NBER w11357](https://www.nber.org/papers/w11357), [NY Fed conference copy](https://www.newyorkfed.org/medialibrary/media/research/conference/2005/liquidity/Coval_Stafford.pdf) | Abstract | Flow-driven fire sales; liquidity providers earn returns |
 | 32 | Lou (2012), *RFS* 25(12) | Peer-reviewed | [LSE Research Online](https://researchonline.lse.ac.uk/id/eprint/46328), [IDEAS](https://ideas.repec.org/a/oup/rfinst/v25y2012i12p3457-3489.html) | Abstract | Temporary flow-induced price pressure; part of momentum |
 | 33 | Boehmer, Jones & Zhang (2008), *J. Finance* 63(2) | Peer-reviewed | [IDEAS/RePEc](https://ideas.repec.org/a/bla/jfinan/v63y2008i2p491-527.html) | Abstract | Heavily shorted stocks lag by 1.16% in 20 days |
@@ -506,15 +567,17 @@ Access column: "Abstract" = abstract or summary seen via search on that landing 
 | 36 | FINRA, short-sale volume data pages and 2019 information notice | Regulator documentation | [FINRA monthly/daily files](https://www.finra.org/finra-data/browse-catalog/short-sale-volume-data/monthly-short-sale-volume-files), [TRF Reg SHO](https://www.finra.org/filing-reporting/trf/trf-regulation-sho-2019), [OTC Markets commentary](https://blog.otcmarkets.com/2023/05/08/what-investors-should-know-about-finra-daily-short-sale-volume-data/) | Summary of pages | Short volume is not short interest; market-making and reporting caveats |
 | 37 | Pan & Poteshman (2006), *RFS* 19(3) | Peer-reviewed | [NBER w10925](https://www.nber.org/papers/w10925) | Abstract | Option-volume put-call ratios predict returns (non-public classification) |
 | 38 | Lucca & Moench (2015), *J. Finance* 70(1) | Peer-reviewed / Fed | [NY Fed Staff Report 512](https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr512.pdf), [IDEAS](https://ideas.repec.org/a/bla/jfinan/v70y2015i1p329-371.html) | Abstract | Pre-FOMC drift 1994-2011 |
+| 39b | Lucca & Moench (2018), The Pre-FOMC Announcement Drift: More Recent Evidence, Liberty Street Economics | Fed research blog | [NY Fed Liberty Street](https://libertystreeteconomics.newyorkfed.org/2018/11/the-pre-fomc-announcement-drift-more-recent-evidence.html) | Summary | Drift persisted only at press-conference meetings (to 2018) |
 | 39 | Kurov, Wolfe & Gilbert (2021), *Finance Research Letters* 40 | Peer-reviewed | [Skidmore (author copy)](https://www.skidmore.edu/economics/documents/KurovWolfeGilbert-TheDisappearingPre-FOMC-Announce-Drift-200914.pdf), [IDEAS](https://ideas.repec.org/a/eee/finlet/v40y2021ics1544612320315956.html) | Abstract | Drift essentially gone after 2015 |
 | 40 | Cieslak, Morse & Vissing-Jorgensen (2019), *J. Finance* 74(5) | Peer-reviewed | [SSRN 2687614](https://papers.ssrn.com/abstract=2687614), [BIS conference copy](https://www.bis.org/events/conf150310/cieslak_morse_vissing.pdf) | Abstract | Equity premium earned in even FOMC-cycle weeks |
 | 41 | Cochrane (2011), Discount Rates, *J. Finance* 66 | Peer-reviewed | [NBER w16972](https://www.nber.org/papers/w16972.pdf), [author page](https://www.johnhcochrane.com/research-all/discount-rates) | Abstract | Time-varying expected returns dominate price variation |
 | 42 | Welch & Goyal (2008), *RFS* 21(4) | Peer-reviewed | [NBER w10483](https://nber.org/papers/w10483), [SFI 2022 update](https://sfi.ch/en/publications/a-comprehensive-2022-look-at-the-empirical-performance-of-equity-premium-prediction) | Abstract | Market-timing predictors fail out of sample |
 | 43 | Gilchrist & Zakrajšek (2012), *AER* 102(4) | Peer-reviewed | [NBER w17021](https://www.nber.org/papers/w17021) | Abstract | Excess bond premium predicts activity and asset prices |
+| 19b | Drechsler, Moreira & Savov, Liquidity and Volatility (NBER w27959, 2020) | Working paper | [IDEAS/RePEc (NBER)](https://ideas.repec.org/p/nbr/nberwo/27959.html), [NYU Stern (author)](https://pages.stern.nyu.edu/~asavov/alexisavov/Alexi_Savov_files/DMS_Liquidity_and_Volatility.pdf) | Abstract | Reversal returns predictable by VIX; volatility-risk explanation |
 | 44 | Cederburg, O'Doherty, Wang & Yan (2020), *JFE* 138 (with Moreira & Muir 2017 and DeMiguel et al. 2024 via citing pages) | Peer-reviewed | [Lehigh (author copy)](https://www.lehigh.edu/~xuy219/research/COWY.pdf), [LBS (DeMiguel et al.)](https://lbsresearch.london.edu/id/eprint/3716) | Abstract | Volatility management does not reliably beat unmanaged out of sample; disputed |
 | 45 | Kelly (1956), *Bell System Technical Journal* 35(4) | Peer-reviewed | [Internet Archive](https://archive.org/details/bstj35-4-917), [Nokia Bell Labs](https://nokia.com/bell-labs/publications-and-media/publications/a-new-interpretation-of-information-rate) | Catalogue + summary | Log-optimal betting; growth rate = information rate |
-| 46 | Thorp (2006), The Kelly Criterion in Blackjack, Sports Betting and the Stock Market | Handbook chapter | [IDEAS/RePEc (World Scientific chapter)](https://ideas.repec.org/h/wsi/wschap/9789814293501_0054.html), [Occidental College copy](https://sites.oxy.edu/lengyel/M330/thorp/paper.htm) | Abstract | Kelly applied to stocks |
-| 47 | MacLean, Thorp & Ziemba (2010), *Quantitative Finance* 10(7) | Peer-reviewed | [Berkeley course copy](https://www.stat.berkeley.edu/~aldous/157/Papers/Good_Bad_Kelly.pdf), [IDEAS chapter](https://ideas.repec.org/h/wsi/wschap/9789814293501_0039.html) | Abstract + summary | Good and bad Kelly properties; zero growth at 2x Kelly; fractional Kelly |
+| 46 | Thorp (2006), The Kelly Criterion in Blackjack, Sports Betting and the Stock Market | Handbook chapter | [IDEAS/RePEc (World Scientific chapter)](https://ideas.repec.org/h/wsi/wschap/9789814293501_0054.html) | Abstract | Kelly applied to stocks |
+| 47 | MacLean, Thorp & Ziemba (2010), *Quantitative Finance* 10(7) | Peer-reviewed | [DOI 10.1080/14697688.2010.506108](https://doi.org/10.1080/14697688.2010.506108), [IDEAS chapter](https://ideas.repec.org/h/wsi/wschap/9789814293501_0039.html) | Abstract + summary | Good and bad Kelly properties; zero growth at 2x Kelly; fractional Kelly |
 | 48 | Van Tharp (1998), *Trade Your Way to Financial Freedom* | Practitioner book | [Van Tharp newsletter](https://vantharp.com/Tharps-Thoughts/639_July_24_2013.html), [TraderLion summary](https://www.traderlion.com/risk-management/r-and-r-multiples/) | Secondary | R-multiples and expectancy |
 | 49 | Lo (2002), The Statistics of Sharpe Ratios, *Financial Analysts Journal* 58(4) | Peer-reviewed (CFA Institute) | [CFA Institute](https://rpc.cfainstitute.org/research/financial-analysts-journal/2002/the-statistics-of-sharpe-ratios), [IDEAS](https://ideas.repec.org/a/taf/ufajxx/v58y2002i4p36-52.html) | Abstract | √12 annualisation invalid; overstatement above 65% |
 | 50 | Bailey & López de Prado (2012/13), The Sharpe Ratio Efficient Frontier, *J. Risk* 15(2) | Peer-reviewed | [Risk.net](https://www.risk.net/journal-risk/2223785/sharpe-ratio-efficient-frontier), [IDEAS](https://ideas.repec.org/a/rsk/journ4/2223785.html) | Abstract | Probabilistic Sharpe; minimum track-record length rises with negative skew and fat tails |
@@ -524,10 +587,10 @@ Access column: "Abstract" = abstract or summary seen via search on that landing 
 | 54 | Ilmanen (2011), *Expected Returns*, Wiley | Textbook | [Wiley](https://gov.wiley.com/WileyCDA/WileyTitle/productCd-1119990726,descCd-authorInfo.html), [library catalogue](https://discover.knoxcountylibrary.org/oreilly/ocn756501425) | Publisher description | Framing: blend history, theory and current conditions; time-varying returns |
 | 55 | Bodie, Kane & Marcus, *Investments* / *Essentials of Investments* (McGraw-Hill), performance evaluation chapter | Textbook | [ISEG Lisbon course slides](https://fenix.iseg.ulisboa.pt/downloadFile/281608120713035/Cap4.PortEval.pdf) | Course slides | Sharpe vs Treynor vs M² vs information ratio; when each fits |
 | 56 | CFA Institute Level III curriculum, performance appraisal (via AnalystPrep study notes) | Professional curriculum (secondary) | [AnalystPrep](https://analystprep.com/study-notes/cfa-level-iii/risk-based-measures-of-performance-appraisal-2/) | Secondary | Sortino, capture ratios, max drawdown and its limits |
-| 57 | Ang & Chen (2002), Asymmetric Correlations of Equity Portfolios, *JFE* 63 | Peer-reviewed | [Columbia](https://drupalgsb-test.paas.cc.columbia.edu/sites/default/files-efs/pubfiles/1516/corr.pdf), [SUFE index](https://academicnewsletter.sufe.edu.cn/info/357811) | Abstract | Correlations much higher in down markets |
+| 57 | Ang & Chen (2002), Asymmetric Correlations of Equity Portfolios, *JFE* 63 | Peer-reviewed | [DOI 10.1016/S0304-405X(02)00068-5 (JFE)](https://doi.org/10.1016/S0304-405X(02)00068-5), [IDEAS](https://ideas.repec.org/a/eee/jfinec/v63y2002i3p443-494.html), [SUFE index](https://academicnewsletter.sufe.edu.cn/info/357811) | Abstract | Correlations much higher in down markets |
 | 58 | Nasdaq-100 sector weights (Invesco page 2026-10-20; ChartRow July 2026; Nasdaq NDXT factsheet) | Index / fund data | [Invesco](https://www.invesco.com/uitml/product-detail?trustId=QQQG0264), [ChartRow](https://chartrow.com/nasdaq-100/sector-weights), [Nasdaq](https://www.nasdaq.com/docs/index/ndxt) | Secondary | About 58-59% technology; top three sectors 82% |
 
-**Count:** 58 entries, of which 50 are primary academic or official sources (peer-reviewed papers, working papers,
+**Count:** 60 entries, of which 52 are primary academic or official sources (peer-reviewed papers, working papers,
 Fed staff reports, regulator documentation) and the rest are textbooks, a practitioner book and secondary data
 pages. **Archives and publishers used (more than 10):** IDEAS/RePEc, NBER, SSRN, Federal Reserve Bank of New York, AQR,
 CFA Institute (FAJ and Digest), journal and publisher sites (INFORMS, Risk.net, Cambridge, Critical Finance
