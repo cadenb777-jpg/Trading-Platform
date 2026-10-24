@@ -5743,3 +5743,23 @@ a.btn {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ---------- Webull (Portfolios > Webull, Settings > Trading) ---------- */
+.wb-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.wb-head h3 { margin: 0; }
+.wb-env { font-size: var(--fs-sm); padding: 2px 10px; }
+.wb-is-live { border-color: var(--down); box-shadow: inset 0 3px 0 var(--down); }
+.wb-warning { color: var(--down-text); background: var(--down-soft); border: 1px solid var(--down); border-radius: var(--radius); padding: 8px 10px; font-weight: 600; }
+.wb-warn { color: var(--warn-text); }
+.wb-body { display: flex; flex-direction: column; gap: var(--sp-3); }
+.wb-body .section-label { margin: var(--sp-2) 0 0; }
+.wb-ticket { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--panel); }
+.wb-ticket-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--sp-2) var(--sp-3); align-items: end; }
+.wb-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.wb-field[hidden] { display: none; }
+.wb-field .input { width: 100%; min-width: 0; }
+.segmented button.wb-sell.active { background: var(--down-soft); color: var(--down-text); }
+.segmented button.wb-live.active { background: var(--down); color: var(--on-accent); }
+.wb-confirm-env { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.wb-summary { font-size: var(--fs-lg); font-weight: 700; color: var(--text-strong); margin: var(--sp-2) 0; }
+.wb-confirm-actions { margin-top: var(--sp-3); flex-wrap: wrap; }

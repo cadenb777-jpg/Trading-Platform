@@ -1,5 +1,6 @@
 /**
- * Settings: the AI key and model, the SEC email, an optional FRED key and optional Alpaca keys (free price history). Values go straight to the helper,
+ * Settings: the AI key and model, the SEC email, an optional FRED key, optional Alpaca keys (free price history) and Webull (trading:
+ * keys, Test/Live, order limits). Values go straight to the helper,
  * which saves them on this computer; keys are never stored in the browser or shown again.
  */
 import { LATEST_HELPER_VERSION, engineRequest, helper, setAlpacaConnected } from '../data/schwab';
@@ -10,6 +11,11 @@ export interface PlatformSettings {
   fredKeySet: boolean;
   /** Both Alpaca keys are saved (missing from helpers without Alpaca support; the keys themselves are never sent back). */
   alpacaSet?: boolean;
+  /** Webull App Key + Secret saved (helper 26+); the keys themselves are never sent back. */
+  webullSet?: boolean;
+  webullEnv?: 'test' | 'live';
+  webullMaxOrder?: number;
+  webullMaxPerDay?: number;
   secContact: string;
   model: string;
   models: { id: string; name: string }[];
@@ -31,7 +37,7 @@ export function onSettingsChange(fn: (s: PlatformSettings) => void) {
   return () => listeners.delete(fn);
 }
 
-async function save(changes: Record<string, string | boolean>) {
+async function save(changes: Record<string, string | number | boolean>) {
   cached = await engineRequest<PlatformSettings>('settings.set', changes, 10000);
   setAlpacaConnected(!!cached.alpacaSet);
   for (const fn of listeners) fn(cached);
@@ -164,6 +170,160 @@ function alpacaRow(isSet: boolean, refresh: () => void): HTMLElement {
   );
 }
 
+interface WebullStatus {
+  ok: boolean;
+  message: string;
+  env: 'test' | 'live';
+}
+
+/** Typed confirmation before Webull switches to real money. */
+function confirmLive(done: () => void) {
+  const input = h('input', { class: 'input', placeholder: 'Type LIVE', autocomplete: 'off', spellcheck: false, 'aria-label': 'Type LIVE to confirm' }) as HTMLInputElement;
+  const go = h('button', { class: 'btn danger', disabled: true }, 'Switch to Live') as HTMLButtonElement;
+  input.addEventListener('input', () => (go.disabled = input.value !== 'LIVE'));
+  const close = openModal(
+    'Switch Webull to Live?',
+    h(
+      'div',
+      { class: 'settings' },
+      h('p', { class: 'wb-warning' }, 'Live means real money. Orders you place from the platform will be sent to your real Webull account and can lose money.'),
+      h('p', { class: 'muted small' }, 'Every order still needs a preview and a confirm, and your maximum order value and orders-per-day limits still apply. You can switch back to Test at any time.'),
+      h('p', { class: 'muted small' }, 'Use your own App Key and Secret from Webull (the shared test keys only work in Test).'),
+      h('div', { class: 'ap-controls' }, input, go),
+    ),
+  );
+  go.addEventListener('click', async () => {
+    try {
+      await save({ webullEnv: 'live', webullLiveConfirm: 'LIVE' });
+      toast('Webull is now LIVE (real money)');
+      close();
+      done();
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  });
+}
+
+/** Webull: the only place orders can be sent from. Keys, Test/Live (Live needs typed LIVE) and the order limits. */
+function webullRow(s: PlatformSettings, refresh: () => void): HTMLElement {
+  const isSet = !!s.webullSet;
+  const live = s.webullEnv === 'live';
+  const key = h('input', { class: 'input', type: 'password', placeholder: isSet ? 'Saved ✓ (paste a new App Key to replace it)' : 'App Key', autocomplete: 'off', spellcheck: false, 'aria-label': 'Webull App Key' });
+  const secret = h('input', { class: 'input', type: 'password', placeholder: isSet ? 'Saved ✓ (paste a new App Secret to replace it)' : 'App Secret', autocomplete: 'off', spellcheck: false, 'aria-label': 'Webull App Secret' });
+  const result = h('p', { class: 'muted small' });
+  const maxOrder = h('input', { class: 'input', type: 'number', min: 1, step: 100, value: s.webullMaxOrder ?? 1000, 'aria-label': 'Max order value ($)' }) as HTMLInputElement;
+  const maxDay = h('input', { class: 'input', type: 'number', min: 1, max: 100, step: 1, value: s.webullMaxPerDay ?? 10, 'aria-label': 'Max orders per day' }) as HTMLInputElement;
+  const test = async () => {
+    result.textContent = 'Testing…';
+    try {
+      const r = await engineRequest<WebullStatus>('webull.status', {}, 30000);
+      result.textContent = `${r.ok ? '✓' : '✗'} ${r.message}`;
+    } catch (err) {
+      const message = (err as Error).message;
+      result.textContent = /doesn.t know|latest helper|update/i.test(message) ? 'Your helper is too old for Webull: download the project ZIP again to update it.' : `✗ ${message}`;
+    }
+  };
+  const envSeg = h(
+    'div',
+    { class: 'segmented', role: 'group', 'aria-label': 'Webull environment' },
+    h(
+      'button',
+      {
+        class: live ? '' : 'active',
+        onclick: async () => {
+          if (!live) return;
+          await save({ webullEnv: 'test' }).catch((err) => toast((err as Error).message));
+          toast('Webull is back on Test (no real money)');
+          refresh();
+        },
+      },
+      'Test (no real money)',
+    ),
+    h('button', { class: live ? 'active wb-live' : '', onclick: () => (live ? null : confirmLive(refresh)) }, 'Live (real money)'),
+  );
+  return h(
+    'div',
+    { class: 'settings-row' },
+    h('div', { class: 'settings-label' }, h('b', {}, 'Webull (trading, optional)'), h('span', { class: `key-status ${isSet ? 'ok' : ''}` }, isSet ? '● Saved' : '○ Not set'), live ? h('span', { class: 'badge down' }, 'LIVE') : h('span', { class: 'badge' }, 'TEST')),
+    h(
+      'p',
+      { class: 'muted small' },
+      'View and sync your Webull account and place stock orders from the Portfolios page (Webull button). Apply for API access and create an App Key and App Secret on ',
+      h('a', { href: 'https://developer.webull.com/apis/docs/getting-started', target: '_blank', rel: 'noopener' }, 'Webull’s developer site'),
+      '. Start in Test: Webull’s test environment uses shared test keys listed on its SDK page and no real money. The AI assistant can never place orders.',
+    ),
+    h('div', { class: 'ap-controls' }, key),
+    h(
+      'div',
+      { class: 'ap-controls' },
+      secret,
+      h(
+        'button',
+        {
+          class: 'btn primary',
+          onclick: async () => {
+            const changes: Record<string, string> = {};
+            if (key.value.trim()) changes.webullAppKey = key.value.trim();
+            if (secret.value.trim()) changes.webullAppSecret = secret.value.trim();
+            if (!isSet && !(changes.webullAppKey && changes.webullAppSecret)) return toast('Paste both the App Key and the App Secret');
+            if (!Object.keys(changes).length) return toast('Paste the new key first');
+            try {
+              const r = await save(changes);
+              if (r.webullSet === undefined) return toast('Your helper is too old for Webull: download the project ZIP again to update it.');
+              toast('Saved');
+              refresh();
+            } catch (err) {
+              toast((err as Error).message);
+            }
+          },
+        },
+        'Save',
+      ),
+      h('button', { class: 'btn', onclick: test }, 'Test connection'),
+      isSet
+        ? h(
+            'button',
+            {
+              class: 'btn',
+              onclick: async () => {
+                await save({ webullAppKey: '', webullAppSecret: '' }).catch((err) => toast((err as Error).message));
+                refresh();
+              },
+            },
+            'Remove',
+          )
+        : null,
+    ),
+    result,
+    h('div', { class: 'settings-label' }, h('b', {}, 'Environment')),
+    envSeg,
+    live ? h('p', { class: 'wb-warning small' }, 'LIVE: orders use real money in your Webull account.') : h('p', { class: 'muted small' }, 'Test: orders go to Webull’s practice environment. Nothing real is bought or sold.'),
+    h('div', { class: 'settings-label' }, h('b', {}, 'Order limits')),
+    h('p', { class: 'muted small' }, 'Safety limits checked by the helper before every order. An order above the maximum value, or after the daily number of orders, is refused.'),
+    h(
+      'div',
+      { class: 'ap-controls' },
+      h('label', { class: 'wb-field' }, h('span', { class: 'muted tiny' }, 'Max order value ($)'), maxOrder),
+      h('label', { class: 'wb-field' }, h('span', { class: 'muted tiny' }, 'Max orders per day'), maxDay),
+      h(
+        'button',
+        {
+          class: 'btn',
+          onclick: async () => {
+            try {
+              await save({ webullMaxOrder: Number(maxOrder.value), webullMaxPerDay: Number(maxDay.value) });
+              toast('Limits saved');
+            } catch (err) {
+              toast((err as Error).message);
+            }
+          },
+        },
+        'Save limits',
+      ),
+    ),
+  );
+}
+
 /** A quick health check of the helper connection, shown at the top of Settings. */
 function connectionCheck(): HTMLElement {
   const rows: [string, string, 'ok' | 'warn' | 'bad'][] = [];
@@ -283,6 +443,8 @@ export async function openSettings(focus?: 'ai') {
         render,
       ),
       alpacaRow(!!s.alpacaSet, render),
+      h('h3', { class: 'settings-section' }, 'Trading'),
+      webullRow(s, render),
       h('h3', { class: 'settings-section' }, 'Helper'),
       (() => {
         const box = h('input', { type: 'checkbox', checked: s.openBrowser !== false });

@@ -3,6 +3,7 @@ import { engineRequest } from '../data/schwab';
 import { deleteDoc, listDocs, saveDoc } from '../data/store';
 import { PRIVATE_FUNDS, STRATEGIES, type Strategy } from '../invest/catalog';
 import { openStatementImport, renderDividends } from '../portfolio/dividendsView';
+import { renderWebull } from '../portfolio/webullView';
 import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
 import {
   ALT_CLASSES,
@@ -61,6 +62,7 @@ export function createPortfolioPage() {
     list.replaceChildren(
       h('button', { class: 'btn primary', onclick: () => select(blank()) }, '+ New portfolio'),
       h('button', { class: 'btn', title: 'Upload a positions export (CSV or Excel) from your broker', onclick: () => openStatementImport(imported) }, 'Import statement'),
+      h('button', { class: 'btn', title: 'Your Webull account: balances, positions, orders, sync and the order ticket', onclick: () => renderWebull(results, synced) }, 'Webull'),
       h('div', { class: 'muted small' }, 'Saved'),
       ...(saved.length ? saved.map((p) => item(p, () => select(structuredClone(p)), p.id === current.id)) : [h('div', { class: 'muted small' }, 'None yet. Saved portfolios are stored by the helper on your computer.')]),
       h('div', { class: 'muted small' }, 'Templates'),
@@ -363,6 +365,14 @@ export function createPortfolioPage() {
     await refreshList();
     select(structuredClone(p));
     renderDividends(results, current);
+  }
+
+  /** Webull holdings were synced to a portfolio: refresh the list and select it, keeping the Webull view open. */
+  async function synced(p: Portfolio & { id: string }) {
+    await refreshList();
+    current = structuredClone(p);
+    renderList();
+    renderEditor();
   }
 
   async function remove() {

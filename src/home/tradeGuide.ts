@@ -104,6 +104,7 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
   const account = h('input', { class: 'input', type: 'number', min: 100, step: 1000, value: size.account, 'aria-label': 'Account size ($)' }) as HTMLInputElement;
   const risk = h('input', { class: 'input', type: 'number', min: 0.1, max: 5, step: 0.25, value: size.risk, 'aria-label': 'Risk per trade (%)' }) as HTMLInputElement;
   const sizeOut = h('p', { class: 'guide-size-out' });
+  let sizedShares = 0;
   const drawSize = () => {
     const a = Math.max(0, parseFloat(account.value) || 0);
     const r = Math.min(5, Math.max(0, parseFloat(risk.value) || 0));
@@ -111,6 +112,7 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
     const dollars = (a * r) / 100;
     const shares = riskPerShare > 0 ? Math.floor(dollars / riskPerShare) : 0;
     const cost = shares * entry;
+    sizedShares = shares;
     sizeOut.replaceChildren(
       shares > 0
         ? h('span', {}, h('b', {}, `${shares} share${shares === 1 ? '' : 's'}`), ` (about ${usd(cost)}). If the stop is hit you lose about ${usd(shares * riskPerShare)}, which is ${r}% of your account.`, cost > a ? h('span', { class: 'down' }, ' That costs more than the account, so buy fewer or skip it.') : '')
@@ -149,6 +151,23 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
         h('label', {}, h('span', { class: 'muted tiny' }, 'Account size ($)'), account),
         h('label', {}, h('span', { class: 'muted tiny' }, 'Risk per trade (%)'), risk),
         sizeOut,
+        s.trade
+          ? null
+          : h(
+              'button',
+              {
+                class: 'btn small',
+                title: 'Pre-fills the Webull order ticket with this symbol, side, entry price and size. You still preview and confirm.',
+                onclick: async () =>
+                  (await import('../portfolio/webullView')).openOrderTicket({
+                    symbol: s.symbol,
+                    side: long ? 'BUY' : 'SELL',
+                    qty: sizedShares || undefined,
+                    ...(p.entryType === 'stop' ? { orderType: 'STOP' as const, stopPrice: +p.trigger.toFixed(2) } : { orderType: 'LIMIT' as const, limitPrice: +s.price.toFixed(2) }),
+                  }),
+              },
+              'Open in order ticket',
+            ),
         h('p', { class: 'muted tiny' }, 'Default 0.5% of the account per trade (the research behind the scanner suggests 0.25-1%), so a losing streak can\'t do real damage.'),
       ),
     ],

@@ -49,7 +49,7 @@ from engine.core import is_safe_url  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 24
+HELPER_VERSION = 26
 
 HOST = '127.0.0.1'
 PORT = 8765
