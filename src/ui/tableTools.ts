@@ -343,3 +343,9 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
     },
   };
 }
+
+/** Same as tableTools, but returns the table so it can wrap an h('table', ...) call in place. */
+export function withTableTools(table: HTMLTableElement, opts: TableToolsOptions): HTMLTableElement {
+  tableTools(table, opts);
+  return table;
+}

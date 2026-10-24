@@ -297,6 +297,8 @@ export function createResearchPage() {
             dataTable(
               ['Discount ↓ / growth →', ...growths.map((g) => pct(g, 1))],
               grid.map((row, i) => [{ v: pct(rates[i], 1), cls: 'label' }, ...row.map((x, j) => ({ v: formatPrice(x), cls: `${i === 2 && j === 2 ? 'hl ' : ''}${x >= price ? 'up' : 'down'}` }))]),
+              undefined,
+              false,
             ),
           ),
         ),

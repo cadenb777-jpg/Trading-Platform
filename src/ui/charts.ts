@@ -193,8 +193,9 @@ export const tableId = (headers: string[]) => `${(location.hash || '#home').repl
 /**
  * A scrolling table with sortable, filterable columns (src/ui/tableTools.ts).
  * Cells can be text, elements, or { v, cls } to add a class (e.g. 'up', 'label').
+ * Pass `tools: false` for grids where row order carries meaning (a correlation matrix).
  */
-export function dataTable(headers: string[], rows: Cell[][], rowClass?: (i: number) => string, tools: Partial<TableToolsOptions> = {}) {
+export function dataTable(headers: string[], rows: Cell[][], rowClass?: (i: number) => string, tools: Partial<TableToolsOptions> | false = {}) {
   const cell = (c: Cell, tag: 'td' | 'th' = 'td') =>
     typeof c === 'object' && c !== null && 'v' in c ? h(tag, { class: c.cls ?? '' }, c.v) : h(tag, {}, c as Node | string);
   const table = h(
@@ -203,7 +204,7 @@ export function dataTable(headers: string[], rows: Cell[][], rowClass?: (i: numb
     h('thead', {}, h('tr', {}, ...headers.map((t) => h('th', {}, t)))),
     h('tbody', {}, ...rows.map((r, i) => h('tr', { class: rowClass?.(i) ?? '' }, ...r.map((c) => cell(c))))),
   );
-  tableTools(table, { ...tools, id: tools.id ?? tableId(headers) });
+  if (tools) tableTools(table, { ...tools, id: tools.id ?? tableId(headers) });
   return h('div', { class: 'table-wrap' }, table);
 }
 
