@@ -66,7 +66,7 @@ helper/
 | 9e | Nasdaq-100 swing scanner every 5 min (weekly swing: COT + z-score + Williams; mean reversion; breakout) with backtests, random-entry and random-walk tests; light/dark mode; candlestick index cards; indicator manager with per-line editing; RIA fee schedules in client reports | ✅ |
 | 9f | Setups page: short-swing / swing / position time frames, per-stock adaptive bounds, COT + z-score edge study, 1,000-run tests with block bootstrap and false-discovery control, out-of-sample check, live entry alerts; indicators on every line chart; faster loading | ✅ |
 | 9g | Setups v22: honest tests (clustered random entry, after-cost R, Holm across strategies, robustness), 15-year daily and kept hourly history (Alpaca optional), simpler rules, lab forward records, weekly rule tests on your data | ✅ |
-| 10 | Trading through Webull (paper first) & alerts | ⏸ on hold |
+| 10 | Trading through Webull (paper first) & alerts | 🟡 Webull account view, sync and guarded stock orders (Test first) done; chart ticket, brackets and phone alerts later |
 | 11 | Cloud engine, login, phone access | ⏸ on hold (last, by choice) |
 
 ## Stage 4: Quant charting upgrades (Module 1, finishing)

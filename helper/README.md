@@ -143,6 +143,42 @@ browser again. Downloaded history is kept in `~/.trading-platform/cache.db`, so 
 downloaded once and only the newest bars are fetched after that. The free plan doesn't include the
 newest 15 minutes; Schwab covers those.
 
+## Webull (optional)
+
+Webull lets the platform show your Webull account (balances, positions, orders), copy it into
+Portfolios, and place **stock** orders from the Portfolios page. Schwab is still used only for prices.
+Nothing extra needs installing: the helper talks to Webull directly.
+
+1. Go to Webull's developer site ([developer.webull.com](https://developer.webull.com/apis/docs/getting-started))
+   and **apply for API access** with your Webull account. Approval can take a few days.
+2. Once approved, create an **App Key** and **App Secret** there. Copy both (keep the secret private).
+3. Start in **Test**: Webull's SDK page ([SDKs and Tools](https://developer.webull.com/apis/docs/sdk)) lists
+   shared **test** App Keys/Secrets for its practice environment (no real money, no application needed).
+   Paste one of those first to try everything safely.
+4. In the platform, open **Settings** → **Trading** → **Webull**, paste the App Key and App Secret, click
+   **Save**, then **Test connection**. It should say "Connected to Webull Test". If Webull asks you to
+   approve the API login, open the Webull app on your phone, approve it, and click Test connection again.
+5. Open **Portfolios** → **Webull**. You'll see a calm blue "TEST — no real money" badge. Try **Sync to
+   Portfolios** and a small test order: fill in the ticket, click **Preview order**, read the confirm
+   window, then **Place test order**.
+6. Only when you're comfortable: paste **your own** App Key/Secret, then in Settings click **Live (real
+   money)** and type `LIVE` to confirm. The badge turns red: "LIVE — real money". Switch back to Test
+   any time.
+
+Safety rails (all checked by the helper, not the web page):
+
+- Every order needs a **preview** and then a **confirm**. The preview is valid for 60 seconds and can be
+  used once; the helper places exactly the previewed order.
+- **Max order value** (default $1,000) and **max orders per day** (default 10) in Settings.
+- US stocks only; you can't sell more shares than you hold (no short selling).
+- Every order attempt, result and cancel is written to `~/.trading-platform/orders.log` (no keys).
+- The AI assistant can never place, preview or cancel orders.
+
+The keys are saved by the helper in `~/.trading-platform/settings.json` and are never sent back to
+the browser. If Webull asked for an app approval, that login token is kept in
+`~/.trading-platform/webull_token.json`. To disconnect, click **Remove** in Settings (it also switches
+back to Test).
+
 ## Every day
 
 Double-click the start file and keep its window open while you use the charts.
