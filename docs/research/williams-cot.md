@@ -10,7 +10,8 @@ Plain-language summary first; every factual claim has a source in brackets, list
   closest long interviews about COT that do exist are: Crowded Market Report with Jason Shapiro (Oct 2024, about
   an hour, chapter "COT Proxy for Stocks" at 15:07) [S2], Foundation for the Study of Cycles with Lars von
   Thienen (2026) [S3], and two Better System Trader podcasts [S4]. If the owner has the video link, it can be
-  checked against this note.
+  checked against this note. The owner later shared the video he meant ([S25]); YouTube is blocked in this
+  session, so it was **not viewed**. A transcript from the owner is pending.
 - **No full page could be opened from this session.** Page fetching was blocked by the network; only web search
   worked. So everything below comes from search-engine summaries of the pages listed in Sources, not from reading
   the pages or the book myself. Treat any single-source detail as "reported, not checked".
@@ -49,16 +50,20 @@ Formula (consistent across every source) [S6][S8][S15]:
     net = commercial longs - commercial shorts   (CFTC legacy report, "Commercial" category)
 
 - **Lookback:** 3 years (156 weekly reports) is what the book is cited for (p. 34) [S6], what his indicator
-  scripts default to [S6], and what the 2026 interview uses [S3]. A 26-week version is often *attributed* to him,
-  but no source shows it from his own text [S15][S16]; one indicator author argues 26-52 weeks give unstable
-  readings because old extremes drop out quickly [S16].
-- **Thresholds:** 75 / 25 in the 2026 interview [S3] and in a description of his own line plot [S16]. 80 / 20 is
-  the common convention in third-party scripts [S6][S15]. Above the upper level = commercials bullish, below the
+  scripts default to [S6], and what the 2026 interview uses [S3]. Forum posts (QuantNet 2008 [S26], metalsmine
+  [S27]) report that the book **also** describes a **26-week** index of commercial net position divided by open
+  interest (see WILLCO below); not checked. Vendor pages repeat the 26-week attribution without a page reference
+  [S15][S16]; one indicator author argues 26-52 weeks give unstable readings because old extremes drop out quickly
+  [S16].
+- **Thresholds:** 75 / 25 in the 2026 interview [S3] (single source, seen only in a summary) and in a third-party
+  script's description of his line plot [S16]. 80 / 20 is used by the script that cites the book [S6] and is the
+  common convention [S15]. The two are **equally supported**; our edge study should decide between them. Above the upper level = commercials bullish, below the
   lower level = bearish.
 - **Group:** commercials (not large speculators, not small traders) [S3][S7].
 - **Open-interest variant (WILLCO):** net commercial position divided by open interest, then indexed; a
-  community script defaults it to 26 weeks [S17] (third-party; Williams' book has a chapter on open interest,
-  "Opening Up on Open Interest" [S10], whose text could not be read).
+  community script defaults it to 26 weeks [S17]. **Possibly from the book (unverified):** the forum posts above
+  [S26][S27] describe it as the book's 26-week index, and the book has a chapter "Opening Up on Open Interest"
+  [S10], whose text could not be read.
 - **Timing of data:** positions are as of Tuesday and published on Friday [S16][S18]. Our `align_cot` already
   uses a report only from the Friday after its Tuesday date.
 - **Futures vs stocks caveat:** the reading is for the futures market (we use Nasdaq-100 E-mini, CFTC code
@@ -68,6 +73,8 @@ Formula (consistent across every source) [S6][S8][S15]:
 **Our code today:** the scanner's `cot_index` (strategies.py) uses **26 weeks**, while the Flow page
 (`flow.py` `cot_index`) and `positioning.rolling_index` use **156 weeks**. The scanner disagrees with both
 Williams' cited lookback and the rest of the app. The scanner's 60 / 40 thresholds are not Williams' numbers.
+Note that `positioning.rolling_index` (positioning.py:70) already returns values after 26 weeks, so its earliest
+readings (weeks 26-155) are not true 156-week values.
 
 ## 3. "Flow of money"
 
@@ -107,19 +114,27 @@ One strategy, three inputs (COT, z-score, %R) plus ATR for the stop. Everything 
 2. Stretch: z-score(20 bars) at or below this stock's own **10th percentile over the last 250 bars** (current
    `zlo`, clamped -2.5..-0.75) on any of the last **3** bars.
 3. Turn: Williams **%R(14) crosses up through -80** on this bar or the one before, and is still above -80.
-4. Entry/exit unchanged: buy-stop above the signal bar's high, valid 2 bars; stop past the 3-bar swing low kept
-   between **0.75 and 2 ATR(14)**; target = 20-bar average **+1 SD**; break-even at +1R; exit after 5 bars.
+4. Entry/exit unchanged: buy-stop above the signal bar's high; stop past the 3-bar swing low kept between
+   **0.75 and 2 ATR(14)**; target = 20-bar average **+1 SD**, skipped if the target is less than **0.5 ATR** away
+   (strategies.py `weekly_swing_plan`); break-even at +1R. Order validity and the time exit come from each time
+   frame's `HORIZONS` values (strategies.py:192-203): swing = valid **2** bars, exit after **5** bars; short =
+   4 / 21 hourly bars; position = 2 / 6 weekly bars. These stay as they are.
 
 **Sell (short)**: mirror image: COT **<= 25**; z-score at or above the stock's **90th percentile** (`zhi`) within 3
 bars; %R(14) **crosses down through -20**; sell-stop below the signal bar's low; target 20-bar average -1 SD.
 
 **COT 25-75 (neutral) or missing:** no `weekly_swing` signal. (Today a missing COT lets the signal through.)
 
+**Grading must change the same way.** `cot_view` (strategies.py:289-294) uses 60 / 40 and feeds both the grade
+and the edge study; it needs the same 75 / 25 (or 80 / 20) thresholds. Also, a missing COT reading passes the
+grade's COT check today (scanner.py:625: `cotView != 'against'` is true when `cotView` is None), not only the
+signal; it should count as "not confirmed", not as a pass.
+
 **Keep / drop**
 
 | Indicator in `weekly_swing` today | Decision | Why |
 |---|---|---|
-| COT index of commercials | **Keep**, change to 156 weeks, 75/25 | Williams' cited lookback and thresholds [S3][S6]; matches the Flow page |
+| COT index of commercials | **Keep**, change to 156 weeks and 75/25 or 80/20 | 156 weeks: book as cited by [S6], matches the Flow page. 75/25: [S3] (single source, summary only) and [S16] (third-party). 80/20: [S6]. Equally supported; let the edge study pick |
 | z-score(20), per-stock percentile band | **Keep** (the "stretch") | Simple, already causal and per-stock |
 | Williams %R(14) cross of -80/-20 | **Keep** (the "turn") | Williams' own named timing tool [S3] |
 | z-score "turning" (`z[i] > z[i-1]`) | **Drop** | Same job as the %R cross |
@@ -129,8 +144,10 @@ bars; %R(14) **crosses down through -20**; sell-stop below the signal bar's low;
 
 **How to accept the change (no guesswork):** run the existing pooled random-entry test and the COT + z-score edge
 study on both versions (current vs this one) over the same history. Switch only if the new version is at least as
-good (profit factor and p-value) with fewer rules. Note that a 156-week index needs 3 years of warm-up, so with
-520 weekly reports (positioning.cot_rows) about 7 years are testable. If COT shows no edge in the study (the
+good (profit factor and p-value) with fewer rules. Note that a 156-week index needs 3 years of warm-up. With 520
+weekly reports (positioning.cot_rows) about 7 years of COT readings exist, but that only helps the **position**
+time frame (15 years of weekly bars). The **swing** time frame loads only 1,100 daily bars (scanner.py:223, about
+3 years), so its test window is about 3 years whichever lookback is used. If COT shows no edge in the study (the
 outside evidence [S13][S14] suggests it may not), keep COT as a displayed reading only and let z-score + %R stand
 alone.
 
@@ -163,3 +180,6 @@ proxy for stocks [S12], WILLCO [S17], POIV [S23].
 - [S22] TA-Lib, WAD: https://ta-lib.org/functions/wad.html
 - [S23] POIV formula: https://prorealcode.com/topic/indicatore-poiv-di-larry-williams
 - [S24] Williams %R: https://en.wikipedia.org/wiki/Williams_%25R
+- [S25] The video the owner referred to: https://www.youtube.com/watch?v=D9Q4S0YhO3k (not viewed, blocked in this session; transcript pending from the owner)
+- [S26] QuantNet forum (2008), "Open interest, COT report, stochastic": https://quantnet.com/threads/open-interest-cot-report-stochastic.1428/
+- [S27] Metalsmine forum post on Williams' 3-year and 26-week indexes: https://www.metalsmine.com/thread/post/4559826
