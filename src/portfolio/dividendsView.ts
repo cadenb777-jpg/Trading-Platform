@@ -60,6 +60,9 @@ export interface DividendReport {
   calendar: { month: string; total: number; payments: Payment[] }[];
 }
 
+/** Whole dollars from $1,000 up, cents below (income figures read better exact than as "$1.3K"). */
+const usd = (v: number | null | undefined) =>
+  v == null || !Number.isFinite(v) ? '—' : v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: Math.abs(v) >= 1000 ? 0 : 2, minimumFractionDigits: Math.abs(v) >= 1000 ? 0 : 2 });
 const tone = (v: number | null | undefined) => (v == null ? '' : v >= 0 ? 'up' : 'down');
 const monthName = (key: string, withYear = false) =>
   new Date(`${key}-01T00:00:00Z`).toLocaleString('en-US', { month: 'short', year: withYear ? 'numeric' : undefined, timeZone: 'UTC' });
@@ -78,6 +81,7 @@ export async function renderDividends(out: HTMLElement, p: Portfolio) {
     return;
   }
   out.replaceChildren(h('div', { class: 'muted pad' }, 'Reading dividend histories…'));
+  out.scrollIntoView({ behavior: 'smooth', block: 'start' });
   try {
     const r = await engineRequest<DividendReport>('dividends.portfolio', { holdings }, 120000);
     draw(out, r, p.holdings.some((x) => x.kind === 'cash'));
@@ -96,11 +100,11 @@ function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
     cells.forEach((c, k) => c.classList.toggle('active', k === i));
     const m = r.calendar[i];
     detail.replaceChildren(
-      h('h4', {}, `${monthName(m.month, true)}: ${money(m.total)} expected`),
+      h('h4', {}, `${monthName(m.month, true)}: ${usd(m.total)} expected`),
       m.payments.length
         ? dataTable(
             ['Symbol', 'Ex-date', 'Pay date', 'Per share', 'Amount'],
-            m.payments.map((x) => [h('b', {}, x.symbol), h('span', {}, day(x.exDate), ' ', est()), h('span', {}, day(x.payDate), ' ', est()), { v: `$${x.perShare.toFixed(4)}`, cls: 'num' }, { v: money(x.amount), cls: 'num' }]),
+            m.payments.map((x) => [h('b', {}, x.symbol), h('span', {}, day(x.exDate), ' ', est()), h('span', {}, day(x.payDate), ' ', est()), { v: `$${x.perShare.toFixed(4)}`, cls: 'num' }, { v: usd(x.amount), cls: 'num' }]),
             undefined,
             false,
           )
@@ -112,7 +116,7 @@ function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
     bars.push(
       h(
         'button',
-        { class: 'div-bar', title: `${monthName(m.month, true)}: ${money(m.total)}`, onclick: () => pick(i) },
+        { class: 'div-bar', title: `${monthName(m.month, true)}: ${usd(m.total)}`, onclick: () => pick(i) },
         h('span', { class: 'div-bar-value' }, m.total ? money(m.total) : ''),
         h('span', { class: 'div-bar-track' }, h('span', { class: 'div-bar-fill', style: `height:${(m.total / max) * 100}%` })),
         h('span', { class: 'div-bar-label' }, monthName(m.month), first ? h('small', {}, m.month.slice(2, 4)) : null),
@@ -123,8 +127,8 @@ function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
       h(
         'button',
         { class: 'div-cell', onclick: () => pick(i) },
-        h('span', { class: 'div-cell-head' }, h('b', {}, monthName(m.month, first)), h('span', { class: 'num' }, money(m.total))),
-        ...shown.map((x) => h('span', { class: 'div-cell-row' }, h('span', {}, x.symbol), h('span', { class: 'num muted' }, money(x.amount)))),
+        h('span', { class: 'div-cell-head' }, h('b', {}, monthName(m.month, first)), h('span', { class: 'num' }, usd(m.total))),
+        ...shown.map((x) => h('span', { class: 'div-cell-row' }, h('span', {}, x.symbol), h('span', { class: 'num muted' }, usd(x.amount)))),
         m.payments.length > shown.length ? h('span', { class: 'muted small' }, `+${m.payments.length - shown.length} more`) : null,
         !m.payments.length ? h('span', { class: 'muted small' }, 'Nothing expected') : null,
       ),
@@ -141,12 +145,16 @@ function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
 
   out.replaceChildren(
     statCards([
-      { label: 'Yearly dividend income', value: money(r.annualIncome), hint: 'Expected over the next 12 months at the latest regular payments' },
-      { label: 'Monthly average', value: money(r.monthly) },
+      { label: 'Yearly dividend income', value: usd(r.annualIncome), hint: 'Expected over the next 12 months at the latest regular payments' },
+      { label: 'Monthly average', value: usd(r.monthly) },
       { label: termLabel('Portfolio yield', 'divyield'), value: pctU(r.yield), hint: 'Yearly income ÷ market value' },
       { label: termLabel('Yield on cost', 'yoc'), value: pctU(r.yieldOnCost), hint: 'Yearly income ÷ what you paid' },
-      { label: 'Market value', value: money(r.value), hint: r.cost ? `Cost ${money(r.cost)}` : 'Add cost basis to see your gain' },
-      { label: 'Gain', value: r.gain != null ? `${money(r.gain)} (${pct(r.gainPct, 1)})` : '—', tone: tone(r.gain), hint: 'Unrealized, on holdings with a cost basis' },
+      {
+        label: 'Value / cost / gain',
+        value: usd(r.value),
+        tone: '',
+        hint: r.cost ? `Cost ${usd(r.cost)} · gain ${r.gain != null && r.gain >= 0 ? '+' : ''}${usd(r.gain)} (${pct(r.gainPct, 1)})` : 'Add cost basis to see your gain',
+      },
     ]),
     h(
       'section',
@@ -168,7 +176,7 @@ function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
       soon.length
         ? dataTable(
             ['Ex-date', 'Symbol', 'Pay date', 'Amount'],
-            soon.map((u) => [h('span', {}, day(u.exDate), ' ', est()), h('b', {}, u.symbol), day(u.payDate), { v: money(u.amount), cls: 'num' }]),
+            soon.map((u) => [h('span', {}, day(u.exDate), ' ', est()), h('b', {}, u.symbol), day(u.payDate), { v: usd(u.amount), cls: 'num' }]),
             undefined,
             false,
           )
@@ -183,12 +191,12 @@ function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
         r.holdings.map((x) => [
           { v: h('span', { title: x.name }, h('b', {}, x.symbol), ' ', noteBadge(x) ?? ''), cls: 'label' },
           { v: String(+x.shares.toFixed(4)), cls: 'num' },
-          { v: money(x.cost), cls: 'num' },
-          { v: money(x.value), cls: 'num' },
+          { v: usd(x.cost), cls: 'num' },
+          { v: usd(x.value), cls: 'num' },
           { v: x.gainPct != null ? pct(x.gainPct, 1) : '—', cls: `num ${tone(x.gain)}` },
           { v: pctU(x.yield), cls: 'num' },
           { v: pctU(x.yieldOnCost), cls: 'num' },
-          { v: money(x.annualIncome), cls: 'num' },
+          { v: usd(x.annualIncome), cls: 'num' },
           x.frequencyLabel,
           x.nextExDate ? h('span', {}, day(x.nextExDate), ' ', est()) : '—',
           { v: pct(x.growth5y, 1), cls: `num ${tone(x.growth5y)}` },
@@ -295,11 +303,11 @@ function preview(rows: string[][], fileName: string, onSaved: (p: Portfolio & { 
     positions = parseStatement(rows, columns).positions;
     const stocks = positions.filter((x) => !x.cash);
     const cash = positions.find((x) => x.cash);
-    summary.textContent = `${stocks.length} holding${stocks.length === 1 ? '' : 's'}${cash ? ` and ${money(cash.value)} cash` : ''}. ${stocks.some((x) => x.cost == null) ? 'Some rows have no cost basis: yield on cost and gain leave them out (you can type it in later).' : ''}`;
+    summary.textContent = `${stocks.length} holding${stocks.length === 1 ? '' : 's'}${cash ? ` and ${usd(cash.value)} cash` : ''}. ${stocks.some((x) => x.cost == null) ? 'Some rows have no cost basis: yield on cost and gain leave them out (you can type it in later).' : ''}`;
     tableBox.replaceChildren(
       dataTable(
         ['Symbol', 'Description', 'Shares', 'Cost basis', 'Market value'],
-        positions.map((x) => [h('b', {}, x.symbol), x.name ?? '', { v: x.cash ? '—' : String(x.shares), cls: 'num' }, { v: money(x.cost), cls: 'num' }, { v: money(x.value), cls: 'num' }]),
+        positions.map((x) => [h('b', {}, x.symbol), { v: x.name ?? '', cls: 'label' }, { v: x.cash ? '—' : String(x.shares), cls: 'num' }, { v: usd(x.cost), cls: 'num' }, { v: usd(x.value), cls: 'num' }]),
         undefined,
         false,
       ),
