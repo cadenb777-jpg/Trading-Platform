@@ -4,6 +4,7 @@ Run from the repository root:  python -m unittest discover helper/tests
 """
 import asyncio
 import datetime as dt
+import json
 import math
 import time
 import os
@@ -16,6 +17,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from engine import alts, core, flow, invest, quant, scanner  # noqa: E402
 from engine import strategies as st  # noqa: E402
+import tempfile  # noqa: E402
+
+# Tests never touch ~/.trading-platform and run the scanner's heavy maths in this process.
+_TMP = tempfile.mkdtemp(prefix='tp-tests-')
+scanner.USE_PROCESSES = False
+scanner.LAB_STATE_PATH = scanner.Path(_TMP) / 'lab_survivors.json'
+scanner.GRAVEYARD_PATH = scanner.Path(_TMP) / 'lab_graveyard.json'
+scanner.RULES_PATH = scanner.Path(_TMP) / 'rule_tests.json'
 
 
 def bar(t, o, h, l, c, v=1_000_000):
@@ -139,7 +148,13 @@ class Simulation(unittest.TestCase):
         t = st.simulate(ind_for(bars), 0, plan(), 1)
         self.assertEqual((t['reason'], t['entry'], t['exitPrice']), ('target', 101.0, 105.0))
         self.assertAlmostEqual(t['ret'], 105 / 101 - 1 - st.COSTS)
-        self.assertAlmostEqual(t['r'], 4 / 3)
+        self.assertAlmostEqual(t['r'], 4 / 3 - st.COSTS * 101 / 3)  # R is after costs
+
+    def test_r_is_net_of_costs(self):
+        bars = [bar(0, 100, 100.5, 99, 100)] + [bar(i, 101, 101.5, 100.5, 101) for i in range(1, 7)]
+        t = st.simulate(ind_for(bars), 0, plan(maxHold=3), 1)  # exits at its entry price after 3 bars
+        self.assertEqual(t['exitPrice'], t['entry'])
+        self.assertAlmostEqual(t['r'], -st.COSTS * 101 / 3)
 
     def test_gap_through_the_stop_fills_at_the_open(self):
         bars = [bar(0, 100, 100.5, 99, 100), bar(1, 100.5, 101.5, 100, 101), bar(2, 96, 96.5, 95, 95.5)]
@@ -192,7 +207,9 @@ class Backtests(unittest.TestCase):
     def test_grades_from_known_trades(self):
         t = lambda ret: {'ret': ret, 'r': ret * 10, 'reason': 'x', 'bars': 3}  # noqa: E731
         g = lambda rets: st.summarise([t(x) for x in rets])['grade']  # noqa: E731
-        self.assertEqual(g([0.03] * 5 + [-0.01] * 3), 'proven')
+        self.assertEqual(g([0.03] * 5 + [-0.01] * 3), 'mixed')  # 8 trades are not enough to call it proven
+        self.assertEqual(g([0.03] * 14 + [-0.01] * 6), 'proven')  # 20 trades, t well above 1.5
+        self.assertEqual(g([0.03, -0.028] * 10), 'mixed')  # 20 trades but t below 1.5
         self.assertEqual(g([0.012] * 3 + [-0.01] * 3), 'mixed')
         self.assertEqual(g([0.01, -0.02, 0.01, -0.02]), 'failed')
         self.assertEqual(g([0.05] * 3), 'unproven')
@@ -342,9 +359,20 @@ class FakeSchwab:
         return Resp(500)
 
 
+class FakeDisk:
+    def __init__(self):
+        self.data = {}
+
+    def get(self, key):
+        return self.data.get(key)
+
+    def put(self, key, saved, value):
+        self.data[key] = (saved, value)
+
+
 class FakeCtx:
     def __init__(self, schwab):
-        self.schwab, self.news, self._cache = schwab, None, {}
+        self.schwab, self.news, self._cache, self.disk = schwab, None, {}, FakeDisk()
 
     async def cached(self, key, max_age, load, persist=False, stale_ok=False):
         if key not in self._cache:
@@ -356,6 +384,7 @@ class ScanErrors(unittest.TestCase):
     def setUp(self):
         self.patches = [mock.patch.object(scanner, 'UNIVERSE', ['SPY', 'AAA']), mock.patch.object(scanner, 'REQUEST_GAP', 0),
                         mock.patch.object(scanner, 'market_session', return_value='closed'),
+                        mock.patch.object(scanner, '_run_rule_tests', new=mock.AsyncMock()),
                         mock.patch.object(scanner, '_run_lab', new=mock.AsyncMock())]  # the lab has its own tests
         for p in self.patches:
             p.start()
@@ -508,8 +537,9 @@ class Grading(unittest.TestCase):
                 'score': 0, 'plan': {'exitBy': '2026-10-30', 'riskReward': rr},
                 'indicators': {'cotView': st_cot_view(cot), 'cot': cot, 'z': z}}
 
-    def strat(self, exp=0.004, pf=1.5, p=0.05):
-        return {'stats': {'trades': 200, 'winRate': 0.55, 'profitFactor': pf, 'expectancy': exp}, 'randomEntry': {'p': p}}
+    def strat(self, exp=0.004, pf=1.5, p=0.05, robust=True):
+        return {'stats': {'trades': 200, 'winRate': 0.55, 'profitFactor': pf, 'expectancy': exp}, 'randomEntry': {'p': p},
+                'robust': {'costs': robust, 'halves': robust}}
 
     def test_tiers(self):
         stock = {'grade': 'proven', 'trades': 10, 'winRate': 0.6}
@@ -632,11 +662,12 @@ class OpenTradesStayListed(unittest.TestCase):
 
     def test_lookback_covers_every_strategy(self):
         from engine import strategies
-        ind = strategies.prepare(random_walk(400, seed=5), None)
-        for key, strat in strategies.STRATEGIES.items():
-            p = strat['plan'](ind, 300, 1) or strat['plan'](ind, 300, -1)
-            if p:
-                self.assertLessEqual(p['validDays'] + p['maxHold'], scanner.SIGNAL_LOOKBACK, key)
+        for h in strategies.HORIZONS:
+            ind = strategies.prepare(random_walk(400, seed=5), None, h)
+            for key, strat in strategies.STRATEGIES.items():
+                p = strat['plan'](ind, 300, 1) or strat['plan'](ind, 300, -1)
+                if p:
+                    self.assertLessEqual(p['validDays'] + p['maxHold'], scanner._lookback(key, strat, h), (h, key))
 
 
     def test_opposite_signals_on_one_stock_are_flagged(self):
@@ -681,12 +712,11 @@ class StatisticsDesign(unittest.TestCase):
         self.assertAlmostEqual(q[4], 0.5)
 
     def test_edge_study_finds_a_planted_edge_and_not_a_fake_one(self):
-        from engine import strategies
-        rnd = random.Random(2)
-        real = [{'cot': 'agree', 'ret': rnd.gauss(0.02, 0.02)} for _ in range(150)] + [{'cot': 'against', 'ret': rnd.gauss(-0.01, 0.02)} for _ in range(150)]
-        self.assertEqual(strategies.edge_summary(real)['test']['verdict'], 'COT adds an edge')
-        fake = [{'cot': rnd.choice(['agree', 'against']), 'ret': rnd.gauss(0, 0.02)} for _ in range(160)]
-        self.assertGreater(strategies.edge_summary(fake)['test']['p'], 0.05)
+        from synthetic import cot_world
+        cot, events = cot_world(seed=2, edge=0.01)
+        self.assertEqual(st.edge_summary(events, cot, 60, 40, runs=300)['test']['verdict'], 'COT adds an edge')
+        cot, events = cot_world(seed=3, edge=0.0)
+        self.assertGreater(st.edge_summary(events, cot, 60, 40, runs=300)['test']['p'], 0.05)
 
     def test_bounds_fit_each_stock(self):
         from engine import strategies
@@ -700,8 +730,10 @@ class StatisticsDesign(unittest.TestCase):
         from engine import strategies
         ind = strategies.prepare(random_walk(800, seed=4), None)
         ev = strategies.cot_z_events(ind, 5)
-        self.assertTrue(all(e['cot'] == 'none' for e in ev))  # no COT data given
-        self.assertTrue(all(e['dir'] in (1, -1) for e in ev))
+        self.assertTrue(ev)
+        self.assertTrue(all(e['dir'] in (1, -1) and 'time' in e for e in ev))
+        days = sorted(e['time'] for e in ev)
+        self.assertTrue(all(b - a >= 5 * 86400 for a, b in zip(days, days[1:])))  # one event per stretch
 
 
 
@@ -792,17 +824,35 @@ class StrategyLab(unittest.TestCase):
         inds = {f'S{k}': self.st.prepare(_lab_series(700, 500 + k, False), None) for k in range(25)}
         self.assertEqual(self.lab.run(inds)['validated'], 0)
 
-    def test_variance_ratio_reads_regimes(self):
-        trend = [100 * 1.001 ** i * (1 + 0.002 * math.sin(i / 7)) for i in range(400)]
-        alt = [100 + (1 if i % 2 else -1) for i in range(400)]  # reverses every bar
-        self.assertGreater(self.lab.variance_ratio(trend)[-1], 1)
-        self.assertLess(self.lab.variance_ratio(alt)[-1], 0.5)
+    def test_removed_filters_are_gone(self):
+        for f in ('reverting', 'trending', 'cot', 'flow'):
+            self.assertNotIn(f, self.lab.FILTERS)
+        self.assertFalse(hasattr(self.lab, 'variance_ratio'))
+        self.assertIn('tom', self.lab.filters_for('swing'))
+        self.assertNotIn('tom', self.lab.filters_for('position'))  # a weekly bar can't hold a 4-day window
+        self.assertEqual(len(self.lab.candidates('swing')), 11 * (1 + 8 + 28) * 2)
+        self.assertEqual(len(self.lab.candidates('position')), 11 * (1 + 7 + 21) * 2)
+
+    def test_turn_of_month_counts_trading_days(self):
+        bars = day_bars([100] * 30, start=dt.date(2026, 7, 27))  # Mon Jul 27 .. early September
+        tom = dict(zip([st._day(b['time']) for b in bars], self.lab.turn_of_month(bars)))
+        self.assertTrue(tom[dt.date(2026, 7, 31)])  # Friday, last trading day of July
+        self.assertFalse(tom[dt.date(2026, 7, 30)])  # T-1: not in the window (calendar-day rules included it)
+        self.assertTrue(all(tom[d] for d in (dt.date(2026, 8, 3), dt.date(2026, 8, 4), dt.date(2026, 8, 5))))
+        self.assertFalse(tom[dt.date(2026, 8, 6)])  # the 4th trading day
+
+    def test_divergence_uses_only_earlier_bars(self):
+        bars = random_walk(300, seed=8)
+        closes = [b['close'] for b in bars]
+        full = self.lab.ad_divergence(bars, closes)
+        cut = self.lab.ad_divergence(bars[:200], closes[:200])
+        self.assertEqual(full[:200], cut)
 
     def test_market_trend_uses_only_the_previous_day(self):
-        bars = [bar(1_600_000_000 + i * 86400, 100, 101, 99, 100 + (i if i < 60 else -i)) for i in range(80)]
+        bars = [bar(1_600_000_000 + i * 86400, 100, 101, 99, 100 + (i if i < 260 else -i)) for i in range(280)]
         m = scanner.market_trend_by_date(bars)
-        day60 = scanner.bar_day(bars[60]['time'])
-        self.assertEqual(m[day60], 1)  # bar 60's own drop is not known yet
+        day260 = scanner.bar_day(bars[260]['time'])
+        self.assertEqual(m[day260], 1)  # bar 260's own drop is not known yet
 
     def test_holm_and_candidate_count(self):
         self.assertEqual(len(self.lab.candidates()), len(self.lab.TRIGGERS) * (1 + len(self.lab.FILTERS) + len(self.lab.FILTERS) * (len(self.lab.FILTERS) - 1) // 2) * 2)
@@ -811,16 +861,40 @@ class StrategyLab(unittest.TestCase):
         self.assertAlmostEqual(adj[2], 0.06)
         self.assertAlmostEqual(adj[1], 0.06)
 
-    def test_registered_strategies_belong_to_one_time_frame(self):
-        fake = {'results': [{'validated': True, 'trigger': 'rsi2', 'filters': ['trend'], 'direction': 1, 'name': 'Lab: RSI(2) + trend (buys)', 'description': 'x'}]}
+    def test_survivors_keep_their_first_shown_time_across_restarts(self):
+        path = os.path.join(_TMP, 'state-test.json')
+        fake = {'results': [{'validated': True, 'id': 'rsi2|above200|1', 'trigger': 'rsi2', 'filters': ['above200'], 'direction': 1,
+                             'name': 'Lab: RSI(2) + 200 (buys)', 'description': 'x', 'test': {}, 'pAdjusted': 0.01}]}
+        state = {}
+        self.assertEqual(self.lab.add_survivors(state, 'swing', fake, 1_700_000_000), ['rsi2|above200|1'])
+        self.lab.save_json_atomic(path, state)
+        again = self.lab.load_state(path)  # a restart
+        self.assertEqual(self.lab.add_survivors(again, 'swing', fake, 1_800_000_000), [])  # already there: unchanged
+        self.assertEqual(again['swing']['rsi2|above200|1']['firstShown'], 1_700_000_000)
         try:
-            keys = self.lab.register('swing', fake)
-            self.assertEqual(keys, ['lab_swing_0'])
-            self.assertEqual(self.st.STRATEGIES['lab_swing_0']['horizon_only'], 'swing')
-            self.lab.register('swing', {'results': []})
-            self.assertNotIn('lab_swing_0', self.st.STRATEGIES)
+            keys = self.lab.install(again)
+            self.assertEqual(len(keys), 1)
+            strat = self.st.STRATEGIES[keys[0]]
+            self.assertEqual((strat['horizon_only'], strat['since'], strat['sides']), ('swing', 1_700_000_000, (1,)))
         finally:
-            self.lab.register('swing', {'results': []})
+            self.lab.install({})
+        self.assertFalse(any(v.get('lab') for v in self.st.STRATEGIES.values()))
+
+    def test_forward_failure_rule(self):
+        ok = {'trades': 40, 'expectancy': 0.002, 'tStat': 0.5}
+        self.assertFalse(self.lab.forward_failed(ok))
+        self.assertTrue(self.lab.forward_failed({**ok, 'expectancy': -0.001}))
+        self.assertTrue(self.lab.forward_failed({**ok, 'tStat': -1.2}))
+        self.assertFalse(self.lab.forward_failed({'trades': 12, 'expectancy': -0.01, 'tStat': -2}))  # too early to judge
+
+    def test_atomic_write_never_leaves_a_broken_file(self):
+        path = os.path.join(_TMP, 'graveyard-test.json')
+        self.lab.save_json_atomic(path, {'ok': 1})
+        with self.assertRaises(TypeError):
+            self.lab.save_json_atomic(path, {'bad': object()})  # fails while writing
+        with open(path) as f:
+            self.assertEqual(json.load(f), {'ok': 1})  # the old file is untouched
+        self.assertEqual([n for n in os.listdir(_TMP) if n.startswith('graveyard-test.json.tmp')], [])  # no temporary file left
 
 
 if __name__ == '__main__':

@@ -963,7 +963,7 @@ async def market_scanner(market):
     if 'scanner' in engine.LOAD_ERRORS:
         return
     from engine import scanner
-    await scanner.background(market.engine, market.news)
+    await scanner.background_loop(market.engine, market.news)
 
 
 def chrome_command(url):
