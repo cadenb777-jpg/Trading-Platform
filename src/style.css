@@ -2752,6 +2752,9 @@ button.news-item {
 
 .tt-bar {
   display: none;
+  position: sticky;
+  left: 0;
+  width: max-content;
   align-items: center;
   gap: var(--sp-2);
   padding: 0 2px var(--sp-2);
@@ -2813,6 +2816,10 @@ button.news-item {
   }
   .tt:not(.tt-open) .tt-filters {
     display: none;
+  }
+  .tt-range {
+    flex-direction: column;
+    align-items: flex-end;
   }
 }
 

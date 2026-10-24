@@ -22,7 +22,7 @@ export type TableToolsOptions = {
   id: string;
   /** Override detected column types, keyed by header text ('' for a column with no header). */
   columns?: Record<string, ColumnType>;
-  /** The filter row appears once the table has this many rows (or a filter is on). Default 6. */
+  /** The filter row appears once the table has this many rows (or a filter is on). Default 5. */
   minRowsForFilters?: number;
 };
 
@@ -153,7 +153,7 @@ function cellText(el: Element): string {
   return parts.join('').replace(/\s+/g, ' ').trim();
 }
 
-type Shared = { state: TableState; live: Set<{ table: HTMLTableElement; apply: () => void }>; focus?: { el: HTMLInputElement; key: string } };
+type Shared = { state: TableState; open?: boolean; live: Set<{ table: HTMLTableElement; apply: () => void }>; focus?: { el: HTMLInputElement; key: string } };
 const registry = new Map<string, Shared>();
 let rowCounter = 0;
 const rowOrder = new WeakMap<HTMLTableRowElement, number>();
@@ -165,7 +165,7 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
   let shared = registry.get(opts.id);
   if (!shared) registry.set(opts.id, (shared = { state: loadState(opts.id), live: new Set() }));
   const { state } = shared;
-  const minRows = opts.minRowsForFilters ?? 6;
+  const minRows = opts.minRowsForFilters ?? 5;
 
   // Column keys are the header texts (made unique), so remembered filters follow the column, not its position.
   const seen = new Map<string, number>();
@@ -193,9 +193,13 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
   const count = h('span', { class: 'tt-count muted small', 'aria-live': 'polite' });
   const toggle = h('button', { type: 'button', class: 'btn small tt-toggle', 'aria-expanded': 'false' }, 'Filter');
   toggle.addEventListener('click', () => {
-    const open = table.classList.toggle('tt-open');
-    toggle.setAttribute('aria-expanded', String(open));
+    shared!.open = table.classList.toggle('tt-open');
+    toggle.setAttribute('aria-expanded', String(shared!.open));
   });
+  if (shared.open) {
+    table.classList.add('tt-open'); // a rebuilt table keeps the phone filter row open
+    toggle.setAttribute('aria-expanded', 'true');
+  }
   const clear = h('button', { type: 'button', class: 'btn small ghost tt-clear' }, 'Clear filters');
   clear.addEventListener('click', () => {
     state.filters = {};
@@ -322,15 +326,16 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
 
   // A rebuilt table (same id) takes over the filter box you were typing in.
   const was = shared.focus;
-  if (was && !was.el.isConnected) {
+  if (was) {
+    const at = was.el.selectionStart;
     requestAnimationFrame(() => {
+      if (was.el.isConnected) return; // the old box is still there: nothing was rebuilt
       const active = document.activeElement;
       if (active && active !== document.body) return;
       const next = [...filterRow.querySelectorAll<HTMLInputElement>('input')].find((i) => i.dataset.key === was.key);
       if (!next?.isConnected) return;
-      const at = was.el.selectionStart ?? next.value.length;
       next.focus();
-      next.setSelectionRange(at, at);
+      next.setSelectionRange(at ?? next.value.length, at ?? next.value.length);
     });
   }
 
