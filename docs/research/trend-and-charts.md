@@ -9,7 +9,7 @@ How to read this:
 - Every factual claim has a source link. Most links are abstracts, publisher pages or reputable summaries. Page
   fetches were blocked in this session (the proxy refused direct PDF downloads), so **the numbers here come from
   search-result summaries of the papers, not from reading the full texts.** Anything I could not check against a
-  primary source is marked *(unverified)*.
+  primary source is marked *(unverified)*: that covers every number whose only source is a secondary summary.
 - Copyrighted books were not read. They are described from publisher pages, reviews and summaries, and cited as
   such. Pirated PDF mirrors that turned up in searches were ignored.
 - No numbers or quotes are invented. Where a source gives no figure, this doc gives none.
@@ -56,7 +56,9 @@ strategy is in 6.2.
   [Cambridge Associates summary](https://publishedresearch.cambridgeassociates.com/wp-content/uploads/2018/02/Investment-Publications-Highlights-1Q18.pdf).
 - **Lempérière et al. (2014), "Two centuries of trend following".** The t-stat of excess returns is about 5 since
   1960 and about 10 since 1800, after adjusting for drift. The key finding for us: **"no sign of a statistical
-  degradation of long trends, whereas shorter trends have significantly withered."**
+  degradation of long trends, whereas shorter trends have significantly withered."** The paper also says the recent
+  weakness of short trends is "fully compatible with a statistical fluctuation" *(this second quote was supplied in
+  review; I could not check it myself)*. So treat "short trends have withered" as a warning, not as proof.
   [arXiv](https://arxiv.org/abs/1404.3274), [RePEc](https://ideas.repec.org/a/rsk/journ6/2349968.html).
 - **Individual stocks, not only futures:** Lim, Wang & Yao (2018, *Journal of Banking & Finance* 97) find strong
   time-series momentum in US individual stocks from 1927 to 2017, robust across sub-periods, firm sizes and
@@ -69,9 +71,9 @@ strategy is in 6.2.
 
 - **Faber (2007, revised later), 10-month SMA:** hold when the month-end price is above its 10-month average,
   otherwise cash. Secondary summaries report much lower volatility and a higher Sharpe ratio than buy-and-hold.
-  Faber himself notes it lagged stocks in 6 of the 8 years after 2009.
+  Faber himself notes it lagged stocks in 6 of the 8 years after 2009 *(unverified)*.
   [Swedroe/ETF.com summary](https://www.etf.com/sections/index-investor-corner/swedroe-why-financial-trends-persist).
-- **Zakamulin:** on the S&P Composite, 1860-2009, the average optimal SMA lookback was about 10 months (median 11).
+- **Zakamulin:** on the S&P Composite, 1860-2009, the average optimal SMA lookback was about 10 months (median 11) *(unverified)*.
   His later revision found that once look-ahead bias is removed, the advantage over buy-and-hold is marginal at
   best, and mostly comes from lower risk. Daily signals did marginally better than monthly ones in back-tests and
   marginally worse in forward tests.
@@ -85,7 +87,7 @@ strategy is in 6.2.
   averages beats the classic momentum and reversal factors in the cross-section of stocks.
   [WUSTL listing](https://profiles.wustl.edu/en/publications/a-trend-factor-any-economic-gains-from-using-information-over-inv/).
 - **Han, Yang & Zhou (2013, *JFQA* 48(5)):** applying a 10-day MA to portfolios sorted by volatility gave returns
-  that **rise with volatility**. Secondary summaries put the range at 8.4% to 18.7% a year, 1964-2009.
+  that **rise with volatility**. Secondary summaries put the range at 8.4% to 18.7% a year, 1964-2009 *(unverified)*.
   [RePEc](https://ideas.repec.org/a/cup/jfinqa/v48y2013i05p1433-1461_00.html),
   [CFA digest](https://rpc.cfainstitute.org/research/cfa-digest/2014/08/a-new-anomaly-the-cross-sectional-profitability-of-technical-analysis-digest-summary).
 - **Avramov, Kaplanski & Subrahmanyam (2021), "Moving average distance" (MAD).** The ratio of the 21-day to the
@@ -111,12 +113,12 @@ strategy is in 6.2.
   System 1 enters on a 20-day breakout and exits on a 10-day opposite breakout. System 2 uses 55 days to enter and
   20 days to exit. N = 20-day ATR, the initial stop is 2N, and one unit risks 1% of equity per N.
   [MQL5 article](https://www.mql5.com/en/articles/23448) *(secondary; book not read)*.
-- **Wilcox & Crittenden (2005), "Does Trend Following Work on Stocks?"** 24,000+ stocks over 22 years, delisted
+- **Wilcox & Crittenden (2005), "Does Trend Following Work on Stocks?"** 24,000+ stocks over 22 years *(unverified)*, delisted
   names included, with costs. Buy at a new **all-time high**, exit on an ATR trailing stop. The authors found a
   positive expectancy. The 10-day ATR period comes from a podcast summary *(unverified)*.
   [CXO summary](https://cxoadvisory.com/momentum-investing/all-time-high-trend-following).
 - **Zarattini, Pagani & Wilcox (2025), update to 1950-2024:** the strategy still works, but **under 7% of trades
-  produce the cumulative profit**, and turnover is high. A secondary summary describes the trailing stop as raised
+  produce the cumulative profit** *(unverified)*, and turnover is high. A secondary summary describes the trailing stop as raised
   daily and never lowered, with exits on a close below it.
   [CXO summary](https://www.cxoadvisory.com/?p=46400),
   [Harbourfront summary](https://harbourfrontquant.substack.com/p/does-trend-following-still-work-on).
@@ -137,7 +139,8 @@ strategy is in 6.2.
   later sub-period. [Liberated Stock Trader](https://www.liberatedstocktrader.com/supertrend-indicator/),
   [HackerNoon](https://hackernoon.com/the-truth-about-tradingviews-supertrend-strategy-after-67-years-of-backtesting).
 - **Larry Williams' WillTrend** is described as a line over price: above it means uptrend, below it means
-  downtrend. Its formula is not public in what I found, so I can't say whether it is volatility-based.
+  downtrend. According to the owner's transcript of Williams' Bloomberg video, it combines trend with volatility
+  ("market expansions"). The formula is not disclosed.
   [StockCharts plug-in help](https://help.stockcharts.com/charts-and-tools/stockchartsacp-plug-ins/larry-williams-stock-trading-starter-pack-plug-in).
 
 ### 2.6 How professional trend followers size positions
@@ -170,7 +173,7 @@ strategy is in 6.2.
 | Chart patterns, automated (Lo, Mamaysky & Wang 2000) | Kernel-regression pattern detection on US stocks, 1962-1996. Some patterns give **incremental information** (more so on Nasdaq), but a pattern that detects an anomaly need not make money, and head-and-shoulders "may not be optimal". | [NBER w7613](https://www.nber.org/papers/w7613), [CFA digest](https://rpc.cfainstitute.org/-/media/documents/article/cfa-digest/2001/dig-v31-n1-811-pdf.pdf) |
 | Head-and-shoulders (Savin, Weller & Zvingelis 2007) | Predicts excess returns, but there is "little or no support" for a profitable standalone strategy. Part of its effect is just negative momentum. | [RePEc](https://ideas.repec.org/a/oup/jfinec/v5yi2p243-265.html), [CXO](https://www.cxoadvisory.com/technical-trading/testing-the-head-and-shoulders-pattern/) |
 | Candlesticks (Marshall, Young & Rose 2006, *JBF*) | Not generally profitable on large US stocks. | [RePEc](https://ideas.repec.org/a/ris/jofitr/0834.html), [CXO](https://www.cxoadvisory.com/technical-trading/candlesticks-fiddlesticks/) |
-| Bulkowski's pattern statistics | The rankings changed between editions: the high-and-tight flag went from "best" to rank 43 of 56. Results depend on his definition of failure (reversing before a 5% move). There is no random-entry comparison in what I found. | [ThePatternSite HTF](https://thepatternsite.com/htf.html), [LuxAlgo on failure definitions](https://www.luxalgo.com/library/concept/pattern-failure-statistics/) |
+| Bulkowski's pattern statistics | The rankings changed between editions: the high-and-tight flag went from "best" to rank 43 of 56 *(unverified)*. Results depend on his definition of failure (reversing before a 5% move). There is no random-entry comparison in what I found. | [ThePatternSite HTF](https://thepatternsite.com/htf.html), [LuxAlgo on failure definitions](https://www.luxalgo.com/library/concept/pattern-failure-statistics/) |
 | Support / resistance | Published intraday S/R levels predicted trend interruptions in FX, 1996-1998, but the effect varied by firm and currency (Osler 2000). There is no comparable daily-stock evidence in what I found. | [NY Fed EPR](https://www.newyorkfed.org/medialibrary/media/research/epr/00v06n2/0007osle.html) |
 | 52-week high | Strong, peer-reviewed evidence (George & Hwang 2004). | above |
 | Volatility contraction / NR7 (Crabel) | Only practitioner backtests; I found no peer-reviewed study. | [Quantified Strategies](https://quantifiedstrategies.substack.com/p/nr7-trading-strategy-the-narrow-range-0f3) |
@@ -222,7 +225,7 @@ Nearly every professional source uses the same five steps:
    measure every trade in units of its initial risk.
    [TraderLion](https://www.traderlion.com/risk-management/r-and-r-multiples/).
 4. **Size:** shares = (equity x risk %) / (entry - stop). Elder's rules are at most 2% of equity per trade, and
-   stop trading for the month once losses plus open risk reach 6%.
+   stop trading for the month once losses plus open risk reach 6% *(unverified)*.
    [TD Ameritrade summary](https://tickertape.tdameritrade.com/trading/rules-to-manage-risk-15908). The Turtles used
    1% per N. Clenow's stock model (as implemented by others) risks 0.1% of equity per ATR(20).
    [QuantConnect forum](https://www.quantconnect.com/forum/discussion/16578) *(implementation, not the book)*.
@@ -231,9 +234,10 @@ Nearly every professional source uses the same five steps:
    reversal trades (Connors' close above the 5-day average).
 
 **Stops and the type of market.** Kaminski & Lo (2014, *Journal of Financial Markets*) show that under a random
-walk, stop-loss rules **reduce** expected return. They add value only when returns have momentum or switch between
-regimes. In other words: **use tight trailing stops on trend trades, and only wide disaster stops on reversal
-trades.** [MIT DSpace](https://dspace.mit.edu/handle/1721.1/114876).
+walk, stop-loss rules **reduce** expected return, and that they can add value when returns have momentum or switch
+between regimes. *Implication (our reading, not a finding of the paper):* use tight trailing stops on trend trades,
+and only wide disaster stops on reversal trades, since a mean-reverting market behaves at least as badly for stops
+as a random walk. [MIT DSpace](https://dspace.mit.edu/handle/1721.1/114876).
 
 **Why stacking indicators fails.** StockCharts' "multicollinearity" guidance groups indicators as trend, momentum,
 volatility and volume, and advises against using several from one group. RSI, MACD, stochastics and rate-of-change
@@ -258,7 +262,7 @@ I did not read these books. Each is described from publisher pages, reviews or s
    only breakouts. *Evidence: strong* (section 2).
 2. **Cut losses short and let winners run.** This means a predefined stop, no fixed upside for trend trades, and a
    trailing exit (Covel, Faith/Turtles, O'Neil's 7-8% stop, Clenow's 3-ATR stop). *Evidence: supported* for trend
-   trades: profits are concentrated in few trades (Zarattini et al.), and stops add value when returns have
+   trades: profits are concentrated in few trades (Zarattini et al.), and stops can add value when returns have
    momentum (Kaminski & Lo).
 3. **Risk a small, fixed fraction per trade, sized by volatility** (Elder 2%/6%, Turtles 1% per N, Clenow ATR
    sizing). *Evidence: supported* for volatility scaling (Barroso & Santa-Clara; Hurst et al.). The exact
@@ -277,7 +281,7 @@ I did not read these books. Each is described from publisher pages, reviews or s
 | Covel, *Trend Following* ([review summary](https://9natree.castos.com/episodes/review-trend-following-learn-to-make-millions-in-up-or-down-markets-michael-covel-summarized)) | React to price, not forecasts; cut losses, let profits run | **Academic support** (Hurst et al.; Moskowitz et al.) |
 | Faith, *Way of the Turtle* ([MQL5 rule summary](https://www.mql5.com/en/articles/23448)) | 20/55-day breakouts, 10/20-day exits, 2N stop, 1% per N | Breakout trend following: **support** (on futures). The 20-day version: **fragile** (short trends have withered, Lempérière) |
 | Clenow, *Following the Trend* / *Stocks on the Move* ([ProRealCode](https://prorealcode.com/topic/the-clenow-plunger-finding-the-pain-threshold-for-trend-followers); [QuantConnect](https://www.quantconnect.com/forum/discussion/16578)) | 50/100 EMA filter, 50-day breakout, 3-ATR stop; for stocks: rank by regression slope x R², index above its 200-day, stock above its 100-day, ATR sizing | Trend filter + volatility sizing: **support**. The ranking formula itself: **none** (practitioner only) |
-| Aronson, *Evidence-Based Technical Analysis* ([CXO review](https://www.cxoadvisory.com/technical-trading/evidence-based-technical-analysis-applying-the-scientific-method-and-statistical-inference-to-trading-signals-chapter-by-chapter-review)) | Correct for data mining; tested 6,402 rules on the S&P 500, none significant after correction | **It is the evidence standard.** Agrees with Sullivan et al. and Bajgrowicz & Scaillet |
+| Aronson, *Evidence-Based Technical Analysis* ([CXO review](https://www.cxoadvisory.com/technical-trading/evidence-based-technical-analysis-applying-the-scientific-method-and-statistical-inference-to-trading-signals-chapter-by-chapter-review)) | Correct for data mining; tested 6,402 rules *(unverified)* on the S&P 500, none significant after correction | **It is the evidence standard.** Agrees with Sullivan et al. and Bajgrowicz & Scaillet |
 | Bulkowski, *Encyclopedia of Chart Patterns* ([ThePatternSite](https://thepatternsite.com/htf.html)) | Pattern-by-pattern breakout statistics | **Weak / none:** rankings unstable across editions, no random baseline found |
 | Weinstein, *Secrets for Profiting in Bull and Bear Markets* ([LuxAlgo](https://www.luxalgo.com/library/concept/weinstein-stage-analysis/), [TraderLion](https://traderlion.com/trading-strategies/stage-analysis/)) | Buy Stage 2: breakout above a base, with a rising 30-week MA, volume and relative strength | Rising long MA + relative strength: **support** (MA timing, momentum). Base geometry: **none** |
 | O'Neil, *How to Make Money in Stocks* / Minervini trend template ([getAbstract](https://www.getabstract.com/de/zusammenfassung/the-successful-investor/3506); [ProRealCode template](https://prorealcode.com/prorealtime-market-screeners/trend-template-mark-minervini)) | Buy base breakouts on volume, cut losses at 7-8%; price above rising 150/200-day MAs and near the 52-week high | Near the 52-week high + above the 200-day: **support** (George & Hwang; MA). VCP / base shapes: **none found** |
@@ -291,7 +295,7 @@ argues for more oscillators.
 
 ---
 
-## 6. Recommendations for the scanner (five, each removing more than it adds)
+## 6. Recommendations for the scanner (five, each removing more than it adds, plus the tests that settle conflicts)
 
 The scanner today, read from the code (`helper/engine/strategies.py`):
 
@@ -313,14 +317,25 @@ same rule for the market regime (QQQ above its 200-day, as Clenow does), known f
 
 | Candidate | Evidence | Verdict |
 |---|---|---|
-| 10-week SMA (today's filter, ~50 days) | Short lookback. Short trends have withered (Lempérière); longer signals beat shorter ones (Clare et al.) | Replace |
+| 10-period higher-timeframe SMA (today's filter: ~50 days on swing) | Short lookback. Short trends have withered (Lempérière); longer signals beat shorter ones (Clare et al.) | Replace |
 | **200-day SMA (~10 months)** | Faber, Zakamulin (optimal ~10-11 months), Clare et al.; MAD uses 200 days; Weinstein/Minervini/Clenow use 150-200 days. Signals earlier than TSMOM (Marshall et al.) | **Choose** |
 | 12-month time-series momentum sign | Strongest academic pedigree (MOP 2012; Lim et al. on stocks), but equivalent to an MA filter (Levine & Pedersen) and slower to turn (Marshall et al.) | Keep only as the head-to-head control |
 | ATR / volatility trend line (SuperTrend, chandelier side) | No peer-reviewed support as a trend definition; fragile to parameters | Use for **exits** (6.2), not as the trend filter |
 
-**What it replaces:** the 10-week `weekly_trend` check in all three strategies, the `sma50` condition in breakout,
-and the separate `sma200` check in mean reversion (it becomes the same rule). It also replaces the 50-day QQQ
+**What it replaces:** the 10-period `weekly_trend` check in `weekly_swing` and `breakout` (strategies.py:309, 353,
+357), the `sma50` condition in breakout, and mean reversion's own `sma200` check (strategies.py:337-344; it already
+uses 200 bars and simply becomes the shared rule). It also replaces the 50-day QQQ
 market filter. That is **four trend definitions reduced to one**.
+
+**What it changes per time frame.** `weekly_trend` takes the last finished higher-timeframe period vs its
+10-period average (`HORIZONS[h]['trend']`):
+
+- *Swing:* 10 weeks, about 50 days. This is where 6.1 makes the real change.
+- *Short (hourly):* a 10-**day** trend built from hourly bars grouped into days. A 200-day rule needs real daily
+  history joined to the hourly series. That is a **new dependency** (more Schwab requests, and joining by date
+  known at the previous close).
+- *Position (weekly):* 10 **months**, about 43 weeks. That is already close to 40 weeks, so 6.1 changes almost
+  nothing there.
 
 **How to test it:**
 
@@ -336,14 +351,31 @@ market filter. That is **four trend definitions reduced to one**.
 
 | Strategy type | Best exit | Evidence | Change from today |
 |---|---|---|---|
-| **Trend / breakout** | Initial stop 2 x ATR(20) (Turtle 2N). Then a **chandelier trail: highest high since entry minus 3 x ATR(22)**, only ever raised, exit on a **close** below it. No fixed target. Safety cap 120 sessions (swing), 52 weeks (position), 15 sessions (hourly). | Few winners carry trend profits (Zarattini et al.); stops help under momentum (Kaminski & Lo); LeBeau anchors the stop to the high since entry | Replaces the 10-bar-low exit and the **20-bar cap**, which cuts off the big winners the strategy exists for |
-| **Mean reversion** | Keep today's rule: exit on the first close back across the 5-bar average, a time stop (7 bars swing), and a **wide** disaster stop (2.5 ATR). No trailing stop and no break-even move. | Under mean reversion, tight stops cut expected return (Kaminski & Lo); Connors' exit | None (confirmed) |
+| **Trend / breakout** | Initial stop 2 x ATR(20) (Turtle 2N). Then a **chandelier trail: highest high since entry minus 3 x ATR(22)**, only ever raised, exit on a **close** below it. No fixed target. Safety cap 120 sessions (swing), 52 weeks (position), 15 sessions (hourly). | Few winners carry trend profits (Zarattini et al.); stops can add value under momentum (Kaminski & Lo; applying it to trend trades is our implication); LeBeau anchors the stop to the high since entry | Replaces the 10-bar-low exit and the **20-bar cap**, which cuts off the big winners the strategy exists for |
+| **Mean reversion** | Keep today's rule: exit on the first close back across the 5-bar average, a time stop (7 bars swing), and a **wide** disaster stop (2.5 ATR). No trailing stop and no break-even move. | Implication of Kaminski & Lo (stops lower returns under a random walk; mean reversion is not tested there); Connors' exit | None (confirmed) |
 | **Pullback in trend** (`weekly_swing`) | Stop beyond the 3-bar swing (0.75-2 ATR) as today, then a choice: **(A) today's target (+1 SD band)** plus break-even at +1R, or **(B) after +1R, switch to the chandelier trail** and drop the 5-bar time cap. Pick by test; do not keep both. | It is a trend trade with a reversal entry. Large, high-turnover stocks show short-term momentum (Medhat & Schmeling), which argues for B on Nasdaq-100 names; the one-week reversal literature argues for A | Pick one variant after the test |
 
 **How to test it:** in `simulate`, give each exit style the same entries, so only the exit differs. Compare average
-R, profit factor and the share of profit from the top 10% of trades, on the lab's three unseen windows. The
-random-entry test must use the **same exit** on random entries; otherwise a long trailing hold only gets credit for
-riding Nasdaq-100 drift. A trend exit should show **positive skew**: a low win rate, and average win much larger than
+R, profit factor and the share of profit from the top 10% of trades, on the lab's three unseen windows. The existing
+random-entry test already matches each real trade's direction and holding time (strategies.py:556-572), so drift is
+controlled even for variable-length trailing exits. Running the exact same exit rule from random entries would be
+**new test code**: a stricter optional check, not a requirement.
+
+**Data limit: the long caps cannot be tested on today's history.**
+
+- Swing loads 1,100 calendar days (scanner.py:223), about 757 daily bars.
+- Each lab unseen window is 15%, about 113 bars.
+- The embargo is the longest `maxHold` + 1 (lab.py:322), and the warm-up is 210 bars (lab.py:329).
+- A 52-week trigger needs 250 bars before its first signal.
+
+A 120-session cap would swallow the embargo and most of a window. So before testing long caps, do one of these:
+
+1. Extend daily history (planned: about 15 years).
+2. Test 40- and 60-session caps for now.
+3. Exclude trend exits from the embargo calculation, and accept that some trades straddle windows (say so on the
+   card).
+
+Until then, the 120-session figure is the target design, not a tested rule. A trend exit should show **positive skew**: a low win rate, and average win much larger than
 average loss.
 
 ### 6.3 One stretch measure, not three (remove collinear oscillators)
@@ -358,8 +390,9 @@ average loss.
 - **Move Williams A/D and ADX out of the main strategies** into lab filters only (`flow` and `adx` already exist
   there). They stay in the main rules only if the lab shows they add value on unseen data.
 
-**What it replaces:** %R, A/D and ADX in the main strategies, and the RSI(2)-and-z double condition. COT stays as
-it is: it is measured separately by the edge study (setups-statistics.md section 4), not assumed.
+**What it replaces:** %R, A/D and ADX in the main strategies, and the RSI(2)-and-z double condition. COT is not
+changed here. The COT changes proposed in williams-cot.md (a 156-week index, 75/25 vs 80/20 thresholds, and missing
+COT = no signal) are judged by the COT + z-score edge study (setups-statistics.md section 4), not assumed.
 
 **How to test it:** run the pooled random-entry test with and without each removed condition. A condition stays
 only if removing it **lowers** unseen average R by more than noise, meaning outside the Monte Carlo 90% band. The
@@ -383,6 +416,8 @@ stocks); Lempérière (long trends robust, short ones withered); MAD and the v20
 stronger).
 
 **How to test it:** pooled random-entry test, long side, compared against today's breakout with the same exit.
+The 250-bar lookback plus the 210-bar warm-up leaves few signals in about 757 swing bars (see the data limit in 6.2).
+Test the 50-session version first, or extend daily history before judging the 52-week one.
 The lab's `high52` trigger already exists: check that it survives walk-forward with the `above200` filter. Expect a
 lower win rate and higher average R. Judge it on R and skew, not on win rate.
 
@@ -400,6 +435,26 @@ automatically gets a smaller position: volatility scaling for free (Barroso & Sa
 **How to test it:** run the existing stationary-bootstrap Monte Carlo of the next 20 trades in **R units**, and show
 the 5th-percentile drawdown at 0.5% and at 1% risk. If the 5th-percentile path at 1% loses more than the owner
 accepts, the default stays at 0.5%. No live-trading logic changes: the platform still never places orders.
+
+
+### 6.6 Conflicts with williams-cot.md, settled by test
+
+This doc and williams-cot.md disagree in places. Neither wins by argument. Each conflict is settled by the pooled
+random-entry test and the lab's walk-forward, per time frame and side. **Rule: the simplest version that survives
+wins.**
+
+1. **Turn trigger** (`weekly_swing`). Test these variants:
+   - (a) the current rule;
+   - (b) z-stretch + %R cross;
+   - (c) z-stretch + z-score turn;
+   - (d) z-stretch + buy-stop only (this doc's 6.3).
+2. **Trend filter:** none / 10-period (today) / 10-period with a ±0.5 ATR band / 200-day (6.1). Use 150 and 250 days
+   only to show a plateau.
+3. **Williams A/D:** williams-cot.md's divergence rule becomes a lab filter. It enters the main rules only if it
+   survives walk-forward with a Holm-corrected p <= 0.10. Otherwise A/D leaves the entry.
+4. **COT:** a 26- vs 156-week index, crossed with 60/40, 75/25, 80/20 thresholds and off, judged by the edge study.
+5. **Pullback exit:** the +1 SD target vs the chandelier trail after +1R (6.2).
+6. **Hourly trend:** decided only after daily history is joined to the hourly series (6.1).
 
 ---
 
