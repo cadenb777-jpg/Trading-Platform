@@ -144,8 +144,16 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   30m-4h charts ask for 3 years and the helper fills what Schwab lacks (Schwab wins); the AI reads regular-session
   hourly bars back to 2016. Only data.alpaca.markets; never trading (test scans every helper module).
   Indicators can load outside data via `IndicatorDef.external` (COT for the related futures market, FINRA short volume).
-  It is market-data only: never add order placement to it (the Schwab app's order limit is 0).
-  Trading is planned through Webull.
+  Schwab stays market-data only (its app's order limit is 0). Order placement exists only in engine/webull.py (Webull
+  OpenAPI, hand-written HMAC-SHA256 signing matching the official SDK; hosts: Test us-openapi-alb.uat.webullbroker.com,
+  Live api.webull.com) behind one-time 60 s preview tokens (webull.preview_order -> webull.place_order {token}), max
+  order value / orders per day, Test-by-default and a typed LIVE opt-in in Settings; US stocks only, no sells beyond
+  the position minus open sells (stock positions only), every attempt logged to ~/.trading-platform/orders.log and
+  counted toward the daily limit (unreadable log = refuse). A timeout/5xx on place is "unknown": looked up once by
+  client_order_id, never reported as not placed. Reply fields are the documented names; missing ones fail closed.
+  The AI never trades (a test scans ai.py; another checks no other helper file places orders).
+  UI: Portfolios > Webull (src/portfolio/webullView.ts: balances, positions, orders, Sync to Portfolios, order
+  ticket + confirm); the trade guide only pre-fills the ticket.
 
 ## Conventions
 
@@ -175,9 +183,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 The full plan (a personal Bloomberg, including client reporting) is in ROADMAP.md. Follow its stage
 order and architecture rules; update its Status table when a stage is done.
 
-Later stages (trading via Webull, AI agents) will need a small backend so secrets are
-not exposed in the browser. Real-money trading must stay behind explicit confirmation, and
-paper trading comes first.
+Secrets (including the Webull keys) stay in the helper on the owner's computer, never in the browser; a cloud
+engine (stage 11) would need the same rule. Real-money trading stays behind explicit confirmation (preview token +
+confirm window, typed LIVE opt-in), and Test (paper) comes first.
 
 ## Agent skills
 

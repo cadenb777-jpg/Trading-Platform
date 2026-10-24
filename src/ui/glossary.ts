@@ -44,6 +44,8 @@ export const TERMS: Record<string, { title: string; text: string }> = {
   yoc: { title: 'Yield on cost', text: 'The same yearly dividends as a percentage of what you paid. If you bought at $50 and it now pays $4 a year, your yield on cost is 8%, even if today\'s yield is lower. It grows as companies raise their dividends.' },
   exdate: { title: 'Ex-dividend date', text: 'You must own the shares before this day to get the next dividend. Buy on or after it and the payment goes to the seller. Dates here are estimates from the usual timing; the company announces the real date a few weeks ahead.' },
   paydate: { title: 'Pay date', text: 'The day the dividend cash lands in your account, usually 2-4 weeks after the ex-date. The free data has no pay dates, so they are estimated as 3 weeks after the ex-date.' },
+  ordertype: { title: 'Order types', text: 'Market: buy or sell now at whatever the price is (fast, but the price can slip). Limit: only at your price or better (you may not get filled). Stop: becomes a market order once the price reaches the stop (used to get in on strength or to get out of a loser). Stop-limit: once the stop is reached it becomes a limit order, so you control the price but may not get filled.' },
+  tif: { title: 'Time in force (Day / GTC)', text: 'Day: the order is cancelled automatically at today\'s close if it hasn\'t filled. GTC (good till cancelled): it stays open on later days until it fills or you cancel it (brokers usually cancel it after about 60-90 days). Market orders are Day only.' },
   conviction: { title: 'Conviction', text: 'A summary of how many factors line up for the trade versus against it, capped by the grade. It tells you how much weight to give the setup, not a guarantee.' },
 };
 
