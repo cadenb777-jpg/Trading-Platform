@@ -3,6 +3,7 @@ import { ColorType, LineSeries, createChart, type IChartApi, type ISeriesApi } f
 import { THEME, followTheme } from './theme';
 import { attachTooltip, isDailySeries, openChartWindow, toUnix } from './chartWindow';
 import { h } from './dom';
+import { tableTools, type TableToolsOptions } from './tableTools';
 
 export interface LineSpec {
   name: string;
@@ -186,20 +187,24 @@ export function pageFrame(title: string, subtitle: string, controls: Node[]) {
 
 type Cell = Node | string | { v: Node | string; cls?: string };
 
-/** A scrolling table. Cells can be text, elements, or { v, cls } to add a class (e.g. 'up', 'label'). */
-export function dataTable(headers: string[], rows: Cell[][], rowClass?: (i: number) => string) {
+/** A table id for remembering sort/filters: the page (first part of the URL hash) plus the column headers. */
+export const tableId = (headers: string[]) => `${(location.hash || '#home').replace(/[/?].*$/, '')}:${headers.join('|')}`;
+
+/**
+ * A scrolling table with sortable, filterable columns (src/ui/tableTools.ts).
+ * Cells can be text, elements, or { v, cls } to add a class (e.g. 'up', 'label').
+ */
+export function dataTable(headers: string[], rows: Cell[][], rowClass?: (i: number) => string, tools: Partial<TableToolsOptions> = {}) {
   const cell = (c: Cell, tag: 'td' | 'th' = 'td') =>
     typeof c === 'object' && c !== null && 'v' in c ? h(tag, { class: c.cls ?? '' }, c.v) : h(tag, {}, c as Node | string);
-  return h(
-    'div',
-    { class: 'table-wrap' },
-    h(
-      'table',
-      { class: 'data-table' },
-      h('thead', {}, h('tr', {}, ...headers.map((t) => h('th', {}, t)))),
-      h('tbody', {}, ...rows.map((r, i) => h('tr', { class: rowClass?.(i) ?? '' }, ...r.map((c) => cell(c))))),
-    ),
+  const table = h(
+    'table',
+    { class: 'data-table' },
+    h('thead', {}, h('tr', {}, ...headers.map((t) => h('th', {}, t)))),
+    h('tbody', {}, ...rows.map((r, i) => h('tr', { class: rowClass?.(i) ?? '' }, ...r.map((c) => cell(c))))),
   );
+  tableTools(table, { ...tools, id: tools.id ?? tableId(headers) });
+  return h('div', { class: 'table-wrap' }, table);
 }
 
 /** A labelled number input. Percent inputs show 8 for 0.08. */
