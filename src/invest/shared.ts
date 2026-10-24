@@ -7,6 +7,7 @@ import { createLineChart, pct, rangeBar, statCards } from '../ui/charts';
 import { formatPrice, h, openModal } from '../ui/dom';
 import { openSettings } from '../ui/settings';
 import { sparkline } from '../ui/sparkline';
+import { withTableTools } from '../ui/tableTools';
 import type { BoardGroup } from './catalog';
 
 export interface BoardRow {
@@ -78,7 +79,7 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
     h(
       'div',
       { class: 'table-wrap' },
-      h(
+      withTableTools(h(
         'table',
         { class: 'data-table inv-table' },
         h('thead', {}, h('tr', {}, ...['Name', 'Price', 'Today', '1 month', 'YTD', '1 year', '3 months'].map((t) => h('th', {}, t)))),
@@ -91,8 +92,8 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
             return h(
               'tr',
               { class: 'clickable', tabindex: 0, onclick: () => onPick(symbol, label), onkeydown: (e: Event) => (e as KeyboardEvent).key === 'Enter' && onPick(symbol, label) },
-              h('td', { class: 'label' }, h('div', { class: 'inv-name' }, h('b', {}, label), h('span', { class: 'muted small' }, showSymbol(symbol)))),
-              h('td', {}, r?.price != null ? formatPrice(r.price) : h('span', { class: 'muted small', title: 'Schwab has no price for this right now' }, 'No quote'), r?.atClose ? h('div', { class: 'muted tiny' }, `At close ${closeDate(r.atClose)}`) : ''),
+              h('td', { class: 'label', 'data-value': `${label} ${showSymbol(symbol)}` }, h('div', { class: 'inv-name' }, h('b', {}, label), h('span', { class: 'muted small' }, showSymbol(symbol)))),
+              h('td', { 'data-value': r?.price != null ? String(r.price) : '' }, r?.price != null ? formatPrice(r.price) : h('span', { class: 'muted small', title: 'Schwab has no price for this right now' }, 'No quote'), r?.atClose ? h('div', { class: 'muted tiny' }, `At close ${closeDate(r.atClose)}`) : ''),
               pctCell(r?.change),
               pctCell(r?.m1),
               pctCell(r?.ytd),
@@ -101,7 +102,7 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
             );
           }),
         ),
-      ),
+      ), { id: `board:${group.title}`, columns: { '3 months': 'none' } }),
     ),
   );
 }

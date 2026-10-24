@@ -32,6 +32,7 @@ import { state } from '../state';
 import type { Bar, Timeframe } from '../types';
 import { createLineChart, dataTable, money, numberField, pageFrame, pct, statCards, pctU } from '../ui/charts';
 import { formatPrice, h, toast } from '../ui/dom';
+import { withTableTools } from '../ui/tableTools';
 import { displaySymbol } from '../ui/watchlist';
 
 const BASE_TIMEFRAMES: Timeframe[] = ['1D', '1W', '4h', '1h', '30m', '15m', '5m'];
@@ -607,11 +608,14 @@ export function createBacktestPage() {
         h(
           'div',
           { class: 'table-wrap' },
-          h(
-            'table',
-            { class: 'data-table heat-table' },
-            h('thead', {}, h('tr', {}, h('th', {}, 'Year'), ...MONTHS.map((m) => h('th', {}, m)), h('th', {}, 'Year'))),
-            h('tbody', {}, ...[...rows.entries()].reverse().map(([y, vals]) => h('tr', {}, h('td', { class: 'label' }, String(y)), ...vals.map(cell)))),
+          withTableTools(
+            h(
+              'table',
+              { class: 'data-table heat-table' },
+              h('thead', {}, h('tr', {}, h('th', {}, 'Year'), ...MONTHS.map((m) => h('th', {}, m)), h('th', {}, 'Year'))),
+              h('tbody', {}, ...[...rows.entries()].reverse().map(([y, vals]) => h('tr', {}, h('td', { class: 'label' }, String(y)), ...vals.map(cell)))),
+            ),
+            { id: 'backtest:monthly' },
           ),
         ),
       ),

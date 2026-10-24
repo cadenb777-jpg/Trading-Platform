@@ -3,6 +3,7 @@ import { insightButton, type InsightRequest } from '../ai/insight';
 import { engineRequest } from '../data/schwab';
 import { barList, compact, createLineChart, dataTable, money, pageFrame, pct, statCards } from '../ui/charts';
 import { formatPrice, h } from '../ui/dom';
+import { withTableTools } from '../ui/tableTools';
 import { xySvg } from '../ui/xyChart';
 
 interface Contract {
@@ -234,7 +235,7 @@ export function createFlowPage() {
           ? h(
               'div',
               { class: 'table-wrap' },
-              h(
+              withTableTools(h(
                 'table',
                 { class: 'data-table' },
                 h('thead', {}, h('tr', {}, ...['Contract', 'Expiry', 'DTE', 'Volume', 'Open int.', 'Vol/OI', 'Last', 'Premium', 'Fill', 'IV', 'Delta'].map((c) => h('th', {}, c)))),
@@ -259,7 +260,7 @@ export function createFlowPage() {
                     ),
                   ),
                 ),
-              ),
+              ), { id: 'flow:unusual' }),
             )
           : h('p', { class: 'muted' }, 'No unusual activity right now (common outside market hours).'),
       ),
@@ -389,7 +390,7 @@ export function createFlowPage() {
           ? h(
               'div',
               { class: 'table-wrap' },
-              h(
+              withTableTools(h(
                 'table',
                 { class: 'data-table' },
                 h('thead', {}, h('tr', {}, ...['Date', 'Insider', 'Role', 'Type', 'Shares', 'Price', 'Value', 'Owned after', ''].map((c) => h('th', {}, c)))),
@@ -412,7 +413,7 @@ export function createFlowPage() {
                     ),
                   ),
                 ),
-              ),
+              ), { id: 'flow:insiders' }),
             )
           : h('p', { class: 'muted' }, 'No recent Form 4 filings.'),
       ),

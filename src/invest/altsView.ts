@@ -10,6 +10,7 @@ import { insightButton } from '../ai/insight';
 import { engineRequest } from '../data/schwab';
 import { barList, createLineChart, dataTable, money, pct, statCards } from '../ui/charts';
 import { formatPrice, h, openModal, toast } from '../ui/dom';
+import { withTableTools } from '../ui/tableTools';
 import { BOARDS, MANAGER_SITES, PRIVATE_FUNDS, STRATEGIES, STRUCTURES, type PrivateFund, type Strategy } from './catalog';
 import { holdingStats, parseCsv, rowsToHoldings, totals, type AltHolding } from './holdings';
 import { boardInsight, boardTable, errorBox, factSheetLink, loadBoard, openSymbolDetail, skeletonBoard, tone, type BoardRow, type InvestContext } from './shared';
@@ -514,11 +515,14 @@ export function createAltsView(ctx: InvestContext) {
       h(
         'div',
         { class: 'table-wrap' },
-        h(
-          'table',
-          { class: 'data-table' },
-          h('thead', {}, h('tr', {}, ...headers.map((t) => h('th', {}, t)))),
-          h('tbody', {}, ...rows.map((r) => h('tr', { class: 'clickable', onclick: () => openFund({ cik: r.cik, name: r.name }) }, h('td', { class: 'label' }, h('b', {}, r.name)), ...cells(r).map((c) => h('td', {}, c))))),
+        withTableTools(
+          h(
+            'table',
+            { class: 'data-table' },
+            h('thead', {}, h('tr', {}, ...headers.map((t) => h('th', {}, t)))),
+            h('tbody', {}, ...rows.map((r) => h('tr', { class: 'clickable', onclick: () => openFund({ cik: r.cik, name: r.name }) }, h('td', { class: 'label' }, h('b', {}, r.name)), ...cells(r).map((c) => h('td', {}, c))))),
+          ),
+          { id: `alts:${headers.join('|')}` },
         ),
       ),
     );

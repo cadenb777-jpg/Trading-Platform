@@ -315,6 +315,8 @@ export function createBondsView(ctx: InvestContext) {
             const change = p / a.cleanPrice - 1;
             return [{ v: `${dy > 0 ? '+' : ''}${(dy * 100).toFixed(1)}%`, cls: 'label' }, pctU(a.yieldToMaturity + dy, 2), p.toFixed(2), { v: pct(change), cls: change >= 0 ? 'up' : 'down' }, pct(priceChangeEstimate(a, dy))];
           }),
+          undefined,
+          false,
         ),
       );
       const t = taxEquivalentYield(calc.muni, calc.federal, calc.state);

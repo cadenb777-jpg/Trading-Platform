@@ -480,6 +480,8 @@ export function createPortfolioPage() {
                 dataTable(
                   ['', ...a.symbols],
                   a.correlation.map((row, i) => [h('b', {}, a.symbols[i]), ...row.map((c) => ({ v: h('span', { style: `color:${c > 0.7 ? 'var(--down)' : c < 0.3 ? 'var(--up)' : 'inherit'}` }, c.toFixed(2)), cls: 'corr-cell' }))]),
+                  undefined,
+                  false,
                 ),
                 h('p', { class: 'ap-note' }, 'Lower correlation (green) means better diversification.'),
               )

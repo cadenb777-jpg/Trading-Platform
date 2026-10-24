@@ -11,6 +11,7 @@ import { BOARDS, CRYPTO_COINS, SECTIONS, searchCatalog, type Section } from '../
 import { boardInsight, boardTable, errorBox, loadBoard, openSymbolDetail, showSymbol, skeletonBoard, tone, type BoardRow, type InvestContext } from '../invest/shared';
 import { pageFrame, pct } from '../ui/charts';
 import { formatPrice, h } from '../ui/dom';
+import { tableTools } from '../ui/tableTools';
 
 const SECTION_KEY = 'tp-invest-section';
 const REFRESH_MS = 60000;
@@ -247,7 +248,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
           const tr = h(
             'tr',
             { class: 'clickable', onclick: () => ctx.openChart({ provider: 'coinbase', symbol }) },
-            h('td', { class: 'label' }, h('div', { class: 'inv-name' }, h('b', {}, label), h('span', { class: 'muted small' }, symbol))),
+            h('td', { class: 'label', 'data-value': `${label} ${symbol}` }, h('div', { class: 'inv-name' }, h('b', {}, label), h('span', { class: 'muted small' }, symbol))),
             h('td', {}, '—'),
             h('td', {}, '—'),
           );
@@ -256,6 +257,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
         }),
       ),
     );
+    tableTools(table, { id: 'invest:crypto' }); // live prices re-sort and re-filter as they arrive
     const boards = h('div', { class: 'inv-boards' }, ...BOARDS.crypto.map(skeletonBoard));
     const ai = boardInsight('Crypto', BOARDS.crypto);
     view.replaceChildren(ai.row, ai.panel, h('section', { class: 'panel inv-board' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Coins (live from Coinbase)'), h('span', { class: 'muted small' }, 'Click one to open its chart')), h('div', { class: 'table-wrap' }, table)), boards);

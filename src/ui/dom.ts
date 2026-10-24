@@ -61,29 +61,38 @@ export function formatNumber(value: number): string {
   return value.toPrecision(4);
 }
 
-/** Opens a small floating menu under `anchor`. Closes on outside click or Escape. Returns a close function. */
-export function openPopover(anchor: HTMLElement, content: Node, opts: { align?: 'left' | 'right' } = {}): () => void {
+/**
+ * Opens a small floating box under `anchor`. Closes on outside click, Escape, or when focus leaves it;
+ * Escape and keyboard close put focus back on the anchor. Returns a close function.
+ */
+export function openPopover(anchor: HTMLElement, content: Node, opts: { align?: 'left' | 'right'; label?: string; onClose?: () => void } = {}): () => void {
   document.querySelector('.popover')?.dispatchEvent(new Event('close'));
-  const el = h('div', { class: 'popover', role: 'menu' }, content);
+  const el = h('div', { class: 'popover', role: 'dialog', 'aria-label': opts.label ?? anchor.getAttribute('aria-label') ?? anchor.textContent?.trim() ?? 'Menu' }, content);
   document.body.append(el);
   const rect = anchor.getBoundingClientRect();
   const width = el.offsetWidth;
   const left = opts.align === 'right' ? rect.right - width : rect.left;
   el.style.left = `${Math.max(8, Math.min(left, window.innerWidth - width - 8))}px`;
   el.style.top = `${rect.bottom + 6}px`;
-  const close = () => {
+  let open = true;
+  const close = (refocus = true) => {
+    if (!open) return;
+    open = false;
+    const hadFocus = el.contains(document.activeElement);
     el.remove();
     document.removeEventListener('mousedown', onDown, true);
     document.removeEventListener('keydown', onKey);
+    if (refocus && hadFocus) anchor.focus();
+    opts.onClose?.();
   };
-  const onDown = (e: Event) => {
-    if (!el.contains(e.target as Node) && !anchor.contains(e.target as Node)) close();
-  };
+  const outside = (n: EventTarget | null) => !(n instanceof Node && (el.contains(n) || anchor.contains(n)));
+  const onDown = (e: Event) => outside(e.target) && close(false);
   const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
-  el.addEventListener('close', close);
+  el.addEventListener('focusout', (e) => e.relatedTarget && outside(e.relatedTarget) && close(false));
+  el.addEventListener('close', () => close(false));
   document.addEventListener('mousedown', onDown, true);
   document.addEventListener('keydown', onKey);
-  return close;
+  return () => close();
 }
 
 export function formatPrice(value: number | null | undefined): string {
