@@ -186,6 +186,25 @@ function connectionCheck(): HTMLElement {
   );
 }
 
+const DOCS = 'https://github.com/cadenb777-jpg/trading-platform/blob/main/';
+
+/** About: the plain disclaimer and links to the legal drafts and licences. */
+function aboutSection(): HTMLElement {
+  const link = (label: string, path: string) => h('a', { href: DOCS + path, target: '_blank', rel: 'noopener' }, label);
+  return h(
+    'div',
+    { class: 'settings-row' },
+    h('h3', { class: 'settings-section' }, 'About'),
+    h('p', { class: 'muted small' }, 'For the owner’s own use. Not investment advice. Market data may be delayed or wrong; check prices with your broker before trading.'),
+    h(
+      'p',
+      { class: 'muted small' },
+      link('Disclaimer', 'docs/legal/DISCLAIMER.md'), ' · ', link('Privacy', 'docs/legal/PRIVACY.md'), ' · ', link('Terms', 'docs/legal/TERMS.md'), ' · ',
+      link('Licences', 'THIRD_PARTY_NOTICES.md'), ' · Charts by ', h('a', { href: 'https://www.tradingview.com/', target: '_blank', rel: 'noopener' }, 'TradingView Lightweight Charts™'),
+    ),
+  );
+}
+
 export async function openSettings(focus?: 'ai') {
   const body = h('div', { class: 'settings' }, h('div', { class: 'muted pad' }, 'Loading…'));
   const close = openModal('Settings', body, { wide: true });
@@ -194,7 +213,7 @@ export async function openSettings(focus?: 'ai') {
     try {
       s = await getSettings(true);
     } catch (err) {
-      body.replaceChildren(connectionCheck(), h('div', { class: 'ap-error' }, `${(err as Error).message}`));
+      body.replaceChildren(connectionCheck(), h('div', { class: 'ap-error' }, `${(err as Error).message}`), aboutSection());
       return;
     }
     const model = h('select', { class: 'input' }, ...s.models.map((m) => h('option', { value: m.id, selected: m.id === s.model }, m.name)));
@@ -279,6 +298,7 @@ export async function openSettings(focus?: 'ai') {
         );
       })(),
       h('p', { class: 'muted small' }, 'Everything here is saved by the helper in your user folder (.trading-platform), not in the browser or online.'),
+      aboutSection(),
     );
     if (focus === 'ai' && !s.aiKeySet) body.querySelector<HTMLInputElement>('input[type=password]')?.focus();
   }
