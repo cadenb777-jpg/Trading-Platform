@@ -10,7 +10,7 @@ import importlib
 import logging
 import threading
 
-from .core import HANDLERS, EngineContext, EngineError, handler
+from .core import HANDLERS, EngineContext, EngineError, background, handler
 
 MODULES = ('store', 'settings', 'sec', 'flow', 'research', 'macro', 'quant', 'positioning', 'invest', 'alts', 'scanner', 'ai')
 #: module name -> why it couldn't load
@@ -54,4 +54,4 @@ def load_all():
     READY.wait()
 
 
-__all__ = ['HANDLERS', 'EngineContext', 'EngineError', 'handler', 'LOAD_ERRORS', 'MODULES', 'READY', 'start_loading', 'wait_loaded', 'load_all']
+__all__ = ['HANDLERS', 'EngineContext', 'EngineError', 'background', 'handler', 'LOAD_ERRORS', 'MODULES', 'READY', 'start_loading', 'wait_loaded', 'load_all']

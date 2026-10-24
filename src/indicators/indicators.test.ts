@@ -3,7 +3,7 @@ import { coinbase } from '../data/coinbase';
 import { positionStats } from '../chart/drawings';
 import { applyTrade, bucketStart, regroupBars, type Bar } from '../types';
 import { INDICATORS, defaultParams, getIndicator } from './library';
-import { ema, rsi, sma, stdev, wma } from './math';
+import { ema, highest, lowest, rsi, sma, stdev, wma } from './math';
 
 const round = (values: number[], dp = 2) => values.map((v) => (Number.isNaN(v) ? NaN : Number(v.toFixed(dp))));
 
@@ -25,6 +25,19 @@ describe('math', () => {
   it('wma', () => {
     // (1*1 + 2*2 + 3*3) / 6
     expect(wma([1, 2, 3], 3)[2]).toBeCloseTo(14 / 6);
+  });
+
+  it('highest/lowest match a plain window scan (including NaN gaps)', () => {
+    let seed = 7;
+    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const values = Array.from({ length: 400 }, (_, i) => (i < 5 || (i > 120 && i < 124) || i === 300 ? NaN : Math.round(rand() * 50)));
+    const scan = (len: number, pick: (w: number[]) => number) =>
+      values.map((_, i) => (i < len - 1 ? NaN : pick(values.slice(i - len + 1, i + 1))));
+    for (const len of [1, 2, 3, 7, 20, 52, 399, 400, 401]) {
+      expect(highest(values, len)).toEqual(scan(len, (w) => Math.max(...w)));
+      expect(lowest(values, len)).toEqual(scan(len, (w) => Math.min(...w)));
+    }
+    expect(highest([3, 1, 2], 2.5)).toEqual([NaN, NaN, 3]); // fractional lengths keep the old slice behaviour
   });
 
   it('stdev is the population standard deviation', () => {

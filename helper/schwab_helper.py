@@ -139,6 +139,7 @@ EASTERN = ZoneInfo('America/New_York')
 TICKER_NEWS_QUERY = '{symbol}+stock+when:3d'
 MAX_TICKER_FEEDS = 12
 NEWS_CACHE_SECONDS = 90
+NEWS_CACHE_MAX = 400  # feeds + article summaries kept in memory
 NEWS_LIMIT = 80
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
 
@@ -429,7 +430,7 @@ def summarize_text(paragraphs, title, count=4):
 
 class NewsFetcher:
     def __init__(self):
-        self.cache = {}  # url -> (fetched_at, data)
+        self.cache = {}  # url (or ('summary', link)) -> (fetched_at, data)
         self.http = httpx.AsyncClient(timeout=10, follow_redirects=True, headers={'User-Agent': USER_AGENT})
 
     async def _cached(self, url, max_age, parse):
@@ -439,8 +440,16 @@ class NewsFetcher:
         response = await self.http.get(url)
         response.raise_for_status()
         data = parse(response)
-        self.cache[url] = (time.time(), data)
+        self._remember(url, data)
         return data
+
+    def _remember(self, key, data):
+        """Caches a reply. Article summaries and search feeds pile up over a long session, so once the cache is
+        large the oldest entries are dropped (they are simply fetched again if asked for)."""
+        self.cache[key] = (time.time(), data)
+        if len(self.cache) > NEWS_CACHE_MAX:
+            for old in sorted(self.cache, key=lambda k: self.cache[k][0])[:len(self.cache) - NEWS_CACHE_MAX // 2]:
+                del self.cache[old]
 
     async def _feed(self, source, section, url):
         items = await self._cached(url, NEWS_CACHE_SECONDS, lambda r: parse_feed(r.text, source))
@@ -483,7 +492,7 @@ class NewsFetcher:
                 points = summarize_text(page['paragraphs'], title)
                 if points or page['description']:
                     result = {'points': points, 'description': page['description'], 'url': str(response.url), 'words': page['words']}
-                    self.cache[('summary', links[0])] = (time.time(), result)
+                    self._remember(('summary', links[0]), result)
                     return result
                 last_error = 'The article text could not be read (it may be behind a paywall).'
             except Exception as err:
@@ -632,18 +641,18 @@ class Market:
                 if kind in ('history', 'subscribe', 'unsubscribe') and not SYMBOL_PATTERN.match(symbol):
                     await ws.send(json.dumps({'type': 'error', 'id': msg.get('id'), 'message': f'Invalid symbol "{symbol}"'}))
                 elif kind == 'history':
-                    asyncio.create_task(self.reply(ws, msg.get('id'), self.history_reply(symbol, msg.get('resolution'), msg.get('days'))))
+                    engine.background(self.reply(ws, msg.get('id'), self.history_reply(symbol, msg.get('resolution'), msg.get('days'))))
                 elif kind == 'calendar':
-                    asyncio.create_task(self.reply(ws, msg.get('id'), self.calendar_reply()))
+                    engine.background(self.reply(ws, msg.get('id'), self.calendar_reply()))
                 elif kind == 'summary':
                     links = [str(u) for u in msg.get('links') or [] if str(u).startswith(('https://', 'http://'))]
-                    asyncio.create_task(self.reply(ws, msg.get('id'), self.summary_reply(links, str(msg.get('title', '')))))
+                    engine.background(self.reply(ws, msg.get('id'), self.summary_reply(links, str(msg.get('title', '')))))
                 elif kind == 'news':
                     symbols = [str(s).upper() for s in msg.get('symbols') or [] if isinstance(s, str)]
-                    asyncio.create_task(self.reply(ws, msg.get('id'), self.news_reply(symbols, str(msg.get('query') or ''))))
+                    engine.background(self.reply(ws, msg.get('id'), self.news_reply(symbols, str(msg.get('query') or ''))))
                 elif kind in engine.HANDLERS:
                     msg['_emit'] = self.emitter(ws, msg.get('id'))
-                    asyncio.create_task(self.reply(ws, msg.get('id'), self.engine_reply(kind, msg)))
+                    engine.background(self.reply(ws, msg.get('id'), self.engine_reply(kind, msg)))
                 elif kind == 'subscribe':
                     if symbol not in self.official:
                         self.official_wake.set()
@@ -654,7 +663,7 @@ class Market:
                     self.remove_listener(ws, symbol)
                 elif not engine.READY.is_set():
                     # The analysis engine is still loading in the background: answer once it's ready.
-                    asyncio.create_task(self.after_engine_loads(ws, msg))
+                    engine.background(self.after_engine_loads(ws, msg))
                 else:
                     await ws.send(json.dumps({'type': 'error', 'id': msg.get('id'), 'message': unknown_request_message(kind)}))
         finally:

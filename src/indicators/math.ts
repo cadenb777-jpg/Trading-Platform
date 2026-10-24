@@ -71,11 +71,39 @@ export function stdev(src: number[], length: number): number[] {
   });
 }
 
+/**
+ * Rolling maximum (or minimum) of the last `length` values in one pass: a queue keeps only the values that
+ * can still become the extreme, so each value is added and removed once (O(n) instead of O(n x length)).
+ * A NaN anywhere in the window gives NaN, like Math.max/Math.min.
+ */
+function rollingExtreme(src: number[], length: number, max: boolean): number[] {
+  const n = src.length;
+  const out = new Array<number>(n);
+  const queue = new Int32Array(n);
+  let head = 0;
+  let tail = 0;
+  let lastNaN = -1;
+  for (let i = 0; i < n; i++) {
+    const v = src[i];
+    if (Number.isNaN(v)) lastNaN = i;
+    else {
+      while (tail > head && (max ? src[queue[tail - 1]] <= v : src[queue[tail - 1]] >= v)) tail--;
+      queue[tail++] = i;
+    }
+    const first = i - length + 1;
+    while (head < tail && queue[head] < first) head++;
+    out[i] = first < 0 || lastNaN >= first ? NaN : src[queue[head]];
+  }
+  return out;
+}
+
 export function highest(src: number[], length: number): number[] {
+  if (Number.isInteger(length) && length >= 1) return rollingExtreme(src, length, true);
   return src.map((_, i) => (i < length - 1 ? NaN : Math.max(...src.slice(i - length + 1, i + 1))));
 }
 
 export function lowest(src: number[], length: number): number[] {
+  if (Number.isInteger(length) && length >= 1) return rollingExtreme(src, length, false);
   return src.map((_, i) => (i < length - 1 ? NaN : Math.min(...src.slice(i - length + 1, i + 1))));
 }
 

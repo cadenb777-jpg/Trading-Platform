@@ -31,6 +31,13 @@ describe('engine reply cache', () => {
     expect(spy).toHaveBeenCalledTimes(5);
   });
 
+  it('does not share a request that can be cancelled', async () => {
+    const spy = vi.spyOn(helper, 'request').mockResolvedValue({ type: 'engine', data: 1 } as never);
+    await engineRequest('macro.curve', {}, 1000, undefined, new AbortController().signal);
+    await engineRequest('macro.curve');
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   it('does not keep partly failed replies', async () => {
     expect(complete('alts.fund', { errors: { navNotes: 'SEC timeout' } })).toBe(false);
     expect(complete('research.company', { quote: {} })).toBe(false);

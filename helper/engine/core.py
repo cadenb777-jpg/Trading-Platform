@@ -4,6 +4,7 @@ import datetime as dt
 import json
 import logging
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -14,6 +15,18 @@ log = logging.getLogger('engine')
 CACHE_PATH = Path.home() / '.trading-platform' / 'cache.db'
 
 HANDLERS = {}
+
+#: Background tasks started without anyone awaiting them. asyncio only keeps a weak reference to running tasks,
+#: so a task nobody holds can be garbage-collected before it finishes; holding them here prevents that.
+_BACKGROUND = set()
+
+
+def background(coro):
+    """Starts `coro` as a task that runs to the end even though nobody awaits it."""
+    task = asyncio.get_running_loop().create_task(coro)
+    _BACKGROUND.add(task)
+    task.add_done_callback(_BACKGROUND.discard)
+    return task
 
 BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
 
@@ -50,6 +63,8 @@ class DiskCache:
     def __init__(self, path=CACHE_PATH):
         self.path = path
         self._db = None
+        # One connection shared by the event loop and the writer thread; the lock keeps their calls apart.
+        self._lock = threading.Lock()
 
     def db(self):
         if self._db is None:
@@ -61,16 +76,33 @@ class DiskCache:
 
     def get(self, key):
         try:
-            row = self.db().execute('SELECT saved, data FROM cache WHERE key = ?', (key,)).fetchone()
+            with self._lock:
+                row = self.db().execute('SELECT saved, data FROM cache WHERE key = ?', (key,)).fetchone()
         except sqlite3.Error:
             return None
         return (row[0], json.loads(row[1])) if row else None
 
     def put(self, key, saved, value):
+        data = self.encode(key, value)
+        if data is not None:
+            self.write(key, saved, data)
+
+    @staticmethod
+    def encode(key, value):
+        """The value as JSON text, or None (logged) when it can't be saved."""
         try:
-            self.db().execute('INSERT OR REPLACE INTO cache VALUES (?, ?, ?)', (key, saved, json.dumps(value)))
-            self.db().commit()
-        except (sqlite3.Error, TypeError, ValueError) as err:
+            return json.dumps(value)
+        except (TypeError, ValueError) as err:
+            log.debug('Not cached %s: %s', key, err)
+            return None
+
+    def write(self, key, saved, data):
+        """Saves already-encoded JSON text. Safe to call from a worker thread."""
+        try:
+            with self._lock:
+                self.db().execute('INSERT OR REPLACE INTO cache VALUES (?, ?, ?)', (key, saved, data))
+                self.db().commit()
+        except sqlite3.Error as err:
             log.debug('Not cached %s: %s', key, err)
 
 
@@ -85,6 +117,7 @@ class EngineContext:
             settings.save({'sec_contact': sec_contact})
         self.sec_http = None
         self.sec_contact = ''
+        self._sec_ua = None
         self.apply_settings()
         self.disk = disk or DiskCache()
         self._cache = {}
@@ -97,6 +130,9 @@ class EngineContext:
         self.sec_contact = settings.get('sec_contact')
         # The SEC asks automated tools to identify themselves with a contact email.
         sec_ua = f'TradingPlatform personal research {self.sec_contact}'.strip()
+        if self.sec_http is not None and sec_ua == self._sec_ua:
+            return  # same identity: keep the open client (and its connections) instead of leaking a new one
+        self._sec_ua = sec_ua
         self.sec_http = httpx.AsyncClient(timeout=httpx.Timeout(20, connect=6), follow_redirects=True,
                                           headers={'User-Agent': sec_ua, 'Accept-Encoding': 'gzip, deflate'})
 
@@ -115,7 +151,7 @@ class EngineContext:
         if hit and stale_ok and time.time() - hit[0] < max_age + 7 * 86400:
             if key not in self._refreshing:
                 self._refreshing.add(key)
-                asyncio.create_task(self._refresh(key, load, persist))
+                background(self._refresh(key, load, persist))
             return hit[1]
         return await self._load(key, load, persist, max_age)
 
@@ -129,7 +165,12 @@ class EngineContext:
             now = time.time()
             self._cache[key] = (now, value)
             if persist:
-                self.disk.put(repr(key), now, value)
+                # Writing (JSON + commit) can take tens of milliseconds for long histories: do it off the event
+                # loop so live quotes and other requests keep flowing.
+                # The JSON is made here, on the loop, so the value can't change while it's being written.
+                data = self.disk.encode(repr(key), value)
+                if data is not None:
+                    await asyncio.to_thread(self.disk.write, repr(key), now, data)
             return value
 
     async def _refresh(self, key, load, persist):
