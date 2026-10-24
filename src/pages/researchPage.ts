@@ -287,6 +287,8 @@ export function createResearchPage() {
                 ...out.years.map((y) => [String(y.year), pct(y.growth, 1), money(y.fcf), money(y.pv)]),
                 [{ v: 'After year 10', cls: 'label' }, pct(inputs.terminalGrowth, 1), money(out.terminalValue), money(out.pvTerminal)],
               ],
+              undefined,
+              false,
             ),
           ),
           h(

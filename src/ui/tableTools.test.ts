@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { compareCells, detectType, isBlank, loadState, matches, nextSort, parseNumber, saveState, tableView, type TableState } from './tableTools';
+import { compareCells, detectType, hasFilters, isActive, isBlank, loadState, matches, nextSort, parseNumber, saveState, tableView, type TableState } from './tableTools';
 
 describe('parseNumber', () => {
   it('reads the formats the app prints', () => {
@@ -31,6 +31,9 @@ describe('detectType', () => {
   });
   it('pick-list for a few repeated values', () => {
     expect(detectType(['Long', 'Short', 'Long', 'Long'])).toBe('pick');
+  });
+  it('ISO dates are text, not a pick-list', () => {
+    expect(detectType(['2026-10-23', '2026-10-24', '2026-10-23', '2026-10-24'])).toBe('text');
   });
   it('text for unique or many values', () => {
     expect(detectType(['Apple', 'Microsoft', 'Nvidia'])).toBe('text');
@@ -81,6 +84,17 @@ describe('filters', () => {
   it('pick-list hides unticked values', () => {
     expect(matches('Short', 'pick', { hide: ['Short'] })).toBe(false);
     expect(matches('Long', 'pick', { hide: ['Short'] })).toBe(true);
+  });
+  it('only filter fields matching the column type count', () => {
+    expect(isActive('number', { hide: ['x'] })).toBe(false);
+    expect(isActive('pick', { hide: ['x'] })).toBe(true);
+    expect(isActive('text', { min: '2' })).toBe(false);
+    const cols = [{ key: 'A', type: 'number' as const }];
+    expect(hasFilters({ filters: { A: { hide: ['stale'] } } }, cols)).toBe(false);
+    expect(hasFilters({ filters: { A: { min: '1' } } }, cols)).toBe(true);
+  });
+  it('leaves the order alone when nothing is sorted', () => {
+    expect(tableView([['b'], ['a']], [{ key: 'x', type: 'text' }], { filters: {} }).order).toBeNull();
   });
   it('tableView filters and sorts together, keeping ties in their original order', () => {
     const rows = [

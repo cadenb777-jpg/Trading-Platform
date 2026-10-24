@@ -53,18 +53,30 @@ export function parseNumber(raw: string): number | null {
 export function detectType(values: string[]): ColumnType {
   const filled = values.map((v) => v.trim()).filter((v) => !isBlank(v));
   if (!filled.length) return 'none';
+  if (filled.filter((v) => /^\d{4}-\d{2}-\d{2}/.test(v)).length >= filled.length * 0.8) return 'text'; // ISO dates
   if (filled.filter((v) => parseNumber(v) != null).length >= filled.length * 0.8) return 'number';
   const distinct = new Set(filled).size;
   if (distinct <= 1) return 'none';
   return distinct <= 8 && distinct < filled.length ? 'pick' : 'text';
 }
 
-const isActive = (f?: ColumnFilter) => !!f && !!(f.text?.trim() || f.min?.trim() || f.max?.trim() || f.hide?.length);
-export const hasFilters = (state: TableState) => Object.values(state.filters).some(isActive);
+/** Is this filter doing anything for a column of this type? (Fields left over from another type don't count.) */
+export function isActive(type: ColumnType, f?: ColumnFilter): boolean {
+  if (!f) return false;
+  if (type === 'number') return !!(f.min?.trim() || f.max?.trim());
+  if (type === 'pick') return !!f.hide?.length;
+  if (type === 'text') return !!f.text?.trim();
+  return false;
+}
+
+/** Any filter on, given the columns' current types. */
+export const hasFilters = (state: TableState, cols: { key: string; type: ColumnType }[]) => cols.some((c) => isActive(c.type, state.filters[c.key]));
+
+const anyField = (f: ColumnFilter) => !!(f.text?.trim() || f.min?.trim() || f.max?.trim() || f.hide?.length);
 
 /** Does one cell pass its column's filter? */
 export function matches(value: string, type: ColumnType, f?: ColumnFilter): boolean {
-  if (!isActive(f) || type === 'none') return true;
+  if (!isActive(type, f)) return true;
   if (type === 'number') {
     const n = parseNumber(value);
     const min = f!.min?.trim() ? parseNumber(f!.min) : null;
@@ -92,14 +104,14 @@ export function compareCells(a: string, b: string, type: ColumnType, dir: 'asc' 
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }) * sign;
 }
 
-/** Rows (cell text, in their original order) -> which rows to show, in what order. */
+/** Rows (cell text, in their original order) -> which rows to show, in what order (`null` = leave the order alone). */
 export function tableView(rows: string[][], cols: { key: string; type: ColumnType }[], state: TableState) {
   const keep = rows.map((r) => cols.every((c, i) => matches(r[i] ?? '', c.type, state.filters[c.key])));
-  const order = rows.map((_, i) => i);
   const sortIndex = state.sort ? cols.findIndex((c) => c.key === state.sort!.col) : -1;
+  let order: number[] | null = null;
   if (sortIndex >= 0 && cols[sortIndex].type !== 'none') {
     const { type } = cols[sortIndex];
-    order.sort((i, j) => compareCells(rows[i][sortIndex] ?? '', rows[j][sortIndex] ?? '', type, state.sort!.dir) || i - j);
+    order = rows.map((_, i) => i).sort((i, j) => compareCells(rows[i][sortIndex] ?? '', rows[j][sortIndex] ?? '', type, state.sort!.dir) || i - j);
   }
   return { order, keep, shown: keep.filter(Boolean).length, total: rows.length };
 }
@@ -126,7 +138,7 @@ export function loadState(id: string, storage: Pick<Storage, 'getItem'> | undefi
 
 export function saveState(id: string, state: TableState, storage: Pick<Storage, 'setItem' | 'removeItem'> | undefined = globalThis.localStorage) {
   try {
-    if (!state.sort && !hasFilters(state)) storage?.removeItem(KEY(id));
+    if (!state.sort && !Object.values(state.filters).some(anyField)) storage?.removeItem(KEY(id));
     else storage?.setItem(KEY(id), JSON.stringify(state));
   } catch {
     /* private window or storage full: sorting and filtering still work for this visit */
@@ -153,17 +165,16 @@ function cellText(el: Element): string {
   return parts.join('').replace(/\s+/g, ' ').trim();
 }
 
-type Shared = { state: TableState; open?: boolean; live: Set<{ table: HTMLTableElement; apply: () => void }>; focus?: { el: HTMLInputElement; key: string } };
+/** Per table id: the remembered state, whether the phone filter row is open, and the filter box being typed in. */
+type Shared = { state: TableState; open?: boolean; focus?: { el: HTMLInputElement; key: string } };
 const registry = new Map<string, Shared>();
-let rowCounter = 0;
-const rowOrder = new WeakMap<HTMLTableRowElement, number>();
 
 export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
   const headRow = table.tHead?.rows[0];
   const body = table.tBodies[0];
   if (!headRow || !body) return { refresh() {}, destroy() {} };
   let shared = registry.get(opts.id);
-  if (!shared) registry.set(opts.id, (shared = { state: loadState(opts.id), live: new Set() }));
+  if (!shared) registry.set(opts.id, (shared = { state: loadState(opts.id) }));
   const { state } = shared;
   const minRows = opts.minRowsForFilters ?? 5;
 
@@ -226,7 +237,7 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
   }
 
   function pickButton(c: (typeof cols)[number], values: () => string[]) {
-    const btn = h('button', { type: 'button', class: 'btn small tt-pick', 'aria-haspopup': 'true', 'aria-label': `Filter ${c.name}` });
+    const btn = h('button', { type: 'button', class: 'btn small tt-pick', 'aria-haspopup': 'dialog', 'aria-expanded': 'false', 'aria-label': `Filter ${c.name}` });
     btn.addEventListener('click', () => {
       const all = [...new Set(values())].sort((a, b) => compareCells(a, b, 'text', 'asc'));
       const boxes = all.map((v) => {
@@ -245,16 +256,15 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
         boxes.forEach((b) => ((b.firstChild as HTMLInputElement).checked = on));
         changed();
       };
-      openPopover(
-        btn,
-        h(
-          'div',
-          { class: 'tt-pick-list', role: 'group', 'aria-label': `Show ${c.name}` },
-          h('div', { class: 'tt-pick-actions' }, h('button', { type: 'button', class: 'link-btn', onclick: () => setAll(true) }, 'All'), h('button', { type: 'button', class: 'link-btn', onclick: () => setAll(false) }, 'None')),
-          ...boxes,
-        ),
+      const list = h(
+        'div',
+        { class: 'tt-pick-list' },
+        h('div', { class: 'tt-pick-actions' }, h('button', { type: 'button', class: 'link-btn', onclick: () => setAll(true) }, 'All'), h('button', { type: 'button', class: 'link-btn', onclick: () => setAll(false) }, 'None')),
+        ...boxes,
       );
-      document.querySelector<HTMLInputElement>('.tt-pick-list input')?.focus();
+      btn.setAttribute('aria-expanded', 'true');
+      openPopover(btn, list, { label: `Show ${c.name}`, onClose: () => btn.setAttribute('aria-expanded', 'false') });
+      list.querySelector<HTMLInputElement>('input[type=checkbox]')?.focus();
     });
     return btn;
   }
@@ -268,6 +278,7 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
   }
 
   let current: string[][] = [];
+  let original: HTMLTableRowElement[] = []; // the page's own row order, to go back to when sorting is switched off
   const observer = new MutationObserver((records) => {
     if (records.some((r) => !(r.target instanceof Node && (table.tHead?.contains(r.target) || table.caption?.contains(r.target))))) apply();
   });
@@ -275,9 +286,10 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
 
   function apply() {
     observer.disconnect();
-    const all = [...body.rows];
-    for (const r of all) if (!rowOrder.has(r)) rowOrder.set(r, rowCounter++);
-    all.sort((a, b) => rowOrder.get(a)! - rowOrder.get(b)!);
+    const rows = [...body.rows];
+    const known = new Set(original);
+    if (rows.length !== original.length || rows.some((r) => !known.has(r))) original = rows; // the page changed the rows
+    const all = original;
     const dataRows = all.filter((r) => r.cells.length === cols.length && !r.classList.contains('total'));
     const fixed = all.filter((r) => !dataRows.includes(r));
     const values = (current = dataRows.map((r) => [...r.cells].map(cellText)));
@@ -289,7 +301,7 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
     });
     const view = tableView(values, cols, state);
     dataRows.forEach((r, i) => r.classList.toggle('tt-hide', !view.keep[i]));
-    const wanted = [...view.order.map((i) => dataRows[i]), ...fixed];
+    const wanted = view.order ? [...view.order.map((i) => dataRows[i]), ...fixed] : all;
     if (wanted.some((r, i) => body.rows[i] !== r)) body.append(...wanted);
 
     for (const c of cols) {
@@ -305,7 +317,7 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
         if (btn) btn.textContent = hidden ? `${Math.max(0, new Set(values.map((v) => v[cols.indexOf(c)].trim())).size - hidden)} shown ▾` : 'All ▾';
       }
     }
-    const active = hasFilters(state);
+    const active = hasFilters(state, cols);
     table.classList.toggle('tt-active', active);
     table.classList.toggle('tt-few', !active && dataRows.length < minRows);
     count.textContent = `Showing ${view.shown} of ${view.total}`;
@@ -315,13 +327,8 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
   function changed() {
     saveState(opts.id, state);
     apply();
-    for (const other of shared!.live) if (other !== self && other.table.isConnected) other.apply();
   }
 
-  // Other live tables with the same id follow the same filters; tables no longer on the page are forgotten.
-  for (const other of shared.live) if (!other.table.isConnected) shared.live.delete(other);
-  const self = { table, apply };
-  shared.live.add(self);
   apply();
 
   // A rebuilt table (same id) takes over the filter box you were typing in.
@@ -342,10 +349,7 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
   return {
     /** Re-apply sort and filters (only needed for changes the table can't see, e.g. a `data-value` update). */
     refresh: apply,
-    destroy() {
-      observer.disconnect();
-      shared!.live.delete(self);
-    },
+    destroy: () => observer.disconnect(),
   };
 }
 

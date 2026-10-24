@@ -193,9 +193,10 @@ export const tableId = (headers: string[]) => `${(location.hash || '#home').repl
 /**
  * A scrolling table with sortable, filterable columns (src/ui/tableTools.ts).
  * Cells can be text, elements, or { v, cls } to add a class (e.g. 'up', 'label').
- * Pass `tools: false` for grids where row order carries meaning (a correlation matrix).
+ * Tables whose first header is empty are row-labelled statements (income statement, key stats) and get no tools
+ * unless `tools` is passed; pass `tools: false` for any other grid where row order carries meaning.
  */
-export function dataTable(headers: string[], rows: Cell[][], rowClass?: (i: number) => string, tools: Partial<TableToolsOptions> | false = {}) {
+export function dataTable(headers: string[], rows: Cell[][], rowClass?: (i: number) => string, tools: Partial<TableToolsOptions> | false = headers[0] === '' ? false : {}) {
   const cell = (c: Cell, tag: 'td' | 'th' = 'td') =>
     typeof c === 'object' && c !== null && 'v' in c ? h(tag, { class: c.cls ?? '' }, c.v) : h(tag, {}, c as Node | string);
   const table = h(
