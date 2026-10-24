@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 
-from . import alts, flow, invest, macro, positioning, quant, research, sec, settings, store
+from . import alpaca, alts, flow, invest, macro, positioning, quant, research, sec, settings, store
 from .core import EngineError, handler
 
 EASTERN = ZoneInfo('America/New_York')
@@ -31,7 +31,10 @@ You have tools for live data from the platform: real-time quotes and price histo
 (Google News and CNBC), options flow, SEC insider trades and financial statements, macro data (FRED), futures \
 positioning (CFTC Commitment of Traders) and stock positioning (FINRA short volume), the bond market (yields, \
 spreads, Treasury auctions), evergreen and private funds from SEC filings (NAV, holdings, Form D), plus the owner's \
-saved portfolios, clients and alternative investments. Always use tools for anything that depends on current data instead of answering from \
+saved portfolios, clients and alternative investments. When Alpaca is connected (get_data_sources tells you), \
+get_price_history's intraday history reaches further back: hourly bars to 2016, 5-30 minute bars about 3 years \
+(regular session, adjusted for splits and dividends). Daily and weekly history always comes from Schwab (20 years). \
+Alpaca is used only for price history. Always use tools for anything that depends on current data instead of answering from \
 memory, and say when the data is from (for example "as of 2:41 pm ET"). Use web search for recent events the \
 news tool doesn't cover. When explaining why something moved, combine the price action with the news and \
 positioning and say how confident you are.
@@ -73,11 +76,22 @@ TOOLS = [
     },
     {
         'name': 'get_price_history',
-        'description': 'Price history for one symbol with summary statistics (change, high, low) and a sampled list of bars.',
+        'description': ('Price history for one symbol with summary statistics (change, high, low, volatility, average '
+                        'volume) and a sampled list of bars. By default 1d and 5d use 5-minute bars and longer ranges daily bars. '
+                        'Set interval for other bar sizes. Intraday bars are regular session only (9:30-16:00 ET). Without Alpaca, '
+                        'intraday history covers what Schwab keeps (about 9 months; 48 days of 1-minute bars). When Alpaca is connected, '
+                        'hourly history goes back to 2016 and 5-30 minute bars about 3 years. Daily history covers 20 years.'),
         'input_schema': {'type': 'object', 'properties': {
             'symbol': {'type': 'string'},
-            'range': {'type': 'string', 'enum': ['1d', '5d', '1mo', '3mo', '6mo', '1y', '5y'], 'description': '1d and 5d use 5-minute bars, longer ranges daily bars.'},
+            'range': {'type': 'string', 'enum': ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'max']},
+            'interval': {'type': 'string', 'enum': ['auto', '1min', '5min', '15min', '30min', '1hour', '1day', '1week'],
+                         'description': 'Bar size. auto (default) picks 5-minute for 1d/5d and daily otherwise.'},
         }, 'required': ['symbol', 'range']},
+    },
+    {
+        'name': 'get_data_sources',
+        'description': 'Which data sources are connected right now (Schwab, Alpaca long price history, FRED key, SEC email) and what each provides. Read-only.',
+        'input_schema': {'type': 'object', 'properties': {}},
     },
     {
         'name': 'get_news',
@@ -198,7 +212,7 @@ for _tool in TOOLS:
     _tool['eager_input_streaming'] = True
 
 TOOL_LABELS = {
-    'get_quotes': 'Getting live quotes', 'get_price_history': 'Reading price history', 'get_news': 'Reading the news',
+    'get_quotes': 'Getting live quotes', 'get_price_history': 'Reading price history', 'get_data_sources': 'Checking data sources', 'get_news': 'Reading the news',
     'get_options_flow': 'Checking options flow', 'get_insider_trades': 'Checking insider trades',
     'get_company_financials': 'Reading SEC financials', 'get_macro_snapshot': 'Checking the economy',
     'get_positioning': 'Checking positioning', 'get_private_fund': 'Reading the fund\'s SEC filings',
@@ -261,38 +275,154 @@ async def t_get_quotes(ctx, args, actions):
     return out
 
 
+RANGE_DAYS = {'1d': 1, '5d': 7, '1mo': 31, '3mo': 92, '6mo': 183, '1y': 366, '2y': 731, '5y': 1830, '10y': 3653, 'max': 365 * 40}
+#: interval -> (Alpaca bar size, Schwab method, days Schwab keeps (approx.), seconds per bar)
+INTERVALS = {
+    '1min': ('1m', 'get_price_history_every_minute', 48, 60),
+    '5min': ('5m', 'get_price_history_every_five_minutes', 270, 300),
+    '15min': ('15m', 'get_price_history_every_fifteen_minutes', 270, 900),
+    '30min': ('30m', 'get_price_history_every_thirty_minutes', 270, 1800),
+    '1hour': ('1h', 'get_price_history_every_thirty_minutes', 270, 3600),
+}
+
+
+def regroup(bars, seconds):
+    """Joins bars into buckets of `seconds` (aligned to UTC multiples, e.g. whole hours)."""
+    out = []
+    for b in bars:
+        t = b['time'] - b['time'] % seconds
+        if out and out[-1]['time'] == t:
+            last = out[-1]
+            last.update(high=max(last['high'], b['high']), low=min(last['low'], b['low']), close=b['close'], volume=last['volume'] + b['volume'])
+        else:
+            out.append({**b, 'time': t})
+    return out
+
+
+async def _schwab_intraday(ctx, symbol, method, start, now):
+    response = await getattr(ctx.schwab, method)(symbol, start_datetime=start, end_datetime=now, need_extended_hours_data=False)
+    if response.status_code != 200:
+        raise EngineError(f'Schwab returned {response.status_code}')
+    return [{'time': c['datetime'] // 1000, 'open': c['open'], 'high': c['high'], 'low': c['low'], 'close': c['close'], 'volume': c.get('volume', 0)}
+            for c in response.json().get('candles', [])]
+
+
+async def intraday_history(ctx, symbol, interval, days, now=None):
+    """Regular-session (9:30-16:00 New York) intraday bars, the sources used and notes for the reader.
+
+    Schwab gives what it keeps; Alpaca (when connected) adds anything older, Schwab winning where both have bars.
+    If Alpaca fails, Schwab's bars come back with a note saying why the older part is missing."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    size, method, schwab_days, _ = INTERVALS[interval]
+    start = now - dt.timedelta(days=days)
+    sources, notes, bars = [], [], []
+    try:
+        bars = await _schwab_intraday(ctx, symbol, method, max(start, now - dt.timedelta(days=schwab_days)), now)
+        if bars:
+            sources.append('Schwab')
+    except Exception:
+        if not alpaca.available():
+            raise
+    if alpaca.available() and (not bars or bars[0]['time'] - start.timestamp() > 4 * 86400):
+        try:
+            older = alpaca.regular_session(await alpaca.bars(ctx, symbol, size, start, bars[0]['time'] if bars else now), hourly=size == '1h')
+        except Exception as err:
+            older = []
+            notes.append(f'Older history from Alpaca is missing: {err}')
+        if older:
+            sources.append('Alpaca')
+            if size == '1h':
+                notes.append('Alpaca hour bars start on the hour, so their 9 am bar also holds 9:00-9:30 pre-market trades.')
+        bars = alpaca.merge_with_schwab(bars, older)
+    if interval == '1hour':
+        bars = regroup(bars, 3600)
+    return bars, sources, notes
+
+
+def _weekly(bars):
+    weeks = []
+    for b in bars:
+        d = dt.datetime.fromtimestamp(b['time'], EASTERN).date()
+        week = d - dt.timedelta(days=d.weekday())
+        if weeks and weeks[-1][0] == week:
+            w = weeks[-1][1]
+            w.update(high=max(w['high'], b['high']), low=min(w['low'], b['low']), close=b['close'], volume=w['volume'] + b['volume'])
+        else:
+            weeks.append((week, dict(b)))
+    return [w for _, w in weeks]
+
+
 async def t_get_price_history(ctx, args, actions):
     symbol = _str(args.get('symbol'), 'symbol').upper()
     rng = args.get('range', '3mo')
+    if rng not in RANGE_DAYS:
+        raise EngineError(f'Unknown range "{rng}"')
+    interval = args.get('interval') or 'auto'
+    if interval == 'auto':
+        interval = '5min' if rng in ('1d', '5d') else '1day'
+    if interval not in INTERVALS and interval not in ('1day', '1week'):
+        raise EngineError(f'Unknown interval "{interval}"')
     now = dt.datetime.now(dt.timezone.utc)
-    if rng in ('1d', '5d'):
-        response = await ctx.schwab.get_price_history_every_five_minutes(
-            symbol, start_datetime=now - dt.timedelta(days=1 if rng == '1d' else 7), end_datetime=now, need_extended_hours_data=False)
-        if response.status_code != 200:
-            raise EngineError(f'Schwab returned {response.status_code}')
-        bars = [{'time': c['datetime'] // 1000, 'open': c['open'], 'high': c['high'], 'low': c['low'], 'close': c['close'], 'volume': c.get('volume', 0)}
-                for c in response.json().get('candles', [])]
+    days = RANGE_DAYS[rng]
+    intraday = interval in INTERVALS
+    notes = []
+    if intraday:
+        size, _, schwab_days, _ = INTERVALS[interval]
+        if not alpaca.available():
+            if days > schwab_days:
+                notes.append('Alpaca isn\'t connected, so intraday history is limited to what Schwab keeps (about 9 months; '
+                             '48 days of 1-minute bars). Adding free Alpaca keys in Settings extends hourly history back to 2016.')
+        elif days > alpaca.MAX_SPAN_DAYS.get(size, days):
+            days = max(schwab_days, alpaca.MAX_SPAN_DAYS[size])
+            notes.append(f'{interval} bars are limited to about {days} days; use 1hour or 1day for longer ranges.')
+        bars, sources, more = await intraday_history(ctx, symbol, interval, days, now)
+        notes += more
         if rng == '1d' and bars:
             last_day = dt.datetime.fromtimestamp(bars[-1]['time'], EASTERN).date()
             bars = [b for b in bars if dt.datetime.fromtimestamp(b['time'], EASTERN).date() == last_day]
     else:
-        years = {'1mo': 1, '3mo': 1, '6mo': 1, '1y': 1, '5y': 5}[rng]
-        bars = await ctx.daily_bars(symbol, years)
-        days = {'1mo': 31, '3mo': 92, '6mo': 183, '1y': 366, '5y': 1830}[rng]
+        sources = ['Schwab']
+        bars = await ctx.daily_bars(symbol, max(1, min(20, -(-days // 365))))
         cutoff = now.timestamp() - days * 86400
         bars = [b for b in bars if b['time'] >= cutoff]
+        if interval == '1week':
+            bars = _weekly(bars)
     if not bars:
         raise EngineError(f'No price history for {symbol}')
     step = max(1, len(bars) // 100)
     sample = bars[::step] + ([bars[-1]] if (len(bars) - 1) % step else [])
-    fmt = '%Y-%m-%d %H:%M' if rng in ('1d', '5d') else '%Y-%m-%d'
-    return {
-        'symbol': symbol, 'range': rng, 'bars': len(bars),
+    fmt = '%Y-%m-%d %H:%M' if intraday else '%Y-%m-%d'
+    out = {
+        'symbol': symbol, 'range': rng, 'interval': interval, 'bars': len(bars), 'sources': sources,
+        'session': 'regular',
         'first': {'time': dt.datetime.fromtimestamp(bars[0]['time'], EASTERN).strftime(fmt), 'close': bars[0]['close']},
         'last': {'time': dt.datetime.fromtimestamp(bars[-1]['time'], EASTERN).strftime(fmt), 'close': bars[-1]['close']},
         'changePercent': 100 * (bars[-1]['close'] / bars[0]['open'] - 1),
         'high': max(b['high'] for b in bars), 'low': min(b['low'] for b in bars),
+        'averageVolume': round(sum(b['volume'] for b in bars) / len(bars)),
         'sample': [[dt.datetime.fromtimestamp(b['time'], EASTERN).strftime(fmt), round(b['close'], 4), b['volume']] for b in sample],
+    }
+    per_year = {'1day': 252, '1week': 52}.get(interval)
+    closes = [b['close'] for b in bars if b['close']]
+    if per_year and len(closes) > 3:
+        rets = [closes[k] / closes[k - 1] - 1 for k in range(1, len(closes))]
+        mean = sum(rets) / len(rets)
+        sd = (sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)) ** 0.5
+        out['volatilityAnnualPercent'] = round(100 * sd * per_year ** 0.5, 2)
+    if notes:
+        out['note'] = ' '.join(notes)
+    return out
+
+
+async def t_get_data_sources(ctx, args, actions):
+    """Read-only: which sources are connected. Never includes keys."""
+    return {
+        'schwab': {'connected': ctx.schwab is not None,
+                   'provides': 'Live quotes, charts, options, intraday history (about 9 months; 48 days of 1-minute) and 20 years of daily bars.'},
+        'alpaca': alpaca.describe(),
+        'fred': {'keySet': bool(settings.get('fred_key')), 'provides': 'US economic data (works without a key, faster with one).'},
+        'sec': {'contactSet': bool(settings.get('sec_contact')), 'provides': 'Company financials, insider trades, fund filings.'},
+        'trading': 'None. This platform cannot place, change or cancel orders.',
     }
 
 
@@ -479,7 +609,7 @@ async def t_ui_action(ctx, args, actions):
 
 
 TOOL_FUNCS = {
-    'get_quotes': t_get_quotes, 'get_price_history': t_get_price_history, 'get_news': t_get_news, 'get_options_flow': t_get_options_flow,
+    'get_quotes': t_get_quotes, 'get_price_history': t_get_price_history, 'get_data_sources': t_get_data_sources, 'get_news': t_get_news, 'get_options_flow': t_get_options_flow,
     'get_insider_trades': t_get_insider_trades, 'get_company_financials': t_get_company_financials, 'get_macro_snapshot': t_get_macro_snapshot,
     'get_positioning': t_get_positioning, 'get_private_fund': t_get_private_fund, 'search_private_funds': t_search_private_funds,
     'get_bond_market': t_get_bond_market, 'get_my_alternatives': t_get_my_alternatives, 'list_portfolios': t_list_portfolios, 'save_portfolio': t_save_portfolio,

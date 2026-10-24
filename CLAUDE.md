@@ -126,6 +126,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Pop-out charts: `openChartWindow` (src/ui/chartWindow.ts); `createLineChart` adds hover values and an expand button;
   `openFredWindow` opens a FRED series' full history.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).
+  Alpaca (engine/alpaca.py, optional free keys in Settings): market-data-only history back to 2016 via
+  `alpaca.bars(ctx, symbol, tf, start, end)` (intraday only, saved in cache.db, extended incrementally). With keys set,
+  30m-4h charts ask for 3 years and the helper fills what Schwab lacks (Schwab wins); the AI reads regular-session
+  hourly bars back to 2016. Only data.alpaca.markets; never trading (test scans every helper module).
   Indicators can load outside data via `IndicatorDef.external` (COT for the related futures market, FINRA short volume).
   It is market-data only: never add order placement to it (the Schwab app's order limit is 0).
   Trading is planned through Webull.

@@ -111,6 +111,27 @@ Your portfolios, clients and report branding are saved on your computer in
 `~/.trading-platform/platform.db` (in your user folder), not in the browser or online.
 Back up that file if the data matters to you.
 
+## Alpaca (optional, free)
+
+Schwab only keeps about 9 months of intraday bars (and about 48 days of 1-minute bars). Alpaca gives
+free intraday price history for the whole US market back to 2016 (adjusted for splits and dividends).
+With it, 30-minute and hourly charts reach back about 3 years, and the AI assistant can read hourly
+history back to 2016. Alpaca is only used for **price history**: the platform never trades through it.
+
+1. Go to [alpaca.markets](https://alpaca.markets) and sign up for a free account (no deposit needed).
+2. Open your dashboard at [app.alpaca.markets](https://app.alpaca.markets). On the Home page, find
+   **API Keys** and click **Generate New Keys** (paper-account keys are commonly reported to work;
+   Test connection will confirm).
+3. Copy both the **Key ID** and the **Secret Key**. The secret is shown only once; if you lose it,
+   generate new keys.
+4. In the platform, open **Settings** → **Data sources** → **Alpaca (free history)**, paste both keys,
+   click **Save**, then **Test connection**. It should say "Connected".
+
+The keys are saved by the helper in `~/.trading-platform/settings.json` and are never shown in the
+browser again. Downloaded history is kept in `~/.trading-platform/cache.db`, so each stock is
+downloaded once and only the newest bars are fetched after that. The free plan doesn't include the
+newest 15 minutes; Schwab covers those.
+
 ## Every day
 
 Double-click the start file and keep its window open while you use the charts.
