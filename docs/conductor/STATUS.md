@@ -1,14 +1,13 @@
-# Status (updated Oct 24, ~5:45 PM Central)
+# Status (updated Oct 24, ~4:55 PM Central)
 
-**Now:** version 22 is ready and tested; waiting for your go to publish.
+**Now:** idle. Version 22 is published (site updated; re-download the helper).
 
-**Live on the site (v21):** new look, speed fixes, Alpaca free history (Settings), research notes.
+**Live (v22):** Setups rework (honest grades after costs, simpler rules, COT counts only if it proves itself on your
+data, 15y daily + saved hourly + Alpaca history, weekly rule tests on your data, 0.5% default risk, instant loading),
+column sort/filters on every data table, production fixes (security, licences/legal drafts, holidays, CI helper tests).
 
-**Next when it restarts:**
-1. Finish the Setups rework (half done, saved on branch conductor/4-setups)
-2. Review the table column filters (built, saved on branch conductor/2b-tables) and the Setups rework
-3. Combine and test, then ask you before publishing v22
+**Backlog (next session):** research applied to every page, design round 2, re-score /100 and fix loop, remaining
+production items (helper pairing token, installer/setup wizard, keychain secrets).
 
-**Later (backlog):** production fixes (score 43/100), research applied to every page, design round 2, re-score.
-
+To resume: "use the conductor skill: continue from docs/conductor/NEXT.md on branch conductor/ledger".
 Mantra: simplicity scales.

@@ -1,6 +1,6 @@
 # Where the work stopped (Oct 24, 3:10 PM Central) and what's next
 
-Published: helper v21 on main (7fc8a1e): new look, speed fixes, Alpaca history, research notes, mantra.
+Published: helper v22 on main (80eb4d1). Items 1-4, 2b, 4a, 8 (quick wins) done.
 
 Saved but NOT published (branches on GitHub):
 - conductor/2b-tables: column sort/filters on all data tables (src/ui/tableTools.ts), 159 tests pass, review was
