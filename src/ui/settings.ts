@@ -1,5 +1,5 @@
 /**
- * Settings: the AI key and model, the SEC email and an optional FRED key. Values go straight to the helper,
+ * Settings: the AI key and model, the SEC email, an optional FRED key and optional Alpaca keys (free price history). Values go straight to the helper,
  * which saves them on this computer; keys are never stored in the browser or shown again.
  */
 import { LATEST_HELPER_VERSION, engineRequest, helper } from '../data/schwab';
@@ -8,6 +8,8 @@ import { h, openModal, toast } from './dom';
 export interface PlatformSettings {
   aiKeySet: boolean;
   fredKeySet: boolean;
+  /** Both Alpaca keys are saved (helper version 21+; the keys themselves are never sent back). */
+  alpacaSet?: boolean;
   secContact: string;
   model: string;
   models: { id: string; name: string }[];
@@ -77,6 +79,86 @@ function keyRow(label: string, help: Node, isSet: boolean, field: 'aiKey' | 'fre
           )
         : null,
     ),
+  );
+}
+
+interface AlpacaStatus {
+  ok: boolean;
+  keysSet: boolean;
+  message: string;
+  earliest: string | null;
+}
+
+/** Alpaca: free price history back to 2016 (market data only, never trading). Key ID + secret, saved together. */
+function alpacaRow(isSet: boolean, refresh: () => void): HTMLElement {
+  const keyId = h('input', { class: 'input', type: 'password', placeholder: isSet ? 'Saved ✓ (paste a new key ID to replace it)' : 'API key ID', autocomplete: 'off', spellcheck: false });
+  const secret = h('input', { class: 'input', type: 'password', placeholder: isSet ? 'Saved ✓ (paste a new secret to replace it)' : 'Secret key', autocomplete: 'off', spellcheck: false });
+  const status = h('span', { class: `key-status ${isSet ? 'ok' : ''}` }, isSet ? '● Saved' : '○ Not set');
+  const result = h('p', { class: 'muted small' });
+  const test = async () => {
+    result.textContent = 'Testing…';
+    try {
+      const r = await engineRequest<AlpacaStatus>('alpaca.status', {}, 20000);
+      result.textContent = r.ok ? `✓ ${r.message}${r.earliest ? ` (earliest daily bar found: ${r.earliest})` : ''}` : `✗ ${r.message}`;
+    } catch (err) {
+      const message = (err as Error).message;
+      result.textContent = /doesn.t know|latest helper/i.test(message) ? 'Your helper is too old for Alpaca: download the project ZIP again to update it.' : `✗ ${message}`;
+    }
+  };
+  return h(
+    'div',
+    { class: 'settings-row' },
+    h('div', { class: 'settings-label' }, h('b', {}, 'Alpaca (free history, optional)'), status),
+    h(
+      'p',
+      { class: 'muted small' },
+      'Free account at alpaca.markets; used only for price history back to 2016 (minute, hourly and daily bars), so charts, the AI assistant and the scanner can look further back than Schwab keeps. Never used for trading. Get the two keys at ',
+      h('a', { href: 'https://app.alpaca.markets/dashboard/overview', target: '_blank', rel: 'noopener' }, 'app.alpaca.markets'),
+      ' (sign up, then on the Home page find "API Keys" and click Generate New Keys; copy both before closing).',
+    ),
+    h('div', { class: 'ap-controls' }, keyId),
+    h(
+      'div',
+      { class: 'ap-controls' },
+      secret,
+      h(
+        'button',
+        {
+          class: 'btn primary',
+          onclick: async () => {
+            const changes: Record<string, string> = {};
+            if (keyId.value.trim()) changes.alpacaKeyId = keyId.value.trim();
+            if (secret.value.trim()) changes.alpacaSecret = secret.value.trim();
+            if (!isSet && !(changes.alpacaKeyId && changes.alpacaSecret)) return toast('Paste both the key ID and the secret');
+            if (!Object.keys(changes).length) return toast('Paste the new key first');
+            try {
+              const s = await save(changes);
+              if (s.alpacaSet === undefined) return toast('Your helper is too old for Alpaca: download the project ZIP again to update it.');
+              toast('Saved');
+              refresh();
+            } catch (err) {
+              toast((err as Error).message);
+            }
+          },
+        },
+        'Save',
+      ),
+      h('button', { class: 'btn', onclick: test }, 'Test connection'),
+      isSet
+        ? h(
+            'button',
+            {
+              class: 'btn',
+              onclick: async () => {
+                await save({ alpacaKeyId: '', alpacaSecret: '' }).catch((err) => toast((err as Error).message));
+                refresh();
+              },
+            },
+            'Remove',
+          )
+        : null,
+    ),
+    result,
   );
 }
 
@@ -179,6 +261,7 @@ export async function openSettings(focus?: 'ai') {
         '32 letters and numbers',
         render,
       ),
+      alpacaRow(!!s.alpacaSet, render),
       h('h3', { class: 'settings-section' }, 'Helper'),
       (() => {
         const box = h('input', { type: 'checkbox', checked: s.openBrowser !== false });
