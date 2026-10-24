@@ -799,21 +799,14 @@ def series_of(bars):
     return [b['time'] for b in bars], [b['open'] for b in bars], [b['close'] for b in bars]
 
 
-def random_entry_test(trades_by_symbol, series_by_symbol, runs=1000, seed=7, costs=COSTS, replay=None):
-    """Pools a strategy's trades across stocks and compares their average return with random entries on the same
-    stocks and sides, on random dates from the same period.
-
-    Two things keep it honest:
-      - Trades that signalled on the same date are moved TOGETHER to one random date (one random date per real
-        signal date), so the random trades cluster in time like the real ones; otherwise 30 trades from one sell-off
-        would be compared with 30 independent random dates and the p-value would be far too small
-        (docs/research/setups-v21-results.md: 38% false alarms at the 10% level before, 9.5% after).
-      - With `replay(symbol, bar, direction)` (see `make_replay`) each random trade is run with the strategy's OWN
-        plan and exits from the random bar (stop, target, trailing stop...). Copying only the real trade's holding
-        time flatters exits that depend on the path: a trailing stop holds exactly the trades that trended, and a
-        random entry held "as long" does not get that choice. When the plan can't be made or never fills on the
-        random bar, that random trade falls back to "enter at the next open, hold as long".
-    p = share of random sets that did at least as well; `excess` = real average minus the average random set."""
+def random_entry_test(trades_by_symbol, series_by_symbol, runs=1000, seed=7, costs=COSTS):
+    """Pools a strategy's trades across stocks and compares their average return with random entries: same stocks,
+    direction and holding time, on random dates from the same period. Trades that signalled on the same date are
+    moved TOGETHER to one random date (one random date per real signal date), so the random trades cluster in time
+    like the real ones; otherwise 30 trades from one sell-off would be compared with 30 independent random dates and
+    the p-value would be far too small (docs/research/setups-v21-results.md: 38% false alarms at the 10% level
+    before, 9.5% after; 7% for strategies with stops, targets and trailing exits). p = share of random sets that did
+    at least as well; `excess` = real average minus the average random set (drift and holding time taken out)."""
     pool = [(sym, t) for sym, ts in trades_by_symbol.items() for t in ts if sym in series_by_symbol]
     if len(pool) < 10:
         return None
@@ -822,7 +815,7 @@ def random_entry_test(trades_by_symbol, series_by_symbol, runs=1000, seed=7, cos
     cands = sorted({x for times, _, _ in series_by_symbol.values() for x in times if lo <= x <= hi})
     clusters = {}
     for sym, t in pool:
-        clusters.setdefault(t['time'], []).append((sym, series_by_symbol[sym], t['bars'], t['dir']))
+        clusters.setdefault(t['time'], []).append((series_by_symbol[sym], t['bars'], t['dir']))
     groups = list(clusters.values())
     rnd = random.Random(seed)
     rand, left = rnd.random, bisect.bisect_left
@@ -832,52 +825,16 @@ def random_entry_test(trades_by_symbol, series_by_symbol, runs=1000, seed=7, cos
         total = 0.0
         for g in groups:
             when = cands[int(rand() * nc)]
-            for sym, (times, opens, closes), hold, d in g:
-                k = left(times, when)
-                r = replay(sym, k, d) if replay is not None else None
-                if r is None:
-                    k = min(k, len(closes) - hold - 1)
-                    r = (closes[k + hold] / opens[k + 1] - 1) * d - costs
-                total += r
-        means += total / n
-        if total / n >= actual:
+            for (times, opens, closes), hold, d in g:
+                k = min(left(times, when), len(closes) - hold - 1)
+                total += (closes[k + hold] / opens[k + 1] - 1) * d
+        mean = total / n - costs
+        means += mean
+        if mean >= actual:
             better += 1
     p = (better + 1) / (runs + 1)
     return {'runs': runs, 'p': p, 'actual': actual, 'randomMean': means / runs, 'excess': actual - means / runs, 'trades': n, 'clusters': len(groups),
-            'exits': 'same plan and exits' if replay is not None else 'same holding time',
             'verdict': 'edge' if p <= 0.05 else 'maybe' if p <= 0.2 else 'luck'}
-
-
-REPLAY_KEYS = ('bars', 'closes', 'horizon', 'atr', 'atr20', 'atr22', 'sma5', 'sma20', 'sd20', 'lo10', 'hi10')
-
-
-def slim(ind):
-    """Just what plans and the simulator read (to keep many stocks in memory for the random-entry replay)."""
-    return {k: ind[k] for k in REPLAY_KEYS if k in ind}
-
-
-def make_replay(inds, strat, costs=COSTS):
-    """replay(symbol, bar, direction) -> the return of the strategy's own plan entered from that bar (after costs),
-    or None when no plan can be made there or it never fills. Results are cached (random dates repeat)."""
-    s = STRATEGIES[strat] if isinstance(strat, str) else strat
-    cache = {}
-
-    def replay(sym, k, d):
-        key = (sym, k, d)
-        if key in cache:
-            return cache[key]
-        ind = inds.get(sym)
-        out = None
-        if ind is not None and 3 <= k < len(ind['bars']) - 1 and ind['atr'][k]:
-            try:
-                plan = s['plan'](ind, k, d)
-            except (TypeError, KeyError, IndexError):
-                plan = None
-            t = plan and simulate(ind, k, plan, d, costs)
-            out = t['ret'] if t else None
-        cache[key] = out
-        return out
-    return replay
 
 
 def holm(pvalues):
