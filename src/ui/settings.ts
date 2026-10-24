@@ -2,13 +2,13 @@
  * Settings: the AI key and model, the SEC email, an optional FRED key and optional Alpaca keys (free price history). Values go straight to the helper,
  * which saves them on this computer; keys are never stored in the browser or shown again.
  */
-import { LATEST_HELPER_VERSION, engineRequest, helper } from '../data/schwab';
+import { LATEST_HELPER_VERSION, engineRequest, helper, setAlpacaConnected } from '../data/schwab';
 import { h, openModal, toast } from './dom';
 
 export interface PlatformSettings {
   aiKeySet: boolean;
   fredKeySet: boolean;
-  /** Both Alpaca keys are saved (helper version 21+; the keys themselves are never sent back). */
+  /** Both Alpaca keys are saved (missing from helpers without Alpaca support; the keys themselves are never sent back). */
   alpacaSet?: boolean;
   secContact: string;
   model: string;
@@ -22,6 +22,7 @@ const listeners = new Set<(s: PlatformSettings) => void>();
 
 export async function getSettings(force = false): Promise<PlatformSettings> {
   if (!cached || force) cached = await engineRequest<PlatformSettings>('settings.get', {}, 10000);
+  setAlpacaConnected(!!cached.alpacaSet);
   return cached;
 }
 
@@ -32,6 +33,7 @@ export function onSettingsChange(fn: (s: PlatformSettings) => void) {
 
 async function save(changes: Record<string, string | boolean>) {
   cached = await engineRequest<PlatformSettings>('settings.set', changes, 10000);
+  setAlpacaConnected(!!cached.alpacaSet);
   for (const fn of listeners) fn(cached);
   return cached;
 }
@@ -99,7 +101,7 @@ function alpacaRow(isSet: boolean, refresh: () => void): HTMLElement {
     result.textContent = 'Testing…';
     try {
       const r = await engineRequest<AlpacaStatus>('alpaca.status', {}, 20000);
-      result.textContent = r.ok ? `✓ ${r.message}${r.earliest ? ` (earliest daily bar found: ${r.earliest})` : ''}` : `✗ ${r.message}`;
+      result.textContent = r.ok ? `✓ ${r.message}${r.earliest ? ` (earliest bar found: ${r.earliest})` : ''}` : `✗ ${r.message}`;
     } catch (err) {
       const message = (err as Error).message;
       result.textContent = /doesn.t know|latest helper/i.test(message) ? 'Your helper is too old for Alpaca: download the project ZIP again to update it.' : `✗ ${message}`;
@@ -112,7 +114,7 @@ function alpacaRow(isSet: boolean, refresh: () => void): HTMLElement {
     h(
       'p',
       { class: 'muted small' },
-      'Free account at alpaca.markets; used only for price history back to 2016 (minute, hourly and daily bars), so charts, the AI assistant and the scanner can look further back than Schwab keeps. Never used for trading. Get the two keys at ',
+      'Free account at alpaca.markets; used only for intraday price history back to 2016, so charts (30-minute and hourly, about 3 years) and the AI assistant can look further back than Schwab keeps. Never used for trading. Get the two keys at ',
       h('a', { href: 'https://app.alpaca.markets/dashboard/overview', target: '_blank', rel: 'noopener' }, 'app.alpaca.markets'),
       ' (sign up, then on the Home page find "API Keys" and click Generate New Keys; copy both before closing).',
     ),

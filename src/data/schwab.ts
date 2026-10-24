@@ -92,6 +92,32 @@ const HISTORY_PLAN: Record<Timeframe, { resolution: string; days: number } | nul
   '1M': { resolution: '1D', days: 365 * 20 },
 };
 
+/** With Alpaca keys saved, the helper fills intraday history older than Schwab keeps, so these charts reach ~3 years. */
+const ALPACA_HISTORY_PLAN: Partial<Record<Timeframe, { resolution: string; days: number }>> = {
+  '30m': { resolution: '30m', days: 365 * 3 },
+  '1h': { resolution: '30m', days: 365 * 3 },
+  '2h': { resolution: '30m', days: 365 * 3 },
+  '3h': { resolution: '30m', days: 365 * 3 },
+  '4h': { resolution: '30m', days: 365 * 3 },
+};
+let alpacaSet = false;
+let alpacaAsked = false;
+
+/** Settings calls this when it learns whether Alpaca keys are saved. */
+export function setAlpacaConnected(value: boolean) {
+  alpacaSet = value;
+  alpacaAsked = true;
+}
+
+/** Asks the helper once (in the background) whether Alpaca keys are saved; charts use the longer plan after that. */
+function checkAlpaca() {
+  if (alpacaAsked) return;
+  alpacaAsked = true;
+  engineRequest<{ alpacaSet?: boolean }>('settings.get', {}, 10000)
+    .then((s) => (alpacaSet = !!s.alpacaSet))
+    .catch(() => (alpacaAsked = false));
+}
+
 export interface HelperListener {
   onTrade?(trade: Trade): void;
   onQuote?(quote: Quote): void;
@@ -435,7 +461,8 @@ export const schwab: DataProvider = {
   normalizeSymbol: (input) => input.trim().toUpperCase(),
 
   async loadHistory(symbol, timeframe, signal) {
-    const plan = HISTORY_PLAN[timeframe];
+    checkAlpaca();
+    const plan = (alpacaSet && ALPACA_HISTORY_PLAN[timeframe]) || HISTORY_PLAN[timeframe];
     if (!plan) {
       await helper.connect();
       return [];

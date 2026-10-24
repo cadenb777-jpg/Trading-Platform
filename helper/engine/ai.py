@@ -32,8 +32,9 @@ You have tools for live data from the platform: real-time quotes and price histo
 positioning (CFTC Commitment of Traders) and stock positioning (FINRA short volume), the bond market (yields, \
 spreads, Treasury auctions), evergreen and private funds from SEC filings (NAV, holdings, Form D), plus the owner's \
 saved portfolios, clients and alternative investments. When Alpaca is connected (get_data_sources tells you), \
-get_price_history can also return minute, hourly, daily or weekly bars back to 2016 (full market, adjusted for splits \
-and dividends; the newest 15 minutes come from Schwab instead). Alpaca is used only for price history. Always use tools for anything that depends on current data instead of answering from \
+get_price_history's intraday history reaches further back: hourly bars to 2016, 5-30 minute bars about 3 years \
+(regular session, adjusted for splits and dividends). Daily and weekly history always comes from Schwab (20 years). \
+Alpaca is used only for price history. Always use tools for anything that depends on current data instead of answering from \
 memory, and say when the data is from (for example "as of 2:41 pm ET"). Use web search for recent events the \
 news tool doesn't cover. When explaining why something moved, combine the price action with the news and \
 positioning and say how confident you are.
@@ -77,9 +78,9 @@ TOOLS = [
         'name': 'get_price_history',
         'description': ('Price history for one symbol with summary statistics (change, high, low, volatility, average '
                         'volume) and a sampled list of bars. By default 1d and 5d use 5-minute bars and longer ranges daily bars. '
-                        'Set interval for other bar sizes. Without Alpaca, intraday history covers what Schwab keeps (about 9 months; '
-                        '48 days of 1-minute bars). When Alpaca is connected, minute and hourly history goes back to 2016 '
-                        '(1-minute bars at most about a year). Daily history covers 20 years.'),
+                        'Set interval for other bar sizes. Intraday bars are regular session only (9:30-16:00 ET). Without Alpaca, '
+                        'intraday history covers what Schwab keeps (about 9 months; 48 days of 1-minute bars). When Alpaca is connected, '
+                        'hourly history goes back to 2016 and 5-30 minute bars about 3 years. Daily history covers 20 years.'),
         'input_schema': {'type': 'object', 'properties': {
             'symbol': {'type': 'string'},
             'range': {'type': 'string', 'enum': ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'max']},
@@ -307,12 +308,14 @@ async def _schwab_intraday(ctx, symbol, method, start, now):
 
 
 async def intraday_history(ctx, symbol, interval, days, now=None):
-    """Intraday bars and the sources used: Schwab for what it keeps, Alpaca (when connected) for anything older.
-    Schwab wins where both have bars."""
+    """Regular-session (9:30-16:00 New York) intraday bars, the sources used and notes for the reader.
+
+    Schwab gives what it keeps; Alpaca (when connected) adds anything older, Schwab winning where both have bars.
+    If Alpaca fails, Schwab's bars come back with a note saying why the older part is missing."""
     now = now or dt.datetime.now(dt.timezone.utc)
     size, method, schwab_days, _ = INTERVALS[interval]
     start = now - dt.timedelta(days=days)
-    sources, bars = [], []
+    sources, notes, bars = [], [], []
     try:
         bars = await _schwab_intraday(ctx, symbol, method, max(start, now - dt.timedelta(days=schwab_days)), now)
         if bars:
@@ -321,13 +324,19 @@ async def intraday_history(ctx, symbol, interval, days, now=None):
         if not alpaca.available():
             raise
     if alpaca.available() and (not bars or bars[0]['time'] - start.timestamp() > 4 * 86400):
-        older = await alpaca.bars(ctx, symbol, size, start, bars[0]['time'] if bars else now)
+        try:
+            older = alpaca.regular_session(await alpaca.bars(ctx, symbol, size, start, bars[0]['time'] if bars else now), hourly=size == '1h')
+        except Exception as err:
+            older = []
+            notes.append(f'Older history from Alpaca is missing: {err}')
         if older:
             sources.append('Alpaca')
+            if size == '1h':
+                notes.append('Alpaca hour bars start on the hour, so their 9 am bar also holds 9:00-9:30 pre-market trades.')
         bars = alpaca.merge_with_schwab(bars, older)
     if interval == '1hour':
         bars = regroup(bars, 3600)
-    return bars, sources
+    return bars, sources, notes
 
 
 def _weekly(bars):
@@ -356,12 +365,18 @@ async def t_get_price_history(ctx, args, actions):
     now = dt.datetime.now(dt.timezone.utc)
     days = RANGE_DAYS[rng]
     intraday = interval in INTERVALS
-    note = None
+    notes = []
     if intraday:
-        if days > INTERVALS[interval][2] and not alpaca.available():
-            note = ('Alpaca isn\'t connected, so intraday history is limited to what Schwab keeps (about 9 months; '
-                    '48 days of 1-minute bars). Adding free Alpaca keys in Settings extends it back to 2016.')
-        bars, sources = await intraday_history(ctx, symbol, interval, days, now)
+        size, _, schwab_days, _ = INTERVALS[interval]
+        if not alpaca.available():
+            if days > schwab_days:
+                notes.append('Alpaca isn\'t connected, so intraday history is limited to what Schwab keeps (about 9 months; '
+                             '48 days of 1-minute bars). Adding free Alpaca keys in Settings extends hourly history back to 2016.')
+        elif days > alpaca.MAX_SPAN_DAYS.get(size, days):
+            days = max(schwab_days, alpaca.MAX_SPAN_DAYS[size])
+            notes.append(f'{interval} bars are limited to about {days} days; use 1hour or 1day for longer ranges.')
+        bars, sources, more = await intraday_history(ctx, symbol, interval, days, now)
+        notes += more
         if rng == '1d' and bars:
             last_day = dt.datetime.fromtimestamp(bars[-1]['time'], EASTERN).date()
             bars = [b for b in bars if dt.datetime.fromtimestamp(b['time'], EASTERN).date() == last_day]
@@ -379,6 +394,7 @@ async def t_get_price_history(ctx, args, actions):
     fmt = '%Y-%m-%d %H:%M' if intraday else '%Y-%m-%d'
     out = {
         'symbol': symbol, 'range': rng, 'interval': interval, 'bars': len(bars), 'sources': sources,
+        'session': 'regular',
         'first': {'time': dt.datetime.fromtimestamp(bars[0]['time'], EASTERN).strftime(fmt), 'close': bars[0]['close']},
         'last': {'time': dt.datetime.fromtimestamp(bars[-1]['time'], EASTERN).strftime(fmt), 'close': bars[-1]['close']},
         'changePercent': 100 * (bars[-1]['close'] / bars[0]['open'] - 1),
@@ -393,8 +409,8 @@ async def t_get_price_history(ctx, args, actions):
         mean = sum(rets) / len(rets)
         sd = (sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)) ** 0.5
         out['volatilityAnnualPercent'] = round(100 * sd * per_year ** 0.5, 2)
-    if note:
-        out['note'] = note
+    if notes:
+        out['note'] = ' '.join(notes)
     return out
 
 

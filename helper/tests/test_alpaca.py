@@ -56,10 +56,21 @@ class FakeAlpaca:
         return Resp(200, {'bars': {params['symbols']: [raw_bar(t) for t in chunk]}, 'next_page_token': nxt})
 
 
+OPEN_DISKS = []
+
+
+def close_disks():
+    while OPEN_DISKS:
+        disk = OPEN_DISKS.pop()
+        if disk._db is not None:
+            disk._db.close()
+
+
 class Ctx:
     def __init__(self, http, path):
         self.http = http
         self.disk = core.DiskCache(Path(path))
+        OPEN_DISKS.append(self.disk)
         self._cache = {}
 
 
@@ -70,6 +81,7 @@ class AlpacaBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(close_disks)
         patcher = mock.patch.object(settings, 'SETTINGS_PATH', Path(self.tmp.name) / 'settings.json')
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -111,7 +123,7 @@ class Pagination(AlpacaBase):
 
     def test_start_is_not_before_2016(self):
         fake = FakeAlpaca([])
-        asyncio.run(alpaca.bars(self.ctx(fake), 'SPY', '1D', dt.date(2005, 1, 1), dt.date(2017, 1, 1)))
+        asyncio.run(alpaca.bars(self.ctx(fake), 'SPY', '1h', dt.date(2005, 1, 1), dt.date(2017, 1, 1)))
         self.assertEqual(alpaca._parse_time(fake.calls[0]['params']['start']), alpaca.EARLIEST)
 
 
@@ -235,17 +247,31 @@ class KeysAndErrors(AlpacaBase):
             async def get(self, url, params=None, headers=None):
                 if not self.calls:
                     self.calls.append('busy')
-                    return Resp(429, {'message': 'too many requests'}, {'Retry-After': '0'})
+                    return Resp(429, {'message': 'too many requests'}, {'X-RateLimit-Reset': '0'})
                 return await super().get(url, params, headers)
         fake = Busy([])
         asyncio.run(alpaca.bars(self.ctx(fake), 'SPY', '1h', self.now - 86400 * 5))
         self.assertEqual(len(fake.calls), 2)
 
+    def test_still_busy_after_retry_gives_a_plain_message(self):
+        class AlwaysBusy(FakeAlpaca):
+            async def get(self, url, params=None, headers=None):
+                self.calls.append(1)
+                return Resp(429, {'message': 'too many requests'}, {'X-RateLimit-Reset': '0'})
+        fake = AlwaysBusy([])
+        with self.assertRaises(core.EngineError) as e:
+            asyncio.run(alpaca.bars(self.ctx(fake), 'SPY', '1h', self.now - 86400 * 5))
+        self.assertIn('Alpaca is busy', str(e.exception))
+        self.assertEqual(len(fake.calls), 2)
+        self.assertEqual(alpaca._retry_delay(Resp(429, headers={})), 5.0)
+        self.assertEqual(alpaca._retry_delay(Resp(429, headers={'X-RateLimit-Reset': str(self.now + 3)})), 3.0)
+
 
 class MarketDataOnly(unittest.TestCase):
     def test_no_trading_hosts_or_order_paths(self):
         helper_dir = Path(__file__).resolve().parent.parent
-        files = [helper_dir / 'engine' / 'alpaca.py', helper_dir / 'engine' / 'ai.py', helper_dir / 'schwab_helper.py']
+        files = sorted((helper_dir / 'engine').glob('*.py')) + [helper_dir / 'schwab_helper.py']
+        self.assertGreater(len(files), 10)
         trading = re.compile(r'(?<![\w.-])(paper-)?api\.alpaca\.markets|/v2/orders|/v2/positions|/v2/account|broker-api|alpaca_trade_api|alpaca\.trading', re.I)
         for path in files:
             text = path.read_text(encoding='utf-8')
@@ -297,29 +323,110 @@ class SettingsPrivacy(unittest.TestCase):
 
 
 class AiTool(AlpacaBase):
-    def test_hourly_history_uses_alpaca_beyond_schwab(self):
-        from engine import ai
-        now = dt.datetime.fromtimestamp(self.now, dt.timezone.utc)
-        recent = self.now - 100 * 86400
-        recent -= recent % HOUR
-
+    def schwab(self, start, n=4):
         class Schwab:
             async def get_price_history_every_thirty_minutes(self, symbol, **kw):
-                candles = [{'datetime': (recent + k * 1800) * 1000, 'open': 9, 'high': 9, 'low': 9, 'close': 9, 'volume': 1} for k in range(4)]
+                candles = [{'datetime': (start + k * 1800) * 1000, 'open': 9, 'high': 9, 'low': 9, 'close': 9, 'volume': 1} for k in range(n)]
                 return Resp(200, {'candles': candles})
-        old = self.now - 700 * 86400
-        old -= old % HOUR
-        fake = FakeAlpaca([old + k * HOUR for k in range(5)], page=100)
+        return Schwab()
+
+    def test_hourly_history_uses_alpaca_regular_session_only(self):
+        from engine import ai
+        now = dt.datetime.fromtimestamp(self.now, dt.timezone.utc)
+        # Schwab: 9:30-11:30 New York on a recent day (13:30Z in summer time).
+        recent = int(dt.datetime(2026, 7, 6, 13, 30, tzinfo=dt.timezone.utc).timestamp())
+        # Alpaca: every hour 8:00-17:00 New York on a winter day (UTC-5) and a summer day (UTC-4).
+        winter = [int(dt.datetime(2024, 11, 4, h, tzinfo=dt.timezone.utc).timestamp()) for h in range(13, 23)]
+        summer = [int(dt.datetime(2024, 7, 8, h, tzinfo=dt.timezone.utc).timestamp()) for h in range(12, 22)]
+        fake = FakeAlpaca(winter + summer, page=100)
         ctx = self.ctx(fake)
-        ctx.schwab = Schwab()
-        bars, sources = asyncio.run(ai.intraday_history(ctx, 'AMD', '1hour', 731, now))
+        ctx.schwab = self.schwab(recent)
+        bars, sources, notes = asyncio.run(ai.intraday_history(ctx, 'AMD', '1hour', 1000, now))
         self.assertEqual(sources, ['Schwab', 'Alpaca'])
-        self.assertEqual(len(bars), 5 + 2)  # four 30-minute Schwab bars make two hours
         self.assertEqual(fake.calls[0]['params']['timeframe'], '1Hour')
+        ny = [dt.datetime.fromtimestamp(b['time'], alpaca.NEW_YORK) for b in bars]
+        alpaca_hours = [t.hour for t in ny if t.year == 2024]
+        self.assertEqual(alpaca_hours, list(range(9, 16)) * 2)  # 9 am .. 3 pm bars, both seasons
+        self.assertEqual(len(bars), 14 + 3)  # Schwab's 9:30, 10:00, 10:30 and 11:00 bars make the 9, 10 and 11 o'clock hours
+        self.assertTrue(any('pre-market' in n for n in notes))
+
+    def test_regular_session_filter_for_minute_bars(self):
+        day = dt.datetime(2025, 3, 10, tzinfo=alpaca.NEW_YORK)  # first Monday of summer time
+        times = [int((day + dt.timedelta(hours=h, minutes=m)).timestamp()) for h, m in ((9, 0), (9, 25), (9, 30), (15, 55), (16, 0), (19, 0))]
+        kept = alpaca.regular_session([{'time': t} for t in times])
+        self.assertEqual([dt.datetime.fromtimestamp(b['time'], alpaca.NEW_YORK).strftime('%H:%M') for b in kept], ['09:30', '15:55'])
+
+    def test_alpaca_failure_returns_schwab_with_note(self):
+        from engine import ai
+        recent = self.now - 100 * 86400
+        recent -= recent % HOUR
+        ctx = self.ctx(FakeAlpaca([], status=403))
+        ctx.schwab = self.schwab(recent)
+        reply = asyncio.run(ai.t_get_price_history(ctx, {'symbol': 'AMD', 'range': '2y', 'interval': '1hour'}, []))
+        self.assertEqual(reply['sources'], ['Schwab'])
+        self.assertEqual(reply['bars'], 2)
+        self.assertEqual(reply['session'], 'regular')
+        self.assertIn('Alpaca rejected the keys', reply['note'])
+
+    def test_sub_hour_ranges_are_clamped(self):
+        from engine import ai
+        seen = {}
+
+        async def fake_history(ctx, symbol, interval, days, now=None):
+            seen['days'] = days
+            return [{'time': self.now - 3600, 'open': 1, 'high': 1, 'low': 1, 'close': 1, 'volume': 1}], ['Schwab'], []
+        with mock.patch.object(ai, 'intraday_history', fake_history):
+            reply = asyncio.run(ai.t_get_price_history(object(), {'symbol': 'AMD', 'range': '10y', 'interval': '5min'}, []))
+        self.assertEqual(seen['days'], alpaca.MAX_SPAN_DAYS['5m'])
+        self.assertIn('limited', reply['note'])
+
+    def test_data_sources_tool(self):
+        from engine import ai
+        ctx = self.ctx(FakeAlpaca([]))
+        ctx.schwab = object()
         sources_reply = asyncio.run(ai.t_get_data_sources(ctx, {}, []))
         self.assertTrue(sources_reply['alpaca']['connected'])
         self.assertNotIn(KEYS['alpaca_secret'], json.dumps(sources_reply))
         self.assertIn('get_data_sources', ai.TOOL_FUNCS)
+
+
+class Bounds(AlpacaBase):
+    def test_span_caps_and_schwab_days(self):
+        fake = FakeAlpaca([])
+        asyncio.run(alpaca.bars(self.ctx(fake), 'SPY', '5m', alpaca.EARLIEST))
+        start = alpaca._parse_time(fake.calls[0]['params']['start'])
+        self.assertEqual(start, self.now - alpaca.MAX_SPAN_DAYS['5m'] * 86400)
+        self.assertEqual(alpaca.schwab_days('30m', 1095), 270)
+        self.assertEqual(alpaca.schwab_days('1D', 1095), 1095)
+        settings._cache = {}
+        self.assertEqual(alpaca.schwab_days('30m', 1095), 1095)
+        self.assertNotIn('1D', alpaca.TIMEFRAMES)
+
+    def test_disk_hit_is_kept_in_memory(self):
+        base = int(dt.datetime(2021, 6, 1, 13, tzinfo=dt.timezone.utc).timestamp())
+        fake = FakeAlpaca([base + k * HOUR for k in range(5)])
+        path = os.path.join(self.tmp.name, 'cache.db')
+        asyncio.run(alpaca.bars(Ctx(fake, path), 'MSFT', '1h', base, base + 4 * HOUR))
+        ctx = Ctx(fake, path)
+        with mock.patch.object(ctx.disk, 'get', wraps=ctx.disk.get) as get:
+            asyncio.run(alpaca.bars(ctx, 'MSFT', '1h', base, base + 4 * HOUR))
+            asyncio.run(alpaca.bars(ctx, 'MSFT', '1h', base, base + 4 * HOUR))
+        self.assertEqual(get.call_count, 1)
+
+    def test_saving_ten_years_of_hours_does_not_hold_the_event_loop(self):
+        base = alpaca.EARLIEST
+        rows = [{'time': base + k * HOUR, 'open': 123.4567, 'high': 124.1, 'low': 122.9, 'close': 123.8, 'volume': 123456.0} for k in range(40000)]
+        ctx = self.ctx(FakeAlpaca([]))
+
+        async def run():
+            started = time.perf_counter()
+            task = asyncio.create_task(alpaca._store(ctx, ('alpaca', 'X', '1h'), base, base + 1, 0, rows))
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            blocked = time.perf_counter() - started  # how long the loop was held before the disk write moved off it
+            await task
+            return blocked
+        self.assertLess(asyncio.run(run()), 0.05)
 
 
 if __name__ == '__main__':

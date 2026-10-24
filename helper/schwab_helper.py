@@ -685,10 +685,11 @@ class Market:
             del self.listeners[symbol]
 
     async def history_reply(self, symbol, resolution, days):
-        bars = await fetch_history(self.client, symbol, resolution, days)
         # Intraday history older than Schwab keeps comes from Alpaca when its keys are saved (Schwab wins where both exist).
         from engine import alpaca
-        bars = await alpaca.fill_older(self.engine, symbol, resolution, max(1, min(int(days or 30), MAX_HISTORY_DAYS)), bars)
+        days = max(1, min(int(days or 30), MAX_HISTORY_DAYS))
+        bars = await fetch_history(self.client, symbol, resolution, alpaca.schwab_days(resolution, days))
+        bars = await alpaca.fill_older(self.engine, symbol, resolution, days, bars)
         log.info('Sent %d %s bars for %s', len(bars), resolution, symbol)
         return {'type': 'history', 'bars': bars}
 
