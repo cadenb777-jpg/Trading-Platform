@@ -36,7 +36,9 @@ export function readTrade(s: Setup, strat?: StrategyInfo, marketTrend?: number |
   // Price structure
   if (i.weekly && i.trendRule && i.trendRule !== 'none') add('trend', 'Trend', i.weekly === d ? 'for' : 'against', `${i.weekly > 0 ? 'uptrend' : 'downtrend'} (${i.trendText ?? i.trendRule})`, 'trend');
   if (i.cotGate) {
-    add('cot', 'Big hedgers (COT)', i.cotView === 'agree' ? 'for' : 'against', i.cotGate.value != null ? `commercials ${i.cotView === 'agree' ? 'confirm' : "don't confirm"} it (${i.cotGate.value.toFixed(0)}/100)` : 'no COT reading for this date', 'cot');
+    add('cot', 'Big hedgers (COT)', i.cotView === 'agree' ? 'for' : 'against', i.cotGate.value == null ? 'no COT reading for this date'
+      : i.cotGate.sign < 0 ? `COT works in reverse on your data: commercials ${i.cotView === 'agree' ? 'lean against this trade, which has been the good sign' : "don't lean against it"} (${i.cotGate.value.toFixed(0)}/100)`
+        : `commercials ${i.cotView === 'agree' ? 'confirm' : "don't confirm"} it (${i.cotGate.value.toFixed(0)}/100)`, 'cot');
   } else if (i.cot != null) {
     add('cot', 'Big hedgers (COT)', 'neutral', `reading only: ${i.cot.toFixed(0)}/100 (no tested COT edge)`, 'cot');
   }

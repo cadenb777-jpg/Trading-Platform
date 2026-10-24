@@ -168,7 +168,7 @@ function dailyRoutine() {
       step('Decide and size it.', 'Only A (normal size) and B (half size). Use the "How much to buy" calculator: risk about 0.5% of your account per trade. Star ☆ the ones you want, or tick "Alert me on A & B entries".'),
       step('Place the orders at your broker.', 'For a "buy above" entry use a buy-stop order at the entry price, with a stop-loss at the stop price (many brokers let you attach both at once as a bracket order, with the target as the take-profit). This platform never places orders.'),
       step('During the day.', 'Leave this tab open: you\'ll hear an alert when price gets close to or reaches an entry. If it says "Too far to chase", don\'t buy: wait for a pullback or skip it.'),
-      step('Managing an open trade.', 'Keep the stop where it is. For the pullback, move the stop up to your entry once the trade is up by its risk. Take profit at the target, or close it by the "Out by" date, whichever comes first.'),
+      step('Managing an open trade.', 'Keep the stop where it is and follow the exit in the setup\'s guide (pullbacks: stop to break-even once up by the risk, then the target or the "Out by" date; breakouts: trail the stop, no fixed target).'),
       step('After 4 PM.', 'New setups appear (marked New) once the day\'s bar closes. Repeat tomorrow. Hourly setups appear through the day; weekly ones after Friday\'s close.'),
     ),
   );
@@ -194,11 +194,13 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   const howTo = dailyRoutine();
   const evidenceBody = h('div', { class: 'sp-evidence' });
   const evidence = h('details', { class: 'sp-fold' }, h('summary', {}, 'Strategy report card: how each strategy has done, and whether COT helps', infoTip('trades')), evidenceBody);
+  const researchBody = h('div', {});
+  const research = h('details', { class: 'sp-fold' }, h('summary', {}, 'Research: the strategy lab and the rule tests on your data', infoTip('rules')), researchBody);
   const filters = h('div', { class: 'sp-filters' });
   const list = h('div', { class: 'sp-list' });
   const detail = h('div', { class: 'sp-detail' }, h('p', { class: 'muted pad' }, 'Pick a setup on the left to see its live entry status, chart and step-by-step guide.'));
   const alertLog = h('div', { class: 'sp-alerts' });
-  frame.body.replaceChildren(status, today, howTo, evidence, filters, h('div', { class: 'sp-main' }, h('div', { class: 'sp-left' }, list, alertLog), detail));
+  frame.body.replaceChildren(status, today, filters, h('div', { class: 'sp-main' }, h('div', { class: 'sp-left' }, list, alertLog), detail), evidence, research, howTo);
 
   function setPref<K extends keyof typeof prefs>(k: K, v: (typeof prefs)[K]) {
     prefs[k] = v;
@@ -250,13 +252,14 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     const r = data.regime;
     status.replaceChildren(
       h('span', {}, `${info.label}: ${info.bars}, hold ${info.hold}.`),
-      h('span', {}, 'Nasdaq-100 ', h('b', { class: r.qqqWeekly === 1 ? 'up' : r.qqqWeekly === -1 ? 'down' : '' }, r.qqqWeekly === 1 ? 'weekly uptrend' : r.qqqWeekly === -1 ? 'weekly downtrend' : 'no clear trend'), r.qqqWeek != null ? ` (week ${pct(r.qqqWeek)})` : ''),
+      h('span', {}, 'Nasdaq-100 ', h('b', { class: r.qqqAbove200 === 1 ? 'up' : r.qqqAbove200 === -1 ? 'down' : '' }, r.qqqAbove200 === 1 ? 'above its 200-day average' : r.qqqAbove200 === -1 ? 'below its 200-day average' : 'trend unknown'), r.qqqWeek != null ? ` (week ${pct(r.qqqWeek)})` : ''),
       r.ndxCot != null ? h('span', { title: 'COT reading (3-year index): shown for context; it counts in grades only if the edge study passes' }, 'Futures commercials ', h('b', {}, `${r.ndxCot.toFixed(0)}/100`)) : '',
       r.vix != null ? h('span', {}, `VIX ${r.vix.toFixed(1)}`) : '',
       h('span', {}, hr ? `${hr.scanned} stocks · scanned ${timeAgo(hr.updated)}` : 'this time frame is still loading…', data.scanning ? ' · scanning now…' : data.nextScan ? ` · next scan in ${Math.max(1, Math.round((data.nextScan - Date.now() / 1000) / 60))} min` : ''),
     );
     renderToday(hr);
     renderEvidence(hr);
+    researchBody.replaceChildren(...(hr && !hr.error ? [labPanel(hr), rulesPanel(hr)] : []));
     renderFilters();
     renderList(hr);
     renderDetail();
@@ -286,7 +289,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       return h(
         'div',
         { class: `sp-card stat-card${prefs.strategy === k ? ' on' : ''}`, onclick: () => setPref('strategy', prefs.strategy === k ? 'all' : k), title: 'Show only this strategy' },
-        h('div', { class: 'sp-card-head' }, h('b', {}, st.short || STRATEGY_LABEL[k]), h('span', { class: `sp-verdict ${tone}` }, verdict)),
+        h('div', { class: 'sp-card-head' }, h('b', {}, st.short || STRATEGY_LABEL[k]), st.sides ? '' : h('span', { class: `sp-verdict ${tone}` }, verdict)),
         st.sides ? h('div', {}, sideLine('long'), sideLine('short'), h('p', { class: 'muted tiny' }, termLabel('Why buys and sells are separate', 'sides'))) : h('p', { class: 'small' }, ev.plain),
         h('div', { class: 'sp-card-stats small' },
           h('span', {}, termLabel('Trades', 'trades'), ` ${s.trades}`),
@@ -310,7 +313,8 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     const edge = h(
       'div',
       { class: 'sp-edge stat-card' },
-      h('div', { class: 'sp-card-head' }, h('b', {}, termLabel('COT edge study', 'edge')), e?.variants ? h('span', { class: `sp-verdict ${e.passed ? 'up' : ''}` }, e.passed && e.chosen ? `counts in the grade (${e.chosen.weeks}-week, ${e.chosen.hi}/${e.chosen.lo})` : 'reading only') : h('span', { class: 'muted tiny' }, 'no COT data yet')),
+      h('div', { class: 'sp-card-head' }, h('b', {}, termLabel('COT edge study', 'edge')), e?.variants ? h('span', { class: `sp-verdict ${e.passed ? 'up' : ''}` }, e.passed && e.chosen ? `counts in the grade${e.chosen.sign < 0 ? ' (works in reverse)' : ''}` : 'reading only') : h('span', { class: 'muted tiny' }, 'no COT data yet')),
+      h('p', { class: 'small' }, e?.passed && e.chosen ? `COT counts in the grade: on your data the ${e.chosen.weeks}-week index at ${e.chosen.hi}/${e.chosen.lo} showed an edge${e.chosen.sign < 0 ? ', but in REVERSE (setups do better when commercials lean the other way)' : ''}.` : 'COT: reading only until it shows an edge on your data.'),
       h('p', { class: 'muted tiny' }, 'Every past stretch-and-turn, split by what commercial hedgers were doing, for a 26-week and a 3-year COT index at three thresholds. Whole weeks are shuffled (one COT reading per week) and the 6 versions are corrected for being tried together. COT counts in grades only if one passes; a missing reading then never counts as a pass.'),
       e?.variants?.length
         ? h('table', { class: 'data-table sp-edge-table small' }, h('thead', {}, h('tr', {}, h('th', {}, 'Index'), h('th', {}, 'Agree / against'), h('th', {}, 'Gap'), h('th', {}, 'p'), h('th', {}, termLabel('p corrected', 'holm')))),
@@ -321,8 +325,6 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     evidenceBody.replaceChildren(
       h('p', { class: 'muted small' }, 'How each strategy\'s rules would have done on every Nasdaq-100 stock in this time frame\'s history. "Trades" are real past signals; each result is then tested with 1,000 random simulations. Click a card to show only that strategy\'s setups.'),
       h('div', { class: 'sp-cards' }, ...cards, edge),
-      labPanel(hr),
-      rulesPanel(hr),
     );
   }
 

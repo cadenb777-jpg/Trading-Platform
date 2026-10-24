@@ -26,6 +26,10 @@ describe('the read', () => {
     expect(readTrade(base, strat, 1).factors.find((f) => f.key === 'cot')!.stance).toBe('neutral');
     const gated = { ...base, indicators: { ...base.indicators, cotView: 'against', cotGate: { weeks: 156, hi: 75, lo: 25, sign: 1, value: 20 } } } as Setup;
     expect(readTrade(gated, strat, 1).factors.find((f) => f.key === 'cot')!.stance).toBe('against');
+    const reverse = { ...base, indicators: { ...base.indicators, cotView: 'agree', cotGate: { weeks: 26, hi: 80, lo: 20, sign: -1, value: 10 } } } as Setup;
+    const f = readTrade(reverse, strat, 1).factors.find((x) => x.key === 'cot')!;
+    expect(f.text).toContain('reverse');
+    expect(f.text).not.toContain('confirm it');
   });
 
   it('lists what is against a trade and never rates a C above watch only', () => {

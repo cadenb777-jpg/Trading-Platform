@@ -4,10 +4,10 @@ Pure maths (no network), so every rule can be tested. All calculations at bar i 
 report is only used from the Friday it is published (data as of the Tuesday before), so the backtests can't peek.
 
 Strategies (helper v21: each one was cut down to what the tests in docs/research/setups-v21-results.md support):
-  weekly_swing   (primary) Pullback in the trend: the stock is on the right side of its 200-day average and has
-                 stretched beyond its own usual z-score range within the last 3 bars. Buy on a stop above the signal
-                 bar's high (the stop order itself proves the turn); stop past the 3-bar swing; target +1 standard
-                 deviation; break-even at +1R; out after the time frame's holding period.
+  weekly_swing   (primary) Pullback in the trend: the stock is on the right side of its 200-day average, stretched
+                 beyond its own usual z-score range within the last 3 bars, and the z-score is turning back. Buy on a
+                 stop above the signal bar's high; stop past the 3-bar swing; target +1 standard deviation; break-even
+                 at +1R; out after the time frame's holding period.
   mean_reversion Short-term snap-back: z-score beyond the stock's own 5th/95th percentile, on the side of the 200-day
                  trend; exit on a close back across the 5-day average, at a wide safety stop or after 7 sessions.
   breakout       Strength near highs: a close above the highest close of the last 250 sessions (52 weeks) while
