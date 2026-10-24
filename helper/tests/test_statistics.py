@@ -267,5 +267,45 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(ruletests._as_good(rows)['id'], 'simple')  # within one standard error: the simpler one
 
 
+class ReviewFixes(unittest.TestCase):
+    def test_pullback_z_check_never_fails_a_valid_signal(self):
+        for z in (-1.3, -1.1, -0.7):
+            s = Grades().setup()
+            s['indicators']['z'] = z
+            scanner.grade(s, Grades.stock, Grades().strat(), {})
+            self.assertEqual(s['tier'], 'A', z)
+            self.assertIsNone(next(c for c in s['checks'] if c['label'] == 'Z-score')['ok'])
+
+    def test_lab_forward_record_halves_split_by_time(self):
+        t0 = int(dt.datetime(2026, 1, 5, 5, tzinfo=UTC).timestamp())
+        trades = [{'signal': 3900 + i, 'time': t0 + i * 7 * 86400, 'dir': 1, 'ret': 0.01, 'r': 0.3, 'reason': 'x', 'bars': 3} for i in range(40)]
+        per = [{'symbol': 'A', 'len': 4000, 'hard': {'k': trades}, 'trades': {'k': trades}}]
+        rob = scanner._robust(per, 'k', 1, 'week', since=t0 - 1)
+        self.assertTrue(rob['halves'])
+        self.assertEqual((rob['firstHalf']['trades'], rob['secondHalf']['trades']), (20, 20))
+
+    def test_dated_history_rows_are_pruned(self):
+        from engine import core
+        disk = core.DiskCache(scanner.Path(test_engine._TMP) / 'prune.db')
+        for key in ("(('scan-daily-15y', '2026-10-20'), 'AAPL')", "(('scan-weekly', '2026-10-20'), 'AAPL')", "('scan-daily-15y', 'AAPL')", "('cot-long', '209742')"):
+            disk.put(key, 1.0, [1])
+        self.assertEqual(scanner.prune_old_cache(disk), 2)
+        self.assertIsNotNone(disk.get("('scan-daily-15y', 'AAPL')"))
+        self.assertIsNotNone(disk.get("('cot-long', '209742')"))
+        self.assertLessEqual(scanner._until_tomorrow(), 20 * 3600)
+
+    def test_worker_process_runs_a_job(self):
+        import asyncio
+        old = scanner.USE_PROCESSES
+        scanner.USE_PROCESSES = True
+        try:
+            t = int(dt.datetime(2026, 10, 21, 5, tzinfo=UTC).timestamp())
+            self.assertEqual(asyncio.run(scanner._offload('scan', 'week_of', t)), '2026-W43')
+            self.assertEqual(set(scanner._pools), {'scan'})
+        finally:
+            scanner.shutdown()
+            scanner.USE_PROCESSES = old
+
+
 if __name__ == '__main__':
     unittest.main()

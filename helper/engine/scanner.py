@@ -146,15 +146,21 @@ USE_PROCESSES = True  # tests switch this off to run everything in the same proc
 _pools = {}
 
 
+def _worker_init():
+    """Workers ignore Ctrl+C: the helper stops them itself (scanner.shutdown) when it exits."""
+    import signal
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
 def _pool(name):
     if name not in _pools:
         # 'spawn' on every system: a fresh interpreter, never a copy of the helper's threads and open sockets.
-        _pools[name] = concurrent.futures.ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context('spawn'))
+        _pools[name] = concurrent.futures.ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context('spawn'), initializer=_worker_init)
     return _pools[name]
 
 
 async def _offload(name, fn_name, *args):
-    """Runs scanner function `fn_name` in worker process `name` ('scan', 'research' or 'rw'), with the lab's saved
+    """Runs scanner function `fn_name` in worker process `name` ('scan' or 'background'), with the lab's saved
     survivors registered there too. Falls back to a thread if the worker can't start or dies."""
     survivors = _lab_state()
     if USE_PROCESSES:
@@ -173,8 +179,15 @@ def _job(survivors, fn_name, args):
 
 
 def shutdown():
-    for p in _pools.values():
+    """Stops the worker processes (called when the helper exits)."""
+    for p in list(_pools.values()):
+        procs = list((getattr(p, '_processes', None) or {}).values())
         p.shutdown(wait=False, cancel_futures=True)
+        for proc in procs:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
     _pools.clear()
 
 
@@ -296,9 +309,35 @@ def session_finished(now=None):
     return now.weekday() >= 5 or now.hour * 60 + now.minute >= 16 * 60
 
 
+def _until_tomorrow(now=None):
+    """Cache age limit that makes a saved history expire at the next New York midnight (one saved row per symbol,
+    replaced each day, instead of a new row per day that is never deleted)."""
+    now = now or dt.datetime.now(EASTERN)
+    nxt = dt.datetime.combine(now.date() + dt.timedelta(days=1), dt.time(), EASTERN)
+    return max(60, min(20 * 3600, (nxt - now).total_seconds()))
+
+
+OLD_KEY_PREFIXES = ("(('scan-daily-15y', '", "(('scan-daily', '", "(('scan-weekly', '")
+
+
+def prune_old_cache(disk):
+    """Deletes the dated history rows earlier versions saved once a day and never removed (about 45 MB a day)."""
+    try:
+        n = 0
+        with disk._lock:  # (no VACUUM: it would hold the lock for long; SQLite reuses the freed space)
+            con = disk.db()
+            for prefix in OLD_KEY_PREFIXES:
+                n += con.execute('DELETE FROM cache WHERE substr(key, 1, ?) = ?', (len(prefix), prefix)).rowcount
+            con.commit()
+        return n
+    except Exception as err:
+        log.info('Old scanner cache rows not removed: %s', err)
+        return 0
+
+
 async def daily_history(ctx, symbol):
     """About 15 years of daily bars, fetched once per day (the live quote supplies today's bar during the day)."""
-    return await _history(ctx, symbol, 'get_price_history_every_day', DAILY_DAYS, ('scan-daily-15y', str(ny_today())), 20 * 3600)
+    return await _history(ctx, symbol, 'get_price_history_every_day', DAILY_DAYS, 'scan-daily-15y', _until_tomorrow())
 
 
 async def live_quotes(ctx, symbols):
@@ -426,34 +465,43 @@ def split_weekly(weeks, quote, now=None):
     return done, done + [cur]
 
 
-_thirty = {}  # symbol -> {'bars': [...], 'months': set, 'bucket': str, 'alpacaTried': date}
+_thirty = {}  # symbol -> {'rows': [(time, o, h, l, c, v), ...], 'hourly': [...], 'months': set, 'bucket': str, 'alpacaTried': date}
 
 
 def _month(t):
     return dt.datetime.fromtimestamp(t, EASTERN).strftime('%Y-%m')
 
 
+def _row(b):
+    return (b['time'], b['open'], b['high'], b['low'], b['close'], b['volume'])
+
+
+def _bar(r):
+    return {'time': r[0], 'open': r[1], 'high': r[2], 'low': r[3], 'close': r[4], 'volume': r[5]}
+
+
 async def thirty_minute_bars(ctx, symbol):
-    """Every regular-session 30-minute bar ever seen for `symbol`. Schwab only keeps about 9 months, so each bar is
-    saved for good in ~/.trading-platform/cache.db, in one entry per month (only the current month is rewritten).
-    With Alpaca keys in Settings, about 3 years of older bars are added once (Alpaca's free plan limit). Disk: about
-    15 KB per stock per month of regular-session bars, i.e. about 0.2 MB a year per stock, 20 MB a year for the
-    Nasdaq-100 (plus Alpaca's own copy of its download, about 1.2 MB per stock)."""
+    """Every regular-session 30-minute bar ever seen for `symbol` (refreshed every 30 minutes). Schwab only keeps
+    about 9 months, so each bar is saved for good in ~/.trading-platform/cache.db, in one entry per month (only the
+    current month is rewritten). With Alpaca keys in Settings, about 3 years of older bars are added once (Alpaca's
+    free plan limit). Disk: about 15 KB per stock per month, i.e. about 20 MB a year for the Nasdaq-100 (plus
+    Alpaca's own copy of its download, about 1.2 MB per stock). In memory the bars are kept as compact tuples and the
+    hourly bars built from them are kept ready, so a scan doesn't rebuild them."""
     mem = _thirty.get(symbol)
     if mem is None:
         stored = await asyncio.to_thread(ctx.disk.get, repr(('scan-30m-months', symbol)))
         months = set(stored[1]) if stored else set()
-        bars = []
+        rows = []
         for m in sorted(months):
             chunk = await asyncio.to_thread(ctx.disk.get, repr(('scan-30m', symbol, m)))
             if chunk:
-                bars += [{'time': r[0], 'open': r[1], 'high': r[2], 'low': r[3], 'close': r[4], 'volume': r[5]} for r in chunk[1]]
-        mem = _thirty[symbol] = {'bars': bars, 'months': months, 'bucket': None, 'alpacaTried': None}
+                rows += [tuple(r) for r in chunk[1]]
+        mem = _thirty[symbol] = {'rows': rows, 'hourly': None, 'months': months, 'bucket': None, 'alpacaTried': None}
     now = dt.datetime.now(EASTERN)
     bucket = f"{now:%Y-%m-%d %H}:{now.minute // 30}"
     if mem['bucket'] == bucket:
-        return mem['bars']
-    old = mem['bars']
+        return mem
+    old = [_bar(r) for r in mem['rows']]
     days = SCHWAB_30M_DAYS if not old else min(SCHWAB_30M_DAYS, max(3, (time.time() - old[-1]['time']) / 86400 + 2))
     fresh = [b for b in await _fetch(ctx, symbol, 'get_price_history_every_thirty_minutes', days) if _regular(b['time'])]
     merged = alpaca.merge(old, fresh)  # newer download wins where times repeat
@@ -467,30 +515,30 @@ async def thirty_minute_bars(ctx, symbol):
             except Exception as err:
                 log.info('Alpaca 30-minute history for %s not added: %s', symbol, err)
     changed = {_month(b['time']) for b in fresh} | ({_month(b['time']) for b in merged} - mem['months'])
-    mem.update(bars=merged, bucket=bucket)
+    mem.update(rows=[_row(b) for b in merged], hourly=hourly_bars(merged), bucket=bucket)
     if changed:
         by_month = {}
         for b in merged:
             m = _month(b['time'])
             if m in changed:
-                by_month.setdefault(m, []).append([b['time'], b['open'], b['high'], b['low'], b['close'], b['volume']])
+                by_month.setdefault(m, []).append(list(_row(b)))
         stamp = time.time()
         for m, rows in by_month.items():
             await asyncio.to_thread(ctx.disk.put, repr(('scan-30m', symbol, m)), stamp, rows)
         mem['months'] |= set(by_month)
         await asyncio.to_thread(ctx.disk.put, repr(('scan-30m-months', symbol)), stamp, sorted(mem['months']))
-    return merged
+    return mem
 
 
 async def hourly_history(ctx, symbol):
     """Regular-session hourly bars from every 30-minute bar kept so far (refreshed every 30 minutes; the live price
     fills in between)."""
-    return hourly_bars(await thirty_minute_bars(ctx, symbol))
+    return (await thirty_minute_bars(ctx, symbol))['hourly'] or []
 
 
 async def weekly_history(ctx, symbol):
     """About 15 years of weekly bars, fetched once a day."""
-    return await _history(ctx, symbol, 'get_price_history_every_week', 15 * 366, ('scan-weekly', str(ny_today())), 20 * 3600)
+    return await _history(ctx, symbol, 'get_price_history_every_week', 15 * 366, 'scan-weekly', _until_tomorrow())
 
 
 async def dark_pool(ctx, s):
@@ -730,8 +778,12 @@ def _robust(per_symbol, key, d, cluster, since=None):
     profitable in both halves of each stock's history (neither half's t below -1)."""
     keep = lambda t: t['dir'] == d and (since is None or t['time'] > since)  # noqa: E731
     hard = [t for r in per_symbol for t in r.get('hard', {}).get(key, []) if keep(t)]
-    first = [t for r in per_symbol if r.get('len') for t in r['trades'].get(key, []) if keep(t) and t['signal'] < r['len'] / 2]
-    second = [t for r in per_symbol if r.get('len') for t in r['trades'].get(key, []) if keep(t) and t['signal'] >= r['len'] / 2]
+    if since is None:  # each stock's history split at its midpoint
+        first = [t for r in per_symbol if r.get('len') for t in r['trades'].get(key, []) if keep(t) and t['signal'] < r['len'] / 2]
+        second = [t for r in per_symbol if r.get('len') for t in r['trades'].get(key, []) if keep(t) and t['signal'] >= r['len'] / 2]
+    else:  # a lab strategy's forward record (all in the newest bars): split it at its median signal time
+        fwd = sorted((t for r in per_symbol for t in r.get('trades', {}).get(key, []) if keep(t)), key=lambda t: t['time'])
+        first, second = fwd[: len(fwd) // 2], fwd[len(fwd) // 2:]
     h, a, b = st.summarise(hard, cluster), st.summarise(first, cluster), st.summarise(second, cluster)
     return {'costs': bool(h['trades']) and (h['expectancy'] or 0) > 0, 'costsExpectancy': h['expectancy'],
             'halves': bool(a['trades'] and b['trades']) and (a['expectancy'] or 0) > 0 and (b['expectancy'] or 0) > 0
@@ -852,7 +904,7 @@ def grade(setup, stock, strat, earnings, context=None):
          'detail': (f"Counts in the grade: your data's edge study passed ({gate['weeks']}-week index, {gate['hi']}/{gate['lo']}). Reading {cot_value:.0f}/100 ({cot_view})"
                     if gate and cot_value is not None else 'Counts in the grade, but there is no COT reading for this date' if gate
                     else f"Reading only (the edge study found no COT edge): Williams COT index {cot_value:.0f}/100" if cot_value is not None else 'Reading only; no COT data')},
-        {'label': 'Z-score', 'ok': None if z is None else ((z <= -1) if d > 0 else (z >= 1)) if s['strategy'] != 'breakout' and not s.get('lab') else (abs(z) < 2.5 if s['strategy'] == 'breakout' else None),
+        {'label': 'Z-score', 'ok': None if z is None or s['strategy'] == 'weekly_swing' or s.get('lab') else ((z <= -1) if d > 0 else (z >= 1)) if s['strategy'] == 'mean_reversion' else (abs(z) < 2.5 if s['strategy'] == 'breakout' else None),
          'detail': f"{z:+.2f} standard deviations from the 20-bar average" if z is not None else '—'},
         {'label': 'Earnings', 'ok': None if s['earnings'] is None or s['earnings'].get('unknown') else not in_window,
          'detail': (f"Reports {e['date']} {'(inside the holding period: skip or size down)' if in_window else '(after the planned exit)'}" if e
@@ -1003,7 +1055,7 @@ async def _run_rw_jobs():
     while _rw_jobs:
         ck, (done, cot) = next(iter(_rw_jobs.items()))
         try:
-            res = await _offload('rw', 'rw_work', done, cot, ck[1], RW_RUNS, ck[2])
+            res = await _offload('background', 'rw_work', done, cot, ck[1], RW_RUNS, ck[2])
         except Exception as err:
             log.info('Random-walk test for %s failed: %s', ck[0], err)
             res = None
@@ -1095,7 +1147,7 @@ async def _run_lab(horizon, rows, stamp, market, daily):
     newest bar as their first-shown time; existing ones stay as they are."""
     state = _lab.setdefault(horizon, {})
     try:
-        result = await _offload('research', 'lab_work', rows, horizon, market, daily)
+        result = await _offload('background', 'lab_work', rows, horizon, market, daily)
         survivors = _lab_state()
         result['added'] = lab.add_survivors(survivors, horizon, result, stamp)
         survivors.setdefault('_runs', {})[horizon] = week_of(stamp)
@@ -1109,6 +1161,11 @@ async def _run_lab(horizon, rows, stamp, market, daily):
             latest['lab'], latest['labRunning'] = _lab_summary(horizon), False
     except Exception as err:
         log.info('Strategy lab (%s) failed: %s', horizon, err)
+        try:  # don't try again every 5 minutes: next week
+            _lab_state().setdefault('_runs', {})[horizon] = week_of(stamp)
+            _save_lab_state()
+        except Exception:
+            pass
     finally:
         state['running'] = False
 
@@ -1138,7 +1195,7 @@ async def _run_rule_tests(horizon, rows, regimes, cot_rows, daily, week):
     """The rule tests (ruletests.py) on your own data, once a week per time frame, saved for the Setups page."""
     state = _rules.setdefault(horizon, {})
     try:
-        report = await _offload('research', 'rules_work', rows, horizon, regimes, cot_rows, daily)
+        report = await _offload('background', 'rules_work', rows, horizon, regimes, cot_rows, daily)
         report.update(source='your data', ran=time.time(), week=week)
         saved = _load_rules()
         saved[horizon] = report
@@ -1148,6 +1205,8 @@ async def _run_rule_tests(horizon, rows, regimes, cot_rows, daily, week):
             latest['ruleTests'] = report
     except Exception as err:
         log.info('Rule tests (%s) failed: %s', horizon, err)
+        saved = _load_rules()  # remember the week so a failing run isn't repeated every 5 minutes
+        saved[horizon] = {**(saved.get(horizon) or {}), 'week': week, 'failed': str(err)[:200]}
     finally:
         state['running'] = False
 
@@ -1171,6 +1230,7 @@ async def _horizon_rows(ctx, horizon, symbols, histories, quotes, cot_of):
             log.info('Scanner %s bars for %s failed: %s', horizon, sym, err)
             continue
         rows.append((sym, done, live, cot_of.get(sym)))
+        await asyncio.sleep(0)  # let quotes through between stocks
     return rows
 
 
@@ -1272,7 +1332,7 @@ async def scan(ctx, news=None, publish=None):
     rules_saved = _load_rules()
     market = market_trend_by_date(histories['QQQ']) if 'QQQ' in histories else {}
     regimes = st.market_regimes(histories['QQQ']) if 'QQQ' in histories else {}
-    daily_done = {sym: split_bars(histories[sym], None)[0] for sym in symbols if sym in histories}
+    daily_done = {sym: [{'time': b['time'], 'close': b['close']} for b in split_bars(histories[sym], None)[0][-400:]] for sym in symbols if sym in histories}
 
     def assemble():
         swing = horizons.get('swing') or {}
@@ -1364,6 +1424,9 @@ def next_interval():
 async def background_loop(ctx, news=None, first_delay=15):
     """Runs forever inside the helper: scans, waits 5 minutes, scans again."""
     await asyncio.sleep(first_delay)
+    removed = await asyncio.to_thread(prune_old_cache, ctx.disk)
+    if removed:
+        log.info('Removed %d old dated scanner history rows from cache.db', removed)
     while True:
         try:
             await run_once(ctx, news)

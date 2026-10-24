@@ -1125,7 +1125,12 @@ def serve_forever(args):
     if SCREEN:
         SCREEN.resume()  # puts the start screen back after the login steps
         SCREEN.step('Starting the live data server...', 99, 1)
-    asyncio.run(run(client, config.get('sec_contact', ''), open_browser=not args.no_browser))
+    try:
+        asyncio.run(run(client, config.get('sec_contact', ''), open_browser=not args.no_browser))
+    finally:
+        scanner = sys.modules.get('engine.scanner')
+        if scanner is not None:
+            scanner.shutdown()  # stop the scanner's worker processes too
 
 
 if __name__ == '__main__':
