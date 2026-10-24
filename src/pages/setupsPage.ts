@@ -89,9 +89,9 @@ interface Scan {
 }
 
 const HORIZONS: { key: Horizon; label: string; hold: string; tf: Timeframe; bars: string }[] = [
-  { key: 'short', label: 'Short swing', hold: '1-3 days', tf: '1h', bars: 'hourly bars, daily trend filter' },
-  { key: 'swing', label: 'Swing', hold: 'about 1 week', tf: '1D', bars: 'daily bars, weekly trend filter' },
-  { key: 'position', label: 'Position', hold: '2-8 weeks', tf: '1W', bars: 'weekly bars, monthly trend filter' },
+  { key: 'short', label: 'Short swing', hold: '1-3 days', tf: '1h', bars: 'hourly bars, 200-day trend filter' },
+  { key: 'swing', label: 'Swing', hold: 'about 1 week', tf: '1D', bars: 'daily bars, 200-day trend filter' },
+  { key: 'position', label: 'Position', hold: '2-8 weeks', tf: '1W', bars: 'weekly bars, 40-week trend filter' },
 ];
 const STRATEGY_LABEL: Record<StrategyKey, string> = { weekly_swing: 'Pullback', mean_reversion: 'Mean reversion', breakout: '52-week-high breakout' };
 const REFRESH_MS = 60_000;
@@ -165,10 +165,10 @@ function dailyRoutine() {
       'ol',
       { class: 'sp-routine small' },
       step('Before the open (around 9:00 AM New York).', 'Pick a time frame: Swing for trades lasting about a week, Short swing for 1-3 days, Position for weeks. Look at "trades worth a look". Click one to read its summary and steps.'),
-      step('Decide and size it.', 'Only A (normal size) and B (half size). Use the "How much to buy" calculator: risk 0.5-1% of your account per trade. Star ☆ the ones you want, or tick "Alert me on A & B entries".'),
+      step('Decide and size it.', 'Only A (normal size) and B (half size). Use the "How much to buy" calculator: risk about 0.5% of your account per trade. Star ☆ the ones you want, or tick "Alert me on A & B entries".'),
       step('Place the orders at your broker.', 'For a "buy above" entry use a buy-stop order at the entry price, with a stop-loss at the stop price (many brokers let you attach both at once as a bracket order, with the target as the take-profit). This platform never places orders.'),
       step('During the day.', 'Leave this tab open: you\'ll hear an alert when price gets close to or reaches an entry. If it says "Too far to chase", don\'t buy: wait for a pullback or skip it.'),
-      step('Managing an open trade.', 'Keep the stop where it is. For the COT pullback, move the stop up to your entry once the trade is up by its risk. Take profit at the target, or close it by the "Out by" date, whichever comes first.'),
+      step('Managing an open trade.', 'Keep the stop where it is. For the pullback, move the stop up to your entry once the trade is up by its risk. Take profit at the target, or close it by the "Out by" date, whichever comes first.'),
       step('After 4 PM.', 'New setups appear (marked New) once the day\'s bar closes. Repeat tomorrow. Hourly setups appear through the day; weekly ones after Friday\'s close.'),
     ),
   );
@@ -539,7 +539,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       if (!box.isConnected) return;
       chart = createChart(box, {
         autoSize: true,
-        layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text, attributionLogo: false },
+        layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text },
         grid: { vertLines: { visible: false }, horzLines: { color: THEME.grid } },
         rightPriceScale: { borderColor: THEME.border },
         timeScale: { borderColor: THEME.border, timeVisible: tf === '1h' },
