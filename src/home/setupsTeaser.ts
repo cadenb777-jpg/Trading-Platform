@@ -29,7 +29,11 @@ export function createSetupsTeaser() {
       return;
     }
     try {
-      const r = await engineRequest<{ updated: number; horizons?: Partial<Record<Horizon, { setups: Setup[] }>>; setups: Setup[] }>('scanner.results', {}, 600_000);
+      const r = await engineRequest<{ updated: number; loading?: boolean; horizons?: Partial<Record<Horizon, { setups: Setup[] }>>; setups: Setup[] }>('scanner.results', {}, 30_000);
+      if (r.loading) {
+        body.replaceChildren(h('p', { class: 'empty-state muted small' }, 'The first scan is running (a few minutes after the helper starts).'));
+        return;
+      }
       loaded = true;
       const hz = r.horizons ?? { swing: { setups: r.setups ?? [] } };
       const good = (Object.keys(LABEL) as Horizon[]).flatMap((k) => (hz[k]?.setups ?? []).filter((s) => (s.tier === 'A' || s.tier === 'B') && s.status !== 'forming').map((s) => ({ ...s, horizon: k })));

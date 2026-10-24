@@ -25,6 +25,7 @@ scanner.USE_PROCESSES = False
 scanner.LAB_STATE_PATH = scanner.Path(_TMP) / 'lab_survivors.json'
 scanner.GRAVEYARD_PATH = scanner.Path(_TMP) / 'lab_graveyard.json'
 scanner.RULES_PATH = scanner.Path(_TMP) / 'rule_tests.json'
+scanner.RESULT_PATH = scanner.Path(_TMP) / 'scan_result.json'
 
 
 def bar(t, o, h, l, c, v=1_000_000):

@@ -79,6 +79,11 @@ interface Scan {
   session: string;
   scanned: number;
   partial?: boolean;
+  /** The last saved scan, shown at once after a helper restart while a fresh one runs. */
+  stale?: boolean;
+  /** No scan finished yet (the first one after installing takes a few minutes). */
+  loading?: boolean;
+  error?: string | null;
   scanning?: boolean;
   nextScan?: number | null;
   regime: { qqqWeekly: number | null; qqqWeek: number | null; above50: number | null; vix: number | null; ndxCot: number | null; qqqAbove200?: number | null };
@@ -95,6 +100,7 @@ const HORIZONS: { key: Horizon; label: string; hold: string; tf: Timeframe; bars
 ];
 const STRATEGY_LABEL: Record<StrategyKey, string> = { weekly_swing: 'Pullback', mean_reversion: 'Mean reversion', breakout: '52-week-high breakout' };
 const REFRESH_MS = 60_000;
+let soon: ReturnType<typeof setTimeout> | undefined;
 const WATCH_KEY = 'tp-setups-watch';
 const PREFS_KEY = 'tp-setups-prefs';
 const pct = (v: number | null | undefined, d = 1) => fmtPct(v, d);
@@ -226,9 +232,12 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       status.textContent = 'Waiting for the helper…';
     }
     try {
-      data = await engineRequest<Scan>('scanner.results', force ? { refresh: true } : {}, force ? 900_000 : 600_000);
+      data = await engineRequest<Scan>('scanner.results', force ? { refresh: true } : {}, 30_000);
       render();
       syncWatches();
+      // While a scan is running (or only a saved one is shown), check again soon: each time frame appears when done.
+      clearTimeout(soon);
+      if (data.scanning || data.loading || data.stale) soon = setTimeout(() => refresh(), 5_000);
     } catch (err) {
       status.replaceChildren(h('span', { class: 'down' }, (err as Error).message));
     }
@@ -255,7 +264,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       h('span', {}, 'Nasdaq-100 ', h('b', { class: r.qqqAbove200 === 1 ? 'up' : r.qqqAbove200 === -1 ? 'down' : '' }, r.qqqAbove200 === 1 ? 'above its 200-day average' : r.qqqAbove200 === -1 ? 'below its 200-day average' : 'trend unknown'), r.qqqWeek != null ? ` (week ${pct(r.qqqWeek)})` : ''),
       r.ndxCot != null ? h('span', { title: 'COT reading (3-year index): shown for context; it counts in grades only if the edge study passes' }, 'Futures commercials ', h('b', {}, `${r.ndxCot.toFixed(0)}/100`)) : '',
       r.vix != null ? h('span', {}, `VIX ${r.vix.toFixed(1)}`) : '',
-      h('span', {}, hr ? `${hr.scanned} stocks · scanned ${timeAgo(hr.updated)}` : 'this time frame is still loading…', data.scanning ? ' · scanning now…' : data.nextScan ? ` · next scan in ${Math.max(1, Math.round((data.nextScan - Date.now() / 1000) / 60))} min` : ''),
+      h('span', {}, hr ? `${hr.scanned} stocks · scanned ${timeAgo(hr.updated)}` : 'this time frame is still loading…', data.stale ? h('b', { class: 'warn' }, ' · saved scan, refreshing…') : data.scanning ? ' · scanning now…' : data.nextScan ? ` · next scan in ${Math.max(1, Math.round((data.nextScan - Date.now() / 1000) / 60))} min` : '', data.error ? h('span', { class: 'down' }, ` · last scan failed: ${data.error}`) : ''),
     );
     renderToday(hr);
     renderEvidence(hr);
@@ -267,7 +276,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   }
 
   function renderEvidence(hr: HorizonResult | undefined) {
-    if (!hr) return evidenceBody.replaceChildren(h('div', { class: 'skeleton', style: 'height:90px' }));
+    if (!hr) return evidenceBody.replaceChildren(h('p', { class: 'empty-state' }, data?.loading ? 'The first scan is running: it downloads 15 years of history for every Nasdaq-100 stock, so it takes a few minutes after the helper starts. This page fills in by itself.' : 'This time frame is still being scanned; it appears here as soon as it is done.'));
     const cards = (Object.keys(hr.strategies) as StrategyKey[]).filter((k) => !hr.strategies[k].lab).map((k) => {
       const st = hr.strategies[k];
       if (!st) return '';
@@ -451,7 +460,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   }
 
   function renderList(hr: HorizonResult | undefined) {
-    if (!hr) return list.replaceChildren(h('div', { class: 'skeleton', style: 'height:240px' }));
+    if (!hr) return list.replaceChildren(h('p', { class: 'empty-state' }, data?.loading ? 'The first scan is running: it downloads 15 years of history for every Nasdaq-100 stock, so it takes a few minutes after the helper starts. This page fills in by itself.' : 'This time frame is still being scanned; it appears here as soon as it is done.'));
     if (hr.error) return list.replaceChildren(h('p', { class: 'muted pad' }, hr.error));
     const rows = visible(hr);
     if (!rows.length) {

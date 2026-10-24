@@ -72,6 +72,7 @@ DATA_DIR = Path.home() / '.trading-platform'
 GRAVEYARD_PATH = DATA_DIR / 'lab_graveyard.json'
 LAB_STATE_PATH = DATA_DIR / 'lab_survivors.json'
 RULES_PATH = DATA_DIR / 'rule_tests.json'
+RESULT_PATH = DATA_DIR / 'scan_result.json'  # the last finished scan, shown at once after a restart
 _state = {'result': None, 'running': None, 'extra': set(), 'bad': {}}  # bad: symbol -> when Schwab rejected it
 
 
@@ -1338,11 +1339,11 @@ async def scan(ctx, news=None, publish=None):
         swing = horizons.get('swing') or {}
         return {
             'updated': time.time(), 'session': session, 'universe': 'Nasdaq-100', 'scanned': swing.get('scanned', 0),
-            'skipped': skipped, 'regime': regime, 'primary': 'weekly_swing', 'version': 22, 'sectors': SECTORS,
+            'skipped': skipped, 'regime': regime, 'primary': 'weekly_swing', 'version': 22,
             'alpaca': alpaca.available(),
             'horizons': horizons, 'horizonInfo': {h: {k: st.HORIZONS[h][k] for k in ('label', 'hold', 'bar', 'unit', 'higher')} for h in HORIZON_ORDER},
-            # The swing results at the top level too, for older pages.
-            'strategies': swing.get('strategies', {}), 'setups': swing.get('setups', []), 'filteredOut': swing.get('filteredOut', []),
+            # Swing setups at the top level too, for pages older than v19 (the strategy records only live in horizons).
+            'setups': swing.get('setups', []), 'filteredOut': swing.get('filteredOut', []),
         }
 
     tier_rank = {'A': 0, 'B': 1, 'C': 2}
@@ -1445,16 +1446,63 @@ async def run_once(ctx, news=None):
     _state['running'] = task
     try:
         _state['result'] = await task
+        try:  # keep it for the next start, so the page has something to show at once
+            await asyncio.to_thread(lab.save_json_atomic, RESULT_PATH, _state['result'])
+        except Exception as err:
+            log.info('Scan result not saved: %s', err)
         return _state['result']
     finally:
         _state['running'] = None
 
 
+def _start_scan(ctx, news):
+    """Starts a scan in the background unless one is running (the browser never waits for it)."""
+    if not _state['running'] and not _state.get('starting'):
+        _state['starting'] = True
+        background(_guarded_scan(ctx, news))
+
+
+async def _guarded_scan(ctx, news):
+    try:
+        _state['lastError'] = None
+        await run_once(ctx, news)
+    except Exception as err:
+        _state['lastError'] = str(err)
+        log.info('Scan failed: %s', err)
+    finally:
+        _state['starting'] = False
+
+
+def _load_saved_result():
+    try:
+        data = json.loads(RESULT_PATH.read_text())
+        return {**data, 'stale': True} if isinstance(data, dict) and data.get('horizons') else None
+    except (OSError, ValueError):
+        return None
+
+
+FIRST_WAIT = 2  # seconds the very first request waits for any result before replying "still loading"
+
+
 @handler('scanner.results')
 async def results(ctx, msg):
-    """The latest scan of the Nasdaq-100 (the owner's universe; runs one first if there isn't one yet)."""
+    """The latest scan of the Nasdaq-100. Replies at once: the newest results (complete or partly done), or after a
+    restart the last saved scan marked `stale` while a fresh one runs. It never waits for a scan to finish (only up to
+    FIRST_WAIT seconds when there is nothing at all yet), nor for the lab, rule tests or random-walk jobs."""
     if msg.get('refresh'):
         _state['bad'].clear()  # "Scan again" retries symbols Schwab rejected earlier
-    if _state['result'] is None or msg.get('refresh'):
-        await run_once(ctx, ctx.news)
-    return {**_state['result'], 'nextScan': _state.get('next'), 'scanning': bool(_state['running'])}
+        _start_scan(ctx, ctx.news)
+    if _state['result'] is None:
+        saved = await asyncio.to_thread(_load_saved_result)
+        if saved and _state['result'] is None:
+            _state['result'] = saved
+        _start_scan(ctx, ctx.news)
+    waited = 0.0
+    while _state['result'] is None and waited < FIRST_WAIT and (_state['running'] or _state.get('starting')):
+        await asyncio.sleep(0.25)
+        waited += 0.25
+    busy = bool(_state['running'] or _state.get('starting'))
+    status = {'nextScan': _state.get('next'), 'scanning': busy, 'error': None if busy else _state.get('lastError')}
+    if _state['result'] is None:
+        return {'loading': True, 'horizons': {}, 'setups': [], 'regime': {}, 'updated': None, **status}
+    return {**_state['result'], **status}

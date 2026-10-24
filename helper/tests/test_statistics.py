@@ -307,5 +307,46 @@ class ReviewFixes(unittest.TestCase):
             scanner.USE_PROCESSES = old
 
 
+class FastReplies(unittest.TestCase):
+    """The Setups page never waits for a scan: saved results at once after a restart, then partial ones."""
+
+    def test_saved_scan_is_served_at_once_while_a_new_one_runs(self):
+        import asyncio
+        from engine import lab as lab_mod
+
+        async def slow_scan(ctx, news=None, publish=None):
+            await asyncio.sleep(30)
+            return {'horizons': {'swing': {}}, 'updated': 2}
+
+        lab_mod.save_json_atomic(scanner.RESULT_PATH, {'horizons': {'swing': {'setups': []}}, 'updated': 1})
+        old_scan, old_state = scanner.scan, dict(scanner._state)
+        scanner.scan = slow_scan
+        scanner._state.update(result=None, running=None)
+
+        class Ctx:
+            news = None
+
+        async def go():
+            import time as _t
+            t0 = _t.monotonic()
+            r = await scanner.results(Ctx(), {})
+            took = _t.monotonic() - t0
+            running = scanner._state['running']
+            if running:
+                running.cancel()
+            return r, took
+        try:
+            r, took = asyncio.run(go())
+        finally:
+            scanner.scan = old_scan
+            scanner._state.clear()
+            scanner._state.update(old_state)
+            scanner._state.update(result=None, running=None)
+        self.assertLess(took, 1.0)
+        self.assertTrue(r['stale'])
+        self.assertTrue(r['scanning'])
+        self.assertEqual(r['updated'], 1)
+
+
 if __name__ == '__main__':
     unittest.main()
