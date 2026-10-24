@@ -154,7 +154,18 @@ How to read this:
 - **Per-trade arithmetic** *(illustration)*. With per-trade Sharpe `s = mean/sd`, the t-statistic is about
   `s·sqrt(n)`. To have an 80% chance of detecting a real edge at a one-sided 5% level you need
   `n ≈ ((1.645 + 0.842)/s)² ≈ 6.2/s²` *independent* trades. Average trade 0.5%, sd 5% → s = 0.1 → about 620
-  trades. At the Harvey-Liu-Zhu hurdle (t = 3, 80% power): `((3 + 0.842)/s)² ≈ 14.8/s²` ≈ 1,480 trades. Carver's
+  trades. At the Harvey-Liu-Zhu hurdle (t = 3, 80% power): `((3 + 0.842)/s)² ≈ 14.8/s²` ≈ 1,480 trades.
+  The multiplier depends on the test you will actually apply (80% power throughout):
+
+  | Test | z for the level | Trades needed |
+  |---|---|---|
+  | Our `tradesNeeded` today: t = 2 (≈ two-sided 5%), **50%** power | 1.96 + 0 | `≈ 4/s²` |
+  | Two-sided 5% (the code's t = 2 with 80% power) | 1.96 + 0.842 | `≈ 7.84/s²` |
+  | One-sided 5% | 1.645 + 0.842 | `≈ 6.2/s²` |
+  | Tier A's one-sided p ≤ 0.10 | 1.282 + 0.842 | `≈ 4.5/s²` |
+  | Harvey-Liu-Zhu t = 3 | 3 + 0.842 | `≈ 14.8/s²` |
+
+  Carver's
   *Systematic Trading* makes the practitioner version of the point: realistic Sharpe ratios rarely exceed 1, so
   telling rules apart takes many years of data *(Sharpe figure from a CXO review; unverified)*.
 - **"Independent" is the catch.** Pooled trades on 100 correlated stocks entered in the same week share one market
@@ -187,10 +198,14 @@ How to read this:
   ≈35%); use the published ones. Hou, Xue & Zhang (2020) agree that most anomalies are weaker than reported;
   Jensen, Kelly & Pedersen (2023) disagree on how much.
 - **Shrinkage.** The Bayesian answer to all of this is to pull a backtest's estimate toward zero by an amount that
-  depends on how noisy it is (Jensen et al. 2023; Harvey 2017). A simple empirical-Bayes version for one estimate
-  *(standard maths, my derivation)*: with prior edge ~ N(0, τ²) and estimate ~ N(μ̂, se²), the posterior mean is
-  `μ̂·τ²/(τ² + se²)`; estimating τ² by `μ̂² − se²` gives the factor `max(0, 1 − 1/t²)`. At t = 2 the edge is cut by
-  25%, at t = 1.2 by about 70%. This is the same direction and roughly the size of the McLean-Pontiff decay.
+  depends on how noisy it is (Jensen et al. 2023; Harvey 2017). A simple **single-estimate empirical-Bayes**
+  version *(standard maths, my derivation; only loosely related to James-Stein, which needs several estimates
+  shrunk together)*: with prior edge ~ N(0, τ²) and estimate ~ N(μ̂, se²), the posterior mean is
+  `μ̂·τ²/(τ² + se²)`; estimating τ² from the one estimate by `μ̂² − se²` gives the factor `max(0, 1 − 1/t²)`. At
+  t = 2 the edge is cut by 25%, at t = 1.2 by about 70%. This is the same direction and roughly the size of the
+  McLean-Pontiff decay. Estimating τ² from one record is crude; better is to estimate it **across all strategy
+  records pooled** (every strategy × side × time frame: τ² ≈ mean of `μ̂ᵢ² − seᵢ²`, floored at 0) and shrink each
+  record by `τ²/(τ² + seᵢ²)`. That is the Jensen-Kelly-Pedersen idea in miniature.
 
 ### 2.8 Survivorship and look-ahead bias
 
@@ -229,30 +244,31 @@ Legend: ✅ matches best practice · ⚠️ partly / approximation · ❌ missin
 | 4 | Monte Carlo of next 20 trades, stationary bootstrap | strategies.py:579-609 | ⚠️ | Correct Politis-Romano mechanics (geometric blocks, circular wrap at 597). Mean block 4 is fixed, not chosen by Politis-White. **The pooled list is ordered stock by stock (scanner.py:576), not by date**, so "consecutive" trades are consecutive within a stock, and cross-stock streaks (all longs losing in one sell-off) are not reproduced; drawdowns are understated. It resamples the in-sample record with no shrinkage, so the median outcome is optimistic (§2.7). |
 | 5 | `summarise`: grade thresholds | strategies.py:502-508 | ❌ | "Proven" needs only 8 trades and PF ≥ 1.2. With typical trade noise 8 trades cannot tell an edge from luck (§2.5). |
 | 6 | `summarise`: t-statistic | strategies.py:511-512 | ⚠️ | Correct iid t of the mean trade (= per-trade Sharpe × √n). Not adjusted for non-normality (skew/kurtosis, §2.5) or for clustering of pooled trades in time (§2.5); overstates certainty for pooled records. |
-| 7 | `summarise`: trades needed | strategies.py:513 | ⚠️ | `(2·sd/mean)²` = trades for t = 2. That is only a **50% chance** of detecting a real edge of this size; 80% power needs ≈ `6.2·(sd/mean)²` (one-sided 5%). Uses raw, not effective, trade count. |
+| 7 | `summarise`: trades needed | strategies.py:513 | ⚠️ | `(2·sd/mean)²` = trades for t = 2 (≈ two-sided 5%). That is only a **50% chance** of detecting a real edge of this size; 80% power at the same level needs ≈ `7.84·(sd/mean)²`, or ≈ `4.5·(sd/mean)²` for Tier A's one-sided p ≤ 0.10 (table in §2.5). Uses raw, not effective, trade count. |
 | 8 | No Sharpe ratio or its standard error | strategies.py:485-519 | ❌ | No per-trade Sharpe with a Lo/Mertens SE; the deflated Sharpe exists only in the lab. |
-| 9 | Recent-history check (last 30%) | scanner.py:582-583 | ⚠️ | Good idea (a regime/decay split). Not a true out-of-sample test for the three core strategies, because the rules were designed after seeing the data's behaviour; there is no first-half vs second-half comparison or a pass/fail rule. |
+| 9 | Recent-history check (last 30%) | scanner.py:582-584 | ⚠️ | Good idea (a regime/decay split). Not a true out-of-sample test for the three core strategies, because the rules were designed after seeing the data's behaviour; there is no first-half vs second-half comparison or a pass/fail rule. |
 | 10 | `bh_qvalues` | strategies.py:612-620 | ✅/⚠️ | Correct step-up BH. Valid under positive dependence (BY 2001), which is the likely case for correlated stocks. But the family is "stocks that currently show a setup" (scanner.py:965), not all stocks tested, so the family size changes from scan to scan; the family should be every stock × strategy tested. |
 | 11 | No correction across the scanner's own strategies | scanner.py:622 | ❌ | Tier A needs random-entry p ≤ 0.10, but each time frame tests 3 strategies × 2 sides (18 tests over 3 frames), plus the lab strategies. No Holm/BH across these. At p ≤ 0.10 with 18 independent-ish tries, ~1.8 false "edges" are expected by luck alone *(illustration)*. |
-| 12 | `cot_z_events` / `edge_summary` permutation | strategies.py:623-666 | ❌ | One event per stretch per stock (642) is good. **But COT is one market-wide reading per week; all stocks share it.** The test permutes individual events (659) as if each had an independent COT label, so the effective n is the number of distinct COT weeks, not events, and the p-value is far too small. Must permute at the week level. |
+| 12 | `cot_z_events` / `edge_summary` permutation | strategies.py:623-666 | ❌ | One event per stretch per stock (642) is good. **But COT is one market-wide reading per week; all stocks share it.** The test permutes individual events (659) as if each had an independent COT label, so the effective n is the number of distinct COT weeks, not events, and the p-value is far too small. Events in the same week also share the same market move, a second reason they are not independent. Shuffling labels by week fixes both at once. |
 | 13 | Costs | strategies.py:21, 463 | ⚠️ | Flat 0.1% round trip. Stops fill exactly at the stop unless gapped through (444), the same-bar stop-before-target rule is conservative (442-447). No slippage on stop fills, no cost-sensitivity test. |
 | 14 | Survivorship | scanner.py:31 (today's NASDAQ_100), docs | ⚠️ | Acknowledged in setups-statistics.md §7, not measured or shown on the cards. Biases longs up, shorts down. |
 | 15 | Look-ahead | strategies.py (causal indicators, tests), lab `market_trend_by_date` previous day | ✅ | Every calculation at bar i uses bars ≤ i, checked by tests; COT used from the Friday after its date. |
 | 16 | Lab folds and embargo | lab.py:57, 322, 329, 340 | ✅ | Expanding walk-forward, three windows, training ends `embargo` = longest hold + 1 bars before each window, so no trade straddles the line – this is purging in López de Prado's sense. |
 | 17 | Lab selection rule | lab.py:338-352, 389-397 | ✅ | Chosen in ≥ 2 of 3 windows, positive and ≥ 30 trades on unseen data – a sensible stability rule. |
 | 18 | Lab `holm` | lab.py:281-288, 383 | ✅/⚠️ | Correct Holm step-down. Applying it only to the ≤ 18 forwarded candidates is legitimate because they were chosen on separate (training) data. But its input p-values come from the random-entry test, with the clustering problem of row 2. |
-| 19 | Lab `pbo` | lab.py:347-351, 358, 384 | ⚠️ | Not CSCV. It is a rank check over at most 3 walk-forward windows, so PBO can only be 0, ⅓, ½, ⅔ or 1, and "> 0.5" means "the in-sample winner was in the bottom half in 2 of 3 windows". Directionally right, statistically very coarse. Bailey et al. use many combinatorial splits for exactly this reason. |
+| 19 | Lab `pbo` | lab.py:347-351, 358, 384 | ⚠️ | Not CSCV. It is a rank check over at most 3 walk-forward windows, so PBO can only be 0, ⅓, ½, ⅔ or 1, and "> 0.5" means "the in-sample winner was in the bottom half in 2 of 3 windows". Directionally right, statistically very coarse. It is also biased **down**: a window whose in-sample winner has fewer than 10 test trades (no `oos_avg` entry, lab.py:341, 349) still counts in `folds_run` but can never be a hit. Bailey et al. use many combinatorial splits for exactly this reason. |
 | 20 | Lab `deflated_sharpe` | lab.py:291-310, 362-367, 380 | ✅/⚠️ | Formula matches Bailey & López de Prado (both SR0 terms, raw kurtosis, √(T−1)). Clustering by (trigger, side) family follows López de Prado & Lewis in spirit. Two weaknesses: `sr_by_cand` is overwritten each fold (331-337) so V[SR] uses only the last fold, and V[SR] is measured **between family averages**, which shrinks it and makes SR0 (the luck bar) lower than it should be. Reported, not gated – reasonable given the doc's finding that it couldn't separate planted edges. |
-| 21 | Lab survivors graded on their "unseen" record | lab.py:416 (`oos_from`), scanner.py:600 | ⚠️ | That record was used to *decide* survival (Holm gate). After selection it is no longer unseen; survivors' unseen stats are biased upward (winner's curse). A true out-of-time record starts the day a strategy is first shown. |
-| 22 | Repeated re-runs of the lab | lab.py docstring, scanner `_run_lab` | ⚠️ | Re-running on each new bar is fine, but survivors can flicker in and out as one bar is added; each re-run is another look at nearly the same data. No persistence rule. |
+| 21 | **Lab survivors graded on the data that selected them** | lab.py:56, 417; scanner.py:600-601, 622; lab.py:378, 383, 391, 393, 395 | ❌ | **The biggest flaw found.** `register` sets `oos_from = TRAIN_SHARE = 0.55` (lab.py:417, 56), exactly the start of the first test window. The scanner then grades lab strategies on trades with signal ≥ `oos_from` (scanner.py:600-601): the same windows that decided survival (expectancy > 0 at lab.py:391, ≥ 30 trades at :393, Holm-adjusted random-entry p ≤ 0.10 at :395 on those pooled trades, from :378/:383). Consequences: **(a)** Tier A's edge test (scanner.py:622, raw p ≤ 0.10) is circular for lab strategies: they already passed a stricter version of it on the same trades, so they pass almost automatically. **(b)** `_run_lab` re-runs on every new finished bar (scanner.py:970-974), so each new bar is absorbed into selection and nothing ever stays unseen. **(c)** Size *(illustration)*: with up to 18 forwarded candidates, Holm's first step needs one-sided p ≤ 0.10/18 ≈ 0.0056 (z ≈ 2.54). For a real edge with true t = 2, the t-value of a survivor is on average E[Z \| Z > 2.54] ≈ 3.17 (Z ~ N(2, 1)), so the shown edge is overstated by roughly 50-60%. With no edge at all, each re-run is a new chance to pass, so false survivors can accumulate over time. Fix: R4. |
+| 22 | Repeated re-runs of the lab | scanner.py:970-974 (`_run_lab` on each new bar) | ⚠️ | See row 21(b). Survivors are reselected every bar and can flicker in and out; each re-run is another look at nearly the same data. No persistence rule. |
 | 23 | Parameter-neighbourhood / plateau check | – | ❌ | None for the core strategies or lab survivors. |
 | 24 | Regime split (market up/down, first/second half) | – | ❌ | Only the last-30% check (row 9). |
 | 25 | Shrinkage of displayed results | – | ❌ | Cards show raw backtest averages; nothing anticipates out-of-sample decay. |
 
 What the code does well, in fairness: theory-first rule design, causal calculations with tests, the side split,
 pooled rather than per-stock grading, an honest walk-forward with purging, Holm on the lab, BH on stocks, seeded
-reproducible simulations, and a graveyard of rejects. The main gap is one idea repeated in rows 2, 4, 6, 7, 12:
-**pooled trades across correlated stocks are treated as independent.**
+reproducible simulations, and a graveyard of rejects. Two gaps matter most: **lab strategies are graded on the
+same trades that selected them** (row 21), and, repeated in rows 2, 4, 6, 7, 12, **pooled trades across correlated
+stocks are treated as independent.**
 
 ---
 
@@ -276,12 +292,16 @@ reproducible simulations, and a graveyard of rejects. The main gap is one idea r
 
 ### R2. Honest sample size, power and shrinkage on every record (fixes rows 5, 7, 8, 25)
 
-- `tradesNeeded = ceil(((1.645 + 0.842) · sd / mean)²)` (80% power, one-sided 5%), compared with
-  `effectiveTrades` from R1, not raw trades.
+- Base `tradesNeeded` on the test Tier A actually uses (one-sided p ≤ 0.10) with 80% power:
+  `tradesNeeded = ceil(((1.282 + 0.842) · sd / mean)²) ≈ 4.5·(sd/mean)²`, and state that basis next to it on the
+  card. (Today's `(2·sd/mean)²` is t = 2 at 50% power; see the table in §2.5.) Compare it with `effectiveTrades`
+  from R1, not raw trades. If R3's Holm correction is adopted, use the Holm-adjusted level instead.
 - Add per-trade Sharpe `s = mean/sd` and its SE `sqrt((1 − skew·s + (kurt−1)/4·s²)/(n−1))` (Mertens/Lo; raw
   kurtosis), computed on the weekly series for pooled records.
-- Show an **expected average trade** = `mean × max(0, 1 − 1/t²)` (empirical-Bayes shrinkage, §2.7) next to the
-  backtest average, and use it for the Monte Carlo's centre (shift the resampled returns by the difference).
+- Show an **expected average trade** next to the backtest average, shrunk by single-estimate empirical Bayes
+  (§2.7): preferably `mean × τ²/(τ² + se²)` with τ² estimated across all strategy records pooled, falling back to
+  `mean × max(0, 1 − 1/t²)` when there are too few records. Use it for the Monte Carlo's centre (shift the
+  resampled returns by the difference).
 - Raise the per-stock "proven" grade from 8 to **20 trades and t ≥ 1.5** (a stock record is a secondary check;
   "mixed"/"failed" stay at 4+).
 - **Acceptance:** Tier A requires `effectiveTrades ≥ tradesNeeded` and a positive expected (shrunk) average after
@@ -295,36 +315,52 @@ reproducible simulations, and a graveyard of rejects. The main gap is one idea r
   Tier B keeps the raw test. Show "adjusted for N tests" on the card.
 - Make the BH family for per-stock random-walk q-values **every stock × strategy tested** in that time frame, not
   only those with a current setup.
-- **Acceptance:** on a universe of pure drifting random walks (no edge anywhere), the chance that *any* record
-  reaches Tier A is ≤ 10% over 100 seeds.
+- **Acceptance:** on a universe of pure drifting random walks (no edge anywhere), the share of seeds in which
+  *any* record reaches Tier A is **≤ 0.16 over 100 seeds, or ≤ 0.10 over 400 seeds**. (A bare "≤ 10% over 100
+  seeds" would fail by chance about 40% of the time even for a correct implementation running at exactly 10%.)
 
-### R4. One robustness report per strategy: neighbourhood, costs, regimes (fixes rows 9, 13, 23, 24)
+### R4. Give lab strategies a real forward record (fixes rows 21, 22)
 
-Computed once a day with the pooled trades, shown as three ticks on the strategy card:
+- When `register` first adds a survivor, **store its first-shown date** (persist it with the lab state, keyed by
+  the candidate id `trigger|filters|side`, so a restart does not reset it).
+- Grade lab strategies **only on trades whose signal bar is after that date** (replace the `oos_from = 0.55`
+  filter at scanner.py:600-601). The walk-forward record stays visible as "how it was chosen", not as evidence.
+- **Cap lab strategies at Tier B until they have 30+ such forward trades**; only then can the normal Tier A tests
+  (with R1-R3) apply to the forward trades.
+- **Keep survivors fixed** instead of reselecting on every new bar: re-run the lab **weekly** (not on every finished
+  bar), add new survivors, and drop an existing survivor only when its own forward record fails (expectancy ≤ 0
+  after 30+ forward trades, or weekly t below −1). Rejected candidates go to the graveyard as now.
+- **Acceptance:** (1) a unit test shows a lab strategy's graded trades all have signal dates after its first-shown
+  date, and that it cannot be Tier A with fewer than 30 forward trades; (2) on the 4 pure random-walk synthetic
+  sets, re-running the lab over 52 simulated weeks never grades any lab strategy above Tier B on its selection
+  trades; (3) a survivor's first-shown date survives a helper restart.
 
-- **Plateau:** move each numeric parameter one step each way (ATR multiples ±0.5, lookbacks ±20%, percentile bands
-  ±2 points, hold ±1 bar), one at a time. Pass if expectancy is positive in **≥ 80%** of these neighbours and the
-  median neighbour's profit factor is **≥ 1.1**.
+### R5. A slim robustness check: double costs and two halves (fixes rows 9, 13, 24)
+
+Computed once a day with the pooled trades, shown as two ticks on the strategy card:
+
 - **Costs:** re-run with **double costs (0.2% round trip) plus 0.05% extra slippage on every stop exit**. Pass if
   expectancy stays positive and (with R1) random-entry p ≤ 0.10.
-- **Regimes:** split trades into first half / second half of history and QQQ above / below its 200-day average
-  (known the previous day). Pass if expectancy is positive in **at least 3 of the 4 parts** and no part has a
-  weekly t below −1.
-- **Acceptance:** Tier A additionally requires all three ticks; failures add a `whyCodes` entry
-  (`fragile_params`, `cost_sensitive`, `regime_dependent`).
+- **Halves:** split each stock's history at its midpoint. Pass if expectancy is positive in **both** halves and
+  neither half has a weekly t below −1. (This replaces the informal last-30% check at scanner.py:582-584 with a
+  pass/fail rule.)
+- **Acceptance:** Tier A additionally requires both ticks; failures add a `whyCodes` entry (`cost_sensitive`,
+  `unstable_halves`). Unit test: a strategy whose synthetic edge exists only in the first half fails the halves
+  tick.
 
-### R5. Replace the 3-window PBO with real CSCV (fixes rows 19, 20)
+### Later, optional (not part of the five)
 
-- After the walk-forward loop, build a matrix: rows = **S = 10** equal time blocks of the history (by signal date,
-  pooled over stocks), columns = every candidate with ≥ 40 training trades, cell = average trade return of that
-  candidate in that block. Purge trades whose exit falls in a different block. For each of the C(10,5) = **252**
-  ways to pick 5 blocks as in-sample, find the in-sample best column (by t-statistic), take its out-of-sample rank
-  r among N columns, ω = r/(N+1), λ = ln(ω/(1−ω)). **PBO = share of splits with λ ≤ 0.** Keep the existing gate
-  (PBO > 0.5 → nothing passes).
-- While there: keep each candidate's Sharpe from the full training record rather than the last fold, and compute
-  V[SR] across all candidates (or family representatives' own trade series) rather than family averages.
-- **Acceptance:** on the existing synthetic tests, mean PBO over the 4 pure random-walk sets ≥ 0.4, and ≤ 0.3 on
-  the 4 planted-edge sets; runtime increase under 20% of the current lab run.
+- **Parameter plateau check** (row 23): move each numeric parameter one step each way (ATR multiples ±0.5,
+  lookbacks ±20%, percentile bands ±2 points, hold ±1 bar); pass if ≥ 80% of neighbours keep positive expectancy
+  and the median neighbour's profit factor is ≥ 1.1. Useful, but it multiplies run time; add it only if R1-R5
+  leave strategies that still look suspicious.
+- **Real CSCV for PBO** (rows 19, 20): S = 10 time blocks, C(10,5) = 252 splits, in-sample best by t-statistic,
+  ω = r/(N+1), λ = ln(ω/(1−ω)), PBO = share of λ ≤ 0; purge trades that cross block borders; keep the PBO > 0.5
+  gate. Meanwhile, at least stop counting windows without an out-of-sample score as non-hits (row 19), keep each
+  candidate's Sharpe from the full training record, and compute V[SR] across candidates rather than family
+  averages (row 20). Proposed acceptance: mean PBO ≥ 0.4 on the random-walk test sets and ≤ 0.3 on the
+  planted-edge sets.
+- **Regime split by market trend** (QQQ above/below its 200-day average) as a third robustness tick.
 
 Not a code recommendation but the most important test of all: the owner's **paper trading in Webull is the only
 truly unseen data**. Log every Tier A/B setup the day it is shown and compare the live results with the backtest
