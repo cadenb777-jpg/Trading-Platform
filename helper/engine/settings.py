@@ -1,6 +1,6 @@
 """
-Settings the platform's Settings window can change: the AI key and model, an optional FRED key and the
-SEC contact email. They are saved on this computer (~/.trading-platform/settings.json). Keys are never
+Settings the platform's Settings window can change: the AI key and model, an optional FRED key, optional Alpaca
+keys (free price history) and the SEC contact email. They are saved on this computer (~/.trading-platform/settings.json). Keys are never
 sent back to the browser; it only learns whether each one is set.
 """
 import json
@@ -9,7 +9,7 @@ from pathlib import Path
 from .core import EngineError, handler
 
 SETTINGS_PATH = Path.home() / '.trading-platform' / 'settings.json'
-SECRET_KEYS = {'anthropic_key', 'fred_key'}
+SECRET_KEYS = {'anthropic_key', 'fred_key', 'alpaca_key_id', 'alpaca_secret'}
 AI_MODELS = {
     'claude-opus-5-5': 'Best: Claude Opus 5.5',
     'claude-sonnet-5-5': 'Balanced: Claude Sonnet 5.5',
@@ -51,6 +51,7 @@ def public():
     return {
         'aiKeySet': bool(data.get('anthropic_key')),
         'fredKeySet': bool(data.get('fred_key')),
+        'alpacaSet': bool(data.get('alpaca_key_id') and data.get('alpaca_secret')),
         'secContact': data.get('sec_contact', ''),
         'model': data.get('model') or DEFAULT_MODEL,
         'openBrowser': data.get('open_browser') is not False,
@@ -76,6 +77,12 @@ async def set_settings(ctx, msg):
         if key and not (len(key) == 32 and key.isalnum()):
             raise EngineError('A FRED API key is 32 letters and numbers.')
         changes['fred_key'] = key
+    for field, name, label in (('alpacaKeyId', 'alpaca_key_id', 'key ID'), ('alpacaSecret', 'alpaca_secret', 'secret key')):
+        if field in msg:
+            key = str(msg[field] or '').strip()
+            if key and (not 10 <= len(key) <= 100 or any(ch.isspace() for ch in key)):
+                raise EngineError(f'That doesn’t look like an Alpaca {label}. Copy it again from alpaca.markets.')
+            changes[name] = key
     if 'secContact' in msg:
         email = str(msg['secContact'] or '').strip()
         if email and ('@' not in email or ' ' in email):
