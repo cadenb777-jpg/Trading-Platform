@@ -31,7 +31,7 @@ export interface Position {
 
 /** Heading patterns, most specific first; headings about changes, gains or percentages never match. */
 const HEADINGS: [StatementField, RegExp][] = [
-  ['costPerShare', /(avg|average|unit|per[- ]share|\/ ?share).*(cost|price)|cost.*(per[- ]share|\/ ?share)|^avg\.? ?cost$/i],
+  ['costPerShare', /(avg|average|unit|per[- ]share|\/ ?share).*cost|cost.*(per[- ]share|\/ ?share)|(avg|average).*price/i],
   ['cost', /(cost basis|total cost|book value|^cost$|\bcost\b)/i],
   ['value', /(market value|mkt val|current value|total value|^value$|^equity$|ending value|\bvalue\b)/i],
   ['shares', /(qty|quantity|shares|units)/i],
@@ -88,9 +88,10 @@ export function rowsToPositions(rows: string[][], headerAt: number, columns: Col
     if (!TICKER.test(symbol)) continue; // notes, disclaimers, options legs with spaces, blank lines
     const shares = parseMoney(get(r, 'shares'));
     if (shares == null || shares <= 0) continue;
-    let cost = parseMoney(get(r, 'cost')) ?? undefined;
+    const total = parseMoney(get(r, 'cost'));
+    let cost = total != null && total > 0 ? total : undefined; // "0" or negative cost is a blank, not free shares
     const perShare = parseMoney(get(r, 'costPerShare'));
-    if (cost == null && perShare != null) cost = perShare * shares;
+    if (cost == null && perShare != null && perShare > 0) cost = perShare * shares;
     const prev = bySymbol.get(symbol);
     if (prev) {
       prev.shares += shares;

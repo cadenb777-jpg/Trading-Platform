@@ -5739,7 +5739,11 @@ a.btn {
   .div-bar-track {
     height: 90px;
   }
+  /* Phones: the bars pick the month; the grid would repeat them in a long list. */
   .div-cal {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: none;
+  }
+  .div-stats .stat-card:nth-child(5) {
+    grid-column: 1 / -1;
   }
 }

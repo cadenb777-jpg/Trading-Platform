@@ -92,6 +92,54 @@ class DividendTests(unittest.TestCase):
         self.assertAlmostEqual(sum(m['total'] for m in s['calendar']), 110, delta=10)
         self.assertTrue(all(p['estimated'] for m in s['calendar'] for p in m['payments']))
 
+    def test_big_raise_is_not_special(self):
+        divs = series(dt.date(2022, 1, 10), 3, 19, 1.00)  # last at 2026-07-10
+        divs[dt.date(2026, 10, 10)] = 1.60  # +60% raise, the newest payment
+        r = dv.analyse(divs, TODAY, shares=1, price=100)
+        self.assertAlmostEqual(r['forward'], 6.40)
+        self.assertNotIn('stopped', r['note'])
+        self.assertFalse(r['specialRecent'])
+        # An older raise that stuck is not special either.
+        divs[dt.date(2026, 7, 10)] = 1.60
+        self.assertAlmostEqual(dv.analyse(divs, TODAY, shares=1, price=100)['forward'], 6.40)
+
+    def test_off_schedule_newest_payment_is_special(self):
+        divs = series(dt.date(2022, 1, 10), 3, 20, 1.00)
+        divs[dt.date(2026, 10, 20)] = 2.00  # ten days after the regular one
+        r = dv.analyse(divs, TODAY, shares=1, price=100)
+        self.assertAlmostEqual(r['forward'], 4.0)
+        self.assertTrue(r['specialRecent'])
+
+    def test_uneven_twice_a_year_payer(self):
+        divs = {}
+        for y in range(2018, 2027):
+            divs[dt.date(y, 3, 15)] = 0.80  # final
+            divs[dt.date(y, 9, 15)] = 0.20  # interim
+        r = dv.analyse(divs, TODAY, shares=100, price=50)
+        self.assertEqual(r['frequency'], 2)
+        self.assertAlmostEqual(r['forward'], 1.00)
+        self.assertFalse(r['specialRecent'])
+        self.assertEqual(r['note'], '')
+        self.assertEqual([u['perShare'] for u in r['upcoming']], [0.80])  # March final; September pays after the window
+
+    def test_weekly_and_irregular(self):
+        weekly = {dt.date(2026, 1, 2) + dt.timedelta(days=7 * k): 0.10 for k in range(42)}
+        r = dv.analyse(weekly, TODAY, shares=10, price=20)
+        self.assertEqual((r['frequency'], r['frequencyLabel']), (52, 'Weekly'))
+        self.assertAlmostEqual(r['forward'], 5.2)
+        days = [0, 20, 110, 130, 260, 280, 400, 520]
+        odd = {dt.date(2025, 1, 1) + dt.timedelta(days=d): 0.5 for d in days}
+        self.assertEqual(dv.analyse(odd, TODAY, shares=1, price=10)['frequencyLabel'], 'Irregular')
+
+    def test_summary_with_a_missing_cost_and_price(self):
+        a = {'symbol': 'AAA', **dv.analyse(series(dt.date(2020, 1, 15), 1, 90, 0.25), TODAY, shares=10, cost=400, price=50)}
+        b = {'symbol': 'BBB', **dv.analyse(series(dt.date(2019, 2, 10), 3, 40, 1.0), TODAY, shares=20, cost=None, price=100)}
+        c = {'symbol': 'CCC', **dv.analyse(series(dt.date(2019, 2, 10), 3, 40, 1.0), TODAY, shares=5, cost=300, price=None)}
+        s = dv.summarise([a, b, c], TODAY)
+        self.assertAlmostEqual(s['gain'], 500 - 400)
+        self.assertAlmostEqual(s['yieldOnCost'], 30 / 400)
+        self.assertAlmostEqual(s['yield'], (30 + 80) / 2500)
+
     def test_handler_merges_and_rejects(self):
         class Ctx:
             async def dividends(self, symbol):
@@ -109,6 +157,7 @@ class DividendTests(unittest.TestCase):
             invest.quotes = orig
         abc = next(x for x in r['holdings'] if x['symbol'] == 'ABC')
         self.assertEqual(abc['shares'], 20)
+        self.assertEqual(r['missing'], 0)
         self.assertEqual(len(r['calendar']), 12)
 
 

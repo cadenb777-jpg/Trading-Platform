@@ -81,6 +81,12 @@ describe('statement import', () => {
     ]);
   });
 
+  it('treats zero cost as missing and never reads "Unit Price" as cost per share', () => {
+    const r = parseStatement(rows('Symbol,Quantity,Unit Price,Cost Basis,Market Value\nKO,10,70,0,700\nPG,5,160,"($5)",800'));
+    expect(r.columns.costPerShare).toBeUndefined();
+    expect(r.positions.map((p) => p.cost)).toEqual([undefined, undefined]);
+  });
+
   it('lets the owner correct the column match', () => {
     const r = parseStatement(rows(WEBULL), { symbol: 0, shares: 2, cost: 5 }); // use market value as the cost
     expect(r.positions[0].cost).toBe(2250);

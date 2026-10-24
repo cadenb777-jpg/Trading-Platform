@@ -1,6 +1,6 @@
 /** Dividends for a shares portfolio (like the Snowball app): income, yields, a 12-month calendar, and statement import. */
 import { engineRequest } from '../data/schwab';
-import { saveDoc } from '../data/store';
+import { listDocs, saveDoc } from '../data/store';
 import { parseCsv } from '../invest/holdings';
 import { dataTable, money, pct, pctU, statCards } from '../ui/charts';
 import { h, openModal, toast } from '../ui/dom';
@@ -26,10 +26,12 @@ interface DividendHolding {
   gain: number | null;
   gainPct: number | null;
   frequencyLabel: string;
-  forward: number;
+  forward: number | null;
   yield: number | null;
   yieldOnCost: number | null;
-  annualIncome: number;
+  /** null when the dividend history couldn't be read. */
+  annualIncome: number | null;
+  missing?: boolean;
   growth5y: number | null;
   nextExDate: string | null;
   nextPayDate: string | null;
@@ -48,6 +50,8 @@ interface Payment {
 
 export interface DividendReport {
   holdings: DividendHolding[];
+  /** Holdings whose dividend history couldn't be read. */
+  missing?: number;
   asOf: string;
   value: number;
   cost: number | null;
@@ -89,6 +93,8 @@ export async function renderDividends(out: HTMLElement, p: Portfolio) {
     out.replaceChildren(h('div', { class: 'ap-error' }, (err as Error).message));
   }
 }
+
+const divStats = (el: HTMLElement) => (el.classList.add('div-stats'), el);
 
 function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
   const max = Math.max(1, ...r.calendar.map((m) => m.total));
@@ -144,7 +150,7 @@ function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
     x.note ? h('span', { class: `badge ${/cut|stopped/.test(x.note) ? 'down' : ''}`, title: x.note }, x.note.replace('Latest dividend was cut', 'Cut').replace('Dividends seem to have stopped', 'Stopped').replace('No dividends', 'None')) : x.specialRecent ? h('span', { class: 'badge accent', title: 'Paid a one-off special dividend in the last year (not counted in the yield)' }, 'Special') : null;
 
   out.replaceChildren(
-    statCards([
+    divStats(statCards([
       { label: 'Yearly dividend income', value: usd(r.annualIncome), hint: 'Expected over the next 12 months at the latest regular payments' },
       { label: 'Monthly average', value: usd(r.monthly) },
       { label: termLabel('Portfolio yield', 'divyield'), value: pctU(r.yield), hint: 'Yearly income ÷ market value' },
@@ -155,7 +161,7 @@ function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
         tone: '',
         hint: r.cost ? `Cost ${usd(r.cost)} · gain ${r.gain != null && r.gain >= 0 ? '+' : ''}${usd(r.gain)} (${pct(r.gainPct, 1)})` : 'Add cost basis to see your gain',
       },
-    ]),
+    ])),
     h(
       'section',
       { class: 'panel' },
@@ -186,26 +192,25 @@ function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
       'section',
       { class: 'panel' },
       h('div', { class: 'panel-head' }, h('h3', {}, 'Holdings')),
+      r.missing ? h('p', { class: 'badge warn' }, `${r.missing} holding${r.missing === 1 ? '' : 's'} had no dividend data (shown as —). Try again later.`) : null,
       dataTable(
-        ['Symbol', 'Shares', 'Cost basis', 'Value', 'Gain', 'Yield', 'Yield on cost', 'Yearly income', 'Pays', 'Next ex-date', '5y growth'],
+        ['Symbol', 'Shares', 'Gain', 'Yield · on cost', 'Yearly income', 'Pays', '5y growth'],
         r.holdings.map((x) => [
-          { v: h('span', { title: x.name }, h('b', {}, x.symbol), ' ', noteBadge(x) ?? ''), cls: 'label' },
+          { v: h('span', { title: [x.name, x.nextExDate ? `next ex-date ~${day(x.nextExDate)}` : ''].filter(Boolean).join(' · ') }, h('b', {}, x.symbol), ' ', noteBadge(x) ?? ''), cls: 'label' },
           { v: String(+x.shares.toFixed(4)), cls: 'num' },
-          { v: usd(x.cost), cls: 'num' },
-          { v: usd(x.value), cls: 'num' },
           { v: x.gainPct != null ? pct(x.gainPct, 1) : '—', cls: `num ${tone(x.gain)}` },
-          { v: pctU(x.yield), cls: 'num' },
-          { v: pctU(x.yieldOnCost), cls: 'num' },
+          { v: `${pctU(x.yield)} · ${pctU(x.yieldOnCost)}`, cls: 'num' },
           { v: usd(x.annualIncome), cls: 'num' },
           x.frequencyLabel,
-          x.nextExDate ? h('span', {}, day(x.nextExDate), ' ', est()) : '—',
           { v: pct(x.growth5y, 1), cls: `num ${tone(x.growth5y)}` },
         ]),
+        undefined,
+        { minRowsForFilters: Number.POSITIVE_INFINITY },
       ),
       h(
         'p',
         { class: 'ap-note' },
-        'Yield = the latest regular dividend × payments per year ÷ price (one-off specials are left out). 5y growth is the yearly rate the dividend grew over five years. Future dates and amounts are estimates from each holding’s dividend history; pay dates are about 3 weeks after the ex-date.',
+        'Yield = the latest regular dividend × payments per year ÷ price (twice-a-year and yearly payers: the last 12 months added up; one-off specials are left out). Yield · on cost shows today’s yield, then the yield on what you paid. 5y growth is the yearly rate the dividend grew over five years. Future dates and amounts are estimates from each holding’s dividend history; pay dates are about 3 weeks after the ex-date.',
         hasCash ? ' Cash and money-market balances aren’t included.' : '',
       ),
     ),
@@ -303,11 +308,14 @@ function preview(rows: string[][], fileName: string, onSaved: (p: Portfolio & { 
     positions = parseStatement(rows, columns).positions;
     const stocks = positions.filter((x) => !x.cash);
     const cash = positions.find((x) => x.cash);
-    summary.textContent = `${stocks.length} holding${stocks.length === 1 ? '' : 's'}${cash ? ` and ${usd(cash.value)} cash` : ''}. ${stocks.some((x) => x.cost == null) ? 'Some rows have no cost basis: yield on cost and gain leave them out (you can type it in later).' : ''}`;
+    // Cost far below market value on most rows usually means the "cost" column is really cost per share.
+    const checked = stocks.filter((x) => x.cost != null && x.value);
+    const tiny = checked.filter((x) => x.cost! < 0.15 * x.value!).length;
+    summary.textContent = `${stocks.length} holding${stocks.length === 1 ? '' : 's'}${cash ? ` and ${usd(cash.value)} cash` : ''}. ${stocks.some((x) => x.cost == null) ? 'Some rows have no cost basis: yield on cost and gain leave them out (you can type it in later). ' : ''}${checked.length && tiny > checked.length / 2 ? 'The cost basis looks like cost per share: switch that column to "Cost per share"?' : ''}`;
     tableBox.replaceChildren(
       dataTable(
-        ['Symbol', 'Description', 'Shares', 'Cost basis', 'Market value'],
-        positions.map((x) => [h('b', {}, x.symbol), { v: x.name ?? '', cls: 'label' }, { v: x.cash ? '—' : String(x.shares), cls: 'num' }, { v: usd(x.cost), cls: 'num' }, { v: usd(x.value), cls: 'num' }]),
+        ['Symbol', 'Shares', 'Cost basis', 'Market value'],
+        positions.map((x) => [h('b', { title: x.name ?? '' }, x.symbol), { v: x.cash ? '—' : String(x.shares), cls: 'num' }, { v: usd(x.cost), cls: 'num' }, { v: usd(x.value), cls: 'num' }]),
         undefined,
         false,
       ),
@@ -355,6 +363,11 @@ function preview(rows: string[][], fileName: string, onSaved: (p: Portfolio & { 
                 ],
               };
               try {
+                const same = (await listDocs<Portfolio>('portfolios')).find((x) => x.name.trim().toLowerCase() === p.name.toLowerCase());
+                if (same) {
+                  if (confirm(`You already have a portfolio called "${same.name}". OK = replace it with this file, Cancel = keep both.`)) p.id = same.id;
+                  else p.name = `${p.name} (${new Date().toLocaleDateString()})`;
+                }
                 const saved = await saveDoc('portfolios', p);
                 close();
                 toast(`Saved "${saved.name}"`);
