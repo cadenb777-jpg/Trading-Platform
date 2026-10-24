@@ -182,8 +182,8 @@ a {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 8px 0;
+  gap: 1px;
+  padding: 6px 0;
 }
 
 .rail-bottom {
@@ -219,7 +219,7 @@ button.nav-btn {
   align-items: center;
   gap: 2px;
   width: 66px;
-  padding: 6px 0 5px;
+  padding: 4px 0 3px;
   border-radius: var(--radius);
   color: var(--muted);
   text-decoration: none;
@@ -698,12 +698,25 @@ input[type='radio'] {
   gap: 6px;
 }
 
+/* The news list fills the left column down to the bottom of the right column and scrolls inside it;
+   a soft fade at the bottom shows there is more (the padding lets the last story scroll clear of it). */
+.news-panel {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+}
+
 .news-list {
   display: flex;
   flex-direction: column;
-  max-height: 640px;
+  flex: 1 1 auto;
+  height: 0;
+  min-height: 420px;
   overflow-y: auto;
   margin: 0 -8px;
+  padding-bottom: 28px;
+  -webkit-mask-image: linear-gradient(to bottom, currentColor calc(100% - 36px), transparent);
+  mask-image: linear-gradient(to bottom, currentColor calc(100% - 36px), transparent);
 }
 
 .news-item {
@@ -1588,7 +1601,7 @@ input[type='radio'] {
 }
 
 .calendar-page > * {
-  max-width: 1100px;
+  max-width: var(--page-max);
   margin-left: auto;
   margin-right: auto;
 }
@@ -1638,7 +1651,7 @@ input[type='radio'] {
 .cal-columns,
 .cal-row {
   display: grid;
-  grid-template-columns: 88px 44px 40px minmax(0, 1fr) 80px 80px 80px;
+  grid-template-columns: 88px 48px 60px minmax(0, 1fr) 96px 96px 96px;
   align-items: center;
   gap: 10px;
   padding: 9px 10px;
@@ -1826,8 +1839,9 @@ input[type='radio'] {
     display: none;
   }
   .cal-row:not(.compact) {
-    grid-template-columns: 70px 40px minmax(0, 1fr);
-    grid-template-areas: 'time country title' 'impact impact title' 'values values values';
+    grid-template-columns: 70px 40px repeat(3, minmax(0, 1fr));
+    grid-template-areas: 'time country title title title' 'impact impact title title title' '. . actual forecast previous';
+    row-gap: 4px;
   }
   .cal-row:not(.compact) .cal-time {
     grid-area: time;
@@ -1841,9 +1855,31 @@ input[type='radio'] {
   .cal-row:not(.compact) .cal-title {
     grid-area: title;
   }
+  /* Actual / forecast / previous become a small labelled row under the event name. */
   .cal-row:not(.compact) .cal-actual,
   .cal-row:not(.compact) .cal-num {
-    display: none;
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+    font-size: var(--fs-base);
+  }
+  .cal-row:not(.compact) .cal-actual::before,
+  .cal-row:not(.compact) .cal-num::before {
+    content: attr(data-label);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .cal-row:not(.compact) .cal-actual {
+    grid-area: actual;
+  }
+  .cal-row:not(.compact) .cal-forecast {
+    grid-area: forecast;
+  }
+  .cal-row:not(.compact) .cal-previous {
+    grid-area: previous;
   }
   .toolbar {
     gap: 6px;
@@ -2924,6 +2960,26 @@ button.news-item {
   padding: 4px 6px;
   text-align: left;
   font-weight: 500;
+}
+
+/* First and last columns line up with the fields above the table. */
+.holdings-table td:first-child,
+.holdings-table th:first-child {
+  padding-left: 0;
+}
+
+.holdings-table td:last-child,
+.holdings-table th:last-child {
+  padding-right: 0;
+}
+
+.holdings-wrap {
+  overflow-x: auto;
+  margin-top: var(--sp-2);
+}
+
+.field .input.symbol {
+  width: 100%;
 }
 
 .holdings-table th {
@@ -4144,11 +4200,32 @@ a.btn {
   gap: 10px;
 }
 
+/* One rule per row: the fields wrap among themselves, the remove button stays at the row's end. */
 .rule-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.rule-fields {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+}
+
+.rule-row > .icon-btn {
+  flex-shrink: 0;
+  height: var(--control-h);
+  width: var(--control-h);
+  padding: 0;
+}
+
+.rule-block > .btn.small {
+  min-height: var(--control-h);
+  font-size: var(--fs-base);
 }
 
 .rule-row select.input {
@@ -4177,8 +4254,6 @@ a.btn {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 220px;
-  overflow-y: auto;
   background: var(--panel-2);
   border-radius: var(--radius);
   padding: 10px 12px;
@@ -5229,5 +5304,137 @@ a.btn {
   }
   .ap-controls {
     gap: 6px;
+  }
+}
+
+/* ---------- Layout fixes: nothing clipped, nothing hidden ---------- */
+
+/* Board tables show every row (the page itself scrolls). */
+.inv-board .table-wrap {
+  max-height: none;
+}
+
+/* Breathing room around the AI button row on Home. */
+.home > .home-ai-row {
+  margin-top: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+/* Chart legend rows get a faint backing so price lines never run through the text. */
+.legend-row {
+  background: color-mix(in srgb, var(--bg-chart) 60%, transparent);
+}
+
+@media (max-width: 1000px) {
+  /* One column: the news list is a normal box with its own scroll. */
+  .news-list {
+    height: auto;
+    min-height: 0;
+    max-height: 560px;
+  }
+}
+
+@media (max-width: 700px) {
+  /* Bottom menu: snaps to buttons and fades at the edges to show it scrolls sideways. */
+  .rail {
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, transparent, currentColor 14px, currentColor calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, transparent, currentColor 14px, currentColor calc(100% - 28px), transparent);
+  }
+  .rail::-webkit-scrollbar {
+    display: none;
+  }
+  .rail .nav-btn {
+    scroll-snap-align: center;
+    width: 60px;
+  }
+  /* Header controls take the full width; tab strips fade at the right edge (they scroll). */
+  .ap-header > .ap-controls {
+    width: 100%;
+  }
+  .ap-controls > .tabs {
+    -webkit-mask-image: linear-gradient(to right, currentColor calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, currentColor calc(100% - 28px), transparent);
+    padding-right: 24px;
+  }
+  /* Investments: search box fills the row, Refresh sits beside it. */
+  .ap-controls:has(.inv-search-wrap) {
+    flex-wrap: nowrap;
+  }
+  .inv-search-wrap {
+    flex: 1;
+    min-width: 0;
+  }
+  .inv-search {
+    width: 100%;
+    max-width: none;
+  }
+  /* Portfolio holdings: keep selects readable; the table scrolls sideways if needed. */
+  .holdings-table {
+    min-width: 520px;
+  }
+  .holdings-table select.input {
+    min-width: 150px;
+  }
+}
+
+/* Grid columns may shrink below their content (wide tables scroll inside instead of widening the page). */
+.pf-layout > *,
+.home-grid > *,
+.two-col > * {
+  min-width: 0;
+}
+
+@media (max-width: 1000px) {
+  .pf-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Phones, weight mode: each holding is two lines (symbol + weight, then asset class) instead of a wide table. */
+@media (max-width: 700px) {
+  .holdings-table.mode-weight,
+  .holdings-table.mode-weight thead,
+  .holdings-table.mode-weight tbody {
+    display: block;
+    min-width: 0;
+  }
+  .holdings-table.mode-weight tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 84px 40px;
+    grid-template-areas: 'sym w x' 'cls cls x';
+    gap: 6px;
+    align-items: center;
+  }
+  .holdings-table.mode-weight tbody tr {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .holdings-table.mode-weight td,
+  .holdings-table.mode-weight th {
+    display: block;
+    padding: 0;
+    width: auto;
+  }
+  .holdings-table.mode-weight th:nth-child(n + 3) {
+    display: none;
+  }
+  .holdings-table.mode-weight td:first-child,
+  .holdings-table.mode-weight th:first-child {
+    grid-area: sym;
+  }
+  .holdings-table.mode-weight .w,
+  .holdings-table.mode-weight th:nth-child(2) {
+    grid-area: w;
+  }
+  .holdings-table.mode-weight .cls {
+    grid-area: cls;
+  }
+  .holdings-table.mode-weight .x {
+    grid-area: x;
+  }
+  .holdings-table.mode-weight select.input {
+    width: 100%;
   }
 }

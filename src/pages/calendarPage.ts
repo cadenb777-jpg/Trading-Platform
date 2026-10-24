@@ -77,7 +77,7 @@ const impactDots = (impact: CalendarEvent['impact']) =>
 
 function valueCell(e: CalendarEvent) {
   const cmp = compareActual(e);
-  return h('span', { class: `cal-actual ${cmp ?? ''}`, title: [cmp ? `Actual came in ${cmp === 'inline' ? 'in line with' : cmp === 'above' ? 'higher than' : 'lower than'} the forecast.` : '', e.actualSource ? `Official figure from ${e.actualSource}.` : ''].join(' ').trim() }, e.actual || '—');
+  return h('span', { class: `cal-actual ${cmp ?? ''}`, 'data-label': 'Actual', title: [cmp ? `Actual came in ${cmp === 'inline' ? 'in line with' : cmp === 'above' ? 'higher than' : 'lower than'} the forecast.` : '', e.actualSource ? `Official figure from ${e.actualSource}.` : ''].join(' ').trim() }, e.actual || '—');
 }
 
 export function openEventDetails(e: CalendarEvent) {
@@ -150,8 +150,8 @@ function eventRow(e: CalendarEvent, compact = false) {
     impactDots(e.impact),
     h('span', { class: 'cal-title' }, e.title),
     compact ? null : valueCell(e),
-    compact ? null : h('span', { class: 'cal-num' }, e.forecast || '—'),
-    compact ? null : h('span', { class: 'cal-num muted' }, e.previous || '—'),
+    compact ? null : h('span', { class: 'cal-num cal-forecast', 'data-label': 'Forecast' }, e.forecast || '—'),
+    compact ? null : h('span', { class: 'cal-num cal-previous muted', 'data-label': 'Previous' }, e.previous || '—'),
   );
 }
 
@@ -230,7 +230,7 @@ export function createCalendarPage() {
   const listPanel = h(
     'div',
     { class: 'panel cal-panel' },
-    h('div', { class: 'cal-columns muted small' }, h('span', {}, 'Time'), h('span', {}, ''), h('span', {}, 'Impact'), h('span', {}, 'Event'), h('span', {}, 'Actual'), h('span', {}, 'Forecast'), h('span', {}, 'Previous')),
+    h('div', { class: 'cal-columns muted small' }, h('span', {}, 'Time'), h('span', {}, 'Ccy'), h('span', {}, 'Impact'), h('span', {}, 'Event'), h('span', {}, 'Actual'), h('span', {}, 'Forecast'), h('span', {}, 'Previous')),
     body,
   );
   const monthPanel = h('div', { class: 'month-view' });

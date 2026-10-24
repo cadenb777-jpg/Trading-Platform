@@ -293,6 +293,8 @@ async function route() {
   const current = currentPage();
   const mine = ++routeRequest;
   document.querySelectorAll<HTMLElement>('.nav-btn[data-route]').forEach((b) => b.classList.toggle('active', b.dataset.route === current.route));
+  // On phones the menu is a sideways-scrolling bar: bring the current page's button into view.
+  document.querySelector<HTMLElement>('.nav-btn.active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
   if (current.title) document.title = current.title === 'Trading Platform' ? current.title : `${current.title} · Trading Platform`;
   let page: Page;
   try {

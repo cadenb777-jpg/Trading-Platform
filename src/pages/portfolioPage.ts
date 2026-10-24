@@ -164,7 +164,7 @@ export function createPortfolioPage() {
             {},
             label,
             ...cells,
-            h('td', {}, cls),
+            h('td', { class: 'cls' }, cls),
             h(
               'td',
               { class: 'x' },
@@ -209,7 +209,7 @@ export function createPortfolioPage() {
         h('label', { class: 'field' }, h('span', { class: 'muted small' }, 'Rebalancing'), reb),
         h('label', { class: 'field' }, h('span', { class: 'muted small' }, 'Measure from (optional)'), since),
       ),
-      h('table', { class: `holdings-table mode-${mode}` }, h('thead', {}, h('tr', {}, ...head.map((t) => h('th', {}, t)))), rows),
+      h('div', { class: 'holdings-wrap' }, h('table', { class: `holdings-table mode-${mode}` }, h('thead', {}, h('tr', {}, ...head.map((t) => h('th', {}, t)))), rows)),
       notes.length ? h('p', { class: 'muted small' }, `For the performance maths, cash and alternatives use listed stand-ins (they have no daily prices): ${notes.join('; ')}. Change one with ⋯.`) : '',
       h(
         'div',

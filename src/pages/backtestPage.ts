@@ -236,9 +236,7 @@ export function createBacktestPage() {
     return h(
       'div',
       { class: 'rule-row' },
-      ...sel(r.left, (o) => (r.left = o)),
-      op,
-      ...sel(r.right, (o) => (r.right = o)),
+      h('div', { class: 'rule-fields' }, ...sel(r.left, (o) => (r.left = o)), op, ...sel(r.right, (o) => (r.right = o))),
       h('button', { class: 'icon-btn', title: 'Remove rule', 'aria-label': 'Remove rule', onclick: () => (list.splice(i, 1), redraw()) }, '✕'),
     );
   }
