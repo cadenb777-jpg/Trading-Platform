@@ -301,8 +301,8 @@ the existing tools. The clustering fix to `random_entry_test` from `backtest-sta
 ### R2. Fix the turn-of-the-month filter to trading days, as published; drop it on weekly bars
 
 - **Why:** the published window is the **last trading day plus the first three trading days** [S26][S27]. The lab's
-  `tom` filter is described as "last 2 / first 3 days" but uses calendar days (`day >= 28 or day <= 3`), so in a 31-day month it can include days 28-30, which are
-  the T-3/T-4 pre-month-end days where Etula et al. found prices *falling* [S29]; after a weekend it can also miss
+  `tom` filter is described as "last 2 / first 3 days" but uses calendar days (`day >= 28 or day <= 3`), so in a 31-day month it includes days 28-30, which can be
+  the T-3/T-4 pre-month-end trading days where Etula et al. found prices *falling* [S29]; after a weekend it can also miss
   first trading days (e.g. the 4th). On **weekly** bars the filter tests the date of the bar's first day, which has
   no meaning. Calendar effects are also the textbook case of data snooping [S32], and this one is disputed after
   1990 [S28].
@@ -317,7 +317,8 @@ the existing tools. The clustering fix to `random_entry_test` from `backtest-sta
 - **Why:** the 9:30 bar holds the overnight gap and the most volatile half hour [S15][S16][S19]; overnight and
   intraday returns follow different rules [S15], intraday moves partly reverse the overnight move in smaller stocks
   but not in S&P 500 names [S16b], and same-time-of-day effects exist [S11]. A per-stock percentile of hourly
-  z-scores or RSI(2) will therefore treat ordinary opening gaps as "stretched" and fire mostly at the open.
+  z-scores or RSI(2) is therefore likely to treat ordinary opening gaps as "stretched" and fire more often at the open
+  (a hypothesis; the test below checks it).
 - **What changes (only if the test says so):** on the short time frame, a signal on the first bar of the session is
   ignored (the trade can still trigger on a later bar). Nothing is added.
 - **Test:** split the pooled hourly trades of each strategy and side by the hour of the signal bar (9:30, 10:30 ...
