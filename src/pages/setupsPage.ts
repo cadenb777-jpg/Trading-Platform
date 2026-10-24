@@ -16,6 +16,7 @@ import type { Timeframe } from '../types';
 import { pageFrame, pct as fmtPct } from '../ui/charts';
 import { formatPrice, h, timeAgo, toast } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
+import { withTableTools } from '../ui/tableTools';
 import { THEME, followTheme } from '../ui/theme';
 
 type Horizon = 'short' | 'swing' | 'position';
@@ -472,12 +473,11 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       );
     }
     if (!selected || !rows.some((s) => idOf(s) === selected)) selected = idOf(rows[0]);
-    // TODO(conductor/2b-tables): tableTools(table, { id: 'setups' }) once src/ui/tableTools.ts is merged.
     list.replaceChildren(
-      h('table', { class: 'data-table sp-table' },
+      withTableTools(h('table', { class: 'data-table sp-table' },
         h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'Stock'), h('th', {}, termLabel('Grade', 'grade')), h('th', {}, termLabel('Right now', 'entryzone')), h('th', { class: 'num' }, 'Entry'), h('th', { class: 'num' }, termLabel('Stop', 'stop')), h('th', { class: 'num' }, 'Target'), h('th', { class: 'num' }, 'Hold'))),
         h('tbody', {}, ...rows.map(row)),
-      ),
+      ) as HTMLTableElement, { id: `setups:${prefs.horizon}`, columns: { '': 'none' } }),
       h('p', { class: 'muted tiny' }, `${rows.length} shown of ${hr.setups.length}. Signals come from finished ${HORIZONS.find((x) => x.key === prefs.horizon)!.bars.split(',')[0]}; the 5-minute scans update prices, triggers and grades.`),
     );
   }
