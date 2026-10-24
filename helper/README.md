@@ -173,6 +173,11 @@ Safety rails (all checked by the helper, not the web page):
 - US stocks only; you can't sell more shares than you hold (no short selling).
 - Every order attempt, result and cancel is written to `~/.trading-platform/orders.log` (no keys).
 - The AI assistant can never place, preview or cancel orders.
+- Live can be switched on from the platform page itself, so only open the platform from its own site
+  (cadenb777-jpg.github.io/trading-platform), and don't put other projects on the same GitHub Pages account or
+  run other local web projects on ports 4173 or 5173 while the helper is running.
+- If an order times out, the platform looks it up once; if it still can't tell, it says so. Check Orders
+  in Webull before trying again, so you don't buy twice.
 
 The keys are saved by the helper in `~/.trading-platform/settings.json` and are never sent back to
 the browser. If Webull asked for an app approval, that login token is kept in

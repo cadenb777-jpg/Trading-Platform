@@ -64,7 +64,7 @@ interface Preview {
   summary: string;
   env: Env;
   account: string;
-  estimate: { value: number; last: number; webullAmount: number | null; fees: number | null };
+  estimate: { value: number; last: number };
   warnings: string[];
   marketNote: string;
   limits: { maxOrder: number; maxPerDay: number };
@@ -325,8 +325,7 @@ function confirmOrder(order: Record<string, unknown>, onPlaced: () => void) {
         statCards([
           { label: 'Estimated value', value: usd(p.estimate.value), hint: 'Shares × price (limit, stop, or the last price for market orders)' },
           { label: 'Last price', value: usd(p.estimate.last) },
-          ...(p.estimate.fees != null ? [{ label: 'Est. fees', value: usd(p.estimate.fees) }] : []),
-          { label: 'Orders today', value: `${p.placedToday} of ${p.limits.maxPerDay}` },
+          { label: 'Orders today', value: `${p.placedToday} of ${p.limits.maxPerDay}`, hint: 'Every order sent today counts, even one that failed' },
         ]),
         h('p', { class: 'muted small' }, p.marketNote),
         ...p.warnings.map((w) => h('p', { class: 'wb-warn small' }, `⚠ ${w}`)),

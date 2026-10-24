@@ -53,6 +53,7 @@ TYPE_NAMES = {'MARKET': 'Market', 'LIMIT': 'Limit', 'STOP': 'Stop', 'STOP_LIMIT'
 
 NO_KEYS = 'Add your Webull App Key and App Secret in Settings (Webull section) first.'
 BAD_KEYS = 'Webull rejected the App Key/Secret. Check them in Settings, and that they match the environment (Test or Live).'
+UNCONFIRMED = "We couldn't confirm whether Webull received this order. Check Orders before trying again."
 APPROVE = 'Webull asks you to approve this API login: open the Webull app on your phone, approve the request, then try again.'
 
 #: preview token -> the exact order it allows (in memory only: a helper restart cancels every pending preview)
@@ -116,6 +117,11 @@ def sign(host, path, query, body_text, app_key, app_secret, timestamp=None, nonc
 
 # ---------- HTTP ----------
 
+class Uncertain(EngineError):
+    """No clear answer from Webull (network failure, timeout or a server error): the request may or may not have
+    been carried out. For an order this must never be read as "not placed"."""
+
+
 def _message(data, status):
     if isinstance(data, dict):
         for k in ('message', 'msg', 'error_msg', 'error'):
@@ -142,7 +148,7 @@ async def _call(ctx, method, path, query=None, body=None, version='v3', extra=No
     except EngineError:
         raise
     except Exception as err:
-        raise EngineError(f'Could not reach Webull ({type(err).__name__}). Check your internet connection.') from err
+        raise Uncertain(f'Could not reach Webull ({type(err).__name__}). Check your internet connection.') from err
     try:
         data = response.json()
     except Exception:
@@ -151,6 +157,8 @@ async def _call(ctx, method, path, query=None, body=None, version='v3', extra=No
         if use_token:
             _forget_token()
         raise EngineError(f'{BAD_KEYS} ({_message(data, response.status_code)})')
+    if response.status_code >= 500:
+        raise Uncertain(_message(data, response.status_code))
     if response.status_code != 200:
         raise EngineError(_message(data, response.status_code))
     return data
@@ -227,19 +235,23 @@ async def _access_token(ctx):
 
 # ---------- reading the account ----------
 
-def _rows(data, *keys):
-    """The list inside a Webull reply (it is either the list itself or under one of a few keys)."""
+# Field names used below are the documented ones (Webull OpenAPI reference: accounts account_id/account_number/
+# account_type; balance total_cash_balance and account_currency_assets[] {currency, cash_balance, buying_power},
+# total_asset; positions symbol, quantity, cost_price, instrument_type, unrealized_profit_loss, items[]; orders
+# {has_next, orders[]} with client_order_id, symbol, side, quantity, filled_quantity, order_type, limit_price,
+# stop_price, time_in_force, status). Nothing is guessed: a missing required field is an error, never a default.
+
+FORMAT = 'Webull’s reply was not in the expected format, so nothing was guessed. Try again; if it keeps happening, send me the helper log.'
+STOCK_TYPES = {'EQUITY', 'STOCK', 'ETF'}
+
+
+def _list(data, key):
+    """The list in a reply: the reply itself, or data[key]. Anything else is refused."""
     if isinstance(data, list):
         return data
-    if isinstance(data, dict):
-        for k in (*keys, 'data', 'items', 'list', 'result'):
-            if isinstance(data.get(k), list):
-                return data[k]
-            if isinstance(data.get(k), dict):
-                inner = _rows(data[k], *keys)
-                if inner:
-                    return inner
-    return []
+    if isinstance(data, dict) and isinstance(data.get(key), list):
+        return data[key]
+    raise EngineError(FORMAT)
 
 
 def _num(value):
@@ -247,22 +259,15 @@ def _num(value):
         out = float(value)
     except (TypeError, ValueError):
         return None
-    return out if out == out else None
+    return out if out == out and out not in (float('inf'), float('-inf')) else None
 
 
-def _pick(d, *names):
-    """First number found under any of the names, in d or in the first item of a nested list (e.g. per-currency assets)."""
-    if not isinstance(d, dict):
-        return None
-    for n in names:
-        if _num(d.get(n)) is not None:
-            return _num(d[n])
-    for v in d.values():
-        if isinstance(v, list) and v and isinstance(v[0], dict):
-            found = _pick(v[0], *names)
-            if found is not None:
-                return found
-    return None
+def _need(row, key):
+    """A required number from a reply row; missing or not a number -> refuse, never a default."""
+    v = _num(row.get(key)) if isinstance(row, dict) else None
+    if v is None:
+        raise EngineError(FORMAT)
+    return v
 
 
 def _mask(account_id):
@@ -273,11 +278,11 @@ def _mask(account_id):
 async def accounts(ctx):
     data = await _call(ctx, 'GET', '/trading/accounts/list')
     out = []
-    for a in _rows(data, 'accounts'):
+    for a in _list(data, 'accounts'):
         if not isinstance(a, dict) or not a.get('account_id'):
-            continue
+            raise EngineError(FORMAT)
         number = a.get('account_number') or a.get('account_id')
-        kind = ' '.join(str(a.get(k)) for k in ('account_type', 'account_class') if a.get(k))
+        kind = str(a.get('account_type') or '')
         out.append({'id': str(a['account_id']), 'label': f"{_mask(number)}{f' ({kind.title()})' if kind else ''}"})
     return out
 
@@ -301,97 +306,86 @@ async def _account_id(ctx, msg):
 
 
 async def balances(ctx, account_id):
-    data = await _call(ctx, 'GET', '/trading/assets/balances/get', {'account_id': account_id})
-    d = data.get('data') if isinstance(data, dict) and isinstance(data.get('data'), dict) else data
-    return {
-        'value': _pick(d, 'total_asset', 'total_assets', 'net_liquidation_value', 'net_liquidation', 'total_net_asset'),
-        'cash': _pick(d, 'total_cash_balance', 'cash_balance', 'settled_cash', 'cash'),
-        'buyingPower': _pick(d, 'buying_power', 'day_buying_power', 'cash_power', 'overnight_buying_power', 'margin_power'),
-        'marketValue': _pick(d, 'total_market_value', 'market_value'),
-    }
+    d = await _call(ctx, 'GET', '/trading/assets/balances/get', {'account_id': account_id, 'total_asset_currency': 'USD'})
+    if not isinstance(d, dict):
+        raise EngineError(FORMAT)
+    usd = next((c for c in d.get('account_currency_assets') or [] if isinstance(c, dict) and c.get('currency') == 'USD'), {})
+    cash = _num(d.get('total_cash_balance'))
+    if cash is None:
+        cash = _num(usd.get('cash_balance'))
+    if cash is None:
+        raise EngineError('Webull’s balance reply has no cash balance, so nothing is shown rather than a guess.')
+    return {'value': _num(d.get('total_asset')), 'cash': cash, 'buyingPower': _num(usd.get('buying_power'))}
 
 
-def _symbol(item):
-    for k in ('symbol', 'ticker'):
-        v = item.get(k)
-        if isinstance(v, dict):
-            v = v.get('symbol')
-        if isinstance(v, str) and v:
-            return v.upper()
-    inst = item.get('instrument') or item.get('items')
-    if isinstance(inst, dict):
-        return _symbol(inst)
-    if isinstance(inst, list) and inst and isinstance(inst[0], dict):
-        return _symbol(inst[0])
-    return ''
+def _first_item(row):
+    items = row.get('items')
+    return items[0] if isinstance(items, list) and items and isinstance(items[0], dict) else {}
 
 
 async def positions(ctx, account_id):
+    """Positions as {symbol, qty, avgCost, cost, gain, type}. A row without a symbol or quantity is refused."""
     data = await _call(ctx, 'GET', '/trading/assets/positions/list', {'account_id': account_id})
     out = []
-    for p in _rows(data, 'positions', 'holdings'):
+    for p in _list(data, 'positions'):
         if not isinstance(p, dict):
-            continue
-        qty = _pick(p, 'quantity', 'qty', 'position', 'total_quantity')
-        symbol = _symbol(p)
-        if not symbol or not qty:
-            continue
-        avg = _pick(p, 'cost_price', 'average_cost', 'avg_cost', 'avg_price')
-        cost = _pick(p, 'total_cost', 'cost')
-        if cost is None and avg is not None:
-            cost = avg * qty
-        price = _pick(p, 'last_price', 'market_price', 'price')
-        value = _pick(p, 'market_value')
-        if value is None and price is not None:
-            value = price * qty
-        gain = _pick(p, 'unrealized_profit_loss', 'unrealized_pl')
-        if gain is None and value is not None and cost is not None:
-            gain = value - cost
-        out.append({'symbol': symbol, 'qty': qty, 'avgCost': avg if avg is not None else (cost / qty if cost is not None else None),
-                    'cost': cost, 'price': price, 'value': value, 'gain': gain,
-                    'type': str(p.get('instrument_type') or 'EQUITY').upper()})
+            raise EngineError(FORMAT)
+        item = _first_item(p)
+        symbol = p.get('symbol') or item.get('symbol')
+        if not isinstance(symbol, str) or not symbol:
+            raise EngineError(FORMAT)
+        qty = _need(p, 'quantity')
+        avg = _num(p.get('cost_price'))
+        out.append({'symbol': symbol.upper(), 'qty': qty, 'avgCost': avg, 'cost': avg * qty if avg is not None else None,
+                    'gain': _num(p.get('unrealized_profit_loss')),
+                    # unknown type -> not a stock: it can't back a sell (fail closed) or be synced as shares
+                    'type': str(p.get('instrument_type') or item.get('instrument_type') or 'UNKNOWN').upper()})
     return out
 
 
 def _order_rows(data):
     out = []
-    for o in _rows(data, 'orders'):
+    for o in _list(data, 'orders'):
         if not isinstance(o, dict):
-            continue
-        subs = o.get('orders') if isinstance(o.get('orders'), list) else [o]
+            raise EngineError(FORMAT)
+        subs = o['orders'] if isinstance(o.get('orders'), list) else [o]  # combo orders hold their legs in 'orders'
         for s in subs:
             if not isinstance(s, dict):
-                continue
+                raise EngineError(FORMAT)
+            order_id = s.get('client_order_id') or o.get('client_order_id')
+            symbol, side, status = s.get('symbol'), s.get('side'), s.get('status') or o.get('status')
+            if not all(isinstance(v, str) and v for v in (order_id, symbol, side, status)):
+                raise EngineError(FORMAT)
             out.append({
-                'orderId': str(s.get('client_order_id') or o.get('client_order_id') or s.get('order_id') or ''),
-                'symbol': _symbol(s),
-                'side': str(s.get('side') or '').upper(),
-                'qty': _pick(s, 'total_quantity', 'quantity', 'qty'),
-                'filled': _pick(s, 'filled_quantity', 'filled_qty') or 0,
+                'orderId': order_id,
+                'symbol': symbol.upper(),
+                'side': side.upper(),
+                'qty': _need(s, 'quantity'),
+                'filled': _num(s.get('filled_quantity')) or 0,  # missing = nothing filled: the cautious reading
                 'type': str(s.get('order_type') or '').upper(),
-                'limitPrice': _pick(s, 'limit_price'),
-                'stopPrice': _pick(s, 'stop_price'),
+                'limitPrice': _num(s.get('limit_price')),
+                'stopPrice': _num(s.get('stop_price')),
                 'tif': str(s.get('time_in_force') or '').upper(),
-                'status': str(s.get('status') or s.get('order_status') or o.get('status') or '').upper(),
-                'placedAt': s.get('place_time') or s.get('create_time') or o.get('place_time') or s.get('place_time_at') or '',
+                'status': status.upper(),
+                'placedAt': s.get('place_time') or '',
             })
     return out
 
 
-OPEN_STATES = {'SUBMITTED', 'PARTIAL_FILLED', 'PENDING', 'WORKING', 'NEW', 'PARTIALLY_FILLED'}
+async def open_orders(ctx, account_id):
+    return _order_rows(await _call(ctx, 'GET', '/trading/orders/open-orders/list', {'account_id': account_id, 'page_size': 100}, version='v2'))
 
 
 async def orders(ctx, account_id):
-    open_data = await _call(ctx, 'GET', '/trading/orders/open-orders/list', {'account_id': account_id, 'page_size': 100}, version='v2')
+    open_rows = await open_orders(ctx, account_id)
     start = (dt.datetime.now(NEW_YORK).date() - dt.timedelta(days=7)).isoformat()
     try:
         recent_data = await _call(ctx, 'GET', '/trading/orders/historical-orders/list', {'account_id': account_id, 'page_size': 50, 'start_date': start}, version='v2')
+        recent = _order_rows(recent_data)
     except EngineError:
-        recent_data = []
-    open_rows = _order_rows(open_data)
+        recent = []
     open_ids = {r['orderId'] for r in open_rows}
-    recent = [r for r in _order_rows(recent_data) if r['orderId'] not in open_ids]
-    return {'open': open_rows, 'recent': recent[:50]}
+    return {'open': open_rows, 'recent': [r for r in recent if r['orderId'] not in open_ids][:50]}
 
 
 # ---------- order log and limits ----------
@@ -404,22 +398,31 @@ def _log(entry):
         f.write(json.dumps(line) + '\n')
 
 
+LOG_UNREADABLE = 'The order log (~/.trading-platform/orders.log) can’t be read, so today’s order count is unknown and no order is placed. Fix or move that file, then try again.'
+
+
 def placed_today(environment=None):
-    """Orders placed through the platform today (New York date) in this environment, from orders.log."""
+    """Orders sent (or attempted) through the platform today, New York date, in this environment, from orders.log.
+    Every attempt counts, whatever its result, so two confirm windows can't both get under the daily limit.
+    An unreadable log refuses (EngineError): the count must never silently read as 0."""
     environment = environment or env()
     today = dt.datetime.now(NEW_YORK).date()
-    count = 0
     try:
         lines = ORDERS_LOG.read_text(encoding='utf-8').splitlines()
-    except OSError:
+    except FileNotFoundError:
         return 0
+    except (OSError, UnicodeDecodeError) as err:
+        raise EngineError(LOG_UNREADABLE) from err
+    count = 0
     for line in lines:
+        if not line.strip():
+            continue
         try:
             e = json.loads(line)
             when = dt.datetime.fromisoformat(e['time']).astimezone(NEW_YORK).date()
-        except (ValueError, KeyError, TypeError):
-            continue
-        if e.get('action') == 'place' and e.get('result') == 'placed' and e.get('env') == environment and when == today:
+        except (ValueError, KeyError, TypeError, AttributeError) as err:
+            raise EngineError(LOG_UNREADABLE) from err
+        if e.get('action') == 'place' and e.get('result') == 'attempt' and e.get('env') == environment and when == today:
             count += 1
     return count
 
@@ -531,8 +534,9 @@ def check(order, last, held, today_count, lim):
         raise EngineError(f"This order is about ${value:,.0f}, above your maximum order value of ${lim['maxOrder']:,.0f} (change it in Settings).")
     if today_count >= lim['maxPerDay']:
         raise EngineError(f"You've placed {today_count} orders today, your daily maximum (change it in Settings).")
-    if order['side'] == 'SELL' and order['qty'] > (held or 0):
-        raise EngineError(f"You hold {held or 0:g} {order['symbol']}; selling {order['qty']} would be a short sale, which is blocked.")
+    if order['side'] == 'SELL' and order['qty'] > max(held or 0, 0):
+        raise EngineError(f"You can sell at most {max(held or 0, 0):g} {order['symbol']} (shares you hold minus open sell orders); "
+                          f"selling {order['qty']} would be a short sale, which is blocked.")
     warnings = []
     kind, side = order['orderType'], order['side']
     lp, sp = order['limitPrice'], order['stopPrice']
@@ -562,8 +566,12 @@ async def status(ctx, msg):
         found = await accounts(ctx)
     except EngineError as err:
         return _unavailable(str(err))
+    try:
+        today = placed_today()
+    except EngineError:
+        today = None  # shown as unknown here; placing an order refuses until the log is readable
     return {'ok': True, 'env': env(), 'liveEnabled': live_enabled(), 'keysSet': True, 'limits': limits(), 'accounts': found,
-            'placedToday': placed_today(),
+            'placedToday': today,
             'message': f"Connected to Webull {'LIVE (real money)' if env() == 'live' else 'Test (no real money)'}: {len(found)} account{'s' if len(found) != 1 else ''}."}
 
 
@@ -575,8 +583,21 @@ async def account(ctx, msg):
 
 @handler('webull.positions')
 async def positions_handler(ctx, msg):
+    """Positions with today's Schwab prices for display (Webull's positions reply carries no price)."""
+    from . import invest
     account_id = await _account_id(ctx, msg)
-    return {'accountId': account_id, 'env': env(), 'positions': await positions(ctx, account_id)}
+    rows = await positions(ctx, account_id)
+    try:
+        quotes = await invest.quotes(ctx, sorted({r['symbol'] for r in rows}))
+    except Exception:
+        quotes = {}
+    for r in rows:
+        price = _num((quotes.get(r['symbol']) or {}).get('price'))
+        r['price'] = price
+        r['value'] = price * r['qty'] if price is not None else None
+        if r['gain'] is None and r['value'] is not None and r['cost'] is not None:
+            r['gain'] = r['value'] - r['cost']
+    return {'accountId': account_id, 'env': env(), 'positions': rows}
 
 
 @handler('webull.orders')
@@ -597,7 +618,7 @@ async def sync(ctx, msg):
         cash = None
     holdings = [{'symbol': p['symbol'], 'weight': 0, 'assetClass': 'US stocks', 'kind': 'security', 'shares': p['qty'],
                  **({'cost': round(p['cost'], 2)} if p['cost'] is not None else {})}
-                for p in held if p['qty'] > 0 and p['type'] in ('EQUITY', 'STOCK', 'ETF')]
+                for p in held if p['qty'] > 0 and p['type'] in STOCK_TYPES]
     if cash:
         holdings.append({'symbol': 'CASH', 'name': 'Webull cash', 'weight': 0, 'assetClass': 'Cash', 'kind': 'cash', 'amount': round(cash, 2)})
     name = f"Webull {_mask(account_id)}{' (Test)' if env() == 'test' else ''}"
@@ -617,15 +638,15 @@ async def preview_order(ctx, msg):
     lim = limits()
     held = None
     if order['side'] == 'SELL':
-        held = sum(p['qty'] for p in await positions(ctx, account_id) if p['symbol'] == order['symbol'])
+        # Only stock positions back a sell, and shares already in open sell orders aren't available again.
+        held = sum(p['qty'] for p in await positions(ctx, account_id) if p['symbol'] == order['symbol'] and p['type'] in STOCK_TYPES)
+        held -= sum(max(o['qty'] - o['filled'], 0) for o in await open_orders(ctx, account_id) if o['symbol'] == order['symbol'] and o['side'] == 'SELL')
     last = await last_price(ctx, order['symbol'])
     value, warnings, note = check(order, last, held, placed_today(), lim)
     client_order_id = uuid.uuid4().hex
     body = {'account_id': account_id, 'new_orders': [webull_order(order, client_order_id)]}
-    reply = await _call(ctx, 'POST', '/trading/orders/preview', body=body, extra={'category': 'US_EQUITY'})
-    estimate = {'value': value, 'last': last,
-                'webullAmount': _pick(reply, 'estimated_cost', 'estimated_amount', 'amount', 'estimate_amount'),
-                'fees': _pick(reply, 'estimated_transaction_fee', 'transaction_fee', 'fee', 'commission')}
+    await _call(ctx, 'POST', '/trading/orders/preview', body=body, extra={'category': 'US_EQUITY'})  # Webull's own check
+    estimate = {'value': value, 'last': last}
     for k in [k for k, v in _previews.items() if v['expires'] < time.monotonic()]:
         _previews.pop(k, None)
     token = secrets.token_urlsafe(24)
@@ -665,17 +686,37 @@ async def place_order(ctx, msg):
     if placed_today() >= lim['maxPerDay']:
         _log({**base, 'result': 'refused', 'reason': 'daily order limit'})
         raise EngineError(f"You've reached your daily maximum of {lim['maxPerDay']} orders.")
+    # The checks above and this line run with no await in between, so two confirm windows can't both pass the
+    # daily limit: the first attempt is counted before the second is checked.
     _log({**base, 'result': 'attempt'})
+    client_order_id = preview['body']['new_orders'][0]['client_order_id']
+    done = {'placed': True, 'orderId': client_order_id, 'env': env(), 'summary': describe(order)}
     try:
-        reply = await _call(ctx, 'POST', '/trading/orders/place', body=preview['body'], extra={'category': 'US_EQUITY'})
+        await _call(ctx, 'POST', '/trading/orders/place', body=preview['body'], extra={'category': 'US_EQUITY'})
+    except Uncertain as err:
+        # Timeout, network failure or server error: Webull may have the order. Never report "not placed".
+        _log({**base, 'result': 'unknown', 'orderId': client_order_id, 'reason': str(err)[:300]})
+        if await order_exists(ctx, preview['account'], client_order_id):
+            _log({**base, 'result': 'placed', 'orderId': client_order_id, 'note': 'confirmed by looking it up'})
+            return done
+        raise EngineError(UNCONFIRMED) from err
     except EngineError as err:
         _log({**base, 'result': 'failed', 'reason': str(err)[:300]})
         raise
-    client_order_id = preview['body']['new_orders'][0]['client_order_id']
-    rows = _rows(reply, 'orders')
-    order_id = str((rows[0] if rows and isinstance(rows[0], dict) else reply if isinstance(reply, dict) else {}).get('client_order_id') or client_order_id)
-    _log({**base, 'result': 'placed', 'orderId': order_id})
-    return {'placed': True, 'orderId': order_id, 'env': env(), 'summary': describe(order)}
+    _log({**base, 'result': 'placed', 'orderId': client_order_id})
+    return done
+
+
+async def order_exists(ctx, account_id, client_order_id):
+    """Looks an order up once by its client order id (GET /trading/orders/get). False also when the lookup fails."""
+    try:
+        reply = await _call(ctx, 'GET', '/trading/orders/get', {'account_id': account_id, 'client_order_id': client_order_id})
+    except EngineError:
+        return False
+    if not isinstance(reply, dict):
+        return False
+    ids = {reply.get('client_order_id')} | {o.get('client_order_id') for o in reply.get('orders') or [] if isinstance(o, dict)}
+    return client_order_id in ids
 
 
 @handler('webull.cancel_order')

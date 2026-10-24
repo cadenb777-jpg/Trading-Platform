@@ -153,7 +153,9 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
         sizeOut,
         s.trade
           ? null
-          : h(
+          : !long
+            ? h('p', { class: 'muted tiny' }, 'Short selling isn’t supported, so there’s no order ticket for this setup.')
+            : h(
               'button',
               {
                 class: 'btn small',
@@ -161,7 +163,7 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
                 onclick: async () =>
                   (await import('../portfolio/webullView')).openOrderTicket({
                     symbol: s.symbol,
-                    side: long ? 'BUY' : 'SELL',
+                    side: 'BUY',
                     qty: sizedShares || undefined,
                     ...(p.entryType === 'stop' ? { orderType: 'STOP' as const, stopPrice: +p.trigger.toFixed(2) } : { orderType: 'LIMIT' as const, limitPrice: +s.price.toFixed(2) }),
                   }),
