@@ -1,6 +1,6 @@
 """
 Settings the platform's Settings window can change: the AI key and model, an optional FRED key, optional Alpaca
-keys (free price history) and the SEC contact email. They are saved on this computer (~/.trading-platform/settings.json). Keys are never
+keys (free price history), the SEC contact email and Webull (keys, Test/Live, order limits). They are saved on this computer (~/.trading-platform/settings.json). Keys are never
 sent back to the browser; it only learns whether each one is set.
 """
 import json
@@ -9,7 +9,7 @@ from pathlib import Path
 from .core import EngineError, handler
 
 SETTINGS_PATH = Path.home() / '.trading-platform' / 'settings.json'
-SECRET_KEYS = {'anthropic_key', 'fred_key', 'alpaca_key_id', 'alpaca_secret'}
+SECRET_KEYS = {'anthropic_key', 'fred_key', 'alpaca_key_id', 'alpaca_secret', 'webull_app_key', 'webull_app_secret'}
 AI_MODELS = {
     'claude-opus-5-5': 'Best: Claude Opus 5.5',
     'claude-sonnet-5-5': 'Balanced: Claude Sonnet 5.5',
@@ -52,6 +52,10 @@ def public():
         'aiKeySet': bool(data.get('anthropic_key')),
         'fredKeySet': bool(data.get('fred_key')),
         'alpacaSet': bool(data.get('alpaca_key_id') and data.get('alpaca_secret')),
+        'webullSet': bool(data.get('webull_app_key') and data.get('webull_app_secret')),
+        'webullEnv': 'live' if data.get('webull_env') == 'live' else 'test',
+        'webullMaxOrder': data.get('webull_max_order') or 1000,
+        'webullMaxPerDay': data.get('webull_max_per_day') or 10,
         'secContact': data.get('sec_contact', ''),
         'model': data.get('model') or DEFAULT_MODEL,
         'openBrowser': data.get('open_browser') is not False,
@@ -83,6 +87,39 @@ async def set_settings(ctx, msg):
             if key and (not 10 <= len(key) <= 100 or any(ch.isspace() for ch in key)):
                 raise EngineError(f'That doesn’t look like an Alpaca {label}. Copy it again from alpaca.markets.')
             changes[name] = key
+    for field, name, label in (('webullAppKey', 'webull_app_key', 'App Key'), ('webullAppSecret', 'webull_app_secret', 'App Secret')):
+        if field in msg:
+            key = str(msg[field] or '').strip()
+            if key and (not 8 <= len(key) <= 200 or any(ch.isspace() for ch in key)):
+                raise EngineError(f'That doesn’t look like a Webull {label}. Copy it again from Webull’s developer site.')
+            changes[name] = key
+    if 'webullAppKey' in msg and 'webullAppSecret' in msg and not changes['webull_app_key'] and not changes['webull_app_secret']:
+        changes['webull_env'], changes['webull_live_ok'] = 'test', False  # Remove: back to Test
+    if 'webullEnv' in msg:
+        if msg['webullEnv'] == 'live':
+            if msg.get('webullLiveConfirm') != 'LIVE':
+                raise EngineError('Type LIVE to switch Webull to real-money trading.')
+            changes['webull_env'], changes['webull_live_ok'] = 'live', True
+        elif msg['webullEnv'] == 'test':
+            changes['webull_env'], changes['webull_live_ok'] = 'test', False
+        else:
+            raise EngineError('Unknown Webull environment')
+    if 'webullMaxOrder' in msg:
+        try:
+            value = float(msg['webullMaxOrder'])
+        except (TypeError, ValueError):
+            value = 0
+        if not 1 <= value <= 1_000_000:
+            raise EngineError('Max order value must be between $1 and $1,000,000.')
+        changes['webull_max_order'] = value
+    if 'webullMaxPerDay' in msg:
+        try:
+            value = int(msg['webullMaxPerDay'])
+        except (TypeError, ValueError):
+            value = 0
+        if not 1 <= value <= 100:
+            raise EngineError('Max orders per day must be between 1 and 100.')
+        changes['webull_max_per_day'] = value
     if 'secContact' in msg:
         email = str(msg['secContact'] or '').strip()
         if email and ('@' not in email or ' ' in email):
