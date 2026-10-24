@@ -400,7 +400,8 @@ export function clearEngineCache(prefix = '') {
 export async function engineRequest<T>(type: string, params: Record<string, unknown> = {}, timeoutMs = 60000, onEvent?: (e: EngineEvent) => void, signal?: AbortSignal): Promise<T> {
   // Every message carries its request number as `id`, so parameters must use other names.
   if ('id' in params || 'type' in params) throw new Error(`engineRequest("${type}"): "id" and "type" are reserved parameter names`);
-  const ttl = onEvent || params.refresh ? 0 : (ENGINE_CACHE_MS[type] ?? 0);
+  // A request that can be cancelled isn't shared: one caller cancelling must not cancel the reply for another.
+  const ttl = onEvent || signal || params.refresh ? 0 : (ENGINE_CACHE_MS[type] ?? 0);
   const key = `${type} ${stableKey(params)}`;
   const hit = ttl ? engineCache.get(key) : undefined;
   // Reuse a recent reply, or join the same request already on its way (two panels asking for one board).

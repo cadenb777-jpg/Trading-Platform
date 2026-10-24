@@ -147,10 +147,16 @@ export class ChartView {
     }
     for (const r of this.indicators.values()) {
       try {
-        this.renderAll(r);
+        this.renderAll(r, false);
       } catch (err) {
         console.error(`Indicator ${r.def.name} failed`, err);
       }
+    }
+    // Markers are collected once for all indicators instead of once per indicator.
+    try {
+      this.refreshMarkers();
+    } catch (err) {
+      console.error('Indicator signals failed', err);
     }
     if (refit) this.fit();
     this.refreshPrimitives();
@@ -509,22 +515,23 @@ export class ChartView {
     if (!tf || TIMEFRAME_SECONDS[tf] <= TIMEFRAME_SECONDS[this.timeframe]) return r.def.compute(this.bars, params, ext);
     const higher = regroupBars(this.bars, tf);
     const values = r.def.compute(higher, params, ext);
-    const out: Record<string, number[]> = Object.fromEntries(Object.keys(values).map((k) => [k, []]));
+    const keys = Object.keys(values);
+    const out: Record<string, number[]> = Object.fromEntries(keys.map((k) => [k, []]));
     let j = 0;
     for (const bar of this.bars) {
       const start = bucketStart(bar.time, tf);
       while (j < higher.length - 1 && higher[j].time < start) j++;
-      for (const k of Object.keys(values)) out[k].push(values[k][j]);
+      for (const k of keys) out[k].push(values[k][j]);
     }
     return out;
   }
 
-  private renderAll(r: RenderedIndicator) {
+  private renderAll(r: RenderedIndicator, markers = true) {
     r.values = this.compute(r);
     for (const plot of r.def.plots) {
       r.series[plot.key]?.setData(this.bars.map((_, i) => this.point(r, plot, i)) as never);
     }
-    this.refreshMarkers();
+    if (markers) this.refreshMarkers();
   }
 
   private point(r: RenderedIndicator, plot: PlotDef, i: number) {

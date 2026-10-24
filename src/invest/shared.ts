@@ -162,15 +162,27 @@ export function openSymbolDetail(symbol: string, label: string, row: BoardRow | 
     h('button', { class: 'btn ai-btn', onclick: () => (close(), openAssistant(`How is ${label} (${shown}) doing lately, and why? Use live data.`)) }, h('span', { class: 'ai-spark' }, '✦'), ' Ask AI'),
   );
   const body = h('div', { class: 'inv-detail' }, head, stats, range, chartBox, actions);
-  const close = openModal(label, body, { wide: true });
+  // The chart is removed with the window (or never built if the window closed first), so repeatedly opening
+  // details doesn't leave hidden charts (canvases and theme listeners) behind.
+  let closed = false;
+  let lineChart: ReturnType<typeof createLineChart> | null = null;
+  const close = openModal(label, body, {
+    wide: true,
+    onClose: () => {
+      closed = true;
+      lineChart?.chart.remove();
+      lineChart = null;
+    },
+  });
   if (isFuture) {
     chartBox.remove();
     return;
   }
   engineRequest<{ closes: [number, number][] }>('invest.history', { symbol }, 45000)
     .then(({ closes }) => {
+      if (closed) return;
       chartBox.classList.remove('skeleton');
-      const chart = createLineChart(chartBox, { height: 240, format: formatPrice });
+      const chart = (lineChart = createLineChart(chartBox, { height: 240, format: formatPrice }));
       const up = closes.length > 1 && closes[closes.length - 1][1] >= closes[0][1];
       chart.set([{ name: `${shown} · last 13 months`, color: up ? '#26a69a' : '#ef5350', data: closes.map(([t, c]) => ({ time: t, value: c })) }]);
     })
