@@ -213,7 +213,8 @@ async def bars(ctx, symbol, timeframe, start, end=None):
             if start < frm:
                 parts.append(await _download(ctx, symbol, timeframe, start, frm))
                 frm = start
-            if end > to and now - checked >= RECHECK[timeframe]:
+            # The newest bars are re-checked at most every RECHECK seconds; a longer gap is always filled.
+            if end > to and (now - checked >= RECHECK[timeframe] or end - to > RECHECK[timeframe]):
                 # Download again from the newest saved bar: it may have been unfinished when saved.
                 since = saved_bars[-1]['time'] if saved_bars else to
                 parts.append(await _download(ctx, symbol, timeframe, min(since, to), end))
