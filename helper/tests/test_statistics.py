@@ -7,6 +7,7 @@ import math
 import os
 import random
 import sys
+import time
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -318,10 +319,12 @@ class FastReplies(unittest.TestCase):
             await asyncio.sleep(30)
             return {'horizons': {'swing': {}}, 'updated': 2}
 
-        lab_mod.save_json_atomic(scanner.RESULT_PATH, {'horizons': {'swing': {'setups': []}}, 'updated': 1})
+        lab_mod.save_json_atomic(scanner.RESULT_PATH, {'horizons': {'swing': {'setups': []}}, 'updated': 1, 'version': scanner.SCAN_VERSION})
         old_scan, old_state = scanner.scan, dict(scanner._state)
         scanner.scan = slow_scan
         scanner._state.update(result=None, running=None)
+        scanner._state.pop('saved', None)
+        scanner._state.pop('lastErrorAt', None)
 
         class Ctx:
             news = None
@@ -346,6 +349,50 @@ class FastReplies(unittest.TestCase):
         self.assertTrue(r['stale'])
         self.assertTrue(r['scanning'])
         self.assertEqual(r['updated'], 1)
+
+
+    def test_saved_history_lasts_until_ny_midnight(self):
+        E = scanner.EASTERN
+        self.assertAlmostEqual(scanner._until_tomorrow(dt.datetime(2026, 10, 21, 18, 0, tzinfo=E)), 18 * 3600)
+        self.assertEqual(scanner._until_tomorrow(dt.datetime(2026, 10, 21, 23, 30, tzinfo=E)), 20 * 3600)
+        self.assertEqual(scanner._until_tomorrow(dt.datetime(2026, 10, 21, 0, 0, 30, tzinfo=E)), 60)
+
+    def test_saved_scan_of_another_version_is_ignored_and_merged_tabs(self):
+        from engine import lab as lab_mod
+        lab_mod.save_json_atomic(scanner.RESULT_PATH, {'horizons': {'swing': {}}, 'version': 21})
+        self.assertIsNone(scanner._load_saved_result())
+        old = scanner._state.get('saved')
+        scanner._state['saved'] = {'horizons': {'swing': {'setups': [1]}, 'short': {'setups': [2]}}}
+        try:
+            merged = scanner._with_saved({'horizons': {'swing': {'setups': [3]}}})
+        finally:
+            scanner._state['saved'] = old
+        self.assertEqual(merged['horizons']['swing'], {'setups': [3]})
+        self.assertTrue(merged['horizons']['short']['stale'])
+
+    def test_hourly_history_counts_only_bars_with_a_trend(self):
+        bars = [{'time': i * 86400} for i in range(100)]
+        self.assertEqual(scanner._trend_span({'bars': bars, 'weekly': [None] * 60 + [1] * 40}), 39)
+        self.assertEqual(scanner._trend_span({'bars': bars, 'weekly': [None] * 100}), 0.0)
+
+    def test_no_new_scan_right_after_a_failure(self):
+        import asyncio
+        started = []
+        old = scanner._start_scan, dict(scanner._state)
+        scanner._start_scan = lambda ctx, news: started.append(1)
+        scanner._state.update(result=None, running=None, saved=None, lastErrorAt=time.time(), lastError='Schwab login expired')
+
+        class Ctx:
+            news = None
+        try:
+            r = asyncio.run(scanner.results(Ctx(), {}))
+        finally:
+            scanner._start_scan = old[0]
+            scanner._state.clear()
+            scanner._state.update(old[1])
+        self.assertEqual(started, [])
+        self.assertTrue(r['loading'])
+        self.assertEqual(r['error'], 'Schwab login expired')
 
 
 if __name__ == '__main__':

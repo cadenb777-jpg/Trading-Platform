@@ -237,7 +237,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       syncWatches();
       // While a scan is running (or only a saved one is shown), check again soon: each time frame appears when done.
       clearTimeout(soon);
-      if (data.scanning || data.loading || data.stale) soon = setTimeout(() => refresh(), 5_000);
+      if (data.scanning || (data.loading && !data.error)) soon = setTimeout(() => refresh(), 5_000); // otherwise the 60 s timer
     } catch (err) {
       status.replaceChildren(h('span', { class: 'down' }, (err as Error).message));
     }

@@ -314,8 +314,9 @@ def _until_tomorrow(now=None):
     """Cache age limit that makes a saved history expire at the next New York midnight (one saved row per symbol,
     replaced each day, instead of a new row per day that is never deleted)."""
     now = now or dt.datetime.now(EASTERN)
-    nxt = dt.datetime.combine(now.date() + dt.timedelta(days=1), dt.time(), EASTERN)
-    return max(60, min(20 * 3600, (nxt - now).total_seconds()))
+    midnight = dt.datetime.combine(now.date(), dt.time(), EASTERN)
+    # A saved copy counts as fresh if it was saved after today's New York midnight (so it lasts until the next one).
+    return max(60, min(20 * 3600, (now - midnight).total_seconds()))
 
 
 OLD_KEY_PREFIXES = ("(('scan-daily-15y', '", "(('scan-daily', '", "(('scan-weekly', '")
@@ -698,7 +699,14 @@ def analyse_symbol(symbol, done, live, cot, strategy_keys, horizon='swing', dail
             found.append(setup)
     edge = st.cot_z_events(ind_done, st.HORIZONS[horizon]['maxHold']['weekly_swing'])
     return {'symbol': symbol, 'setups': found, 'trades': trades, 'hard': hard, 'edge': edge, 'len': n, 'series': st.series_of(done),
-            'span': (done[-1]['time'] - done[0]['time']) / 86400}
+            'span': _trend_span(ind_done)}
+
+
+def _trend_span(ind):
+    """Days of bars that could actually signal: from the first bar with a known trend to the last bar."""
+    tr, bars = ind.get('weekly') or [], ind['bars']
+    first = next((i for i, v in enumerate(tr) if v is not None), None)
+    return (bars[-1]['time'] - bars[first]['time']) / 86400 if first is not None and bars else 0.0
 
 
 def build_setup(symbol, key, ind, s, sig, plan, state, trade, ind_now):
@@ -1333,13 +1341,13 @@ async def scan(ctx, news=None, publish=None):
     rules_saved = _load_rules()
     market = market_trend_by_date(histories['QQQ']) if 'QQQ' in histories else {}
     regimes = st.market_regimes(histories['QQQ']) if 'QQQ' in histories else {}
-    daily_done = {sym: [{'time': b['time'], 'close': b['close']} for b in split_bars(histories[sym], None)[0][-400:]] for sym in symbols if sym in histories}
+    daily_done = {sym: [{'time': b['time'], 'close': b['close']} for b in split_bars(histories[sym], None)[0][-1100:]] for sym in symbols if sym in histories}
 
     def assemble():
         swing = horizons.get('swing') or {}
         return {
             'updated': time.time(), 'session': session, 'universe': 'Nasdaq-100', 'scanned': swing.get('scanned', 0),
-            'skipped': skipped, 'regime': regime, 'primary': 'weekly_swing', 'version': 22,
+            'skipped': skipped, 'regime': regime, 'primary': 'weekly_swing', 'version': SCAN_VERSION,
             'alpaca': alpaca.available(),
             'horizons': horizons, 'horizonInfo': {h: {k: st.HORIZONS[h][k] for k in ('label', 'hold', 'bar', 'unit', 'higher')} for h in HORIZON_ORDER},
             # Swing setups at the top level too, for pages older than v19 (the strategy records only live in horizons).
@@ -1442,10 +1450,10 @@ async def run_once(ctx, news=None):
     if _state['running']:
         return await _state['running']
     # Each finished time frame is shown straight away while the others are still loading.
-    task = background(scan(ctx, news, publish=lambda r: _state.__setitem__('result', {**r, 'partial': True})))
+    task = background(scan(ctx, news, publish=lambda r: _state.__setitem__('result', _with_saved({**r, 'partial': True}))))
     _state['running'] = task
     try:
-        _state['result'] = await task
+        _state['result'] = _with_saved(await task)
         try:  # keep it for the next start, so the page has something to show at once
             await asyncio.to_thread(lab.save_json_atomic, RESULT_PATH, _state['result'])
         except Exception as err:
@@ -1453,6 +1461,14 @@ async def run_once(ctx, news=None):
         return _state['result']
     finally:
         _state['running'] = None
+
+
+def _with_saved(result):
+    """Time frames not scanned yet in this run keep the saved scan's version (marked stale), so tabs don't go empty
+    after a restart."""
+    saved = (_state.get('saved') or {}).get('horizons') or {}
+    missing = {h: {**v, 'stale': True} for h, v in saved.items() if h not in (result.get('horizons') or {})}
+    return {**result, 'horizons': {**missing, **(result.get('horizons') or {})}} if missing else result
 
 
 def _start_scan(ctx, news):
@@ -1468,15 +1484,20 @@ async def _guarded_scan(ctx, news):
         await run_once(ctx, news)
     except Exception as err:
         _state['lastError'] = str(err)
+        _state['lastErrorAt'] = time.time()
         log.info('Scan failed: %s', err)
     finally:
         _state['starting'] = False
 
 
+SCAN_VERSION = 22  # results saved by another version are not shown
+
+
 def _load_saved_result():
     try:
         data = json.loads(RESULT_PATH.read_text())
-        return {**data, 'stale': True} if isinstance(data, dict) and data.get('horizons') else None
+        ok = isinstance(data, dict) and data.get('horizons') and data.get('version') == SCAN_VERSION
+        return {**data, 'stale': True} if ok else None
     except (OSError, ValueError):
         return None
 
@@ -1493,10 +1514,13 @@ async def results(ctx, msg):
         _state['bad'].clear()  # "Scan again" retries symbols Schwab rejected earlier
         _start_scan(ctx, ctx.news)
     if _state['result'] is None:
-        saved = await asyncio.to_thread(_load_saved_result)
-        if saved and _state['result'] is None:
-            _state['result'] = saved
-        _start_scan(ctx, ctx.news)
+        if 'saved' not in _state:
+            _state['saved'] = await asyncio.to_thread(_load_saved_result)
+        if _state['saved'] and _state['result'] is None:
+            _state['result'] = _state['saved']
+        # After a failure (expired login, Schwab down) wait for the next scheduled scan instead of retrying each request.
+        if time.time() - _state.get('lastErrorAt', 0) > SCAN_EVERY:
+            _start_scan(ctx, ctx.news)
     waited = 0.0
     while _state['result'] is None and waited < FIRST_WAIT and (_state['running'] or _state.get('starting')):
         await asyncio.sleep(0.25)
