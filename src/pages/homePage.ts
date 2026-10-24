@@ -69,7 +69,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
     ...chartThemeOptions(true),
     layout: { ...chartThemeOptions(true).layout, fontFamily: "'Inter', sans-serif", fontSize: 11, attributionLogo: false },
     grid: { vertLines: { visible: false }, horzLines: { color: THEME.grid } },
-    rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.18, bottom: 0.08 } },
+    rightPriceScale: { borderVisible: false, entireTextOnly: true, scaleMargins: { top: 0.18, bottom: 0.08 } }, // entireTextOnly: no half-cut labels at the edges
     timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true, timeVisible: true, tickMarkFormatter: (t: number) => (daily() ? nyDate(t) : nyTime(t, range !== '1D').replace(/:00 /, ' ')) },
     localization: { timeFormatter: (t: number) => (daily() ? nyDate(t) : nyTime(t, true)), priceFormatter: (v: number) => formatPrice(v) },
     crosshair: { horzLine: { labelVisible: true }, vertLine: { labelVisible: false } },
