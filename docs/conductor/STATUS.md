@@ -1,6 +1,6 @@
-# Status (updated Oct 24, 3:46 PM Central)
+# Status (updated Oct 24, ~5:45 PM Central)
 
-**Now:** resumed at your request — finishing the Setups rework (lean). Table filters are built and waiting for review.
+**Now:** version 22 is ready and tested; waiting for your go to publish.
 
 **Live on the site (v21):** new look, speed fixes, Alpaca free history (Settings), research notes.
 
