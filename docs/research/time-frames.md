@@ -138,10 +138,10 @@ Lehmann [S4] is the main dissent, on older and broader data.
   under-rejection in the left tail in small samples [S2, *unverified*]. The textbook formula for the standard error
   of the overlapping variance ratio under a random walk is `sqrt(2(2q-1)(q-1) / (3qT))` (Campbell, Lo & MacKinlay,
   ch. 2 [T1]; the formula is from my knowledge of the book, not read in this session). For the lab's settings
-  (q = 5, T = 100 bars) that is about **0.22**. *(Our simulation)* on 200 pure random walks using the lab's own
-  `variance_ratio` definition: mean 0.96 (biased low), standard deviation 0.216, the 5th-95th percentile range
-  0.64-1.35, and the lab's thresholds were crossed by pure noise **42% of the time (< 0.9) and 24% (> 1.1)**. So
-  the lab's "mean-reverting" and "trending" regime filters are mostly noise. See R1.
+  (q = 5, T = 100 bars: `variance_ratio` in lab.py:106-119, computed for every bar at lab.py:101) that is about
+  **0.22**. *(Our simulation)* on 200 pure random walks using the lab's own `variance_ratio` definition: mean 0.96 (biased low), standard deviation 0.216, the 5th-95th percentile range
+  0.64-1.35, and the lab's thresholds (`v < 0.9` / `v > 1.1`, lab.py:191-196) were crossed by pure noise **42% of
+  the time (< 0.9) and 24% (> 1.1)**. So the lab's "mean-reverting" and "trending" regime filters are mostly noise. See R1.
 - **The FOMC cycle.** Cieslak, Morse & Vissing-Jorgensen (2019, *JF*): since 1994 the US equity premium was earned
   entirely in even weeks of the FOMC cycle (weeks 0, 2, 4, 6 after a meeting), linked to Fed communication [S35].
   This is a market-wide weekly rhythm; for single stocks it is background risk, not a stock signal.
@@ -178,9 +178,10 @@ Lehmann [S4] is the main dissent, on older and broader data.
 - **Square-root-of-time fails.** Diebold, Hickman, Inoue & Schuermann (Penn working paper 97-34): scaling 1-day
   volatility by sqrt(h) is inappropriate under GARCH-type dynamics and overstates the variability of long-horizon
   volatility; fit a model at the horizon you care about [S21]. Lo (2002, *Financial Analysts Journal*): Sharpe
-  ratios do not scale by sqrt(time) when returns are serially correlated; overstatement can exceed 65% [S22].
-  *Check of our code:* the scanner computes ATR on each time frame's own bars and uses no sqrt-of-time conversion
-  (only `sessionsPerBar` for counting calendar days), which matches this advice.
+  ratios do not scale by sqrt(time) when returns are serially correlated; the abstract reports overstatement of up to 65% [S22].
+  *Check of our code:* the scanner computes ATR on each time frame's own bars (`atr` at strategies.py:103, called in
+  `prepare` at strategies.py:278) and uses no sqrt-of-time conversion; `sessionsPerBar` (strategies.py:191-204) is
+  used only to count calendar days of validity (scanner.py:517). This matches the advice.
 
 ### 2.6 Stationarity and regime shifts
 
@@ -193,8 +194,10 @@ Lehmann [S4] is the main dissent, on older and broader data.
   in mean, volatility and correlation, often matching policy and regulatory changes [S25].
 - **Practical meaning:** regimes are persistent (months to years), so a back-test window of a few months
   usually sits in one regime. Detecting a regime well needs long data; a 100-bar variance ratio cannot do it
-  (2.3). Nagel's VIX finding (2.2) is a simple, observable regime variable for reversal trades, already loosely
-  covered by the lab's market filter and the stats note's regime split.
+  (2.3). Nagel's VIX finding (2.2) is a simple, observable regime variable for reversal trades. Note that the
+  lab's `market` filter (QQQ vs its 50-day average) is a *trend* filter, not a volatility regime; the volatility
+  test that fits Nagel's finding is the one proposed in the sibling note `investment-analysis.md` section 7.3 (QQQ's
+  volatility vs its median), plus the stats note's regime split.
 
 ### 2.7 Calendar effects, by horizon
 
@@ -225,7 +228,7 @@ Lehmann [S4] is the main dissent, on older and broader data.
 - **For each horizon:** an hourly trade (1-3 days) can be dominated by one news day; a daily swing trade (about a
   week) has a good chance of spanning a macro release and, four times a year, earnings; a weekly position trade (2-8
   weeks) almost always spans several. The scanner's live grade already refuses Tier A when earnings fall inside the
-  hold. Its *historical* record does not exclude such trades (`trades_for` takes every signal). See R4.
+  hold. Its *historical* record does not exclude such trades (`trades_for`, strategies.py:468, takes every signal). See R4.
 
 ### 2.9 How sampling frequency and overlap change the statistics
 
@@ -245,14 +248,21 @@ Lehmann [S4] is the main dissent, on older and broader data.
   market factor and **no predictability at all**, a signal that fires on market-wide dips (so trades cluster on the
   same dates), scored with the scanner's own `random_entry_test`. The test reported p <= 0.10 in **37%** of
   universes instead of the expected 10%. Drawing one random date per real signal date (so the random trades
-  cluster like the real ones) gave **7%**, close to the expected rate. This independently supports the sister
-  note's recommendation to cluster by date; it is not repeated as a recommendation here.
-- **Effective sample size per horizon.** An hourly history of about 6 months (`hourly_history` asks Schwab for 180
-  calendar days) is about 124 sessions; after the 210-bar warm-up (`trades_for` starts at bar 210, about 30
-  sessions of hourly bars) roughly **95 sessions (4-5 months) are tradable**. Over 1-3 day holds and with
+  cluster like the real ones) gave **7%**, close to the expected rate. The 7% applies to *this* design (one random
+  date per real signal date); the sister note's R1 uses blocks by calendar week instead. Both designs should be
+  judged by that note's 200-seed false-positive check (rate <= 0.14 at the 10% level), and the simpler one that
+  passes wins. This supports the sister note's recommendation; it is not repeated as a recommendation here.
+  (An independent review reran both simulations: VR sd 0.216 with 42% / 24%; random-entry 40% plain vs 8.8%
+  clustered.)
+- **Effective sample size per horizon.** An hourly history of about 6 months (`hourly_history`, scanner.py:345-350, asks
+  Schwab for 180 calendar days of 30-minute bars at scanner.py:349 via `_history`, scanner.py:158-161, and joins
+  them into regular-session hourly bars, scanner.py:271 and 274-292) is about 124 sessions; after the 210-bar
+  warm-up (`trades_for` starts at bar 210, strategies.py:468, about 30 sessions of hourly bars) roughly **95
+  sessions (4-5 months) are tradable**. Over 1-3 day holds and with
   market-wide clustering, the number of independent market episodes in that sample is in the tens, not
-  thousands. The lab's three unseen windows (15% of history each) are about **three weeks each** on hourly data.
-  See R5.
+  thousands. The lab runs on every time frame (scanner.py:969-974), and its three unseen windows
+  (15% of history each, `FOLDS` at lab.py:57) are about **four weeks each (~19 sessions, ~130 hourly bars)** on
+  hourly data. See R5.
 
 ### 2.10 How fast does a signal's information decay?
 
@@ -286,25 +296,34 @@ the existing tools. The clustering fix to `random_entry_test` from `backtest-sta
 
 - **Why:** with q = 5 over 100 bars the variance ratio's sampling noise (standard deviation about 0.22) is larger
   than the gap between the thresholds (0.9 / 1.1) and 1.0. On pure random walks the filters switch on 42% and 24%
-  of the time *(our simulation)*. They make up 21 of the 67 filter combinations tried per trigger and side (about 30% of the lab's ~1,474
-  candidates, including the impossible pair of both), which means more tries, a higher luck bar and a worse PBO,
-  without measuring a regime. Regimes are persistent and need long data to detect
-  [S1][S2][S23][S25][T1].
-- **What changes:** delete the two entries from the lab's filter list (`FILTERS` and `_filter` in `lab.py`; `variance_ratio` can then go too
-  unless something else uses it). No replacement; the market filter (QQQ vs its 50-day average) is a cleaner,
-  observable regime variable.
+  of the time *(our simulation)*. They make up 21 of the 67 filter combinations tried per trigger and side (`candidates`, lab.py:63-72; about 30%
+  of the lab's 1,474 candidates, including the impossible pair of both). Removing them cuts the search from
+  **1,474 to 1,012 candidates (11 triggers x 46 combinations x 2 sides)**, which means fewer tries and a lower luck
+  bar. As things stand they add tries without measuring a regime. Regimes are persistent and need long data
+  to detect [S1][S2][S23][S25][T1].
+- **What changes:** delete the two entries from the lab's filter list (`FILTERS`, lab.py:52-53, and their branches in
+  `_filter`, lab.py:191-196); `variance_ratio` (lab.py:106-119, computed at lab.py:101) can then go too unless
+  something else uses it. No replacement is needed. (The `market` filter, QQQ vs its 50-day average, stays; it is a
+  trend filter, not a volatility regime; see 2.6.)
 - **Test:** run the lab on each time frame with and without the two filters. Pass if (a) the number of survivors
   that use them is zero or their unseen-period random-entry p (clustered) is no better than the median survivor,
-  and (b) PBO does not get worse after removing them. Also add a synthetic test in `helper/tests`: on random walks,
-  a "regime" defined by these filters must not validate.
+  and (b) the remaining survivors' unseen-period results do not get worse after removing them. Also add a synthetic test in `helper/tests` that is decisive: plant
+  a reversal edge only in genuinely mean-reverting stretches of a simulated series (and none elsewhere) and check
+  whether the filter helps the lab find it, and on pure random walks check that no candidate using these filters
+  survives over several seeds. Do not use PBO as the deciding number there: with three windows the lab's PBO can
+  only take the values 0, 1/3, 1/2, 2/3 or 1, too coarse to show a change. Note also that the survivors' p-values
+  are partly circular (the same unseen windows chose and scored them), so a clean verdict needs the forward record
+  proposed in `backtest-statistics.md` R4: judge filters on trades taken after they were registered.
 
 ### R2. Fix the turn-of-the-month filter to trading days, as published; drop it on weekly bars
 
 - **Why:** the published window is the **last trading day plus the first three trading days** [S26][S27]. The lab's
-  `tom` filter is described as "last 2 / first 3 days" but uses calendar days (`day >= 28 or day <= 3`), so in a 31-day month it includes days 28-30, which can be
+  `tom` filter is described as "last 2 / first 3 days" (lab.py:51) but tests the calendar day (`_dom >= 28 or
+  <= 3`, lab.py:189-190, with `_dom` the calendar day of the bar's UTC date, lab.py:100 and strategies.py:185-186), so in a 31-day month it includes days 28-30, which can be
   the T-3/T-4 pre-month-end trading days where Etula et al. found prices *falling* [S29]; after a weekend it can also miss
-  first trading days (e.g. the 4th). On **weekly** bars the filter tests the date of the bar's first day, which has
-  no meaning. Calendar effects are also the textbook case of data snooping [S32], and this one is disputed after
+  first trading days (e.g. the 4th). On **weekly** bars (stamped on the Monday; scanner.py:518 adds 4 days to reach
+  Friday) it is only a rough proxy: it selects weeks starting on the 28th-3rd, misses weeks starting on the
+  25th-27th that also contain the turn of the month, and cannot isolate the 4-day window inside a 5-day bar. Calendar effects are also the textbook case of data snooping [S32], and this one is disputed after
   1990 [S28].
 - **What changes:** compute the trading-day position within the month from the bar dates (last session of the month
   = -1, first sessions = 1, 2, 3); filter = -1 or 1-3. Apply on daily and hourly bars only.
@@ -334,9 +353,10 @@ the existing tools. The clustering fix to `random_entry_test` from `backtest-sta
   days carry outsized returns [S33][S36]. If a strategy's edge comes from the earnings-spanning trades, live A
   setups (which exclude them) will not have it; if those trades are its worst, the record understates it.
 - **What changes:** nothing in the rules at first. Tag each historical trade "spans earnings" using past earnings
-  dates. (Check first whether the Nasdaq calendar endpoint the scanner already uses returns past dates; if not, SEC
-  8-K item 2.02 filing dates from EDGAR, which the engine already reads, are a free proxy. A new data source is
-  a cost: use it only if the test is decisive.) Tag "spans FOMC" from the helper's hard-coded FOMC dates (past years
+  dates. (Try first the free, price-only earnings proxy proposed in the sibling note `investment-analysis.md` section 7.4
+  (a gap of 3 ATR or more marks a likely earnings day), which needs no new data. Use SEC 8-K item 2.02 filing dates
+  only if they are cheap to get through the engine's existing EDGAR code. Whether the Nasdaq calendar endpoint the
+  scanner uses returns past dates is unchecked.) Tag "spans FOMC" from the helper's hard-coded FOMC dates (past years
   would need to be added; the list currently holds 2026 only).
 - **Test:** pooled clustered random-entry test on (a) all trades, (b) trades not spanning earnings. If (b) differs
   from (a) by more than its own standard error, grade live setups on (b). Same for FOMC, reported only; do **not**
@@ -346,17 +366,21 @@ the existing tools. The clustering fix to `random_entry_test` from `backtest-sta
 ### R5. Hourly grades need more history, or a lower ceiling
 
 - **Why:** about 95 tradable sessions (4-5 months) of hourly data is one market regime [S23][S25]; trades across
-  ~100 stocks cluster on the same few dozen market episodes [S43]; the lab's unseen windows are about three weeks
-  each. A Tier A built on that is weaker evidence than the same label on 15 years of daily data, but the page
+  ~100 stocks cluster on the same few dozen market episodes [S43]; the lab's unseen windows are about four weeks
+  each (~19 sessions, ~130 hourly bars). A Tier A built on that is weaker evidence than the same label on 15 years of daily data, but the page
   shows them alike.
-- **What changes (pick one, by test):** (a) ask Schwab for the longest 30-minute history it serves (to be checked;
-  `_history` currently asks for 180 days) and cache it so later scans only add new bars; or, if no more is
-  available, (b) cap hourly setups at grade B unless the daily (swing) record of the same strategy and side also
-  passes. Option (b) removes rather than adds.
+- **What changes:** the helper currently caps Schwab 30-minute history at 180 days (scanner.py:349). The plan is:
+  (a) request Schwab's maximum 30-minute history and keep every 30-minute bar permanently in
+  `~/.trading-platform/cache.db`, so the hourly record grows with each scan instead of rolling off; (b) optionally,
+  for history only (never live signals), use Alpaca's free Basic market-data plan, which per its documentation
+  offers consolidated (SIP) bars back to 2016 with the newest 15 minutes delayed
+  (https://docs.alpaca.markets/docs/about-market-data-api; not checked in this session); and (c) until the hourly
+  record covers at least a year, cap hourly setups at grade B unless the daily (swing) record of the same
+  strategy and side also passes. Option (c) removes rather than adds and can ship first.
 - **Test:** on the swing time frame, where long history exists, simulate the problem: grade each strategy using
   only its last 95 sessions of trades, repeatedly over rolling 95-session windows, and count how often that short
   window's verdict (clustered random-entry p <= 0.10) agrees with the full-history verdict. If agreement is poor
-  (say below 70%), option (a) or (b) is needed for hourly. For (a), re-run the lab's short time frame on the longer
+  (say below 70%), keep the cap (c) until (a) or (b) supplies more history. With more history, re-run the lab's short time frame on the longer
   history and check PBO and the number of survivors.
 
 ---
@@ -402,8 +426,8 @@ confirmed. No paywalled or pirated copies were used.
 | S9 | Nagel (2012), "Evaporating Liquidity", *RFS* 25(7) | Journal | NBER w17653 | abstract | Reversal = liquidity provision, predictable with VIX |
 | S10 | Da, Liu & Schaumburg (2014), "A Closer Look at the Short-Term Return Reversal", *Management Science* 60(3) | Journal | NY Fed Staff Report 513; RePEc; INFORMS | abstract | Reversal stronger net of news |
 | S11 | Heston, Korajczyk & Sadka (2010), "Intraday Patterns in the Cross-Section of Stock Returns", *JF* 65(4) | Journal | arXiv 1005.3535; Kellogg; NBER conference | abstract | Same-half-hour continuation for 40+ days |
-| S11b | Chen et al., investor clientele and intraday patterns (UK, China, Brazil) | Journal | Aston University repository | abstract (via summary) | Replication outside the US |
-| S12 | Gao, Han, Li & Zhou (2018), "Market Intraday Momentum", *JFE* | Journal | Washington Univ. profile; SUFE listing | abstract | First half hour predicts last |
+| S11b | Chen, Haboub, Khan & Mahmud (2024 online; 2025 print, vol. 64(2)), "Investor Clientele and Intraday Patterns in the Cross-Section of Stock Returns", *Review of Quantitative Finance and Accounting* | Journal | Aston and Nottingham repositories; RePEc/IDEAS | abstract | Replication: UK and Brazil yes, China weak |
+| S12 | Gao, Han, Li & Zhou (2018), "Market Intraday Momentum", *JFE* | Journal | Washington Univ. profile (SUFE listing used only as a pointer) | abstract | First half hour predicts last |
 | S13 | Baltussen, Da, Lammers & Martens (2021), "Hedging Demand and Market Intraday Momentum", *JFE* | Journal | Erasmus repository; Notre Dame PDF listing | abstract | 60+ futures, gamma hedging, reverses later |
 | S14 | Bogousslavsky (2016), "Infrequent Rebalancing, Return Autocorrelation, and Seasonality", *JF* 71 | Journal | EPFL Infoscience | abstract | Mechanism for periodicity |
 | S15 | Lou, Polk & Skouras (2019), "A Tug of War: Overnight versus Intraday Expected Returns", *JFE* 134 | Journal | LSE Research Online; FMG DP744 | abstract | Overnight vs intraday split of strategy profits |
@@ -419,7 +443,7 @@ confirmed. No paywalled or pirated copies were used.
 | S23 | Hamilton (1989), "A New Approach to the Economic Analysis of Nonstationary Time Series", *Econometrica* 57(2) | Journal | Econometric Society; RePEc; Virginia Tech (Boldin robustness note) | abstract | Regime switching and its fragility |
 | S24 | Bai & Perron (1998) *Econometrica* 66(1); (2003) *J. Applied Econometrics* 18(1) | Journal | RePEc/IDEAS; Econometric Society | abstract | Multiple structural breaks |
 | S25 | Ang & Timmermann (2012), "Regime Changes and Financial Markets", *Annual Rev. Fin. Econ.* 4 | Journal | NBER w17182; RePEc | abstract | Regimes are persistent and policy-linked |
-| S26 | Lakonishok & Smidt (1988), "Are Seasonal Anomalies Real? A Ninety-Year Perspective", *RFS* 1 | Journal | SUFE listing; later papers | abstract + secondary | Turn of month, holidays, weekdays |
+| S26 | Lakonishok & Smidt (1988), "Are Seasonal Anomalies Real? A Ninety-Year Perspective", *RFS* 1 | Journal | Later papers citing it (SUFE listing used only as a pointer) | secondary | Turn of month, holidays, weekdays |
 | S27 | McConnell & Xu (2008), "Equity Returns at the Turn of the Month", *FAJ* 64(2) | Journal | CFA Institute; RePEc; Purdue | abstract | Exact TOM window; 31 of 35 countries |
 | S28 | Maberly & Waggoner (2000), Atlanta Fed WP 2000-11 | WP | Federal Reserve Bank of Atlanta; RePEc | abstract | TOM gone after 1990 (S&P 500) |
 | S29 | Etula, Rinne, Suominen & Vaittinen (2020), "Dash for Cash", *RFS* 33(1) | Journal | OUP; Aalto repository; RePEc | abstract (+ WP/slides via summary) | Month-end payment cycle; pre-month-end reversal |
@@ -436,7 +460,7 @@ confirmed. No paywalled or pirated copies were used.
 | S40 | McLean & Pontiff (2016), "Does Academic Research Destroy Stock Return Predictability?", *JF* 71 | Journal | Ivey (author copy); CXO summary | abstract | Post-publication decay 58% / 26% |
 | S41 | Chordia, Subrahmanyam & Tong (2014), *J. Accounting and Economics* 58(1) | Journal | SMU repository; Emory; CESifo (Auer & Rottmann challenge) | abstract | Anomalies halved after decimalization |
 | S42 | Newey & West (1987), *Econometrica* 55(3) | Journal | NBER t0055; SSRN; Econometric Society | abstract | Autocorrelation-robust standard errors |
-| S43 | Petersen (2009), "Estimating Standard Errors in Finance Panel Data Sets", *RFS* 22; Thompson (2011) | Journal | Ohio State-hosted copy; Kellogg; Statalist discussion | abstract + secondary | Time-clustered errors in panels |
+| S43 | Petersen (2009), "Estimating Standard Errors in Finance Panel Data Sets", *RFS* 22; Thompson (2011) | Journal | Kellogg (author page); Statalist discussion | abstract + secondary | Time-clustered errors in panels |
 | S44 | Boudoukh, Israel & Richardson (2019), "Long-Horizon Predictability: A Cautionary Tale", *FAJ* 75(1); Boudoukh, Richardson & Whitelaw (2008), *RFS* 21 | Journal | RePEc; CFA Institute; NBER w11841 | abstract | Overlap adds little information |
 | S45 | Huang, Li, Wang & Zhou (2020), "Time Series Momentum: Is It There?", *JFE* | Journal | Washington Univ.; SMU; HKBU | abstract | Pooled t-stats vs bootstrap |
 | S46 | Han, Zhou & Zhu (2016), "A Trend Factor", *JFE* 122(2) | Journal | RePEc/IDEAS | abstract | Combining horizons as one score |
@@ -446,7 +470,7 @@ confirmed. No paywalled or pirated copies were used.
 | T4 | Cochrane (2008), "The Dog That Did Not Bark: A Defense of Return Predictability", *RFS* 21(4) (in place of his *Asset Pricing* textbook, whose contents could not be found) | Journal | johnhcochrane.com | abstract | Counterpoint on long-horizon tests |
 
 **Count:** 53 rows: S1-S46, three supplementary rows (S11b, S15b, S16b) and four textbook rows (T1-T4). Of these,
-S15b is a practitioner summary and S5, S16b and S38 are bibliographic or secondary only, so **at least 45 primary
+S15b is a practitioner summary and S5, S16b, S26 and S38 are bibliographic or secondary only, so **at least 44 primary
 sources were seen at abstract level** (more if the paired rows S16, S17, S24, S30, S31, S43 and S44 are counted
 twice). They come from more than six distinct archives and publishers:
 NBER, RePEc/IDEAS, SSRN, arXiv, the Econometric Society, CFA Institute, the Federal Reserve (New York, Atlanta,
