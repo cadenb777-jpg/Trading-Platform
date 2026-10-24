@@ -162,7 +162,7 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
   const box = h('div', { class: 'chart-window-chart' });
   const chart = createChart(box, {
     autoSize: true,
-    layout: { background: { type: ColorType.Solid, color: THEME.background }, textColor: THEME.text, fontFamily: "'Inter', sans-serif", fontSize: 12, attributionLogo: false },
+    layout: { background: { type: ColorType.Solid, color: THEME.background }, textColor: THEME.text, fontFamily: "'Inter', sans-serif", fontSize: 12 },
     grid: { vertLines: { color: THEME.grid }, horzLines: { color: THEME.grid } },
     rightPriceScale: { borderColor: THEME.border },
     timeScale: { borderColor: THEME.border, rightOffset: 4 },

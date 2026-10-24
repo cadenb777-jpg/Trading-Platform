@@ -22,7 +22,7 @@ export function createLineChart(container: HTMLElement, opts: { percent?: boolea
   const format = opts.format ?? ((v: number) => (opts.percent ? `${v.toFixed(1)}%` : compact(v)));
   const chart: IChartApi = createChart(container, {
     autoSize: true,
-    layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text, fontFamily: "'Inter', sans-serif", fontSize: 12, attributionLogo: false },
+    layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text, fontFamily: "'Inter', sans-serif", fontSize: 12 },
     grid: { vertLines: { visible: false }, horzLines: { color: THEME.grid } },
     rightPriceScale: { borderColor: THEME.border },
     timeScale: { borderColor: THEME.border },
