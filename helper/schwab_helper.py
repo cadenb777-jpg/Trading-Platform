@@ -48,7 +48,7 @@ import engine  # noqa: E402  (light: its big modules load in the background, see
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 20
+HELPER_VERSION = 21
 
 HOST = '127.0.0.1'
 PORT = 8765
