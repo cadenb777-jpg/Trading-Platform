@@ -106,7 +106,7 @@ export function barList(rows: { label: string; value: number; highlight?: string
 }
 
 /** A grid of headline numbers ("stat cards"). */
-export function statCards(items: { label: string; value: string; hint?: string; tone?: 'up' | 'down' | ''; node?: Node }[]) {
+export function statCards(items: { label: string | Node; value: string; hint?: string; tone?: 'up' | 'down' | ''; node?: Node }[]) {
   return h(
     'div',
     { class: 'stat-cards' },

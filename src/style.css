@@ -5614,3 +5614,132 @@ a.btn {
 .settings-row .input {
   background-color: var(--panel);
 }
+
+/* Portfolios: dividends view (income bars and the 12-month calendar). */
+.pf-list .btn:not(.primary) {
+  border-color: var(--border);
+  text-align: center;
+}
+
+.div-bars {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--sp-1);
+  align-items: end;
+}
+
+.div-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: var(--sp-1) 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.div-bar:hover,
+.div-bar.active {
+  background: var(--panel-2);
+}
+
+.div-bar.active {
+  border-color: var(--accent-border);
+}
+
+.div-bar-value {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-height: 1.4em;
+}
+
+.div-bar-track {
+  display: flex;
+  align-items: flex-end;
+  width: 70%;
+  max-width: 36px;
+  height: 140px;
+}
+
+.div-bar-fill {
+  width: 100%;
+  min-height: 2px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--accent);
+}
+
+.div-bar-label {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+}
+
+.div-bar-label small {
+  color: var(--faint);
+}
+
+.div-cal {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.div-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 92px;
+  padding: var(--sp-2);
+  text-align: left;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+.div-cell:hover {
+  border-color: var(--border-strong);
+}
+
+.div-cell.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.div-cell-head,
+.div-cell-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.div-cell-head {
+  margin-bottom: 2px;
+}
+
+@media (max-width: 600px) {
+  .div-bars {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    row-gap: var(--sp-3);
+  }
+  .div-bar-track {
+    height: 90px;
+  }
+  .div-cal {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

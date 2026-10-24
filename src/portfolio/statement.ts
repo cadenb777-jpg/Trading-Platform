@@ -98,7 +98,7 @@ export function rowsToPositions(rows: string[][], headerAt: number, columns: Col
       prev.value = prev.value != null || value != null ? (prev.value ?? 0) + (value ?? 0) : undefined;
     } else bySymbol.set(symbol, { symbol, name: name && name !== '--' ? name : undefined, shares, cost, value: value ?? undefined });
   }
-  const out = [...bySymbol.values()].map((p) => ({ ...p, shares: +p.shares.toFixed(6), cost: p.cost != null ? +p.cost.toFixed(2) : undefined }));
+  const out: Position[] = [...bySymbol.values()].map((p) => ({ ...p, shares: +p.shares.toFixed(6), cost: p.cost != null ? +p.cost.toFixed(2) : undefined }));
   if (cash > 0) out.push({ symbol: 'CASH', name: 'Cash & money market', shares: 0, value: +cash.toFixed(2), cash: true });
   return out;
 }

@@ -2,6 +2,7 @@
 import { engineRequest } from '../data/schwab';
 import { deleteDoc, listDocs, saveDoc } from '../data/store';
 import { PRIVATE_FUNDS, STRATEGIES, type Strategy } from '../invest/catalog';
+import { openStatementImport, renderDividends } from '../portfolio/dividendsView';
 import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
 import {
   ALT_CLASSES,
@@ -43,7 +44,7 @@ export function createPortfolioPage() {
   const list = h('div', { class: 'pf-list' });
   const editor = h('section', { class: 'panel' });
   const results = h('div', { class: 'ap-body' });
-  const frame = pageFrame('Portfolios', 'Build a portfolio and see how it would have done: returns, risk, stress tests and optimal weights.', []);
+  const frame = pageFrame('Portfolios', 'Build a portfolio and see how it would have done: returns, risk, stress tests, optimal weights and dividend income.', []);
   frame.body.replaceChildren(h('div', { class: 'pf-layout' }, h('aside', { class: 'panel' }, list), h('div', { class: 'ap-body' }, editor, results)));
 
   async function refreshList() {
@@ -59,6 +60,7 @@ export function createPortfolioPage() {
     const item = (p: Portfolio, onclick: () => void, active: boolean) => h('button', { class: active ? 'active' : '', onclick }, p.name);
     list.replaceChildren(
       h('button', { class: 'btn primary', onclick: () => select(blank()) }, '+ New portfolio'),
+      h('button', { class: 'btn', title: 'Upload a positions export (CSV or Excel) from your broker', onclick: () => openStatementImport(imported) }, 'Import statement'),
       h('div', { class: 'muted small' }, 'Saved'),
       ...(saved.length ? saved.map((p) => item(p, () => select(structuredClone(p)), p.id === current.id)) : [h('div', { class: 'muted small' }, 'None yet. Saved portfolios are stored by the helper on your computer.')]),
       h('div', { class: 'muted small' }, 'Templates'),
@@ -221,6 +223,7 @@ export function createPortfolioPage() {
         h('span', { class: 'spacer' }),
         p.id ? h('button', { class: 'btn danger', onclick: remove }, 'Delete') : null,
         h('button', { class: 'btn', onclick: save }, 'Save'),
+        h('button', { class: 'btn', title: 'Dividend income, yields and a 12-month calendar', onclick: () => renderDividends(results, current) }, 'Dividends'),
         h('button', { class: 'btn primary', onclick: analyse }, 'Analyse'),
       ),
     );
@@ -353,6 +356,13 @@ export function createPortfolioPage() {
     } catch (err) {
       toast((err as Error).message);
     }
+  }
+
+  /** A statement was imported and saved: open it and show its dividends. */
+  async function imported(p: Portfolio & { id: string }) {
+    await refreshList();
+    select(structuredClone(p));
+    renderDividends(results, current);
   }
 
   async function remove() {

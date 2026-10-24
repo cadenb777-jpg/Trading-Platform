@@ -25,7 +25,7 @@ export const PAGE_SUGGESTIONS: Record<string, string[]> = {
   flow: ['What is options flow saying about this stock?', 'Are insiders buying or selling, and does it matter?', 'Summarize the positioning shown here'],
   research: ['Is this company cheap or expensive, and why?', 'Summarize the financials on screen', 'What are the biggest risks in these numbers?'],
   macro: ['Summarize the macro picture on this page in 5 bullets', 'What do these readings mean for stocks over the next 3 months?', 'Is recession risk rising or falling?', 'Explain the yield curve shown here in plain words'],
-  portfolio: ['Summarize this portfolio’s risk and return', 'What is the biggest risk in this portfolio?', 'How could I make it more diversified?'],
+  portfolio: ['Summarize this portfolio’s risk and return', 'What is the biggest risk in this portfolio?', 'Which holdings give me the most dividend income?', 'Is my dividend income well diversified?', 'Which dividends look at risk of a cut?'],
   backtest: ['Is this backtest result trustworthy or luck?', 'Explain the Monte Carlo and random-walk results', 'Why does this strategy lose in some years?'],
   calendar: ['Which events this week matter most for stocks?', 'Explain the latest actual vs forecast surprises', 'What should I watch out for before these releases?'],
 };

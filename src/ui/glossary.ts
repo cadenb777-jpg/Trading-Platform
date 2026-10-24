@@ -40,6 +40,10 @@ export const TERMS: Record<string, { title: string; text: string }> = {
   forward: { title: 'Forward record', text: 'A lab strategy\'s trades signalled after the day it was first shown. The windows that chose it are not evidence; only these new trades are.' },
   rules: { title: 'Rule tests', text: 'Each "which version of this rule?" question (turn signal, trend filter, exits, stretch measure, breakout type) re-tested once a week on your own price history. The simplest version that beats random entries wins; the page shows whether your data agrees with the rules in use.' },
   sector: { title: 'Open risk per sector', text: 'How much of your account is at risk in each sector if every listed trade is on at your chosen risk per trade. The Nasdaq-100 is mostly tech, so several setups can be one sector bet. Display only.' },
+  divyield: { title: 'Dividend yield', text: 'The dividends you can expect over the next year as a percentage of today\'s price. $4 a year on a $100 share is a 4% yield. Worked out from the latest regular payment times how often it pays; one-off special dividends are left out.' },
+  yoc: { title: 'Yield on cost', text: 'The same yearly dividends as a percentage of what you paid. If you bought at $50 and it now pays $4 a year, your yield on cost is 8%, even if today\'s yield is lower. It grows as companies raise their dividends.' },
+  exdate: { title: 'Ex-dividend date', text: 'You must own the shares before this day to get the next dividend. Buy on or after it and the payment goes to the seller. Dates here are estimates from the usual timing; the company announces the real date a few weeks ahead.' },
+  paydate: { title: 'Pay date', text: 'The day the dividend cash lands in your account, usually 2-4 weeks after the ex-date. The free data has no pay dates, so they are estimated as 3 weeks after the ex-date.' },
   conviction: { title: 'Conviction', text: 'A summary of how many factors line up for the trade versus against it, capped by the grade. It tells you how much weight to give the setup, not a guarantee.' },
 };
 
