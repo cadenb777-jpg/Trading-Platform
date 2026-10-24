@@ -741,15 +741,33 @@ def _attachment_blocks(attachments):
     return blocks
 
 
-def _context_text(context):
+SCREEN_CHARS = 8000
+
+
+def _context_text(context, last_screen=None):
+    """The platform context line, plus the text of what the user sees (only when it changed since their last message,
+    so long chats don't repeat the same screen)."""
     now = dt.datetime.now(EASTERN).strftime('%A %B %d, %Y, %I:%M %p ET')
     parts = [f'Now: {now}.']
+    screen = ''
     if isinstance(context, dict):
         if context.get('page'):
             parts.append(f"Page open: {context['page']}.")
         if context.get('symbol'):
             parts.append(f"Chart symbol: {context['symbol']} ({context.get('timeframe', '')}).")
-    return '[Platform context] ' + ' '.join(parts)
+        screen = str(context.get('screen') or '')[:SCREEN_CHARS].strip()
+    text = '[Platform context] ' + ' '.join(parts)
+    if screen and screen != last_screen:
+        text += ('\n\n<screen>\n' + screen + '\n</screen>\nThe <screen> block is the text the user sees on that page right '
+                 'now (including any open pop-up). When they say "this", "here" or ask why a number on the page is what it '
+                 'is, answer from it, quote the figures you use, and explain in plain words for a beginner. If what they '
+                 'ask about is not on the screen, say so and use your tools instead.')
+    elif screen:
+        text += ' (Same screen as before.)'
+    return text
+
+
+_last_screen = {}  # conversation id -> last screen text sent (so an unchanged screen isn't repeated)
 
 
 @handler('ai.chat')
@@ -762,8 +780,14 @@ async def chat(ctx, msg):
     conv_id = str(msg.get('conversation') or '') or uuid.uuid4().hex[:12]
     messages = _conversations.setdefault(conv_id, [])
     if len(_conversations) > MAX_CONVERSATIONS:
-        _conversations.pop(next(iter(_conversations)))
-    content = files + [{'type': 'text', 'text': f"{_context_text(msg.get('context'))}\n\n{text or 'Please analyse the attached file(s).'}"}]
+        old = next(iter(_conversations))
+        _conversations.pop(old)
+        _last_screen.pop(old, None)
+    context = msg.get('context') if isinstance(msg.get('context'), dict) else None
+    screen = str((context or {}).get('screen') or '')[:SCREEN_CHARS].strip()
+    content = files + [{'type': 'text', 'text': f"{_context_text(context, _last_screen.get(conv_id))}\n\n{text or 'Please analyse the attached file(s).'}"}]
+    if screen:
+        _last_screen[conv_id] = screen
     start = len(messages)
     messages.append({'role': 'user', 'content': content})
     try:
@@ -798,4 +822,5 @@ async def insight(ctx, msg):
 @handler('ai.reset')
 async def reset(ctx, msg):
     _conversations.pop(str(msg.get('conversation') or ''), None)
+    _last_screen.pop(str(msg.get('conversation') or ''), None)
     return {'ok': True}

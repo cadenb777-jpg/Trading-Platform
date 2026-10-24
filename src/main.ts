@@ -13,6 +13,7 @@ import { h, toast } from './ui/dom';
 import { icon, type IconName } from './ui/icons';
 import { openSettings } from './ui/settings';
 import { currentTheme, initTheme, onThemeChange, setTheme } from './ui/theme';
+import { PAGE_SUGGESTIONS, screenText } from './ai/screen';
 
 initTheme();
 
@@ -112,7 +113,7 @@ const AI_CHANNEL = 'tp-ai-actions';
 
 function aiContext(): Record<string, string> {
   const page = currentPage();
-  return { page: page.label, symbol: state.symbols[state.provider] ?? '', timeframe: state.timeframe };
+  return { page: page.label, route: page.route, symbol: state.symbols[state.provider] ?? '', timeframe: state.timeframe, screen: screenText(page.page?.el) };
 }
 
 /** Carries out something the AI asked for (open a chart, add an indicator, set an alert...). */
@@ -183,7 +184,7 @@ if (isAiWindow) {
     updateBanner.hidden = bannerDismissed || v == null || !helper.outdated;
     if (updateBanner.hidden || v == null) return;
     updateBanner.replaceChildren(
-      h('span', {}, h('b', {}, `Helper update available (you have version ${v}, newest is ${LATEST_HELPER_VERSION}). `), v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : v < 12 ? 'It adds the Nasdaq-100 swing scanner (weekly swing with COT, z-score and Williams; mean reversion; breakouts) every 5 minutes, RIA fee schedules in client reports and fresher fund data. ' : v < 21 ? 'It adds the free Alpaca history option (Settings), a faster and steadier helper and fixes. ' : v < 22 ? 'It reworks the Setups scanner: honest tests (trades from the same week count as one bet, results after costs, corrected for many tests), 15 years of daily history, hourly history kept for good, simpler rules and weekly rule tests on your own data. ' : 'It includes bug fixes. '),
+      h('span', {}, h('b', {}, `Helper update available (you have version ${v}, newest is ${LATEST_HELPER_VERSION}). `), v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : v < 12 ? 'It adds the Nasdaq-100 swing scanner (weekly swing with COT, z-score and Williams; mean reversion; breakouts) every 5 minutes, RIA fee schedules in client reports and fresher fund data. ' : v < 21 ? 'It adds the free Alpaca history option (Settings), a faster and steadier helper and fixes. ' : v < 22 ? 'It reworks the Setups scanner: honest tests (trades from the same week count as one bet, results after costs, corrected for many tests), 15 years of daily history, hourly history kept for good, simpler rules and weekly rule tests on your own data. ' : v < 23 ? 'The AI assistant can now see the page you’re on, so you can ask about anything on screen. ' : 'It includes bug fixes. '),
       h('a', { href: 'https://github.com/cadenb777-jpg/Trading-Platform', target: '_blank', rel: 'noopener' }, 'Get it: Code → Download ZIP, replace your helper folder, restart it'),
       h('button', { class: 'icon-btn', 'aria-label': 'Dismiss', title: 'Dismiss', onclick: () => ((bannerDismissed = true), showUpdateBanner()) }, '✕'),
     );
@@ -193,6 +194,7 @@ if (isAiWindow) {
   const assistant = createAssistant({
     mode: 'drawer',
     getContext: aiContext,
+    getSuggestions: () => PAGE_SUGGESTIONS[currentPage().route] ?? [],
     onAction: runAction,
     onClose: () => toggleAssistant(false),
     onPopOut: () => {
@@ -253,6 +255,7 @@ if (isAiWindow) {
   helper.onAvailability(showUpdateBanner);
 
   window.addEventListener('hashchange', route);
+  window.addEventListener('hashchange', () => { if (!drawer.hidden) assistant.reload(); }); // page-specific example questions
   route();
   startAlertWatcher();
 }

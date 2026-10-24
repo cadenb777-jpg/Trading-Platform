@@ -67,6 +67,8 @@ export function friendlyAiError(err: unknown): { text: string; needsKey: boolean
 export interface AssistantOptions {
   mode: 'drawer' | 'window';
   getContext(): Record<string, string>;
+  /** Example questions for the page the user is on; falls back to the general list. */
+  getSuggestions?(): string[];
   onAction(action: AssistantAction): void;
   onClose?(): void;
   onPopOut?(): void;
@@ -77,6 +79,7 @@ export function createAssistant(opts: AssistantOptions) {
   let busy = false;
   let controller: AbortController | null = null;
   let attachments: Attachment[] = [];
+  const suggestions = () => { const own = opts.getSuggestions?.() ?? []; return own.length ? own : SUGGESTIONS; };
 
   const list = h('div', { class: 'ai-messages', 'aria-live': 'polite' });
   const input = h('textarea', { class: 'ai-input', rows: 1, placeholder: 'Ask anything… e.g. “Why is NVDA down today?”', 'aria-label': 'Message the AI assistant' });
@@ -186,8 +189,8 @@ export function createAssistant(opts: AssistantOptions) {
           { class: 'ai-empty' },
           h('div', { class: 'ai-empty-mark' }, '✦'),
           h('h3', {}, 'How can I help?'),
-          h('p', { class: 'muted' }, 'I can read live quotes, news, options flow, insider trades, financials and the economy. I can also build and analyse portfolios, open charts and set alerts. Drop in a spreadsheet or PDF and I’ll make sense of it.'),
-          h('div', { class: 'ai-suggestions' }, ...SUGGESTIONS.map((s) => h('button', { class: 'ai-suggestion', onclick: () => ask(s) }, s))),
+          h('p', { class: 'muted' }, 'I can see the page you’re on, so ask about anything on screen (“why is…”, “summarize this”). I also read live quotes, news, options flow, financials and the economy, build portfolios, open charts and set alerts.'),
+          h('div', { class: 'ai-suggestions' }, ...suggestions().map((s) => h('button', { class: 'ai-suggestion', onclick: () => ask(s) }, s))),
         ),
       );
       return;

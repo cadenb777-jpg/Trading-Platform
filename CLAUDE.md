@@ -38,6 +38,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (e.g. `series`, `docId`). Long requests stream `engine_event` messages before the reply (`onEvent`).
   Settings (Anthropic key, model, SEC email, FRED key) are set in the Settings window and saved by the helper in
   ~/.trading-platform/settings.json; keys are never stored in or sent back to the browser.
+  AI screen context (v23): the browser sends the open page's visible text plus any open pop-up (src/ai/screen.ts,
+  capped 8,000 chars) as context.screen; ai.py adds it in a <screen> block only when it changed since the last message;
+  PAGE_SUGGESTIONS gives per-page example questions.
   AI (engine/ai.py): official `anthropic` SDK, default model claude-opus-5-5 with server-side fallbacks, tools over
   engine data plus `ui_action` (browser carries out open_chart/add_indicator/create_alert). It must never trade.
   Investments page (src/pages/investmentsPage.ts, src/invest/): boards via invest.board (quotes + 1m/3m/YTD/1y from
