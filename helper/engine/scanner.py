@@ -1278,7 +1278,7 @@ async def scan(ctx, news=None, publish=None):
         swing = horizons.get('swing') or {}
         return {
             'updated': time.time(), 'session': session, 'universe': 'Nasdaq-100', 'scanned': swing.get('scanned', 0),
-            'skipped': skipped, 'regime': regime, 'primary': 'weekly_swing', 'version': 21, 'sectors': SECTORS,
+            'skipped': skipped, 'regime': regime, 'primary': 'weekly_swing', 'version': 22, 'sectors': SECTORS,
             'alpaca': alpaca.available(),
             'horizons': horizons, 'horizonInfo': {h: {k: st.HORIZONS[h][k] for k in ('label', 'hold', 'bar', 'unit', 'higher')} for h in HORIZON_ORDER},
             # The swing results at the top level too, for older pages.

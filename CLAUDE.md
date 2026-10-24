@@ -72,40 +72,43 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   The stream's CLOSE_PRICE is only a fallback (after the session it becomes today's close, which read as 0%).
   Scanner (engine/scanner.py + engine/strategies.py): a background task (`market_scanner`) scans the
   Nasdaq-100 (NASDAQ_100 list; update it after each December rebalance) every 5 minutes (owner's request). Daily history is fetched once per day; today's bar comes from the live quotes.
-  strategies.py is pure and tested: weekly_swing (primary: weekly trend from finished weeks, Williams COT index for
-  commercials >= 60 / <= 40 when available, z-score(20) beyond ±1 and turning, Williams %R crossing out of -80/-20,
-  Williams A/D vs its 20-day EMA; buy-stop above the signal day's high, stop past the 3-day swing (0.75-2 ATR),
-  target ±1 SD band, exit after 5 sessions, break-even at +1R), mean_reversion (RSI2 + z-score with the 200-day
-  trend, exit on a close across the 5-day average or 7 days) and breakout (Donchian 20 + ADX + volume, 10-day
-  trailing exit). COT is used from the Friday after its Tuesday data date. Every signal/plan/exit at bar i uses only
-  bars <= i (tests check this). Pooled random-entry test per strategy and per-stock random-walk test (shuffled daily
-  moves, seeded). Tier A = strategy beats random entries (PF >= 1.2, p <= 0.10) + stock record not failed + COT
-  not against + no earnings in the hold (Nasdaq earnings calendar; failure = "unavailable", never "none") + R:R >= 1.5
-  (weekly swing). B = profitable strategy and no failed check of its own; non-A cards carry `why` (plain reasons, v13)
-  and `whyCodes` (one code per reason, v17; the Home banner counts the main one).
+  strategies.py is pure and tested (v22 rules, settled in docs/research/setups-v21-results.md): weekly_swing = pullback
+  (z-score beyond the stock's own 10th/90th percentile in the last 3 bars and turning, buy-stop above the signal bar,
+  stop past the 3-bar swing 0.75-2 ATR, +1 SD target, break-even at +1R, time exit), mean_reversion (z-score beyond its
+  5th/95th percentile, exit on a close across the 5-bar average), breakout (close above the 250-session high, buys only,
+  2 ATR(20) stop then chandelier trail 3 ATR(22), cap 120 sessions). One trend filter everywhere: `TREND` = price vs its
+  200-day average (40-week on weekly bars; hourly bars use the previous close). Removed: %R, A/D vs EMA, ADX, volume,
+  RSI2-and-z, 20-bar Donchian, COT in signals. COT (156-week index) is a reading; it enters Tier A only if
+  `cot_study` (26/156 weeks x 60/75/80, weeks shuffled, Holm over 6) passes on the owner's data, and a missing reading
+  then never passes. R is after costs. Every signal/plan/exit at bar i uses only bars <= i (tests check this).
+  Statistics: `random_entry_test` moves same-date trades together to one random date (clustered; tested false-alarm
+  rate <= 0.14); `summarise` t-stat counts same-week (hourly: same-day) trades as one bet, tradesNeeded = bets for
+  one-sided p 0.10 at 80% power, per-stock "proven" = 20+ trades and t >= 1.5. Tier A = side record PF >= 1.2 and Holm-
+  adjusted random-entry p <= 0.10 across every strategy record of all time frames (`holm_family`, untested = p 1) +
+  robust (`_robust`: double costs + 0.05% stop slippage, both halves) + stock record not failed + COT gate if active
+  + no earnings in the hold (failure = "unavailable", never "none") + R:R >= 1.5 (pullback) + not forming; lab strategies
+  need 30 forward trades and hourly setups 2 years of hourly history (or the same strategy passing on daily) or they
+  cap at B. B = profitable side and no failed check of its own. `why`/`whyCodes` explain non-A cards.
+  Data: daily 15 years; hourly = every regular-session 30m bar kept for good in cache.db (monthly chunks,
+  `thirty_minute_bars`), plus ~3 years from Alpaca once when keys are set. Heavy maths runs in spawn worker processes
+  (`_offload` pools 'scan', 'research', 'rw'; `USE_PROCESSES = False` in tests); caches evict oldest (`_remember`).
+  Rule tests (engine/ruletests.py): weekly per time frame on the owner's data, saved to ~/.trading-platform/
+  rule_tests.json and shown on the Setups page; they report, never switch rules.
   Simulations are 1,000 each: pooled random-entry (cached per day), per-stock random walk (RW_RUNS, background worker
-  `_run_rw_jobs`, card shows pending first) and Monte Carlo of the next 20 trades (`monte_carlo`). Clicking a card opens
-  the trade guide pop-up (src/home/tradeGuide.ts: verdict, step-by-step entry/stop/target/exit, size calculator, grade).
-  Each strategy shows its newest signal within SIGNAL_LOOKBACK (25) sessions whose trade is still waiting or open
-  (a confirmed one beats today's forming one); `new` = signalled at the latest close; `conflict` = another strategy
-  points the other way on the same stock (neutral check + warning, v18).
-  Statuses: forming (today's bar), ready, waiting (trigger valid 2 days), in trade. Schwab requests
-  are paced (one at a time, 0.7 s apart); unknown symbols are skipped for a day, only an expired login stops a scan.
-  Time frames (v19, strategies.HORIZONS): short (1-hour bars from 30-minute history, regular session only, refreshed every
-  30 min; daily trend filter), swing (daily; weekly trend) and position (weekly bars, 15 years; monthly trend). Each runs
-  the three strategies with its own entry window and hold (in bars); the forming bar (hour/day/week) is updated from
-  live quotes on every 5-minute scan. Results: `horizons[h]` = {strategies (with `recent` = last 30% of history,
-  tStat, tradesNeeded), setups, edge}; the top level keeps swing for older pages. Universe: Nasdaq-100 only (owner).
-  Thresholds fit each stock: z-score and RSI(2) bands are the stock's own rolling percentiles (rolling_quantile,
-  causal), stops/targets in ATR. Monte Carlo uses the stationary bootstrap; per-stock random-walk p-values get
-  Benjamini-Hochberg q-values; `edge` = COT + z-score edge study (cot_z_events/edge_summary, 1,000-run permutation).
-  Buys and sells have separate records (`strategies[k].sides.long/short`, v20); setups are graded on their own side.
-  Strategy lab (engine/lab.py, v20): 11 theory triggers x up to 2 of 11 filters x side (~1,474 combinations), walk-forward
-  over 3 windows with an embargo, kept if chosen in 2+ windows, profitable on unseen trades (30+), Holm-corrected
-  random-entry p <= 0.10 and PBO <= 50%; deflated Sharpe reported. Re-runs when the time frame has a new finished bar
-  (scanner._run_lab, stamp = newest bar); survivors register as `lab_<horizon>_<n>` strategies judged only on their
-  unseen period (`oos_from`); rejects go to ~/.trading-platform/lab_graveyard.json. Market filter = QQQ vs its 50-day
-  average as of the previous day (market_trend_by_date).
+  `_run_rw_jobs`, BH q over every stock x strategy tested) and Monte Carlo of the next 20 trades (`monte_carlo`, % and R).
+  Clicking a card opens the trade guide (src/home/tradeGuide.ts; default risk 0.5%). Each strategy shows its newest
+  signal within its entry window + hold whose trade is still waiting or open; `new`, `conflict` as before.
+  Statuses: forming, ready, waiting, in trade. Schwab requests are paced (one at a time, 0.7 s apart); unknown symbols
+  are skipped for a day, only an expired login stops a scan. Time frames (strategies.HORIZONS): short (1-hour bars),
+  swing (daily), position (weekly, 15 years). Results: `horizons[h]` = {strategies (sides.long/short with stats,
+  randomEntry incl. pAdjusted, robust, monteCarlo/monteCarloR; lab ones carry forward.since), setups, edge (COT
+  study), lab, ruleTests, historyDays}; the top level keeps swing for older pages. Universe: Nasdaq-100 only (owner);
+  `SECTORS` feeds the page's open-risk-per-sector line (display only).
+  Strategy lab (engine/lab.py): 11 triggers x up to 2 of 8 filters (trend, above200, adiv = A/D divergence, adx, volume,
+  lowvol, tom = last trading day + first 3, market = QQQ vs 200-day; no tom on weekly) x side (814 combos), walk-forward
+  3 windows with embargo, chosen in 2+, profitable on unseen (30+), Holm p <= 0.10, PBO <= 50%. Runs weekly; survivors
+  are saved with their first-shown time (lab_survivors.json, atomic writes) and judged only on later trades; they leave
+  when that forward record fails (30+ trades losing, or t < -1). Rejects go to lab_graveyard.json (atomic write).
   Statistics rationale and sources: docs/research/setups-statistics.md.
   Setups page (src/pages/setupsPage.ts, route #setups): time-frame tabs, strategy evidence cards, edge study, sortable
   list, detail with live entry zone (src/home/entryZone.ts: waiting/approaching/entry/extended/target/invalid/expired,

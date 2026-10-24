@@ -100,7 +100,15 @@ a COT + z-score edge study, live entry alerts and an out-of-sample check. The fi
 minutes longer while it downloads hourly and weekly history. Version 20 judges buys and sells separately and adds
 the strategy lab, which searches about 1,500 rule combinations for ones that keep working on data they were not
 chosen on. Version 21 adds the optional free Alpaca price history (see below), keeps replies from being lost,
-saves to disk off the main loop and caps its memory use. If an optional part
+saves to disk off the main loop and caps its memory use. Version 22 reworks the Setups scanner: every test now
+counts trades taken in the same week as one bet, all results are after costs (also in R), Tier A needs the edge to
+survive a correction for every strategy tested, double costs and both halves of history; 15 years of daily history;
+every 30-minute bar is kept for good (and, with Alpaca keys in Settings, about 3 years of older 30-minute bars are
+loaded once; hourly grades stay at B until 2 years of hourly history); simpler rules (pullback = z-score stretch and
+turn, mean reversion = z-score only, breakout = 52-week high, one 200-day trend filter; COT is a reading unless the
+edge study on your data shows it helps); lab survivors are judged only on trades after the day they were first
+shown; and a weekly "rule tests" report on your own data. Heavy maths runs in separate worker processes so prices
+keep flowing during a scan; the first scan after updating takes longer while 15 years of history download. If an optional part
 (the AI or portfolio maths) fails to install, the helper still starts and charts and prices keep working; the
 platform's Settings window shows what's unavailable, and the helper writes a log to `~/.trading-platform/helper.log`. The first start after updating installs a few
 more parts, so it takes a couple of minutes. Keys and emails are no longer typed into this window:
