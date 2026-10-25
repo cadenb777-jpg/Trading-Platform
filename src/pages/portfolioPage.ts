@@ -13,6 +13,7 @@ import {
   analysisSymbol,
   holdingsPayload,
   isCashOrAlt,
+  isMine,
   positions,
   pricedSymbols,
   proxyNotes,
@@ -58,7 +59,8 @@ export function createPortfolioPage() {
   }
 
   function renderList() {
-    const item = (p: Portfolio, onclick: () => void, active: boolean) => h('button', { class: active ? 'active' : '', onclick }, p.name);
+    const item = (p: Portfolio, onclick: () => void, active: boolean) =>
+      h('button', { class: active ? 'active' : '', onclick }, p.name, p.id && isMine(p) ? h('span', { class: 'badge accent pf-mine-badge', title: 'Your own account (shown on the Account page)' }, 'Mine') : null);
     list.replaceChildren(
       h('button', { class: 'btn primary', onclick: () => select(blank()) }, '+ New portfolio'),
       h('button', { class: 'btn', title: 'Upload a positions export (CSV or Excel) from your broker', onclick: () => openStatementImport(imported) }, 'Import statement'),
@@ -190,6 +192,8 @@ export function createPortfolioPage() {
     reb.addEventListener('change', () => (p.rebalance = reb.value as Rebalance));
     const since = h('input', { class: 'input', type: 'date', value: p.inception ?? '', 'aria-label': 'Start date', title: 'Optional: only measure from this date' });
     since.addEventListener('change', () => (p.inception = since.value || undefined));
+    const mineBox = h('input', { type: 'checkbox', checked: isMine(p) }) as HTMLInputElement;
+    mineBox.addEventListener('change', () => setMine(mineBox.checked));
     const modes: [EntryMode, string][] = [
       ['weight', 'Percent'],
       ['shares', 'Shares'],
@@ -212,6 +216,13 @@ export function createPortfolioPage() {
         h('label', { class: 'field' }, h('span', { class: 'muted small' }, 'Benchmark'), bench),
         h('label', { class: 'field' }, h('span', { class: 'muted small' }, 'Rebalancing'), reb),
         h('label', { class: 'field' }, h('span', { class: 'muted small' }, 'Measure from (optional)'), since),
+      ),
+      h(
+        'div',
+        { class: 'pf-mine' },
+        h('label', { class: 'pf-mine-toggle', title: 'Your own accounts are added together on the Account page; client portfolios stay out' }, mineBox, h('span', {}, 'This is my account')),
+        isMine(p) ? h('a', { href: '#account', class: 'small' }, 'See it in Account →') : null,
+        mode === 'weight' && isMine(p) ? h('span', { class: 'muted small' }, 'Percent-only portfolios have no amounts, so Account leaves them out. Use Shares or Dollars.') : null,
       ),
       h('div', { class: 'holdings-wrap' }, h('table', { class: `holdings-table mode-${mode}` }, h('thead', {}, h('tr', {}, ...head.map((t) => h('th', {}, t)))), rows)),
       notes.length ? h('p', { class: 'muted small' }, `For the performance maths, cash and alternatives use listed stand-ins (they have no daily prices): ${notes.join('; ')}. Change one with ⋯.`) : '',
@@ -358,6 +369,22 @@ export function createPortfolioPage() {
     } catch (err) {
       toast((err as Error).message);
     }
+  }
+
+  /** "This is my account": saved straight away for a saved portfolio (only the flag, not unsaved edits). */
+  async function setMine(on: boolean) {
+    current.mine = on;
+    const stored = saved.find((x) => x.id === current.id);
+    if (stored) {
+      try {
+        await saveDoc('portfolios', { ...stored, mine: on });
+        await refreshList();
+        toast(on ? `"${stored.name}" now shows on the Account page` : `"${stored.name}" is no longer on the Account page`);
+      } catch (err) {
+        toast((err as Error).message);
+      }
+    }
+    renderEditor();
   }
 
   /** A statement was imported and saved: open it and show its dividends. */
@@ -656,6 +683,12 @@ export function createPortfolioPage() {
       renderEditor();
       renderList();
       refreshList();
+    },
+    /** Opens a saved portfolio (from the Account page). */
+    async open(id: string) {
+      await refreshList();
+      const p = saved.find((x) => x.id === id);
+      if (p) select(structuredClone(p));
     },
   };
 }

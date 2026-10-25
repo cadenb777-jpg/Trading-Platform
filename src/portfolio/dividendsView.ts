@@ -87,16 +87,20 @@ export async function renderDividends(out: HTMLElement, p: Portfolio) {
   out.replaceChildren(h('div', { class: 'muted pad' }, 'Reading dividend histories…'));
   out.scrollIntoView({ behavior: 'smooth', block: 'start' });
   try {
-    const r = await engineRequest<DividendReport>('dividends.portfolio', { holdings }, 120000);
-    draw(out, r, p.holdings.some((x) => x.kind === 'cash'));
+    drawDividends(out, await fetchDividends(holdings), { hasCash: p.holdings.some((x) => x.kind === 'cash') });
   } catch (err) {
     out.replaceChildren(h('div', { class: 'ap-error' }, (err as Error).message));
   }
 }
 
+/** Share holdings for the helper's dividends.portfolio request (the same symbol may appear more than once; the helper adds them up). */
+export type DividendInput = { symbol: string; shares?: number; costBasis?: number };
+export const fetchDividends = (holdings: DividendInput[]) => engineRequest<DividendReport>('dividends.portfolio', { holdings }, 120000);
+
 const divStats = (el: HTMLElement) => (el.classList.add('div-stats'), el);
 
-function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
+/** Draws a dividends report: headline cards (unless `stats` is false), income by month, calendar, ex-dates, holdings. */
+export function drawDividends(out: HTMLElement, r: DividendReport, { hasCash = false, stats = true }: { hasCash?: boolean; stats?: boolean } = {}) {
   const max = Math.max(1, ...r.calendar.map((m) => m.total));
   const detail = h('div', {});
   const bars: HTMLElement[] = [];
@@ -150,7 +154,7 @@ function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
     x.note ? h('span', { class: `badge ${/cut|stopped/.test(x.note) ? 'down' : ''}`, title: x.note }, x.note.replace('Latest dividend was cut', 'Cut').replace('Dividends seem to have stopped', 'Stopped').replace('No dividends', 'None')) : x.specialRecent ? h('span', { class: 'badge accent', title: 'Paid a one-off special dividend in the last year (not counted in the yield)' }, 'Special') : null;
 
   out.replaceChildren(
-    divStats(statCards([
+    stats ? divStats(statCards([
       { label: 'Yearly dividend income', value: usd(r.annualIncome), hint: 'Expected over the next 12 months at the latest regular payments' },
       { label: 'Monthly average', value: usd(r.monthly) },
       { label: termLabel('Portfolio yield', 'divyield'), value: pctU(r.yield), hint: 'Yearly income ÷ market value' },
@@ -161,7 +165,7 @@ function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
         tone: '',
         hint: r.cost ? `Cost ${usd(r.cost)} · gain ${r.gain != null && r.gain >= 0 ? '+' : ''}${usd(r.gain)} (${pct(r.gainPct, 1)})` : 'Add cost basis to see your gain',
       },
-    ])),
+    ])) : '',
     h(
       'section',
       { class: 'panel' },
@@ -191,7 +195,7 @@ function draw(out: HTMLElement, r: DividendReport, hasCash: boolean) {
     h(
       'section',
       { class: 'panel' },
-      h('div', { class: 'panel-head' }, h('h3', {}, 'Holdings')),
+      h('div', { class: 'panel-head' }, h('h3', {}, stats ? 'Holdings' : 'Dividends by holding')),
       r.missing ? h('p', { class: 'badge warn' }, `${r.missing} holding${r.missing === 1 ? '' : 's'} had no dividend data (shown as —). Try again later.`) : null,
       dataTable(
         ['Symbol', 'Shares', 'Gain', 'Yield · on cost', 'Yearly income', 'Pays', '5y growth'],
@@ -357,6 +361,7 @@ function preview(rows: string[][], fileName: string, onSaved: (p: Portfolio & { 
                 benchmark: 'SPY',
                 rebalance: 'none',
                 mode: 'shares',
+                mine: true,
                 holdings: [
                   ...stocks.map((x) => ({ symbol: x.symbol, name: x.name, weight: 0, assetClass: 'US stocks' as const, kind: 'security' as const, shares: x.shares, cost: x.cost })),
                   ...(cash?.value ? [{ symbol: 'CASH', name: 'Cash / money market', weight: 0, assetClass: 'Cash' as const, kind: 'cash' as const, amount: cash.value }] : []),

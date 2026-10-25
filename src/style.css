@@ -5767,3 +5767,21 @@ a.btn {
 .wb-confirm-env { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
 .wb-summary { font-size: var(--fs-lg); font-weight: 700; color: var(--text-strong); margin: var(--sp-2) 0; }
 .wb-confirm-actions { margin-top: var(--sp-3); flex-wrap: wrap; }
+
+/* Portfolios: "This is my account" toggle */
+.pf-mine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 10px;
+}
+.pf-mine-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.pf-mine-badge {
+  margin-left: 6px;
+}
