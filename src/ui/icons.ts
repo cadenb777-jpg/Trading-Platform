@@ -29,6 +29,7 @@ const PATHS = {
   flow: '<path d="M3 7h11l-3-3M21 17H10l3 3"/><path d="M3 12h6M15 12h6"/>',
   research: '<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5"/><path d="M8 12.5V10M10.5 12.5V8M13 12.5v-3"/>',
   macro: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.8 5.2 3.8 8.5s-1.2 6.1-3.8 8.5M12 3.5C9.4 5.9 8.2 8.7 8.2 12s1.2 6.1 3.8 8.5"/>',
+  account: '<circle cx="12" cy="8" r="4"/><path d="M4 20.5c1.4-4 4.4-6 8-6s6.6 2 8 6"/>',
   portfolio: '<path d="M12 3v9h9"/><path d="M19.5 15.5A8.5 8.5 0 1110 3.7"/>',
   backtest: '<path d="M3 12a9 9 0 109-9"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/>',
   clients: '<path d="M6 3.5h9l3.5 3.5v13.5H6z"/><path d="M15 3.5V7h3.5"/><path d="M9 12h6M9 15.5h6M9 8.5h3"/>',

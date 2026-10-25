@@ -684,8 +684,9 @@ export function createPortfolioPage() {
       renderList();
       refreshList();
     },
-    /** Opens a saved portfolio (from the Account page). */
+    /** Opens a saved portfolio, or the Webull view for 'webull' (from the Account page). */
     async open(id: string) {
+      if (id === 'webull') return renderWebull(results, synced);
       await refreshList();
       const p = saved.find((x) => x.id === id);
       if (p) select(structuredClone(p));

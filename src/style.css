@@ -5785,3 +5785,94 @@ a.btn {
 .pf-mine-badge {
   margin-left: 6px;
 }
+
+/* ---------- Account page ---------- */
+.acct-section {
+  margin: var(--sp-2) 0 0;
+}
+.acct-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--sp-3);
+}
+.acct-cards:empty {
+  display: none;
+}
+.panel .acct-cards + .acct-cards {
+  margin-top: var(--sp-3);
+}
+.acct-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: var(--sp-3);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.acct-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.acct-card-value {
+  font-size: var(--fs-num-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.acct-card .stat-cards {
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+}
+.acct-parts summary {
+  cursor: pointer;
+  color: var(--link);
+}
+.acct-alloc {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--sp-4);
+}
+.acct-alloc h4 {
+  margin: 0 0 var(--sp-2);
+}
+.alloc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--fs-sm);
+}
+.alloc-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 120px) 1fr 52px;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.alloc-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alloc-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.alloc-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.alloc-value {
+  text-align: right;
+}
+.acct-empty ol {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

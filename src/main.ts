@@ -50,6 +50,14 @@ const openResearch = (symbol: string) => {
   ensurePage(entry).then((page) => (page as Page & { open?(symbol: string): void }).open?.(symbol));
 };
 
+/** Opens a saved portfolio (or, with 'webull', the Webull view) on the Portfolios page (from the Account page). */
+const openPortfolio = (id: string) => {
+  const entry = pages.find((p) => p.route === 'portfolio');
+  if (!entry) return;
+  location.hash = '#portfolio';
+  ensurePage(entry).then((page) => (page as Page & { open?(id: string): void }).open?.(id));
+};
+
 /** The chart's Backtest button: open the backtester with the chart's symbol, timeframe and indicators. */
 window.addEventListener('tp:backtest-chart', () => {
   const entry = pages.find((p) => p.route === 'backtest');
@@ -60,7 +68,7 @@ window.addEventListener('tp:backtest-chart', () => {
 
 /**
  * Each page is built the first time it's opened (and its code downloaded then), so the platform starts
- * quickly instead of building all 14 pages at launch.
+ * quickly instead of building every page at launch.
  */
 interface PageEntry {
   route: string;
@@ -87,6 +95,7 @@ const pages: PageEntry[] = [
   { route: 'flow', label: 'Flow', icon: 'flow', title: 'Flow', create: async () => (await import('./pages/flowPage')).createFlowPage() },
   { route: 'research', label: 'Research', icon: 'research', title: 'Research', create: async () => (await import('./pages/researchPage')).createResearchPage() },
   { route: 'macro', label: 'Macro', icon: 'macro', title: 'Macro', create: async () => (await import('./pages/macroPage')).createMacroPage() },
+  { route: 'account', label: 'Account', icon: 'account', title: 'Account', create: async () => (await import('./pages/accountPage')).createAccountPage(openPortfolio) },
   { route: 'portfolio', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', create: async () => (await import('./pages/portfolioPage')).createPortfolioPage() },
   { route: 'clients', label: 'Clients', icon: 'clients', title: 'Clients & Reports', create: async () => (await import('./pages/clientsPage')).createClientsPage() },
   { route: 'backtest', label: 'Backtest', icon: 'backtest', title: 'Backtest', create: async () => (await import('./pages/backtestPage')).createBacktestPage() },

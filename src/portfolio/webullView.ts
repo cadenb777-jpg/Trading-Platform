@@ -122,19 +122,7 @@ export async function renderWebull(out: HTMLElement, onSynced: (p: Portfolio & {
           return sel;
         })()
       : h('span', { class: 'muted small' }, status.accounts[0]?.label ?? '');
-  const syncBtn = h('button', { class: 'btn', title: 'Save these holdings as a portfolio so analysis and Dividends work on them' }, 'Sync to Portfolios') as HTMLButtonElement;
-  syncBtn.addEventListener('click', async () => {
-    syncBtn.disabled = true;
-    try {
-      const r = await engineRequest<{ portfolio: Portfolio & { id: string }; skipped: number }>('webull.sync', { accountId }, 60000);
-      toast(`Saved "${r.portfolio.name}"${r.skipped ? ` (${r.skipped} non-stock position${r.skipped === 1 ? '' : 's'} left out)` : ''}`);
-      onSynced(r.portfolio);
-    } catch (err) {
-      toast(friendly(err));
-    } finally {
-      syncBtn.disabled = false;
-    }
-  });
+  const syncBtn = syncButton('Sync to Portfolios', () => accountId, onSynced);
   out.replaceChildren(
     h(
       'section',
@@ -195,6 +183,57 @@ export async function renderWebull(out: HTMLElement, onSynced: (p: Portfolio & {
     );
   }
   load();
+}
+
+/** Saves the Webull account's holdings as a portfolio (helper request webull.sync). */
+function syncButton(label: string, accountId: () => string, onSynced: (p: Portfolio & { id: string }) => void) {
+  const btn = h('button', { class: 'btn', title: 'Save these holdings as a portfolio so analysis and Dividends work on them' }, label) as HTMLButtonElement;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const r = await engineRequest<{ portfolio: Portfolio & { id: string }; skipped: number }>('webull.sync', { accountId: accountId() }, 60000);
+      toast(`Saved "${r.portfolio.name}"${r.skipped ? ` (${r.skipped} non-stock position${r.skipped === 1 ? '' : 's'} left out)` : ''}`);
+      onSynced(r.portfolio);
+    } catch (err) {
+      toast(friendly(err));
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  return btn;
+}
+
+/**
+ * A small read-only Webull card for the Account page: balances and buying power per account, "Sync now", and a link to
+ * the full Webull view (the only place with the order ticket). Draws nothing when Webull isn't set up.
+ */
+export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio & { id: string }) => void, openFull: () => void) {
+  let status: Status;
+  try {
+    status = await engineRequest<Status>('webull.status', {}, 30000);
+  } catch {
+    return out.replaceChildren(); // older helper or offline: the accounts list still works without it
+  }
+  if (!status.ok) return out.replaceChildren();
+  const cards = await Promise.all(
+    status.accounts.map(async (a) => {
+      const bal = await engineRequest<Balances>('webull.account', { accountId: a.id }, 30000).catch((err) => err as Error);
+      return h(
+        'div',
+        { class: 'acct-card' },
+        h('div', { class: 'acct-card-head' }, h('b', {}, `Webull ${a.label}`), envBadge(status.env)),
+        bal instanceof Error
+          ? h('div', { class: 'ap-error' }, friendly(bal))
+          : statCards([
+              { label: 'Account value', value: usd(bal.value) },
+              { label: 'Cash', value: usd(bal.cash) },
+              { label: 'Buying power', value: usd(bal.buyingPower), hint: 'What you can spend on new orders now' },
+            ]),
+        h('div', { class: 'ap-controls' }, syncButton('Sync now', () => a.id, onSynced), h('button', { class: 'btn', onclick: openFull }, 'Open Webull view')),
+      );
+    }),
+  );
+  out.replaceChildren(...cards);
 }
 
 function ordersTable(orders: Order[], refresh: () => void) {
