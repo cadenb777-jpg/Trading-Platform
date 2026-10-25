@@ -9,31 +9,13 @@ import { formatPrice, h, openModal } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
 import { sideRecord, type Setup, type StrategyInfo } from './setupsPanel';
 import { readTrade } from './tradeRead';
+import { readSize, saveSize } from '../trade/sizing';
 
 const pct = (v: number | null | undefined, d = 1) => fmtPct(v, d);
 const shortDate = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
-const SIZE_KEY = 'tp-guide-size';
 const usd = (v: number) => `$${formatPrice(v)}`;
 /** The exit rule without the entry sentence some strategies start it with. */
 const exitOnly = (rule: string) => rule.replace(/^Enter at the next [^.]*open\.\s*/, '');
-
-function readSize(): { account: number; risk: number } {
-  try {
-    const v = JSON.parse(localStorage.getItem(SIZE_KEY) || '');
-    if (v && v.account > 0 && v.risk > 0) return v;
-  } catch {
-    /* private window or nothing saved yet */
-  }
-  return { account: 10000, risk: 0.5 };
-}
-
-function saveSize(v: { account: number; risk: number }) {
-  try {
-    localStorage.setItem(SIZE_KEY, JSON.stringify(v));
-  } catch {
-    /* not essential */
-  }
-}
 
 /** The one-paragraph answer to "should I take it?" */
 function verdict(s: Setup): { tone: 'good' | 'ok' | 'wait' | 'no'; title: string; text: string } {
@@ -159,12 +141,13 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
               'button',
               {
                 class: 'btn small',
-                title: 'Pre-fills the Webull order ticket with this symbol, side, entry price and size. You still preview and confirm.',
+                title: 'Opens the Trade page with this symbol, side, entry price and size filled in. You still preview and confirm.',
                 onclick: async () =>
-                  (await import('../portfolio/webullView')).openOrderTicket({
+                  (await import('../trade/webull')).openOrderTicket({
                     symbol: s.symbol,
                     side: 'BUY',
                     qty: sizedShares || undefined,
+                    guideStop: +p.stop.toFixed(2),
                     ...(p.entryType === 'stop' ? { orderType: 'STOP' as const, stopPrice: +p.trigger.toFixed(2) } : { orderType: 'LIMIT' as const, limitPrice: +s.price.toFixed(2) }),
                   }),
               },
