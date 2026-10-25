@@ -177,19 +177,31 @@ export interface Analysis {
   monteCarlo: { years: number; percentiles: Record<'5' | '25' | '50' | '75' | '95', number[]>; lossChance: number } | null;
 }
 
+export interface WalkForwardRow {
+  key: 'current' | 'equal' | 'min_var' | 'risk_parity' | 'growth';
+  return: number;
+  volatility: number;
+  maxDrawdown: number;
+  sharpe: number | null;
+  /** Share of the portfolio traded per year. */
+  turnover: number;
+}
+
 export interface Optimisation {
-  method: string;
+  method: 'risk_parity' | 'min_var' | 'growth' | 'black_litterman';
   start: string;
+  end: string;
   riskFree: number;
   symbols: string[];
+  /** Symbols that stand in for cash (e.g. BIL). */
+  cash: string[];
+  keepCash: boolean;
   weights: number[];
   current: number[];
-  expectedReturns: number[];
-  volatilities: number[];
-  result: { return: number; volatility: number; sharpe: number | null };
-  currentResult: { return: number; volatility: number; sharpe: number | null };
-  frontier: { return: number; volatility: number }[];
-  converged: boolean;
+  volatility: { current: number; suggested: number };
+  walkForward: { windowYears: number; days: number; rows: WalkForwardRow[] } | null;
+  /** How often shuffled histories gave the method at least its real out-of-sample Sharpe edge over the current portfolio. */
+  randomWalk: { method: string; runs: number; edge: number; p: number } | null;
 }
 
 export const PERIOD_LABELS: [PeriodKey, string][] = [
@@ -298,7 +310,22 @@ export function holdingsPayload(p: Portfolio, prices: Record<string, number | nu
     const sym = analysisSymbol(r.holding);
     if (sym) merged.set(sym, (merged.get(sym) ?? 0) + r.weight * 100);
   }
-  return [...merged.entries()].map(([symbol, weight]) => ({ symbol, weight: +weight.toFixed(4) }));
+  const cash = cashSymbols(p);
+  return [...merged.entries()].map(([symbol, weight]) => ({ symbol, weight: +weight.toFixed(4), ...(cash.has(symbol) ? { cash: true } : {}) }));
+}
+
+/** Stand-in tickers that only carry cash (a stand-in also held as a real security isn't counted). */
+function cashSymbols(p: Portfolio): Set<string> {
+  const real = new Set(p.holdings.filter((h) => !isCashOrAlt(h)).map((h) => h.symbol.trim().toUpperCase()));
+  return new Set(p.holdings.filter((h) => h.kind === 'cash').map(analysisSymbol).filter((s) => !real.has(s)));
+}
+
+/** How to show an analysis ticker: cash as "Cash" (not its stand-in, e.g. BIL), alternatives by name. */
+export function holdingLabel(p: Portfolio, symbol: string): { label: string; note?: string } {
+  if (cashSymbols(p).has(symbol)) return { label: 'Cash', note: symbol === 'BIL' ? 'modelled as T-bills (BIL)' : `modelled as ${symbol}` };
+  const alts = p.holdings.filter((h) => h.kind === 'alt' && analysisSymbol(h) === symbol);
+  if (alts.length && !p.holdings.some((h) => !isCashOrAlt(h) && h.symbol.trim().toUpperCase() === symbol)) return { label: alts.map((h) => h.name || h.symbol).join(' + '), note: `modelled as ${symbol}` };
+  return { label: symbol };
 }
 
 /** Plain-language list of stand-ins used, for notes under results and in reports. */

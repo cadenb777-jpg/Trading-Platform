@@ -11,6 +11,7 @@ import {
   PERIOD_LABELS,
   TEMPLATES,
   analysisSymbol,
+  holdingLabel,
   holdingsPayload,
   isCashOrAlt,
   isMine,
@@ -25,7 +26,8 @@ import {
   type Portfolio,
   type Rebalance,
 } from '../portfolio/types';
-import { createLineChart, dataTable, money, pageFrame, pct, pctU, scatterChart, statCards } from '../ui/charts';
+import { createLineChart, dataTable, money, pageFrame, pct, pctU, statCards } from '../ui/charts';
+import { infoTip } from '../ui/glossary';
 import { h, openModal, toast } from '../ui/dom';
 
 const STRATEGY_CLASS: Record<Strategy, AssetClass> = {
@@ -39,6 +41,8 @@ const STRATEGY_CLASS: Record<Strategy, AssetClass> = {
 const blank = (): Portfolio => ({ name: 'New portfolio', benchmark: 'SPY', rebalance: 'quarterly', mode: 'weight', holdings: [{ symbol: '', weight: 100, assetClass: 'US stocks', kind: 'security' }] });
 const ratio = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(2));
 const tone = (v: number | null | undefined) => (v == null ? '' : v >= 0 ? 'up' : 'down');
+const METHOD_NAMES = { current: 'Your current mix', equal: 'Equal weight', risk_parity: 'Balanced risk', min_var: 'Lower risk', growth: 'Growth (robust)', black_litterman: 'My views' } as const;
+const METHOD_TERMS = { risk_parity: 'optRiskParity', min_var: 'optMinVar', growth: 'optGrowth', black_litterman: 'optViews' } as const;
 
 export function createPortfolioPage() {
   let saved: (Portfolio & { id: string })[] = [];
@@ -517,7 +521,7 @@ export function createPortfolioPage() {
           h('div', { class: 'panel-head' }, h('h3', {}, 'Holdings')),
           dataTable(
             ['Symbol', 'Weight', 'Share of risk', 'CAGR', 'Volatility'],
-            a.assets.map((x) => [h('b', {}, x.symbol), pctU(x.weight, 1), { v: pctU(x.riskContribution, 1), cls: x.riskContribution > x.weight * 1.3 ? 'down' : '' }, { v: pct(x.cagr, 1), cls: tone(x.cagr) }, pctU(x.volatility, 1)]),
+            a.assets.map((x) => [holdingCell(x.symbol), pctU(x.weight, 1), { v: pctU(x.riskContribution, 1), cls: x.riskContribution > x.weight * 1.3 ? 'down' : '' }, { v: pct(x.cagr, 1), cls: tone(x.cagr) }, pctU(x.volatility, 1)]),
           ),
           a.symbols.length > 1
             ? h(
@@ -525,8 +529,8 @@ export function createPortfolioPage() {
                 {},
                 h('h4', {}, 'Correlation'),
                 dataTable(
-                  ['', ...a.symbols],
-                  a.correlation.map((row, i) => [h('b', {}, a.symbols[i]), ...row.map((c) => ({ v: h('span', { style: `color:${c > 0.7 ? 'var(--down)' : c < 0.3 ? 'var(--up)' : 'inherit'}` }, c.toFixed(2)), cls: 'corr-cell' }))]),
+                  ['', ...a.symbols.map((x) => holdingLabel(current, x).label)],
+                  a.correlation.map((row, i) => [h('b', {}, holdingLabel(current, a.symbols[i]).label), ...row.map((c) => ({ v: h('span', { style: `color:${c > 0.7 ? 'var(--down)' : c < 0.3 ? 'var(--up)' : 'inherit'}` }, c.toFixed(2)), cls: 'corr-cell' }))]),
                   undefined,
                   false,
                 ),
@@ -570,22 +574,32 @@ export function createPortfolioPage() {
     }
   }
 
+  /** A holding's name for result tables: cash shows as "Cash" with a note about its stand-in, never as BIL. */
+  function holdingCell(symbol: string) {
+    const l = holdingLabel(current, symbol);
+    return h('span', {}, h('b', {}, l.label), l.note ? h('span', { class: 'muted small' }, ` ${l.note}`) : null);
+  }
+
   function optimiserForm(out: HTMLElement) {
     const method = h(
       'select',
       { class: 'input', 'aria-label': 'Method' },
-      h('option', { value: 'max_sharpe' }, 'Best return for the risk (max Sharpe)'),
-      h('option', { value: 'min_var' }, 'Lowest risk (minimum variance)'),
-      h('option', { value: 'risk_parity' }, 'Equal risk from each holding (risk parity)'),
-      h('option', { value: 'black_litterman' }, 'My views (Black-Litterman)'),
-    );
-    const minW = h('input', { class: 'input', type: 'number', value: 0, step: 1, 'aria-label': 'Minimum weight %' });
-    const maxW = h('input', { class: 'input', type: 'number', value: 60, step: 1, 'aria-label': 'Maximum weight %' });
-    const years = h('select', { class: 'input', 'aria-label': 'History' }, ...[5, 10, 20].map((y) => h('option', { value: y, selected: y === 10 }, `${y} years of history`)));
-    const views = h('input', { class: 'input', placeholder: 'e.g. GLD 8% 60%, VTI 6% 50%', 'aria-label': 'Views', hidden: true, style: 'min-width:320px' });
-    method.addEventListener('change', () => (views.hidden = method.value !== 'black_litterman'));
+      ...(Object.keys(METHOD_TERMS) as (keyof typeof METHOD_TERMS)[]).map((k) => h('option', { value: k }, METHOD_NAMES[k])),
+    ) as HTMLSelectElement;
+    const tip = h('span', {}, infoTip(METHOD_TERMS.risk_parity));
+    const maxW = h('input', { class: 'input', type: 'number', value: 25, min: 1, max: 100, step: 1, 'aria-label': 'Max per holding %' }) as HTMLInputElement;
+    const maxChange = h('input', { class: 'input', type: 'number', value: 20, min: 1, max: 100, step: 1, 'aria-label': 'Max change per holding %' }) as HTMLInputElement;
+    const keepCash = h('input', { type: 'checkbox', checked: true }) as HTMLInputElement;
+    const keepAll = h('input', { type: 'checkbox' }) as HTMLInputElement;
+    const hasCash = current.holdings.some((x) => x.kind === 'cash');
+    const years = h('select', { class: 'input', 'aria-label': 'History' }, ...[5, 10].map((y) => h('option', { value: y, selected: y === 10 }, `${y} years of history`))) as HTMLSelectElement;
+    const views = h('input', { class: 'input', placeholder: 'e.g. GLD 8% 60%, VTI 6% 50%', 'aria-label': 'Views', hidden: true }) as HTMLInputElement;
+    method.addEventListener('change', () => {
+      views.hidden = method.value !== 'black_litterman';
+      tip.replaceChildren(infoTip(METHOD_TERMS[method.value as keyof typeof METHOD_TERMS]));
+    });
     async function run() {
-      out.replaceChildren(h('div', { class: 'muted pad' }, 'Optimising…'));
+      out.replaceChildren(h('div', { class: 'muted pad' }, 'Optimising and testing every method on data it hadn’t seen (about 20 seconds)…'));
       const parsedViews = views.value
         .split(',')
         .map((v) => v.trim().match(/^([A-Za-z.$^-]+)\s+(-?[\d.]+)%?(?:\s+([\d.]+)%?)?$/))
@@ -594,8 +608,17 @@ export function createPortfolioPage() {
       try {
         const r = await engineRequest<Optimisation>(
           'portfolio.optimize',
-          { holdings: holdingsPayload(current, priceMap(prices)), method: method.value, minWeight: (parseFloat(minW.value) || 0) / 100, maxWeight: (parseFloat(maxW.value) || 100) / 100, years: Number(years.value), views: parsedViews },
-          120000,
+          {
+            holdings: holdingsPayload(current, priceMap(prices)),
+            method: method.value,
+            maxWeight: (parseFloat(maxW.value) || 25) / 100,
+            maxChange: parseFloat(maxChange.value) > 0 ? parseFloat(maxChange.value) / 100 : null,
+            keepCash: keepCash.checked,
+            keepAll: keepAll.checked,
+            years: Number(years.value),
+            views: parsedViews,
+          },
+          180000,
         );
         renderOptimisation(out, r);
       } catch (err) {
@@ -608,46 +631,62 @@ export function createPortfolioPage() {
       h(
         'div',
         { class: 'ap-controls' },
-        method,
-        h('label', { class: 'field-input compact' }, h('span', { class: 'muted small' }, 'Min %'), minW),
-        h('label', { class: 'field-input compact' }, h('span', { class: 'muted small' }, 'Max %'), maxW),
+        h('span', { class: 'opt-method' }, method, tip),
+        h('label', { class: 'field-input compact' }, h('span', { class: 'muted small' }, 'Max per holding %'), maxW),
+        h('label', { class: 'field-input compact' }, h('span', { class: 'muted small' }, 'Max change %'), maxChange),
         years,
-        views,
         h('button', { class: 'btn primary', onclick: run }, 'Optimise'),
       ),
-      h('p', { class: 'ap-note' }, 'Views format: symbol, expected yearly return, confidence. Past returns don’t predict future ones, so optimised weights can be unstable. Treat them as a starting point.'),
+      h(
+        'div',
+        { class: 'ap-controls' },
+        hasCash ? h('label', { class: 'opt-check', title: 'Only the invested part is reallocated' }, keepCash, ' Keep cash as is') : null,
+        h('label', { class: 'opt-check' }, keepAll, ' Keep every holding (at least 1%)'),
+        views,
+      ),
+      h('p', { class: 'ap-note' }, 'Only your own holdings are used. Max change limits how far each weight moves from today, so suggestions don’t churn. Views format: symbol, expected yearly return, confidence.'),
     );
   }
 
+  function verdict(r: Optimisation): string {
+    const wf = r.walkForward;
+    const key = r.method === 'black_litterman' ? 'growth' : r.method;
+    const name = METHOD_NAMES[key];
+    if (!wf) return 'There isn’t enough shared history (about 1.5 years) for the walk-forward test, so there is no proof these weights would have done better. Treat them as a starting point.';
+    const m = wf.rows.find((x) => x.key === key)!;
+    const c = wf.rows.find((x) => x.key === 'current')!;
+    const edge = (m.sharpe ?? 0) - (c.sharpe ?? 0);
+    if (edge <= 0) return `On data it hadn’t seen, ${name} did not beat your current mix (Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)}). Keeping what you have is a reasonable choice.`;
+    const base = `On data it hadn’t seen, ${name} beat your current mix: Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)}, ${pct(m.return, 1)} vs ${pct(c.return, 1)} a year, worst drop ${pct(m.maxDrawdown, 0)} vs ${pct(c.maxDrawdown, 0)}.`;
+    const rw = r.randomWalk;
+    if (!rw || !rw.runs) return base;
+    return rw.p <= 0.1
+      ? `${base} Shuffled histories rarely gave an edge this big (p = ${rw.p.toFixed(2)}), so the method found something real in the order of events.`
+      : `${base} Shuffled histories gave an edge this big ${Math.round(rw.p * 100)} times in 100, so it doesn’t come from reading the past: it comes from how these holdings move together (spreading risk). Past results still don’t guarantee future ones.`;
+  }
+
   function renderOptimisation(out: HTMLElement, r: Optimisation) {
+    const wf = r.walkForward;
+    const key = r.method === 'black_litterman' ? 'growth' : r.method;
     out.replaceChildren(
-      statCards([
-        { label: 'Expected return', value: pct(r.result.return, 1), hint: `Current ${pct(r.currentResult.return, 1)}` },
-        { label: 'Expected volatility', value: pctU(r.result.volatility, 1), hint: `Current ${pctU(r.currentResult.volatility, 1)}` },
-        { label: 'Sharpe ratio', value: ratio(r.result.sharpe), hint: `Current ${ratio(r.currentResult.sharpe)}` },
-      ]),
+      h('p', { class: 'opt-verdict' }, verdict(r)),
       h(
         'div',
-        { class: 'two-col' },
-        scatterChart(
-          [
-            { name: 'Efficient frontier', color: '#2962ff', line: true, points: r.frontier.map((f) => ({ x: f.volatility, y: f.return })) },
-            { name: 'Holdings', color: '#9598a1', size: 4, points: r.symbols.map((s, i) => ({ x: r.volatilities[i], y: r.expectedReturns[i], label: s })) },
-            { name: 'Current', color: '#ff9800', size: 6, points: [{ x: r.currentResult.volatility, y: r.currentResult.return, label: 'Current' }] },
-            { name: 'Optimised', color: '#26a69a', size: 7, points: [{ x: r.result.volatility, y: r.result.return, label: 'Optimised' }] },
-          ],
-          { x: 'Risk (volatility)', y: 'Expected return' },
-        ),
+        { class: 'opt-results' },
         h(
           'div',
           {},
+          h('h4', {}, 'Suggested weights'),
           dataTable(
-            ['Symbol', 'Current', 'Optimised', 'Change'],
-            r.symbols.map((s, i) => [h('b', {}, s), pctU(r.current[i], 1), pctU(r.weights[i], 1), { v: pct(r.weights[i] - r.current[i], 1), cls: tone(r.weights[i] - r.current[i]) }]),
+            ['Holding', 'Current', 'Suggested', 'Change'],
+            r.symbols.map((s, i) => [holdingCell(s), pctU(r.current[i], 1), pctU(r.weights[i], 1), { v: pct(r.weights[i] - r.current[i], 1), cls: tone(r.weights[i] - r.current[i]) }]),
+            undefined,
+            false,
           ),
+          h('p', { class: 'ap-note' }, `Expected volatility ${pctU(r.volatility.suggested, 1)} (now ${pctU(r.volatility.current, 1)}).${r.keepCash ? ' Cash is kept as is; only the invested part moves.' : ''} History ${r.start} to ${r.end}.`),
           h(
             'div',
-            { class: 'ap-controls', style: 'margin-top:10px' },
+            { class: 'ap-controls' },
             h(
               'button',
               {
@@ -665,8 +704,32 @@ export function createPortfolioPage() {
               },
               'Use these weights',
             ),
-            r.converged ? null : h('span', { class: 'muted small' }, 'The optimiser didn’t fully converge; results are approximate.'),
           ),
+        ),
+        h(
+          'div',
+          {},
+          h('h4', {}, 'How each method did on data it hadn’t seen ', infoTip('walkForward')),
+          wf
+            ? dataTable(
+                ['Method', 'Return/yr', 'Volatility', 'Worst drop', 'Sharpe', 'Traded/yr'],
+                wf.rows.map((x) => [x.key === key ? h('b', {}, METHOD_NAMES[x.key]) : METHOD_NAMES[x.key], { v: pct(x.return, 1), cls: tone(x.return) }, pctU(x.volatility, 1), { v: pct(x.maxDrawdown, 0), cls: 'down' }, ratio(x.sharpe), pctU(x.turnover, 0)]),
+                (i) => (wf.rows[i].key === key ? 'opt-chosen' : ''),
+                false,
+              )
+            : h('p', { class: 'muted small' }, 'Not enough history for this test.'),
+          wf ? h('p', { class: 'ap-note' }, `Refit on the previous ${wf.windowYears.toFixed(0)} year${wf.windowYears >= 2 ? 's' : ''}, held each quarter, over ${(wf.days / 252).toFixed(1)} years. Dividends included.`) : null,
+          r.randomWalk
+            ? h(
+                'p',
+                { class: 'ap-note' },
+                h('b', {}, 'Random-walk check '),
+                infoTip('randomWalk'),
+                r.randomWalk.runs
+                  ? ` In ${Math.round(r.randomWalk.p * (r.randomWalk.runs + 1)) - 1} of ${r.randomWalk.runs} shuffled histories ${METHOD_NAMES[r.randomWalk.method as keyof typeof METHOD_NAMES] ?? r.randomWalk.method} beat your mix by at least as much (p = ${r.randomWalk.p.toFixed(2)}).`
+                  : ' Not needed: there was no edge over your mix to explain.',
+              )
+            : null,
         ),
       ),
     );

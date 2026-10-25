@@ -6015,3 +6015,10 @@ a.btn {
   .tr-updated { display: none; }
 }
 .tr-stale { border: 1px solid var(--warn-border); background: var(--warn-soft); color: var(--warn-text); border-radius: var(--radius); padding: 8px 10px; }
+
+/* Portfolio optimiser */
+.opt-method { display: inline-flex; align-items: center; gap: 6px; }
+.opt-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
+.opt-verdict { margin: 0 0 12px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--panel-2); border-radius: 4px; line-height: 1.45; }
+.data-table tr.opt-chosen td { background: var(--accent-soft); }
+.opt-results { display: grid; gap: 16px; }

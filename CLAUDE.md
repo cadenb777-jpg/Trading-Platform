@@ -63,6 +63,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Total return (v28, dividends.total_return_stats/total_returns: dividends reinvested on the ex-date, 3y/5y annualised, None when
   history is short, cached per symbol per day): per holding + value-weighted 1y in dividends.portfolio (Account card and column),
   invest.board tr1y for dividend payers, research.company totalReturn; glossary term `totalreturn`.
+  Optimizer (v29, quant.optimize/run_optimizer): Ledoit-Wolf covariance; Balanced risk (risk parity, default), Lower risk
+  (min variance), Growth (resampled max-Sharpe, returns 70% equal-weight equilibrium + 30% history), My views (BL);
+  max per holding, max change, keep cash (payload `cash: true`, held fixed); walk-forward (3y fit, quarterly hold) table and
+  random-walk check (100 block-shuffled histories). Only the owner's own symbols; cash shows as "Cash" (holdingLabel), not BIL.
   Account page (src/pages/accountPage.ts, #account): portfolios with Portfolio.mine (set by Import statement; unset = live
   Webull sync) merged by src/portfolio/account.ts, figures from dividends.portfolio + dividendsView; read-only (orders only in Webull view).
   Portfolios: Holding.kind security/cash/alt, Portfolio.mode weight/shares/dollars; positions()/holdingsPayload()

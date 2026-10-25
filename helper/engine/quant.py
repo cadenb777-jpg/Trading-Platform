@@ -404,39 +404,89 @@ async def analyze(ctx, msg):
 
 
 # ---------- Optimisation ----------
+# Robust methods only (no raw historical means): shrunk covariance, risk-based weights and a resampled max-Sharpe on
+# returns pulled toward the market equilibrium. Each method is judged by a walk-forward test on data it hadn't seen,
+# and the chosen method's edge over the current portfolio by the same test on shuffled histories (random walk).
 
-def _portfolio_perf(w, mu, cov):
-    ret = float(w @ mu)
-    vol = float(np.sqrt(max(w @ cov @ w, 0)))
-    return ret, vol
+METHODS = ('risk_parity', 'min_var', 'growth', 'black_litterman')
+WINDOW, STEP, BLOCK = 3 * TRADING_DAYS, 63, 21  # fit on 3 years, hold a quarter, 1-month blocks when resampling
+HIST_SHARE = 0.3  # expected returns = 70% equilibrium (Black-Litterman prior) + 30% history
+RESAMPLES, WF_RESAMPLES, RW_RESAMPLES, RW_RUNS = 200, 10, 3, 100
 
 
-def optimise(mu, cov, rf, method, lo=0.0, hi=1.0, target=None):
-    n = len(mu)
-    x0 = np.full(n, 1 / n)
-    bounds = [(lo, hi)] * n
-    cons = [{'type': 'eq', 'fun': lambda w: w.sum() - 1}]
-    if method == 'min_var':
-        fun = lambda w: w @ cov @ w
-    elif method == 'risk_parity':
-        def fun(w):
-            port_var = w @ cov @ w
-            rc = w * (cov @ w) / port_var
-            return float(((rc - 1 / n) ** 2).sum())
-    elif method == 'target':
-        cons.append({'type': 'eq', 'fun': lambda w: w @ mu - target})
-        fun = lambda w: w @ cov @ w
-    else:  # max Sharpe
-        def fun(w):
-            ret, vol = _portfolio_perf(w, mu, cov)
-            return -(ret - rf) / vol if vol else 0
-    res = minimize(fun, x0, method='SLSQP', bounds=bounds, constraints=cons, options={'maxiter': 500, 'ftol': 1e-10})
-    w = np.clip(res.x, 0 if lo >= 0 else lo, hi)
-    return w / w.sum(), bool(res.success)
+def ledoit_wolf(returns):
+    """Ledoit & Wolf (2004): the sample covariance shrunk toward a scaled identity. Returns (cov, shrinkage 0-1)."""
+    x = returns - returns.mean(axis=0)
+    t, n = x.shape
+    s = x.T @ x / t
+    target = np.trace(s) / n * np.eye(n)
+    d2 = ((s - target) ** 2).sum()
+    # sum over days of ||x x' - S||^2 = sum (x.x)^2 - t ||S||^2
+    b2 = (((x ** 2).sum(axis=1) ** 2).sum() / t - (s ** 2).sum()) / t
+    delta = min(max(b2, 0.0), d2) / d2 if d2 > 0 else 1.0
+    return delta * target + (1 - delta) * s, float(delta)
+
+
+def _block_sample(t, rng, block=BLOCK):
+    """Day indices for a block bootstrap: random 1-month stretches (with replacement) glued to length t."""
+    block = min(block, t)
+    starts = rng.integers(0, t - block + 1, -(-t // block))
+    return (starts[:, None] + np.arange(block)).ravel()[:t]
+
+
+def _block_shuffle(t, rng, block=BLOCK):
+    """Day indices with 1-month blocks put in random order (every day used once): a history with no real order."""
+    starts = np.arange(0, t, block)
+    rng.shuffle(starts)
+    return np.concatenate([np.arange(s, min(s + block, t)) for s in starts])
+
+
+def _solve(fun, bounds, x0, jac=True):
+    lo, hi = np.array(bounds).T
+    cons = [{'type': 'eq', 'fun': lambda w: w.sum() - 1, 'jac': lambda w: np.ones_like(w)}]
+    res = minimize(fun, np.clip(x0, lo, hi), jac=jac, method='SLSQP', bounds=bounds, constraints=cons, options={'maxiter': 300, 'ftol': 1e-12})
+    w = np.clip(res.x, lo, hi)
+    return w / w.sum()
+
+
+def min_variance(cov, bounds):
+    return _solve(lambda w: (w @ cov @ w, 2 * cov @ w), bounds, np.full(len(cov), 1 / len(cov)))
+
+
+def _into_bounds(w, bounds):
+    """Clip to the limits and spread what's left over the holdings not at a limit (keeps the shape, sums to 1)."""
+    lo, hi = np.array(bounds).T
+    for _ in range(len(w) + 1):
+        w = np.clip(w, lo, hi)
+        free = (w > lo) & (w < hi)
+        gap = 1 - w.sum()
+        if abs(gap) < 1e-12 or not free.any():
+            break
+        w[free] += gap * w[free] / w[free].sum()
+    return w
+
+
+def risk_parity(cov, bounds):
+    """Equal risk contribution (Spinu's convex form), then fitted into the limits."""
+    n = len(cov)
+    res = minimize(lambda y: (0.5 * y @ cov @ y - np.log(y).sum() / n, cov @ y - 1 / (n * y)), 1 / np.sqrt(np.diag(cov)),
+                   jac=True, method='L-BFGS-B', bounds=[(1e-12, None)] * n)
+    return _into_bounds(res.x / res.x.sum(), bounds)
+
+
+def max_sharpe(excess, cov, bounds):
+    if excess.max() <= 0:
+        return min_variance(cov, bounds)
+
+    def fun(w):
+        a, sd = w @ excess, np.sqrt(w @ cov @ w)
+        return -a / sd, -(excess / sd - a * (cov @ w) / sd ** 3)
+
+    return _solve(fun, bounds, np.full(len(cov), 1 / len(cov)))
 
 
 def black_litterman(cov, prior_weights, views, symbols, delta=2.5, tau=0.05):
-    """Blends the market's implied returns with your views ({symbol, return, confidence 0–1})."""
+    """Blends the market's implied (equilibrium) excess returns with your views ({symbol, return, confidence 0–1})."""
     pi = delta * cov @ prior_weights
     views = [v for v in views if str(v.get('symbol', '')).upper() in symbols]
     if not views:
@@ -454,48 +504,157 @@ def black_litterman(cov, prior_weights, views, symbols, delta=2.5, tau=0.05):
     return middle @ (inv(tau * cov) @ pi + P.T @ inv(omega) @ Q)
 
 
+def expected_excess(r, cov, rf, views=(), symbols=()):
+    """Yearly excess returns: the equal-weight equilibrium (plus any views), nudged 30% toward history."""
+    pi = black_litterman(cov, np.full(len(cov), 1 / len(cov)), list(views), list(symbols))
+    return (1 - HIST_SHARE) * pi + HIST_SHARE * (r.mean(axis=0) * TRADING_DAYS - rf)
+
+
+def _bounds(n, lo, hi, cur=None, max_change=None):
+    lo, hi = min(lo, 1 / n), max(hi, 1 / n)  # impossible limits are loosened just enough
+    lo_b, hi_b = np.full(n, lo), np.full(n, min(hi, 1.0))
+    if cur is not None and max_change is not None:
+        lo_b, hi_b = np.maximum(lo_b, cur - max_change), np.minimum(hi_b, cur + max_change)
+        hi_b = np.maximum(hi_b, lo_b)
+        if lo_b.sum() > 1 or hi_b.sum() < 1:
+            return _bounds(n, lo, hi)
+    return list(zip(lo_b, hi_b))
+
+
+def fit(r, method, o, rng):
+    """Weights from a window of daily returns r (days x assets) and nothing later.
+
+    o: rf, lo, hi, fixed {index: weight} (cash held as is), cur + maxChange (limit each move), views, symbols, runs."""
+    n = r.shape[1]
+    fixed = o.get('fixed') or {}
+    w = np.zeros(n)
+    for j, v in fixed.items():
+        w[j] = v
+    inv = [j for j in range(n) if j not in fixed]
+    s = 1 - sum(fixed.values())
+    if not inv or s <= 1e-9:
+        return w
+    if len(inv) == 1:
+        w[inv] = s
+        return w
+    if method == 'equal':
+        w[inv] = s / len(inv)
+        return w
+    cur, mc = o.get('cur'), o.get('maxChange')
+    bounds = _bounds(len(inv), o['lo'] / s, o['hi'] / s, None if cur is None else cur[inv] / s, None if mc is None else mc / s)
+    sub = r[:, inv]
+    cov = ledoit_wolf(sub)[0] * TRADING_DAYS
+    if method == 'min_var':
+        w[inv] = s * min_variance(cov, bounds)
+    elif method == 'risk_parity':
+        w[inv] = s * risk_parity(cov, bounds)
+    else:  # growth / views: resampled max-Sharpe (Michaud) on equilibrium-shrunk returns
+        syms = [o['symbols'][j] for j in inv] if o.get('symbols') else []
+        views = o.get('views') or []
+        runs = []
+        for _ in range(o.get('runs', RESAMPLES)):
+            b = sub[_block_sample(len(sub), rng)]
+            cb = ledoit_wolf(b)[0] * TRADING_DAYS
+            runs.append(max_sharpe(expected_excess(b, cb, o['rf'], views, syms), cb, bounds))
+        w[inv] = s * np.mean(runs, axis=0)
+    return w
+
+
+def walk_forward(returns, weigh, window=WINDOW, step=STEP):
+    """Refit on the last `window` days, hold the next `step` days (weights drift), move on.
+
+    weigh(past) only ever sees days before its holding period. Returns (out-of-sample daily returns, weights, yearly turnover)."""
+    t = len(returns)
+    out, ws, turnover, held = [], [], 0.0, None
+    for s in range(window, t, step):
+        w = weigh(returns[s - window:s])
+        if held is not None:
+            turnover += np.abs(w - held).sum() / 2
+        seg = np.cumprod(1 + returns[s:s + step], axis=0)
+        value = seg @ w
+        out.append(value / np.concatenate([[1.0], value[:-1]]) - 1)
+        held = seg[-1] * w / value[-1]
+        ws.append(w)
+    port = np.concatenate(out)
+    return port, ws, turnover / (len(port) / TRADING_DAYS)
+
+
+def oos_stats(port, rf):
+    growth = np.concatenate([[1.0], np.cumprod(1 + port)])
+    cagr = growth[-1] ** (TRADING_DAYS / len(port)) - 1
+    vol = float(port.std() * np.sqrt(TRADING_DAYS))
+    return {'return': float(cagr), 'volatility': vol, 'maxDrawdown': float((growth / np.maximum.accumulate(growth) - 1).min()), 'sharpe': (cagr - rf) / vol if vol else None}
+
+
+def _window(t):
+    if t >= WINDOW + 4 * STEP:
+        return WINDOW
+    return TRADING_DAYS if t >= TRADING_DAYS + 2 * STEP else None
+
+
+def run_optimizer(returns, current, method, o, seed=7):
+    """Suggested weights, the walk-forward table and the random-walk check. Pure: arrays in, plain dict out."""
+    rng = np.random.default_rng(seed)
+    test_method = 'growth' if method == 'black_litterman' else method
+    weights = fit(returns, method, {**o, 'cur': current}, rng)
+    cov = ledoit_wolf(returns)[0] * TRADING_DAYS
+    out = {'weights': weights, 'volatility': {'current': float(np.sqrt(current @ cov @ current)), 'suggested': float(np.sqrt(weights @ cov @ weights))}, 'walkForward': None, 'randomWalk': None}
+    window = _window(len(returns))
+    if not window:
+        return out
+    wf = {**o, 'runs': WF_RESAMPLES, 'views': []}
+    keys = ['current', 'equal', 'min_var', 'risk_parity', 'growth']
+    weighers = {k: (lambda past: current) if k == 'current' else (lambda past, k=k: fit(past, k, wf, rng)) for k in keys}
+    rows, ports = [], {}
+    for k in keys:
+        port, _, turnover = walk_forward(returns, weighers[k], window)
+        ports[k] = port
+        rows.append({'key': k, **oos_stats(port, o['rf']), 'turnover': turnover})
+    n_days = len(ports['current'])
+    out['walkForward'] = {'windowYears': window / TRADING_DAYS, 'days': n_days, 'rows': rows}
+    by = {r['key']: r for r in rows}
+    edge = (by[test_method]['sharpe'] or 0) - (by['current']['sharpe'] or 0)
+    if edge <= 0:  # no edge to explain: skip the shuffles
+        out['randomWalk'] = {'method': test_method, 'runs': 0, 'edge': float(edge), 'p': 1.0}
+        return out
+    rw = {**wf, 'runs': RW_RESAMPLES}
+    beats = 0
+    for _ in range(RW_RUNS):
+        shuffled = returns[_block_shuffle(len(returns), rng)]
+        a = oos_stats(walk_forward(shuffled, lambda past: fit(past, test_method, rw, rng), window)[0], o['rf'])['sharpe'] or 0
+        b = oos_stats(walk_forward(shuffled, lambda past: current, window)[0], o['rf'])['sharpe'] or 0
+        beats += (a - b) >= edge
+    out['randomWalk'] = {'method': test_method, 'runs': RW_RUNS, 'edge': float(edge), 'p': float((beats + 1) / (RW_RUNS + 1))}
+    return out
+
+
 @handler('portfolio.optimize')
 async def optimize(ctx, msg):
     symbols, current = _clean_holdings(msg)
     if len(symbols) < 2:
         raise EngineError('Optimisation needs at least two holdings.')
-    method = msg.get('method', 'max_sharpe')
+    method = msg.get('method') if msg.get('method') in METHODS else 'risk_parity'
     years = int(msg.get('years') or 10)
-    lo, hi = float(msg.get('minWeight', 0)), float(msg.get('maxWeight', 1))
-    if lo * len(symbols) > 1 or hi * len(symbols) < 1:
-        raise EngineError('Those weight limits are impossible for this many holdings.')
+    cash = {str(h['symbol']).upper().strip() for h in msg.get('holdings') or [] if h.get('cash')}
+    keep_cash = msg.get('keepCash', True)
+    fixed = {j: float(current[j]) for j, s in enumerate(symbols) if s in cash} if keep_cash else {}
     (dates, prices, _), rf = await asyncio.gather(price_matrix(ctx, symbols, years), risk_free(ctx))
     returns = prices[1:] / prices[:-1] - 1
-    cov = np.cov(returns.T) * TRADING_DAYS
-    historical = (np.prod(1 + returns, axis=0) ** (TRADING_DAYS / len(returns))) - 1
-    if method == 'black_litterman':
-        mu = black_litterman(cov, current, msg.get('views') or [], symbols)
-    else:
-        mu = historical
-    weights, ok = optimise(mu, cov, rf, 'max_sharpe' if method == 'black_litterman' else method, lo, hi)
-    frontier = []
-    min_w, _ = optimise(mu, cov, rf, 'min_var', lo, hi)
-    r_min = float(min_w @ mu)
-    r_max = float(max(mu.max(), r_min))
-    for t in np.linspace(r_min, r_max, 18):
-        w, success = optimise(mu, cov, rf, 'target', lo, hi, t)
-        if success:
-            ret, vol = _portfolio_perf(w, mu, cov)
-            frontier.append({'return': ret, 'volatility': vol})
-    ret, vol = _portfolio_perf(weights, mu, cov)
-    cur_ret, cur_vol = _portfolio_perf(current, mu, cov)
+    views = [{**v, 'return': float(v['return']) - rf} for v in msg.get('views') or [] if 'return' in v]
+    o = {'rf': rf, 'lo': 0.01 if msg.get('keepAll') else 0.0, 'hi': float(msg.get('maxWeight') or 0.25), 'fixed': fixed,
+         'maxChange': float(msg['maxChange']) if msg.get('maxChange') else None, 'views': views if method == 'black_litterman' else [], 'symbols': symbols}
+    r = await asyncio.to_thread(run_optimizer, returns, current, method, o)
     return {
         'method': method,
         'start': dates[0].isoformat(),
+        'end': dates[-1].isoformat(),
         'riskFree': rf,
-        'symbols': symbols,
-        'weights': weights.round(4).tolist(),
+        'symbols': symbols,  # only what was sent: never a symbol the owner didn't add
+        'cash': [s for s in symbols if s in cash],
+        'keepCash': bool(fixed),
+        'weights': r['weights'].round(4).tolist(),
         'current': current.round(4).tolist(),
-        'expectedReturns': mu.tolist(),
-        'historicalReturns': historical.tolist(),
-        'volatilities': np.sqrt(np.diag(cov)).tolist(),
-        'result': {'return': ret, 'volatility': vol, 'sharpe': (ret - rf) / vol if vol else None},
-        'currentResult': {'return': cur_ret, 'volatility': cur_vol, 'sharpe': (cur_ret - rf) / cur_vol if cur_vol else None},
-        'frontier': frontier,
-        'converged': ok,
+        'volatility': r['volatility'],
+        'walkForward': r['walkForward'],
+        'randomWalk': r['randomWalk'],
     }

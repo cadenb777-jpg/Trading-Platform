@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analysisSymbol, holdingsPayload, positions, unpricedSymbols, type Portfolio } from './types';
+import { analysisSymbol, holdingLabel, holdingsPayload, positions, unpricedSymbols, type Portfolio } from './types';
 
 const base: Omit<Portfolio, 'holdings' | 'mode'> = { name: 'Test', benchmark: 'SPY', rebalance: 'quarterly' };
 
@@ -20,7 +20,7 @@ describe('portfolio positions', () => {
     // Cash and the alternative are modelled with their stand-ins; weights are percentages.
     expect(holdingsPayload(p, { VTI: 300 })).toEqual([
       { symbol: 'VTI', weight: 50 },
-      { symbol: 'BIL', weight: +((5000 / 60000) * 100).toFixed(4) },
+      { symbol: 'BIL', weight: +((5000 / 60000) * 100).toFixed(4), cash: true },
       { symbol: 'BIZD', weight: +((25000 / 60000) * 100).toFixed(4) },
     ]);
   });
@@ -46,5 +46,14 @@ describe('portfolio positions', () => {
       { symbol: 'VTI', weight: 80 },
     ]);
     expect(analysisSymbol({ symbol: 'X', weight: 0, assetClass: 'Private equity', kind: 'alt', proxy: 'psp ' })).toBe('PSP');
+  });
+
+  it('shows cash as Cash, not its stand-in BIL', () => {
+    const p: Portfolio = { ...base, mode: 'weight', holdings: [{ symbol: 'VTI', weight: 90, assetClass: 'US stocks' }, { symbol: 'CASH', weight: 10, assetClass: 'Cash', kind: 'cash' }] };
+    expect(holdingLabel(p, 'BIL')).toEqual({ label: 'Cash', note: 'modelled as T-bills (BIL)' });
+    expect(holdingLabel(p, 'VTI')).toEqual({ label: 'VTI' });
+    // Someone who really owns BIL sees BIL.
+    const own: Portfolio = { ...p, holdings: [...p.holdings, { symbol: 'BIL', weight: 5, assetClass: 'Cash' }] };
+    expect(holdingLabel(own, 'BIL').label).toBe('BIL');
   });
 });
