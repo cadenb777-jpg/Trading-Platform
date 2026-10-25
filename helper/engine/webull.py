@@ -234,11 +234,12 @@ async def _call(ctx, method, path, query=None, body=None, version='v3', extra=No
     def left():
         return None if deadline is None else deadline - time.monotonic()
 
+    # Never wrap a lock in a wait_for timeout: on Python < 3.12 a timeout firing just as the lock is taken can leave it
+    # locked for good. Locks are taken normally and the deadline is checked once held.
     if use_token:
-        try:
-            token = await asyncio.wait_for(_access_token(ctx), max(left(), 0)) if deadline is not None else await _access_token(ctx)
-        except asyncio.TimeoutError:
-            raise NotSent(NOT_SENT) from None
+        token = await _access_token(ctx)
+        if deadline is not None and left() <= 0:
+            raise NotSent(NOT_SENT)
         if token:
             headers['x-access-token'] = token
     url = f'https://{host}{path}' + (f'?{urlencode(query)}' if query else '')
@@ -249,13 +250,7 @@ async def _call(ctx, method, path, query=None, body=None, version='v3', extra=No
         # must wait for its endpoint lets go, sleeps and queues again, so it can't hold up an order.
         response = None
         while response is None:
-            if deadline is not None:
-                try:
-                    await asyncio.wait_for(gate.acquire(), max(left(), 0))
-                except asyncio.TimeoutError:
-                    raise NotSent(NOT_SENT) from None
-            else:
-                await gate.acquire()
+            await gate.acquire()  # the deadline is checked below, once held (and the gate released if it passed)
             try:
                 wait = _last_call.get(path, -1e9) + SPACING.get(path, DEFAULT_SPACING) - time.monotonic()
                 if wait <= 0:

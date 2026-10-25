@@ -553,8 +553,32 @@ class RateLimits(Base):
             run(both())
         self.assertIn('NOT placed', str(e.exception))
         self.assertEqual(self.fake.placed_ids, [])
+        self.assertNotIn('await asyncio.wait_for(', Path(webull.__file__).read_text().split('def _call(')[1].split('def _access_token')[0])
         self.assertEqual([x['result'] for x in self.log() if x.get('action') == 'place'], ['attempt', 'failed'])
         self.assertEqual(webull.placed_today(), 1)
+
+    def test_gate_and_token_lock_are_free_after_a_refused_order(self):
+        """A refused (not sent) order leaves no lock held: the next requests still go through."""
+        self.fake.token_check = True
+        webull.PLACE_DEADLINE = 0.2
+        self.addCleanup(setattr, webull, 'PLACE_DEADLINE', 10)
+
+        async def go():
+            token = (await webull.preview_order(self.ctx, dict(ORDER)))['token']
+            self.fake.delay['/trading/assets/balances/get'] = 0.6
+            read = asyncio.create_task(webull.account(self.ctx, {}))
+            await asyncio.sleep(0.05)
+            with self.assertRaises(core.EngineError):
+                await webull.place_order(self.ctx, {'token': token})
+            await read
+            self.assertFalse(webull._lock('gate').locked())
+            self.assertFalse(webull._lock('token').locked())
+            self.fake.delay.clear()
+            webull.forget()
+            return await asyncio.wait_for(webull.account(self.ctx, {}), 2)
+
+        self.assertEqual(run(go())['cash'], 2000)
+        self.assertEqual(self.fake.placed_ids, [])
 
     def test_read_started_before_an_order_is_not_kept(self):
         self.fake.delay['/trading/assets/balances/get'] = 0.2
