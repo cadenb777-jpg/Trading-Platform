@@ -5823,7 +5823,10 @@ a.btn {
   font-variant-numeric: tabular-nums;
 }
 .acct-card .stat-cards {
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+}
+.acct-cards.acct-webull {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr));
 }
 .acct-parts summary {
   cursor: pointer;
@@ -5875,4 +5878,12 @@ a.btn {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.acct-stats .stat-cards {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+@media (max-width: 700px) {
+  .acct-stats .stat-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

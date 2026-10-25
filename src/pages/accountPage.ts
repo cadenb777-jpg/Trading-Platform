@@ -39,7 +39,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
       return frame.error(err);
     }
     const mine = myPortfolios(all);
-    const webull = h('div', { class: 'acct-cards' });
+    const webull = h('div', { class: 'acct-cards acct-webull' });
     if (!mine.length) {
       frame.body.replaceChildren(emptyState(all), webull);
       renderWebullCard(webull, synced, () => openPortfolio('webull'));
