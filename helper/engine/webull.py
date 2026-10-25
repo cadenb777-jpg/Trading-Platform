@@ -799,7 +799,8 @@ async def snapshot(ctx, msg):
 async def sync(ctx, msg):
     """Saves (or updates) the portfolio "Webull <account>" with the account's stocks (shares + total cost) and cash."""
     from . import store
-    account_id = await _account_id(ctx, msg)
+    chosen = await _account(ctx, msg)
+    account_id = chosen['id']
     held = await cached_positions(ctx, account_id, fresh=True)  # a sync always reads Webull now (still through the gate)
     try:
         cash = (await cached_balances(ctx, account_id, fresh=True)).get('cash')
@@ -810,7 +811,7 @@ async def sync(ctx, msg):
                 for p in held if p['qty'] > 0 and p['type'] in STOCK_TYPES]
     if cash:
         holdings.append({'symbol': 'CASH', 'name': 'Webull cash', 'weight': 0, 'assetClass': 'Cash', 'kind': 'cash', 'amount': round(cash, 2)})
-    name = f"Webull {_mask(account_id)}{' (Test)' if env() == 'test' else ''}"
+    name = f"Webull {chosen['label']}{' (Test)' if env() == 'test' else ''}"  # same masked number as the rest of the UI
     existing = next((p for p in store.list_docs('portfolios') if p.get('webullAccount') == account_id and p.get('webullEnv', 'live') == env()), None)
     doc = {**(existing or {'benchmark': 'SPY', 'rebalance': 'none'}), 'name': (existing or {}).get('name') or name, 'mode': 'shares',
            'holdings': holdings, 'webullAccount': account_id, 'webullEnv': env(), 'syncedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')}
@@ -867,7 +868,7 @@ async def place_order(ctx, msg):
         _log({**base, 'result': 'refused', 'reason': 'preview expired'})
         raise EngineError(f'The preview expired (it is valid for {TOKEN_SECONDS} seconds). Preview the order again.')
     if preview['env'] != env() or preview['fp'] != _fingerprint():
-        _log({**base, 'result': 'refused', 'reason': 'settings changed since preview'})
+        _log({**base, 'env': preview['env'], 'result': 'refused', 'reason': 'settings changed since preview'})
         raise EngineError('Your Webull settings changed since the preview. Preview the order again.')
     if env() == 'live' and not live_enabled():
         _log({**base, 'result': 'refused', 'reason': 'live not enabled'})

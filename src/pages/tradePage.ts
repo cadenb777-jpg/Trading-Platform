@@ -39,10 +39,13 @@ function save(key: string, value: unknown) {
   }
 }
 const pctText = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '' : `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%`);
+const clock = (unix: number) => new Date(unix * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 const tone = (v: number | null | undefined) => (v == null ? '' : v >= 0 ? 'up' : 'down');
 
 export function createTradePage() {
   let snap: Snapshot | null = null;
+  /** Set while the last refresh failed (busy or slow) and the page shows older data: the reason. */
+  let stale: string | null = null;
   let accountId = '';
   let loadedAt = 0;
   let started = false;
@@ -57,7 +60,10 @@ export function createTradePage() {
   const quotes = new Map<string, Quote>();
   const books = new Map<string, { bid: number | null; ask: number | null; name: string; last: number | null }>();
   const quoteStops = new Map<string, () => void>();
-  const protect = load<Record<string, number>>(PROTECT_KEY, {});
+  /** symbol -> the stop to offer after a buy fills, and that buy's order id (older saves hold just the stop). */
+  const protect: Record<string, { stop: number; orderId?: string }> = Object.fromEntries(
+    Object.entries(load<Record<string, number | { stop: number; orderId?: string }>>(PROTECT_KEY, {})).map(([k, v]) => [k, typeof v === 'number' ? { stop: v } : v]),
+  );
 
   // ----- layout -----
   const envSlot = h('span', { class: 'tr-env' }, h('span', { class: 'badge' }, 'Webull…'));
@@ -338,14 +344,29 @@ export function createTradePage() {
     refreshing = (async () => {
       try {
         const next = await loadSnapshot(accountId || undefined);
-        snap = next;
         loadedAt = Date.now();
-        if (next.ok) accountId = next.accountId ?? accountId;
+        if (next.ok) {
+          snap = next;
+          stale = null;
+          accountId = next.accountId ?? accountId;
+        } else if (next.busy && snap?.ok) {
+          stale = next.message; // Webull busy: keep showing the last data, marked as old
+        } else {
+          snap = next;
+          stale = null;
+        }
       } catch (err) {
-        snap = null;
         loadedAt = Date.now();
-        showError(friendly(err));
-        return;
+        const message = friendly(err);
+        const slow = /took too long|busy/i.test(message);
+        // Keep the last data (marked old) while Webull or the helper is slow or briefly away
+        if (snap?.ok && (slow || /Lost connection|isn.t running/i.test(message))) stale = message;
+        else {
+          snap = null;
+          stale = null;
+          showError(message, slow);
+          return;
+        }
       } finally {
         refreshing = null;
         refreshBtn.disabled = false;
@@ -359,13 +380,22 @@ export function createTradePage() {
     return refreshing;
   }
 
-  function showError(message: string) {
-    envSlot.replaceChildren(h('span', { class: 'badge warn' }, 'Not connected'));
+  /** No account data to show: the setup steps, or a plain "busy" note when the helper or Webull was just slow. */
+  function showError(message: string, busy: boolean) {
+    envSlot.replaceChildren(h('span', { class: 'badge warn' }, busy ? 'Waiting for Webull' : 'Not connected'));
     acctSlot.replaceChildren();
     statsSlot.replaceChildren();
-    notice.replaceChildren(setupSteps(message, false));
+    notice.replaceChildren(setupSteps(message, busy));
     grid.classList.add('tr-offline');
+    clearAccountViews();
+  }
+
+  /** Order lines, Protect, As-of and the lists, cleared together when there is no account data. */
+  function clearAccountViews() {
+    drawLines();
+    drawProtect();
     drawLists();
+    tickUpdated();
   }
 
   function drawAccount() {
@@ -376,7 +406,10 @@ export function createTradePage() {
       grid.classList.add('tr-offline');
       statsSlot.replaceChildren();
       acctSlot.replaceChildren();
-      drawLists();
+      const keep = snap;
+      snap = null;
+      clearAccountViews();
+      snap = keep;
       return;
     }
     grid.classList.remove('tr-offline');
@@ -398,6 +431,9 @@ export function createTradePage() {
     );
     const errs = Object.values(snap.errors ?? {});
     notice.replaceChildren(
+      stale && snap.asOf
+        ? h('div', { class: 'tr-stale' }, h('b', {}, `${/took too long|busy/i.test(stale) ? 'Webull is busy' : 'Can’t reach the helper'} — showing data as of ${clock(snap.asOf)}.`), h('span', { class: 'muted small' }, ` ${stale} The page tries again by itself.`))
+        : '',
       snap.env === 'live' ? h('p', { class: 'wb-warning small' }, 'LIVE: orders placed here use real money in your Webull account.') : '',
       ...[...new Set(errs)].map((e) => h('div', { class: 'ap-error' }, e)),
     );
@@ -412,7 +448,8 @@ export function createTradePage() {
   function tickUpdated() {
     // the helper's fetch time (it reuses Webull answers for up to 20 s), not when the browser asked
     const asOf = snap?.ok ? snap.asOf : null;
-    updated.textContent = asOf ? `As of ${new Date(asOf * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}` : '';
+    updated.textContent = asOf ? `As of ${clock(asOf)}${stale ? ' (old)' : ''}` : '';
+    updated.classList.toggle('wb-warn', !!asOf && !!stale);
     updated.title = asOf ? `Fetched from Webull ${timeAgo(asOf)}` : '';
   }
 
@@ -436,35 +473,41 @@ export function createTradePage() {
   }
 
   // ----- protect after a buy -----
-  function placed(order: PlacedOrder, protectStop: number | null, ok: boolean) {
-    if (ok && order.side === 'BUY' && protectStop && protectStop > 0) protect[order.symbol] = protectStop;
+  function placed(order: PlacedOrder, protectStop: number | null, ok: boolean, orderId?: string) {
+    if (ok && order.side === 'BUY' && protectStop && protectStop > 0) protect[order.symbol] = { stop: protectStop, orderId };
     if (ok && order.side === 'SELL' && order.orderType.startsWith('STOP')) delete protect[order.symbol];
     save(PROTECT_KEY, protect);
     refresh(true);
   }
 
   function drawProtect() {
-    const items = Object.entries(protect).filter(([s]) => {
-      const pos = snap?.positions?.find((p) => p.symbol === s && p.qty > 0);
+    const items = Object.entries(protect).filter(([s, p]) => {
       const open = (snap?.open ?? []).filter((o) => o.symbol === s && OPEN.test(o.status));
-      const guarded = open.some((o) => o.side === 'SELL' && o.stopPrice != null);
-      const waiting = open.some((o) => o.side === 'BUY'); // the buy hasn't filled yet
-      return pos && !guarded && !waiting;
+      const guarded = open.some((o) => o.side === 'SELL' && o.stopPrice != null); // a stop sell is already working
+      const waiting = !!p.orderId && open.some((o) => o.orderId === p.orderId); // that buy hasn't filled yet
+      return canSell(s) > 0 && !guarded && !waiting;
     });
     protectSlot.replaceChildren(
-      ...items.map(([s, stop]) => {
-        const pos = snap!.positions!.find((p) => p.symbol === s)!;
+      ...items.map(([s, { stop }]) => {
+        const qty = canSell(s);
         return h(
           'div',
           { class: 'tr-protect' },
-          h('div', {}, h('b', {}, `Protect ${s}?`), h('span', { class: 'muted small' }, ` You hold ${pos.qty}. A stop sell at ${usd(stop)} gets you out if it falls there.`)),
+          h('div', {}, h('b', {}, `Protect ${s}?`), h('span', { class: 'muted small' }, ` You can sell ${qty}. A stop sell at ${usd(stop)} gets you out if it falls there.`)),
           h('div', { class: 'tr-protect-actions' },
-            h('button', { class: 'btn small primary', type: 'button', onclick: () => (select(s), ticket.fill({ symbol: s, side: 'SELL', orderType: 'STOP', stopPrice: stop, qty: pos.qty, tif: 'GTC' }), ticket.el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })) }, 'Fill stop order'),
+            h('button', { class: 'btn small primary', type: 'button', onclick: () => (select(s), ticket.fill({ symbol: s, side: 'SELL', orderType: 'STOP', stopPrice: stop, qty, tif: 'GTC' }), ticket.el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })) }, 'Fill stop order'),
             h('button', { class: 'btn small ghost', type: 'button', title: 'Hide this', onclick: () => (delete protect[s], save(PROTECT_KEY, protect), drawProtect()) }, 'Not now'),
           ),
         );
       }),
     );
+  }
+
+  /** Shares of a symbol that can be sold: the position minus open sell orders (the same figure as the ticket). */
+  function canSell(s: string) {
+    const held = snap?.positions?.find((p) => p.symbol === s)?.qty ?? 0;
+    const selling = (snap?.open ?? []).filter((o) => o.symbol === s && o.side === 'SELL' && OPEN.test(o.status)).reduce((t, o) => t + Math.max((o.qty ?? 0) - o.filled, 0), 0);
+    return Math.max(held - selling, 0);
   }
 
   // ----- lists -----
@@ -593,6 +636,7 @@ export function createTradePage() {
   let timer: ReturnType<typeof setInterval> | undefined;
   const onVisible = () => document.visibilityState === 'visible' && started && refresh();
   window.addEventListener('tp:trade-prefill', () => started && usePrefill(takePrefill()));
+  window.addEventListener('tp:settings-saved', () => started && refresh(true)); // limits or Test/Live changed
   drawTf();
   drawWatch();
   ticket.setSymbol(symbol);

@@ -167,8 +167,8 @@ export function takePrefill(): TicketPrefill | null {
 /** Asks the helper for a preview, restates it, and only then enables "Place order". */
 const UNCONFIRMED = 'We couldn’t confirm whether the order was placed. Check Orders before trying again.';
 
-/** onPlaced(order, ok): ok=false after a failed or unconfirmed place (the caller only refreshes). */
-export function confirmOrder(order: PlacedOrder, onPlaced: (order: PlacedOrder, ok: boolean) => void) {
+/** onPlaced(order, ok, orderId): ok=false after a failed or unconfirmed place (the caller only refreshes). */
+export function confirmOrder(order: PlacedOrder, onPlaced: (order: PlacedOrder, ok: boolean, orderId?: string) => void) {
   const content = h('div', { class: 'wb-confirm' }, h('div', { class: 'muted pad' }, 'Checking the order…'));
   const place = h('button', { class: 'btn primary', disabled: true }, 'Place order') as HTMLButtonElement;
   const timer = h('span', { class: 'muted small' });
@@ -218,7 +218,7 @@ export function confirmOrder(order: PlacedOrder, onPlaced: (order: PlacedOrder, 
             const r = await engineRequest<{ orderId: string; summary: string; env: Env }>('webull.place_order', { token: p.token }, 90000);
             close();
             toast(`Order placed${r.env === 'live' ? ' (LIVE)' : ' (Test)'}: ${r.summary}`);
-            onPlaced(order, true);
+            onPlaced(order, true, r.orderId);
           } catch (err) {
             timer.textContent = '';
             // No answer from the helper (timeout or lost connection): the order may have gone through.

@@ -31,7 +31,7 @@ export const HELPER_UPDATE_FOR_FEATURE =
   'This feature needs the updated Schwab helper. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
 
 export const HELPER_NOT_RUNNING =
-  'The Schwab helper isn\'t running on this computer. Start it (double-click start-windows.bat or start-mac.command), then click Try again.';
+  'The helper isn\'t running on this computer. Start it (double-click start-windows.bat or start-mac.command), then click Try again.';
 
 export type NewsSection = 'economy' | 'markets' | 'companies' | 'crypto';
 export type Impact = 'high' | 'medium' | 'low';
@@ -230,7 +230,7 @@ class HelperConnection {
       let timer: ReturnType<typeof setTimeout>;
       const arm = () => {
         clearTimeout(timer);
-        timer = setTimeout(() => finish(new Error('The Schwab helper took too long to answer. Try again.')), timeoutMs);
+        timer = setTimeout(() => finish(new Error('The helper took too long to answer. Try again.')), timeoutMs);
       };
       const finish = (err: Error | null, reply?: HelperMessage) => {
         clearTimeout(timer);
@@ -327,7 +327,7 @@ class HelperConnection {
   private onClose(ws: WebSocket) {
     if (this.ws !== ws) return;
     this.ws = null;
-    for (const p of this.pending.values()) p.reject(new Error('Lost connection to the Schwab helper.'));
+    for (const p of this.pending.values()) p.reject(new Error('Lost connection to the helper.'));
     this.pending.clear();
     for (const l of this.allListeners()) l.onStatus?.('error', 'Schwab helper stopped. Reconnecting…');
     this.notify(false);

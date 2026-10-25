@@ -209,7 +209,7 @@ class Reading(Base):
     def test_sync_saves_and_updates_one_portfolio(self):
         doc = run(webull.sync(self.ctx, {}))['portfolio']
         self.assertEqual(doc['mode'], 'shares')
-        self.assertTrue(doc['name'].startswith('Webull'))
+        self.assertEqual(doc['name'], 'Webull …2345 (Cash) (Test)')  # the account label shown everywhere else
         stock = doc['holdings'][0]
         self.assertEqual((stock['symbol'], stock['shares'], stock['cost']), ('AAPL', 10.0, 1500.0))
         self.assertEqual(doc['holdings'][-1]['kind'], 'cash')
@@ -272,6 +272,12 @@ class Orders(Base):
         settings._cache = {**KEYS, 'webull_app_key': 'otherkey999'}
         with self.assertRaisesRegex(core.EngineError, 'changed'):
             run(webull.place_order(self.ctx, {'token': p['token']}))
+        settings._cache = dict(KEYS)  # a preview made in Test, refused after a switch to Live
+        p = self.preview()
+        settings._cache = {**KEYS, 'webull_env': 'live', 'webull_live_ok': True}
+        with self.assertRaisesRegex(core.EngineError, 'changed'):
+            run(webull.place_order(self.ctx, {'token': p['token']}))
+        self.assertEqual(self.log()[-1]['env'], 'test')  # logged under the preview's environment
 
     def test_live_without_opt_in_refused(self):
         p = self.preview()

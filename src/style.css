@@ -6008,3 +6008,4 @@ a.btn {
   .tr-stats { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
   .tr-updated { display: none; }
 }
+.tr-stale { border: 1px solid var(--warn-border); background: var(--warn-soft); color: var(--warn-text); border-radius: var(--radius); padding: 8px 10px; }

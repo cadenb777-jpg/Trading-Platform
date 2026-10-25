@@ -88,7 +88,7 @@ export async function renderWebull(out: HTMLElement, onSynced: (p: Portfolio & {
             { label: 'Account value', value: usd(bal.value) },
             { label: 'Cash', value: usd(bal.cash) },
             { label: 'Buying power', value: usd(bal.buyingPower), hint: 'What you can spend on new orders now' },
-            { label: 'Limits', value: `$${status.limits.maxOrder.toLocaleString('en-US', { maximumFractionDigits: 0 })} · ${status.limits.maxPerDay}/day`, hint: 'Max order value and orders per day (Settings)' },
+            { label: 'Limits', value: `$${snap.limits.maxOrder.toLocaleString('en-US', { maximumFractionDigits: 0 })} · ${snap.limits.maxPerDay}/day`, hint: 'Max order value and orders per day (Settings)' },
           ])
         : fail('balances'),
       h('h4', { class: 'section-label' }, 'Positions'),
@@ -171,7 +171,7 @@ export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio
 function ordersTable(orders: Order[], refresh: () => void) {
   if (!orders.length) return h('div', { class: 'empty-state' }, 'No open or recent orders.');
   return dataTable(
-    ['Symbol', 'Side', 'Qty', 'Type', 'Price', 'Time', 'Status', ''],
+    ['Symbol', 'Side', 'Qty', 'Type', 'Price', 'Time in force', 'Status', ''],
     orders.map((o) => [
       { v: o.symbol, cls: 'label' },
       o.side,

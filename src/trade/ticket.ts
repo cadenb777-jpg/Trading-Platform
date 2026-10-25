@@ -19,7 +19,7 @@ export interface TicketHost {
   /** The symbol field changed (the Trade page loads that symbol's chart and quote). */
   onSymbol?(symbol: string): void;
   /** ok=false: the place failed or is unconfirmed (refresh only). */
-  onPlaced(order: PlacedOrder, protectStop: number | null, ok: boolean): void;
+  onPlaced(order: PlacedOrder, protectStop: number | null, ok: boolean, orderId?: string): void;
 }
 export interface Ticket {
   el: HTMLElement;
@@ -219,7 +219,7 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
       order.stopPrice = v;
     }
     const protect = side === 'BUY' ? num(riskStop) : null;
-    confirmOrder(order, (placed, ok) => host.onPlaced(placed, protect, ok));
+    confirmOrder(order, (placed, ok, orderId) => host.onPlaced(placed, protect, ok, orderId));
   }
 
   for (const i of [qty, dollars, riskStop, limit, stop]) i.addEventListener('input', refresh);

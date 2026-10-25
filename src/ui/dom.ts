@@ -23,6 +23,16 @@ export function openModal(title: string, body: Node, opts: { wide?: boolean; onC
   };
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') close();
+    else if (e.key === 'Tab' && [...document.querySelectorAll('.modal-backdrop')].pop() === backdrop) {
+      // keep Tab inside the top window (e.g. the order confirm window)
+      const items = [...backdrop.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((el) => !(el as HTMLButtonElement).disabled && el.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const inside = backdrop.contains(document.activeElement);
+      if (e.shiftKey && (document.activeElement === first || !inside)) (e.preventDefault(), last.focus());
+      else if (!e.shiftKey && (document.activeElement === last || !inside)) (e.preventDefault(), first.focus());
+    }
   };
   const backdrop = h(
     'div',

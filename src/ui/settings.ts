@@ -41,6 +41,7 @@ async function save(changes: Record<string, string | number | boolean>) {
   cached = await engineRequest<PlatformSettings>('settings.set', changes, 10000);
   setAlpacaConnected(!!cached.alpacaSet);
   for (const fn of listeners) fn(cached);
+  window.dispatchEvent(new CustomEvent('tp:settings-saved')); // e.g. the Trade page re-reads its limits
   return cached;
 }
 
@@ -232,8 +233,12 @@ function webullRow(s: PlatformSettings, refresh: () => void): HTMLElement {
         class: live ? '' : 'active',
         onclick: async () => {
           if (!live) return;
-          await save({ webullEnv: 'test' }).catch((err) => toast((err as Error).message));
-          toast('Webull is back on Test (no real money)');
+          try {
+            await save({ webullEnv: 'test' });
+            toast('Webull is back on Test (no real money)');
+          } catch (err) {
+            toast((err as Error).message);
+          }
           refresh();
         },
       },
@@ -248,7 +253,7 @@ function webullRow(s: PlatformSettings, refresh: () => void): HTMLElement {
     h(
       'p',
       { class: 'muted small' },
-      'View and sync your Webull account and place stock orders from the Portfolios page (Webull button). Apply for API access and create an App Key and App Secret on ',
+      'Place stock orders on the Trade page; view and sync your account under Portfolios (Webull button). Apply for API access and create an App Key and App Secret on ',
       h('a', { href: 'https://developer.webull.com/apis/docs/getting-started', target: '_blank', rel: 'noopener' }, 'Webull’s developer site'),
       '. Start in Test: Webull’s test environment uses shared test keys listed on its SDK page and no real money. The AI assistant can never place orders.',
     ),

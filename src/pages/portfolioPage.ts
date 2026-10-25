@@ -64,7 +64,7 @@ export function createPortfolioPage() {
     list.replaceChildren(
       h('button', { class: 'btn primary', onclick: () => select(blank()) }, '+ New portfolio'),
       h('button', { class: 'btn', title: 'Upload a positions export (CSV or Excel) from your broker', onclick: () => openStatementImport(imported) }, 'Import statement'),
-      h('button', { class: 'btn', title: 'Your Webull account: balances, positions, orders, sync and the order ticket', onclick: () => renderWebull(results, synced) }, 'Webull'),
+      h('button', { class: 'btn', title: 'Your Webull account: balances, positions, orders and sync (place orders on the Trade page)', onclick: () => renderWebull(results, synced) }, 'Webull'),
       h('div', { class: 'muted small' }, 'Saved'),
       ...(saved.length ? saved.map((p) => item(p, () => select(structuredClone(p)), p.id === current.id)) : [h('div', { class: 'muted small' }, 'None yet. Saved portfolios are stored by the helper on your computer.')]),
       h('div', { class: 'muted small' }, 'Templates'),
