@@ -51,6 +51,9 @@ def quote_row(symbol, data):
         'high52': _num(q.get('52WeekHigh')),
         'low52': _num(q.get('52WeekLow')),
         'volume': _num(q.get('totalVolume')),
+        'netChange': _num(q.get('netChange')),
+        'bid': _num(q.get('bidPrice')),
+        'ask': _num(q.get('askPrice')),
         'divYield': _num(f.get('divYield')),
         'peRatio': _num(f.get('peRatio')),
     }

@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -19,8 +20,8 @@ KEYS = {'webull_app_key': 'testappkey123', 'webull_app_secret': 'testappsecret45
 
 
 class Resp:
-    def __init__(self, status, data):
-        self.status_code, self._data = status, data
+    def __init__(self, status, data, headers=None):
+        self.status_code, self._data, self.headers = status, data, headers or {}
 
     def json(self):
         return self._data
@@ -38,11 +39,23 @@ class FakeWebull:
         self.place_fails = None       # 'timeout' or a 5xx status: Webull may or may not have the order
         self.lookup_finds = False     # whether GET /trading/orders/get then finds it
         self.placed_ids = []
+        self.busy = {}                # path -> how many times to answer 429 first
+        self.in_flight = self.max_in_flight = 0
 
     async def request(self, method, url, headers=None, content=None):
         u = urlparse(url)
         body = json.loads(content) if content else None
-        self.calls.append({'method': method, 'host': u.netloc, 'path': u.path, 'query': {k: v[0] for k, v in parse_qs(u.query).items()}, 'headers': dict(headers or {}), 'body': body})
+        self.calls.append({'method': method, 'host': u.netloc, 'path': u.path, 'query': {k: v[0] for k, v in parse_qs(u.query).items()}, 'headers': dict(headers or {}), 'body': body,
+                           'at': time.monotonic()})
+        self.in_flight += 1
+        self.max_in_flight = max(self.max_in_flight, self.in_flight)
+        try:
+            await asyncio.sleep(0.01)  # a real request yields to other tasks
+        finally:
+            self.in_flight -= 1
+        if self.busy.get(u.path):
+            self.busy[u.path] -= 1
+            return Resp(429, {'message': 'Too Many Requests'}, {'Retry-After': '0'})
         if self.status != 200:
             return Resp(self.status, {'message': 'nope'})
         p = u.path
@@ -109,6 +122,12 @@ class Base(unittest.TestCase):
         self.addCleanup(self._close_db)
         webull._previews.clear()
         webull._config_cache.clear()
+        webull._reads.clear()
+        webull._last_call.clear()
+        for attr, value in (('SPACING', {}), ('DEFAULT_SPACING', 0), ('RETRY_WAITS', (0, 0))):  # no real waiting in tests
+            p = mock.patch.object(webull, attr, value)
+            p.start()
+            self.addCleanup(p.stop)
         price = mock.patch.object(webull, 'last_price', mock.AsyncMock(return_value=200.0))
         price.start()
         self.addCleanup(price.stop)
@@ -410,6 +429,93 @@ class Orders(Base):
         self.assertEqual(self.log()[-1]['action'], 'cancel')
         with self.assertRaises(core.EngineError):
             run(webull.cancel_order(self.ctx, {'orderId': '../x'}))
+
+
+class RateLimits(Base):
+    """Webull's per-endpoint limits: one request at a time, spacing, caching, 429 handling, one access token."""
+
+    def test_parallel_snapshot_and_status_make_one_accounts_call(self):
+        async def both():
+            return await asyncio.gather(webull.snapshot(self.ctx, {}), webull.status(self.ctx, {}), webull.account(self.ctx, {}), webull.snapshot(self.ctx, {}))
+        snap, stat, bal, snap2 = run(both())
+        self.assertTrue(snap['ok'] and stat['ok'])
+        self.assertEqual(snap['balances']['cash'], 2000)
+        self.assertEqual(snap['positions'][0]['symbol'], 'AAPL')
+        self.assertEqual([o['orderId'] for o in snap['open']], ['o1'])
+        self.assertEqual(snap['errors'], {})
+        paths = self.fake.paths()
+        self.assertEqual(paths.count('/trading/accounts/list'), 1)
+        self.assertEqual(paths.count('/trading/assets/balances/get'), 1)  # snapshot, account and the 2nd snapshot share it
+        self.assertEqual(paths.count('/trading/assets/positions/list'), 1)
+        self.assertEqual(self.fake.max_in_flight, 1)  # never two Webull requests at once
+
+    def test_spacing_per_endpoint(self):
+        webull.SPACING = {'/trading/accounts/list': 0.15}
+        async def three():
+            await asyncio.gather(*(webull._call(self.ctx, 'GET', '/trading/accounts/list') for _ in range(3)))
+        run(three())
+        times = [c['at'] for c in self.fake.calls if c['path'] == '/trading/accounts/list']
+        self.assertEqual(len(times), 3)
+        self.assertTrue(all(b - a >= 0.14 for a, b in zip(times, times[1:])), times)
+
+    def test_429_on_a_read_waits_and_retries(self):
+        self.fake.busy['/trading/assets/balances/get'] = 2
+        out = run(webull.account(self.ctx, {}))
+        self.assertEqual(out['cash'], 2000)
+        self.assertEqual(self.fake.paths().count('/trading/assets/balances/get'), 3)
+
+    def test_429_three_times_gives_a_plain_message(self):
+        self.fake.busy['/trading/assets/balances/get'] = 10
+        with self.assertRaises(core.EngineError) as e:
+            run(webull.account(self.ctx, {}))
+        self.assertIn('too many requests', str(e.exception))
+        self.assertEqual(self.fake.paths().count('/trading/assets/balances/get'), 3)
+        snap = run(webull.snapshot(self.ctx, {}))  # the snapshot still shows the other sections
+        self.assertIn('balances', snap['errors'])
+        self.assertIsNotNone(snap['positions'])
+
+    def test_429_on_place_is_not_retried_and_counts(self):
+        token = self.preview()['token']
+        self.fake.busy['/trading/orders/place'] = 1
+        with self.assertRaises(core.EngineError) as e:
+            run(webull.place_order(self.ctx, {'token': token}))
+        self.assertIn('nothing was placed', str(e.exception))
+        self.assertEqual(self.fake.paths().count('/trading/orders/place'), 1)
+        self.assertNotIn('/trading/orders/get', self.fake.paths())
+        results = [x['result'] for x in self.log() if x.get('action') == 'place']
+        self.assertEqual(results, ['attempt', 'failed'])
+        self.assertEqual(webull.placed_today(), 1)
+
+    def test_429_on_preview_is_not_retried(self):
+        self.fake.busy['/trading/orders/preview'] = 1
+        with self.assertRaises(core.EngineError) as e:
+            self.preview()
+        self.assertIn('preview again', str(e.exception))
+        self.assertEqual(self.fake.paths().count('/trading/orders/preview'), 1)
+
+    def test_token_created_once_under_concurrency(self):
+        self.fake.token_check = True
+        async def many():
+            return await asyncio.gather(*(webull._call(self.ctx, 'GET', p) for p in ('/trading/accounts/list', '/trading/assets/positions/list', '/trading/assets/balances/get', '/trading/accounts/list')))
+        run(many())
+        self.assertEqual(self.fake.paths().count('/auth/tokens/create'), 1)
+        self.assertEqual(self.fake.paths().count('/openapi/config'), 1)
+
+    def test_place_and_cancel_clear_the_cache(self):
+        run(webull.snapshot(self.ctx, {}))
+        token = self.preview()['token']
+        run(webull.place_order(self.ctx, {'token': token}))
+        run(webull.snapshot(self.ctx, {}))
+        self.assertEqual(self.fake.paths().count('/trading/assets/balances/get'), 2)
+        run(webull.cancel_order(self.ctx, {'orderId': 'o1'}))
+        run(webull.snapshot(self.ctx, {}))
+        self.assertEqual(self.fake.paths().count('/trading/assets/balances/get'), 3)
+        self.assertEqual(self.fake.paths().count('/trading/accounts/list'), 1)
+
+    def test_sync_reads_fresh(self):
+        run(webull.snapshot(self.ctx, {}))
+        run(webull.sync(self.ctx, {}))
+        self.assertEqual(self.fake.paths().count('/trading/assets/positions/list'), 2)
 
 
 class Isolation(unittest.TestCase):

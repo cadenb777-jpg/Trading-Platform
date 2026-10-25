@@ -30,6 +30,17 @@ interface Status {
   limits: { maxOrder: number; maxPerDay: number };
   placedToday?: number;
 }
+/** webull.snapshot: the status fields plus everything the view shows, in one helper request (v27). */
+export interface Snapshot extends Status {
+  busy?: boolean;
+  accountId?: string;
+  account?: string;
+  balances?: Balances | null;
+  positions?: Position[] | null;
+  open?: Order[] | null;
+  recent?: Order[] | null;
+  errors?: Record<string, string>;
+}
 interface Balances {
   value: number | null;
   cash: number | null;
@@ -89,9 +100,9 @@ function friendly(err: unknown) {
 export async function renderWebull(out: HTMLElement, onSynced: (p: Portfolio & { id: string }) => void) {
   out.replaceChildren(h('div', { class: 'muted pad' }, 'Connecting to Webull…'));
   out.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  let status: Status;
+  let status: Snapshot;
   try {
-    status = await engineRequest<Status>('webull.status', {}, 30000);
+    status = await engineRequest<Snapshot>('webull.snapshot', {}, 60000);
   } catch (err) {
     out.replaceChildren(h('div', { class: 'ap-error' }, friendly(err)));
     return;
@@ -104,7 +115,7 @@ export async function renderWebull(out: HTMLElement, onSynced: (p: Portfolio & {
         h(
           'div',
           { class: 'empty-state' },
-          h('b', {}, 'Webull isn’t connected yet.'),
+          h('b', {}, status.busy ? 'Webull is busy right now.' : 'Webull isn’t connected yet.'),
           h('span', {}, status.message),
           h('button', { class: 'btn primary', onclick: async () => (await import('../ui/settings')).openSettings() }, 'Open Settings'),
         ),
@@ -118,7 +129,7 @@ export async function renderWebull(out: HTMLElement, onSynced: (p: Portfolio & {
     status.accounts.length > 1
       ? (() => {
           const sel = h('select', { class: 'input', 'aria-label': 'Account' }, ...status.accounts.map((a) => h('option', { value: a.id }, a.label))) as HTMLSelectElement;
-          sel.addEventListener('change', () => ((accountId = sel.value), load()));
+          sel.addEventListener('change', () => ((accountId = sel.value), load(true)));
           return sel;
         })()
       : h('span', { class: 'muted small' }, status.accounts[0]?.label ?? '');
@@ -134,7 +145,7 @@ export async function renderWebull(out: HTMLElement, onSynced: (p: Portfolio & {
         envBadge(status.env),
         accountPick,
         h('span', { class: 'spacer' }),
-        h('button', { class: 'btn', onclick: () => load() }, 'Refresh'),
+        h('button', { class: 'btn', onclick: () => load(true) }, 'Refresh'),
         syncBtn,
       ),
       status.env === 'live' ? h('p', { class: 'wb-warning small' }, 'Live: orders placed here use real money in your Webull account.') : h('p', { class: 'muted small' }, 'Test environment: Webull’s practice account. Nothing real is bought or sold. Switch in Settings.'),
@@ -142,28 +153,35 @@ export async function renderWebull(out: HTMLElement, onSynced: (p: Portfolio & {
     ),
   );
 
-  async function load() {
+  // One helper request per refresh (webull.snapshot): the helper reads Webull one call at a time and reuses
+  // recent answers, so Webull never sees a burst ("too many requests").
+  async function load(again = false) {
     body.replaceChildren(h('div', { class: 'muted pad' }, 'Loading your account…'));
-    const [bal, pos, ord] = await Promise.allSettled([
-      engineRequest<Balances>('webull.account', { accountId }, 30000),
-      engineRequest<{ positions: Position[] }>('webull.positions', { accountId }, 30000),
-      engineRequest<{ open: Order[]; recent: Order[] }>('webull.orders', { accountId }, 30000),
-    ]);
-    const fail = (r: PromiseRejectedResult) => h('div', { class: 'ap-error' }, friendly(r.reason));
-    const held = pos.status === 'fulfilled' ? pos.value.positions : [];
+    let snap: Snapshot = status;
+    if (again) {
+      try {
+        snap = await engineRequest<Snapshot>('webull.snapshot', { accountId }, 60000);
+      } catch (err) {
+        return body.replaceChildren(h('div', { class: 'ap-error' }, friendly(err)));
+      }
+      if (!snap.ok) return body.replaceChildren(h('div', { class: 'ap-error' }, snap.message));
+    }
+    const fail = (section: string) => h('div', { class: 'ap-error' }, snap.errors?.[section] ?? 'Not available.');
+    const bal = snap.balances;
+    const held = snap.positions ?? [];
     body.replaceChildren(
-      bal.status === 'fulfilled'
+      bal
         ? statCards([
-            { label: 'Account value', value: usd(bal.value.value) },
-            { label: 'Cash', value: usd(bal.value.cash) },
-            { label: 'Buying power', value: usd(bal.value.buyingPower), hint: 'What you can spend on new orders now' },
+            { label: 'Account value', value: usd(bal.value) },
+            { label: 'Cash', value: usd(bal.cash) },
+            { label: 'Buying power', value: usd(bal.buyingPower), hint: 'What you can spend on new orders now' },
             { label: 'Limits', value: `$${status.limits.maxOrder.toLocaleString('en-US', { maximumFractionDigits: 0 })} · ${status.limits.maxPerDay}/day`, hint: 'Max order value and orders per day (Settings)' },
           ])
-        : fail(bal),
+        : fail('balances'),
       h('h4', { class: 'section-label' }, 'Order ticket'),
-      orderTicket({}, () => load(), held),
+      orderTicket({}, () => load(true), held),
       h('h4', { class: 'section-label' }, 'Positions'),
-      pos.status === 'fulfilled'
+      snap.positions
         ? held.length
           ? dataTable(
               ['Symbol', 'Shares', 'Avg cost', 'Price', 'Value', 'Gain'],
@@ -177,9 +195,9 @@ export async function renderWebull(out: HTMLElement, onSynced: (p: Portfolio & {
               ]),
             )
           : h('div', { class: 'empty-state' }, 'No positions in this account.')
-        : fail(pos),
+        : fail('positions'),
       h('h4', { class: 'section-label' }, 'Orders'),
-      ord.status === 'fulfilled' ? ordersTable([...ord.value.open, ...ord.value.recent], () => load()) : fail(ord),
+      snap.open ? ordersTable([...snap.open, ...(snap.recent ?? [])], () => load(true)) : fail('orders'),
     );
   }
   load();
@@ -208,17 +226,20 @@ function syncButton(label: string, accountId: () => string, onSynced: (p: Portfo
  * the full Webull view (the only place with the order ticket). Draws nothing when Webull isn't set up.
  */
 export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio & { id: string }) => void, openFull: () => void) {
-  let status: Status;
+  let status: Snapshot;
   try {
-    status = await engineRequest<Status>('webull.status', {}, 30000);
+    status = await engineRequest<Snapshot>('webull.snapshot', {}, 60000);
   } catch {
     return out.replaceChildren(); // older helper or offline: the accounts list still works without it
   }
   if (!status.ok) return out.replaceChildren();
-  const cards = await Promise.all(
-    status.accounts.map(async (a) => {
-      const bal = await engineRequest<Balances>('webull.account', { accountId: a.id }, 30000).catch((err) => err as Error);
-      return h(
+  const cards: HTMLElement[] = [];
+  for (const a of status.accounts) {
+    // one account after another: the helper paces Webull calls anyway, and the first snapshot already holds account 1
+    const snap = a.id === status.accountId ? status : await engineRequest<Snapshot>('webull.snapshot', { accountId: a.id }, 60000).catch((err) => err as Error);
+    const bal = snap instanceof Error ? snap : snap.balances ?? new Error(snap.errors?.balances ?? snap.message ?? 'Not available.');
+    cards.push(
+      h(
         'div',
         { class: 'acct-card' },
         h('div', { class: 'acct-card-head' }, h('b', {}, `Webull ${a.label}`), envBadge(status.env)),
@@ -230,9 +251,9 @@ export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio
               { label: 'Buying power', value: usd(bal.buyingPower), hint: 'What you can spend on new orders now' },
             ]),
         h('div', { class: 'ap-controls' }, syncButton('Sync now', () => a.id, onSynced), h('button', { class: 'btn', onclick: openFull }, 'Open Webull view')),
-      );
-    }),
-  );
+      ),
+    );
+  }
   out.replaceChildren(...cards);
 }
 

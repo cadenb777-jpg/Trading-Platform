@@ -18,6 +18,7 @@ A test checks our signatures against values the SDK produced.
 Some Webull setups also ask for a one-time approval of the API login in the Webull app (an "access token",
 checked with /openapi/config). That token is kept in ~/.trading-platform/webull_token.json, never sent to the browser.
 """
+import asyncio
 import base64
 import datetime as dt
 import hashlib
@@ -55,6 +56,22 @@ NO_KEYS = 'Add your Webull App Key and App Secret in Settings (Webull section) f
 BAD_KEYS = 'Webull rejected the App Key/Secret. Check them in Settings, and that they match the environment (Test or Live).'
 UNCONFIRMED = "We couldn't confirm whether Webull received this order. Check Orders before trying again."
 APPROVE = 'Webull asks you to approve this API login: open the Webull app on your phone, approve the request, then try again.'
+
+#: Webull's documented rate limits (developer.webull.com/apis/docs/rate-limits and the Trading API overview), counted
+#: per App Key and per endpoint; over the limit Webull answers HTTP 429 and does not process the request. Account list
+#: 10 per 30 s; balances, positions, open orders, order history and order detail 2 per 2 s; preview 150 per 10 s;
+#: place/cancel 600 per 60 s; token create/check 10 per 10 s. Every call goes through one gate (one request at a time)
+#: and waits until the same endpoint was last called at least this many seconds ago (with a little margin).
+SPACING = {'/trading/accounts/list': 3.2, '/auth/tokens/create': 1.1, '/auth/tokens/check': 1.1,
+           '/trading/orders/preview': 0.1, '/trading/orders/place': 0.1, '/trading/orders/cancel': 0.1}
+DEFAULT_SPACING = 1.1
+#: Seconds to wait before retrying a read that got 429 (when Webull sends no Retry-After); reads only, never orders.
+RETRY_WAITS = (2, 5)
+#: How long read results are reused (seconds): the account list rarely changes; balances/positions/orders briefly.
+ACCOUNTS_TTL = 600
+READ_TTL = 20
+BUSY = 'Webull is busy (too many requests). It will refresh automatically in a minute.'
+BUSY_PLACE = 'Webull was busy and did not take the order; nothing was placed. Wait a few seconds and preview again.'
 
 #: preview token -> the exact order it allows (in memory only: a helper restart cancels every pending preview)
 _previews = {}
@@ -117,6 +134,55 @@ def sign(host, path, query, body_text, app_key, app_secret, timestamp=None, nonc
 
 # ---------- HTTP ----------
 
+class Busy(EngineError):
+    """HTTP 429: Webull rejected the request before processing it (its docs: no partial processing)."""
+
+
+_locks = {}
+_last_call = {}   # path -> monotonic time of the last request to it
+_reads = {}       # cache key -> (expires, value)
+
+
+def _lock(name):
+    """One asyncio.Lock per name and event loop (tests run a new loop each time)."""
+    loop = asyncio.get_running_loop()
+    held = _locks.get(name)
+    if held is None or held[0] is not loop:
+        held = _locks[name] = (loop, asyncio.Lock())
+    return held[1]
+
+
+async def _cached(key, ttl, fetch, fresh=False):
+    """A read result reused for ttl seconds. Callers asking for the same thing at once share one Webull call.
+    fresh=True skips the stored value (and stores the new one). Failures are never stored."""
+    key = (_fingerprint(),) + tuple(key)
+    async with _lock(('read',) + key):
+        hit = _reads.get(key)
+        if not fresh and hit and hit[0] > time.monotonic():
+            return hit[1]
+        value = await fetch()
+        _reads[key] = (time.monotonic() + ttl, value)
+        return value
+
+
+def forget(account_id=None):
+    """Drops cached reads for one account (after an order, a cancel or a sync), or all of them."""
+    for key in list(_reads):
+        if account_id is None or account_id in key:
+            _reads.pop(key, None)
+
+
+def _retry_after(response, attempt):
+    headers = getattr(response, 'headers', None) or {}
+    for name in ('Retry-After', 'retry-after', 'X-RateLimit-Reset', 'x-ratelimit-reset'):
+        v = _num(headers.get(name)) if hasattr(headers, 'get') else None
+        if v is not None and v >= 0:
+            if v > 1e9:  # an epoch time, not a number of seconds
+                v -= time.time()
+            return min(max(v, 0), 30)
+    return RETRY_WAITS[min(attempt, len(RETRY_WAITS) - 1)]
+
+
 class Uncertain(EngineError):
     """No clear answer from Webull (network failure, timeout or a server error): the request may or may not have
     been carried out. For an order this must never be read as "not placed"."""
@@ -143,12 +209,30 @@ async def _call(ctx, method, path, query=None, body=None, version='v3', extra=No
         if token:
             headers['x-access-token'] = token
     url = f'https://{host}{path}' + (f'?{urlencode(query)}' if query else '')
-    try:
-        response = await ctx.http.request(method, url, headers=headers, content=body_text.encode() if body_text is not None else None)
-    except EngineError:
-        raise
-    except Exception as err:
-        raise Uncertain(f'Could not reach Webull ({type(err).__name__}). Check your internet connection.') from err
+    attempt = 0
+    while True:
+        async with _lock('gate'):  # one Webull request at a time, spaced per endpoint
+            wait = _last_call.get(path, -1e9) + SPACING.get(path, DEFAULT_SPACING) - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            try:
+                response = await ctx.http.request(method, url, headers=headers, content=body_text.encode() if body_text is not None else None)
+            except EngineError:
+                raise
+            except Exception as err:
+                raise Uncertain(f'Could not reach Webull ({type(err).__name__}). Check your internet connection.') from err
+            finally:
+                _last_call[path] = time.monotonic()
+        if response.status_code != 429:
+            break
+        if method != 'GET' or attempt >= len(RETRY_WAITS):
+            raise Busy(BUSY)  # orders, previews and tokens are never retried here
+        pause = _retry_after(response, attempt)
+        _last_call[path] = time.monotonic() + pause  # others asking for this endpoint wait too
+        await asyncio.sleep(pause)
+        attempt += 1
+        # a retry is a new request: fresh timestamp and nonce
+        headers.update(sign(host, path, query, body_text, settings.get('webull_app_key'), settings.get('webull_app_secret')))
     try:
         data = response.json()
     except Exception:
@@ -201,6 +285,11 @@ def _expired(expires):
 
 
 async def _access_token(ctx):
+    async with _lock('token'):  # one token check/create at a time, so parallel requests never make several tokens
+        return await _access_token_locked(ctx)
+
+
+async def _access_token_locked(ctx):
     fp = _fingerprint()
     if fp not in _config_cache:
         try:
@@ -275,7 +364,12 @@ def _mask(account_id):
     return f'…{s[-4:]}' if len(s) > 4 else s
 
 
-async def accounts(ctx):
+async def accounts(ctx, fresh=False):
+    """The owner's accounts [{id, label}], reused for 10 minutes (Webull allows 10 account-list calls per 30 s)."""
+    return await _cached(('accounts',), ACCOUNTS_TTL, lambda: _fetch_accounts(ctx), fresh)
+
+
+async def _fetch_accounts(ctx):
     data = await _call(ctx, 'GET', '/trading/accounts/list')
     out = []
     for a in _list(data, 'accounts'):
@@ -565,7 +659,7 @@ async def status(ctx, msg):
     try:
         found = await accounts(ctx)
     except EngineError as err:
-        return _unavailable(str(err))
+        return {**_unavailable(str(err)), 'busy': isinstance(err, Busy)}
     try:
         today = placed_today()
     except EngineError:
@@ -575,35 +669,79 @@ async def status(ctx, msg):
             'message': f"Connected to Webull {'LIVE (real money)' if env() == 'live' else 'Test (no real money)'}: {len(found)} account{'s' if len(found) != 1 else ''}."}
 
 
+def cached_balances(ctx, account_id, fresh=False):
+    return _cached(('balances', account_id), READ_TTL, lambda: balances(ctx, account_id), fresh)
+
+
+def cached_positions(ctx, account_id, fresh=False):
+    return _cached(('positions', account_id), READ_TTL, lambda: positions(ctx, account_id), fresh)
+
+
+def cached_orders(ctx, account_id, fresh=False):
+    return _cached(('orders', account_id), READ_TTL, lambda: orders(ctx, account_id), fresh)
+
+
+async def priced_positions(ctx, account_id, fresh=False):
+    """Positions with Schwab prices for display (Webull's positions reply carries no price): price, value, gain and
+    today's gain (dayGain = shares x Schwab's net change; None when Schwab has no figure)."""
+    from . import invest
+    rows = [dict(r) for r in await cached_positions(ctx, account_id, fresh)]
+    try:
+        quotes = await invest.quotes(ctx, sorted({r['symbol'] for r in rows})) if rows else {}
+    except Exception:
+        quotes = {}
+    for r in rows:
+        q = quotes.get(r['symbol']) or {}
+        price, change = _num(q.get('price')), _num(q.get('netChange'))
+        r['price'] = price
+        r['value'] = price * r['qty'] if price is not None else None
+        r['dayGain'] = change * r['qty'] if change is not None else None
+        if r['gain'] is None and r['value'] is not None and r['cost'] is not None:
+            r['gain'] = r['value'] - r['cost']
+    return rows
+
+
 @handler('webull.account')
 async def account(ctx, msg):
     account_id = await _account_id(ctx, msg)
-    return {'accountId': account_id, 'env': env(), **(await balances(ctx, account_id))}
+    return {'accountId': account_id, 'env': env(), **(await cached_balances(ctx, account_id))}
 
 
 @handler('webull.positions')
 async def positions_handler(ctx, msg):
-    """Positions with today's Schwab prices for display (Webull's positions reply carries no price)."""
-    from . import invest
     account_id = await _account_id(ctx, msg)
-    rows = await positions(ctx, account_id)
-    try:
-        quotes = await invest.quotes(ctx, sorted({r['symbol'] for r in rows}))
-    except Exception:
-        quotes = {}
-    for r in rows:
-        price = _num((quotes.get(r['symbol']) or {}).get('price'))
-        r['price'] = price
-        r['value'] = price * r['qty'] if price is not None else None
-        if r['gain'] is None and r['value'] is not None and r['cost'] is not None:
-            r['gain'] = r['value'] - r['cost']
-    return {'accountId': account_id, 'env': env(), 'positions': rows}
+    return {'accountId': account_id, 'env': env(), 'positions': await priced_positions(ctx, account_id)}
 
 
 @handler('webull.orders')
 async def orders_handler(ctx, msg):
     account_id = await _account_id(ctx, msg)
-    return {'accountId': account_id, 'env': env(), **(await orders(ctx, account_id))}
+    return {'accountId': account_id, 'env': env(), **(await cached_orders(ctx, account_id))}
+
+
+@handler('webull.snapshot')
+async def snapshot(ctx, msg):
+    """Everything a Webull view shows in one request, read one after another through the gate: the status fields
+    (ok, env, accounts, limits, placedToday, message), balances, positions (with Schwab prices), open and recent
+    orders. A section that fails is None with its reason in errors[section]; the others still show."""
+    head = await status(ctx, msg)
+    if not head['ok']:
+        return head
+    chosen = await _account(ctx, msg)
+    account_id = chosen['id']
+    out = {**head, 'accountId': account_id, 'account': chosen['label'], 'balances': None, 'positions': None, 'open': None, 'recent': None, 'errors': {}}
+    for section, read in (('balances', lambda: cached_balances(ctx, account_id)), ('positions', lambda: priced_positions(ctx, account_id)),
+                          ('orders', lambda: cached_orders(ctx, account_id))):
+        try:
+            value = await read()
+        except EngineError as err:
+            out['errors'][section] = str(err)
+            continue
+        if section == 'orders':
+            out['open'], out['recent'] = value['open'], value['recent']
+        else:
+            out[section] = value
+    return out
 
 
 @handler('webull.sync')
@@ -611,9 +749,9 @@ async def sync(ctx, msg):
     """Saves (or updates) the portfolio "Webull <account>" with the account's stocks (shares + total cost) and cash."""
     from . import store
     account_id = await _account_id(ctx, msg)
-    held = await positions(ctx, account_id)
+    held = await cached_positions(ctx, account_id, fresh=True)  # a sync always reads Webull now (still through the gate)
     try:
-        cash = (await balances(ctx, account_id)).get('cash')
+        cash = (await cached_balances(ctx, account_id, fresh=True)).get('cash')
     except EngineError:
         cash = None
     holdings = [{'symbol': p['symbol'], 'weight': 0, 'assetClass': 'US stocks', 'kind': 'security', 'shares': p['qty'],
@@ -645,7 +783,10 @@ async def preview_order(ctx, msg):
     value, warnings, note = check(order, last, held, placed_today(), lim)
     client_order_id = uuid.uuid4().hex
     body = {'account_id': account_id, 'new_orders': [webull_order(order, client_order_id)]}
-    await _call(ctx, 'POST', '/trading/orders/preview', body=body, extra={'category': 'US_EQUITY'})  # Webull's own check
+    try:
+        await _call(ctx, 'POST', '/trading/orders/preview', body=body, extra={'category': 'US_EQUITY'})  # Webull's own check
+    except Busy:
+        raise EngineError('Webull is busy (too many requests). Wait a few seconds and preview again.') from None
     estimate = {'value': value, 'last': last}
     for k in [k for k, v in _previews.items() if v['expires'] < time.monotonic()]:
         _previews.pop(k, None)
@@ -691,8 +832,13 @@ async def place_order(ctx, msg):
     _log({**base, 'result': 'attempt'})
     client_order_id = preview['body']['new_orders'][0]['client_order_id']
     done = {'placed': True, 'orderId': client_order_id, 'env': env(), 'summary': describe(order)}
+    forget(preview['account'])  # whatever happens next, the account's cached balances/positions/orders are old
     try:
         await _call(ctx, 'POST', '/trading/orders/place', body=preview['body'], extra={'category': 'US_EQUITY'})
+    except Busy as err:
+        # 429: Webull rejected it before processing (documented), so it was not placed. Still counted as an attempt.
+        _log({**base, 'result': 'failed', 'reason': 'webull busy (429)'})
+        raise EngineError(BUSY_PLACE) from err
     except Uncertain as err:
         # Timeout, network failure or server error: Webull may have the order. Never report "not placed".
         _log({**base, 'result': 'unknown', 'orderId': client_order_id, 'reason': str(err)[:300]})
@@ -726,6 +872,7 @@ async def cancel_order(ctx, msg):
         raise EngineError('Unknown order.')
     account_id = await _account_id(ctx, msg)
     base = {'action': 'cancel', 'orderId': order_id, 'account': _mask(account_id)}
+    forget(account_id)
     try:
         await _call(ctx, 'POST', '/trading/orders/cancel', body={'account_id': account_id, 'client_order_id': order_id})
     except EngineError as err:
