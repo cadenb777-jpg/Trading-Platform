@@ -20,7 +20,20 @@ export interface InsightRequest {
 export async function runInsight(target: HTMLElement, req: InsightRequest) {
   const body = h('div', { class: 'md insight-body' }, h('div', { class: 'ai-status' }, h('span', { class: 'ai-dots' }, h('i'), h('i'), h('i')), h('span', {}, 'Analysing…')));
   const actions = h('div', { class: 'insight-actions' });
-  target.replaceChildren(h('div', { class: 'insight-head' }, h('span', { class: 'ai-spark' }, '✦'), h('b', {}, req.title)), body, actions);
+  const fold = h('button', { class: 'icon-btn', title: 'Minimize', 'aria-label': 'Minimize', 'aria-expanded': 'true' }, '–');
+  fold.onclick = () => {
+    const open = body.hidden; // hidden now = minimized, so this click opens it
+    body.hidden = actions.hidden = !open;
+    fold.textContent = open ? '–' : '+';
+    fold.title = fold.ariaLabel = open ? 'Minimize' : 'Expand';
+    fold.setAttribute('aria-expanded', String(open));
+  };
+  const close = h('button', { class: 'icon-btn', title: 'Close', 'aria-label': 'Close', onclick: () => (target.hidden = true) }, '✕');
+  target.replaceChildren(
+    h('div', { class: 'insight-head' }, h('span', { class: 'ai-spark' }, '✦'), h('b', {}, req.title), h('span', { class: 'insight-controls' }, fold, close)),
+    body,
+    actions,
+  );
   target.hidden = false;
   let text = '';
   let frame = 0;

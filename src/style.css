@@ -3771,6 +3771,12 @@ body.ai-window-body #app {
   font-size: var(--fs-lg);
 }
 
+.insight-controls {
+  margin-left: auto;
+  display: flex;
+  gap: var(--sp-1);
+}
+
 .insight-body {
   line-height: 1.6;
 }
