@@ -5,7 +5,7 @@ valuation inputs and the filings list. Prices and P/E come from Schwab's quote.
 import asyncio
 import datetime as dt
 
-from . import sec
+from . import dividends, sec
 from .core import EngineError, handler
 
 # Each line item lists the XBRL tags companies use for it, most common first. Companies switch tags
@@ -243,7 +243,8 @@ async def company(ctx, msg):
         company_facts = await sec._json(ctx, sec.FACTS_URL.format(cik=info['cik']))
         return {'statements': statements(company_facts), 'shares': _latest_shares(company_facts)}
     core_task = ctx.cached(('sec-core', info['cik']), 6 * 3600, load_core, persist=True, stale_ok=True)
-    subs, core, q, b = await asyncio.gather(sec.submissions(ctx, info['cik']), core_task, quote(ctx, symbol), beta(ctx, symbol))
+    subs, core, q, b, tr = await asyncio.gather(sec.submissions(ctx, info['cik']), core_task, quote(ctx, symbol), beta(ctx, symbol),
+                                             dividends.total_returns(ctx, [symbol]))
     st = core['statements']
     annual, quarterly = st['annual'], st['quarterly']
     shares = core['shares'] or ttm(quarterly, annual, 'dilutedShares')
@@ -267,6 +268,7 @@ async def company(ctx, msg):
             'website': subs.get('website', ''),
         },
         'quote': q,
+        'totalReturn': tr[symbol],
         'valuation': {
             'price': price,
             'shares': shares,

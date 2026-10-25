@@ -10,7 +10,7 @@ import math
 import re
 import time
 
-from . import macro
+from . import dividends, macro
 from .core import EngineError, handler, market_session
 
 FISCAL = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/'
@@ -150,8 +150,10 @@ async def board(ctx, msg):
         raise EngineError('No symbols')
     symbols = symbols[:80]
     with_history = [s for s in symbols if not s.startswith('/')]  # Schwab has no daily history for futures
-    q, histories = await asyncio.gather(quotes(ctx, symbols), asyncio.gather(*(closes(ctx, s) for s in with_history), return_exceptions=True))
+    q, histories, divs = await asyncio.gather(quotes(ctx, symbols), asyncio.gather(*(closes(ctx, s) for s in with_history), return_exceptions=True),
+                                              asyncio.gather(*(ctx.dividends(s) for s in with_history)))
     hist = {s: h for s, h in zip(with_history, histories) if not isinstance(h, Exception)}
+    divs = dict(zip(with_history, divs))
     rows = []
     for s in symbols:
         row = q.get(s) or {'symbol': s, 'name': '', 'price': None, 'change': None}
@@ -161,6 +163,11 @@ async def board(ctx, msg):
                 row['atClose'] = hist[s][-1][0]
             row.update(performance(hist[s], row.get('price')))
             session_change(row, hist[s])
+            if divs.get(s) and row.get('y1') is not None:  # dividend payers: 1-year total return (dividends reinvested)
+                day = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).date()  # noqa: E731
+                st = dividends.total_return_stats([(day(t), c) for t, c in hist[s]], divs[s])
+                if st['tr1y'] is not None:
+                    row['tr1y'] = (1 + row['y1']) * (1 + st['tr1y']) / (1 + st['price1y']) - 1
         rows.append(row)
     return {'rows': rows, 'asOf': time.time()}
 

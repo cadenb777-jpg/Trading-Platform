@@ -6,7 +6,7 @@
  */
 import { listDocs } from '../data/store';
 import { allocation, combineHoldings, combinedValue, dividendPayload, myPortfolios, todayChange, type CombinedHolding } from '../portfolio/account';
-import { drawDividends, fetchDividends, type DividendReport } from '../portfolio/dividendsView';
+import { drawDividends, fetchDividends, totalReturnCell, type DividendReport } from '../portfolio/dividendsView';
 import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
 import { isMine, positions, type Portfolio } from '../portfolio/types';
 import { renderWebullCard } from '../portfolio/webullView';
@@ -73,7 +73,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
       panel(
         'Holdings',
         `${rows.length} holding${rows.length === 1 ? '' : 's'} across ${mine.length} account${mine.length === 1 ? '' : 's'}`,
-        holdingsTable(valued, total),
+        holdingsTable(valued, total, report),
       ),
       h('h2', { class: 'section-label acct-section' }, 'Dividends'),
       divBox,
@@ -93,6 +93,12 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
         { label: 'Total value', value: usd(total), hint: cash ? `Includes ${usd(cash)} cash and other amounts` : 'All your accounts added together' },
         { label: 'Total cost', value: usd(r?.cost), hint: 'What you paid for the shares (where your broker gave a cost basis)' },
         { label: 'Gain', value: r?.gain != null ? `${signed(r.gain)} (${pct(r.gainPct, 1)})` : '—', tone: tone(r?.gain), hint: 'Value − cost, on holdings with a cost basis' },
+        {
+          label: termLabel('1-yr total return', 'totalreturn'),
+          value: pct(r?.totalReturn?.tr1y, 1),
+          tone: tone(r?.totalReturn?.tr1y),
+          hint: r?.totalReturn?.tr1y != null ? `Price only ${pct(r.totalReturn.price1y, 1)} · if today’s holdings were held all year` : 'Needs a year of price history',
+        },
         { label: 'Today', value: today != null ? `${signed(today)} (${pct(todayPct, 2)})` : '—', tone: tone(today), hint: 'Change since yesterday’s close on your shares' },
         { label: 'Yearly dividend income', value: usd(r?.annualIncome), hint: 'Expected over the next 12 months at the latest regular payments' },
         { label: 'Monthly average', value: usd(r?.monthly) },
@@ -102,7 +108,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
     );
   }
 
-  function holdingsTable(valued: { r: CombinedHolding; value: number | null; today: number | null }[], total: number) {
+  function holdingsTable(valued: { r: CombinedHolding; value: number | null; today: number | null }[], total: number, report: DividendReport | null) {
     const sorted = [...valued].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
     const accounts = (r: CombinedHolding) => {
       if (r.parts.length === 1) return h('span', { class: 'muted' }, r.parts[0].account);
@@ -114,7 +120,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
       );
     };
     return dataTable(
-      ['Symbol', 'Shares', 'Price', 'Value', 'Weight', 'Today', 'Gain', 'Accounts'],
+      ['Symbol', 'Shares', 'Price', 'Value', 'Weight', 'Today', 'Gain', '1Y total return', 'Accounts'],
       sorted.map(({ r, value, today }) => {
         const gain = r.cost != null && value != null ? value - r.cost : null;
         return [
@@ -125,6 +131,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
           { v: value != null && total ? pctU(value / total, 1) : '—', cls: 'num' },
           { v: signed(today), cls: `num ${tone(today)}` },
           { v: gain != null ? `${signed(gain)} (${pct(r.cost ? gain / r.cost : null, 1)})` : '—', cls: `num ${tone(gain)}` },
+          r.kind === 'security' ? totalReturnCell(report?.holdings.find((x) => x.symbol === r.symbol) ?? {}) : '—',
           accounts(r),
         ];
       }),

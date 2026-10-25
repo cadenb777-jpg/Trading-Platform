@@ -60,6 +60,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   yields, yield on cost, income, 5y growth, 12-month calendar; forward = last regular payment x frequency (1-2x a year:
   last 12 months summed); special = > 1.5x the 4 before and the next drops back (newest: off-schedule or > 3x); ex/pay dates are estimates (pay = ex + 21 days; Yahoo has no pay dates). Statement import
   (src/portfolio/statement.ts) matches CSV/Excel columns; a PDF goes through ai.chat when the AI key is set.
+  Total return (v28, dividends.total_return_stats/total_returns: dividends reinvested on the ex-date, 3y/5y annualised, None when
+  history is short, cached per symbol per day): per holding + value-weighted 1y in dividends.portfolio (Account card and column),
+  invest.board tr1y for dividend payers, research.company totalReturn; glossary term `totalreturn`.
   Account page (src/pages/accountPage.ts, #account): portfolios with Portfolio.mine (set by Import statement; unset = live
   Webull sync) merged by src/portfolio/account.ts, figures from dividends.portfolio + dividendsView; read-only (orders only in Webull view).
   Portfolios: Holding.kind security/cash/alt, Portfolio.mode weight/shares/dollars; positions()/holdingsPayload()

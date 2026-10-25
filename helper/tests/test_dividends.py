@@ -160,6 +160,23 @@ class DividendTests(unittest.TestCase):
         self.assertEqual(r['missing'], 0)
         self.assertEqual(len(r['calendar']), 12)
 
+    def test_total_return(self):
+        days = [dt.date(2020, 1, 1) + dt.timedelta(days=i) for i in range(0, 6 * 366)]
+        closes = [(d, 100 + i * 0.01) for i, d in enumerate(days)]
+        plain = dv.total_return_stats(closes, {})
+        for y in (1, 3, 5):  # no dividends: total return equals price return
+            self.assertAlmostEqual(plain[f'tr{y}y'], plain[f'price{y}y'])
+        flat = [(d, 100.0) for d in days]
+        paid = dv.total_return_stats(flat, {days[-100]: 2.0})  # one $2 dividend on a flat $100 stock
+        self.assertAlmostEqual(paid['price1y'], 0.0)
+        self.assertAlmostEqual(paid['tr1y'], 0.02)
+        self.assertAlmostEqual(paid['tr3y'], 1.02 ** (1 / 3) - 1)
+        short = dv.total_return_stats(flat[-200:], {})
+        self.assertIsNone(short['tr1y'])
+        self.assertIsNone(short['price5y'])
+        self.assertAlmostEqual(dv.weighted_total_return([{'value': 300, 'tr1y': 0.1, 'price1y': 0.05}, {'value': 100, 'tr1y': 0.3, 'price1y': 0.3},
+                                                         {'value': 50, 'tr1y': None}])['tr1y'], 0.15)
+
 
 if __name__ == '__main__':
     unittest.main()

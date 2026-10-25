@@ -5,6 +5,7 @@ import type { MarketRef } from '../data/quotes';
 import { engineRequest } from '../data/schwab';
 import { createLineChart, pct, rangeBar, statCards } from '../ui/charts';
 import { formatPrice, h, openModal } from '../ui/dom';
+import { termLabel } from '../ui/glossary';
 import { openSettings } from '../ui/settings';
 import { sparkline } from '../ui/sparkline';
 import { withTableTools } from '../ui/tableTools';
@@ -21,6 +22,8 @@ export interface BoardRow {
   m3?: number | null;
   ytd?: number | null;
   y1?: number | null;
+  /** 1-year total return (dividends reinvested); dividend payers only. */
+  tr1y?: number | null;
   spark?: number[];
   high52?: number | null;
   low52?: number | null;
@@ -82,7 +85,7 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
       withTableTools(h(
         'table',
         { class: 'data-table inv-table' },
-        h('thead', {}, h('tr', {}, ...['Name', 'Price', 'Today', '1 month', 'YTD', '1 year', '3 months'].map((t) => h('th', {}, t)))),
+        h('thead', {}, h('tr', {}, ...['Name', 'Price', 'Today', '1 month', 'YTD', '1 year', termLabel('1Y total', 'totalreturn'), '3 months'].map((t) => h('th', {}, t)))),
         h(
           'tbody',
           {},
@@ -98,6 +101,7 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
               pctCell(r?.m1),
               pctCell(r?.ytd),
               pctCell(r?.y1),
+              r?.tr1y != null && r.y1 != null ? h('td', { class: tone(r.tr1y), title: `Price ${pct(r.y1)} + dividends ${pct(r.tr1y - r.y1)}` }, pct(r.tr1y)) : h('td', { class: 'muted' }, '—'),
               h('td', { class: 'inv-spark' }, r?.spark && r.spark.length > 1 ? sparkline(r.spark, null, up ? '#26a69a' : '#ef5350') : ''),
             );
           }),
@@ -148,6 +152,7 @@ export function openSymbolDetail(symbol: string, label: string, row: BoardRow | 
     { label: '3 months', value: pct(row?.m3), tone: tone(row?.m3) },
     { label: 'Year to date', value: pct(row?.ytd), tone: tone(row?.ytd) },
     { label: '1 year', value: pct(row?.y1), tone: tone(row?.y1) },
+    ...(row?.tr1y != null ? [{ label: termLabel('1-yr total return', 'totalreturn'), value: pct(row.tr1y), tone: tone(row.tr1y) }] : []),
     ...(row?.divYield ? [{ label: 'Dividend yield', value: `${row.divYield.toFixed(2)}%` }] : []),
     ...(row?.peRatio ? [{ label: 'P/E', value: row.peRatio.toFixed(1) }] : []),
   ]);

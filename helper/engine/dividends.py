@@ -4,6 +4,7 @@ Dividend history comes from Yahoo (ctx.dividends, cash per share by ex-date) and
 Yahoo has no pay dates, so every future date here is an estimate: the next ex-date follows the stock's usual gap
 and the pay date is assumed to be PAY_LAG_DAYS after it.
 """
+import asyncio
 import datetime as dt
 import statistics
 
@@ -176,6 +177,57 @@ def summarise(holdings, today):
     }
 
 
+def total_return_stats(closes, divs):
+    """1, 3 and 5-year total return (dividends reinvested on the ex-date; 3y/5y annualised) and price-only return from
+    [(date, close), ...] (oldest first) and {ex-date: cash per share}. None when the history is too short. Pure."""
+    closes = [(d, float(c)) for d, c in closes if c]
+    if len(closes) < 2:
+        return {f'{k}{y}y': None for k in ('tr', 'price') for y in (1, 3, 5)}
+    # Same rule as quant.price_matrix: a dividend counts on the first trading day on or after its ex-date.
+    pending = sorted((d, a) for d, a in (divs or {}).items() if d > closes[0][0])
+    index, j = [1.0], 0
+    for (_, prev), (day, close) in zip(closes, closes[1:]):
+        paid = 0.0
+        while j < len(pending) and pending[j][0] <= day:
+            paid += pending[j][1]
+            j += 1
+        index.append(index[-1] * (close + paid) / prev)
+    end = closes[-1][0]
+    out = {}
+    for years in (1, 3, 5):
+        cutoff = end - dt.timedelta(days=round(365.25 * years))
+        start = max((i for i, (d, _) in enumerate(closes) if d <= cutoff + dt.timedelta(days=5)), default=None)
+        if start is None:
+            out[f'tr{years}y'] = out[f'price{years}y'] = None
+            continue
+        tr, pr = index[-1] / index[start], closes[-1][1] / closes[start][1]
+        out[f'tr{years}y'], out[f'price{years}y'] = tr ** (1 / years) - 1, pr ** (1 / years) - 1
+    return out
+
+
+async def total_returns(ctx, symbols):
+    """{symbol: total_return_stats} from Schwab daily closes (6 years) and Yahoo dividends; cached per symbol per day."""
+    async def one(symbol):
+        async def load():
+            bars, divs = await asyncio.gather(ctx.daily_bars(symbol, 6), ctx.dividends(symbol))
+            day = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).date()  # noqa: E731
+            return total_return_stats([(day(b['time']), b['close']) for b in bars], divs or {})
+        try:
+            return await ctx.cached(('total-return', symbol), 86400, load)
+        except Exception:
+            return total_return_stats([], {})
+    return dict(zip(symbols, await asyncio.gather(*(one(s) for s in symbols))))
+
+
+def weighted_total_return(holdings):
+    """Portfolio 1-year total and price return weighted by current value (as if every holding was held all year)."""
+    have = [x for x in holdings if x.get('value') and x.get('tr1y') is not None]
+    value = sum(x['value'] for x in have)
+    if not value:
+        return {'tr1y': None, 'price1y': None}
+    return {k: sum(x['value'] * x[k] for x in have) / value for k in ('tr1y', 'price1y')}
+
+
 @handler('dividends.portfolio')
 async def portfolio(ctx, msg):
     from . import invest
@@ -202,12 +254,14 @@ async def portfolio(ctx, msg):
     quotes = await invest.quotes(ctx, list(wanted))
     today = dt.date.today()
     out = []
+    returns = await total_returns(ctx, list(wanted))
     for symbol, h in wanted.items():
         divs = await ctx.dividends(symbol)  # cached per symbol for a day
         price = (quotes.get(symbol) or {}).get('price')
         row = analyse(divs or {}, today, h['shares'], h['cost'], price)
         if divs is None:
             row.update(note='Dividend history unavailable', missing=True, forward=None, annualIncome=None, **{'yield': None, 'yieldOnCost': None})
-        out.append({'symbol': symbol, 'name': (quotes.get(symbol) or {}).get('name') or '', 'shares': h['shares'], **row})
+        out.append({'symbol': symbol, 'name': (quotes.get(symbol) or {}).get('name') or '', 'shares': h['shares'], **row, **returns[symbol]})
     out.sort(key=lambda x: -(x['annualIncome'] or 0))
-    return {'holdings': out, 'missing': sum(1 for x in out if x.get('missing')), 'asOf': today.isoformat(), 'payLagDays': PAY_LAG_DAYS, **summarise(out, today)}
+    return {'holdings': out, 'missing': sum(1 for x in out if x.get('missing')), 'asOf': today.isoformat(), 'payLagDays': PAY_LAG_DAYS, **summarise(out, today),
+            'totalReturn': weighted_total_return(out)}

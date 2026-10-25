@@ -5,6 +5,7 @@ import { engineRequest } from '../data/schwab';
 import { dcf, impliedGrowth, sensitivity, wacc, type DcfInputs } from '../research/dcf';
 import { compact, createLineChart, dataTable, money, numberField, pageFrame, pct, rangeBar, statCards } from '../ui/charts';
 import { formatPrice, h } from '../ui/dom';
+import { termLabel } from '../ui/glossary';
 
 type Values = Record<string, (number | null)[]>;
 
@@ -17,6 +18,8 @@ export interface CompanyData {
   symbol: string;
   profile: { name: string; cik: number; industry: string; exchange: string; fiscalYearEnd: string };
   quote: { price?: number; change?: number; high52?: number; low52?: number; peRatio?: number; divYield?: number; lastEarnings?: string };
+  /** Total return (dividends reinvested) and price-only return; 3y/5y are yearly rates. Missing from helpers before v28. */
+  totalReturn?: Record<'tr1y' | 'tr3y' | 'tr5y' | 'price1y' | 'price3y' | 'price5y', number | null>;
   valuation: {
     price: number | null;
     shares: number | null;
@@ -136,6 +139,12 @@ export function createResearchPage() {
       { class: 'panel company-head' },
       h('div', { class: 'panel-head' }, h('h3', {}, `${d.profile.name} (${d.symbol})`), h('span', { class: 'spacer' }), livePrice, liveChange),
       h('div', { class: 'profile-line muted small' }, h('span', {}, d.profile.industry || 'Industry n/a'), h('span', {}, d.profile.exchange), d.profile.fiscalYearEnd ? h('span', {}, `Fiscal year ends ${d.profile.fiscalYearEnd.slice(0, 2)}/${d.profile.fiscalYearEnd.slice(2)}`) : null, h('span', {}, `SEC CIK ${d.profile.cik}`)),
+      d.totalReturn?.tr1y != null
+        ? h('div', { class: 'profile-line small' }, termLabel('Total return', 'totalreturn'), ...([1, 3, 5] as const).map((y) => {
+            const tr = d.totalReturn![`tr${y}y`];
+            return h('span', { class: tr == null ? 'muted' : tr >= 0 ? 'up' : 'down' }, `${y}Y ${pct(tr, 1)}`, h('span', { class: 'muted' }, ` (price ${pct(d.totalReturn![`price${y}y`], 1)})`));
+          }), h('span', { class: 'muted' }, '3Y and 5Y per year'))
+        : null,
     );
     const body = tab === 'overview' ? overview(d) : tab === 'financials' ? financials(d) : tab === 'valuation' ? valuation(d) : filings(d);
     frame.body.replaceChildren(header, ...body, ai.panel);

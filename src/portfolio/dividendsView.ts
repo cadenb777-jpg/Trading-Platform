@@ -33,6 +33,11 @@ interface DividendHolding {
   annualIncome: number | null;
   missing?: boolean;
   growth5y: number | null;
+  /** Total return (dividends reinvested) and price-only return; 3y/5y are yearly rates. */
+  tr1y?: number | null;
+  price1y?: number | null;
+  tr3y?: number | null;
+  tr5y?: number | null;
   nextExDate: string | null;
   nextPayDate: string | null;
   note: string;
@@ -62,7 +67,15 @@ export interface DividendReport {
   yield: number | null;
   yieldOnCost: number | null;
   calendar: { month: string; total: number; payments: Payment[] }[];
+  /** 1-year total and price return weighted by today's value (as if every holding was held all year). */
+  totalReturn?: { tr1y: number | null; price1y: number | null };
 }
+
+/** "1Y total return" table cell; its hover shows the price-only return. */
+export const totalReturnCell = (x: { tr1y?: number | null; price1y?: number | null }) => ({
+  v: h('span', { title: x.tr1y == null ? 'Not enough price history' : `Price only ${pct(x.price1y, 1)} · dividends ${pct((x.tr1y ?? 0) - (x.price1y ?? 0), 1)}` }, pct(x.tr1y, 1)),
+  cls: `num ${tone(x.tr1y)}`,
+});
 
 /** Whole dollars from $1,000 up, cents below (income figures read better exact than as "$1.3K"). */
 const usd = (v: number | null | undefined) =>
@@ -198,11 +211,12 @@ export function drawDividends(out: HTMLElement, r: DividendReport, { hasCash = f
       h('div', { class: 'panel-head' }, h('h3', {}, stats ? 'Holdings' : 'Dividends by holding')),
       r.missing ? h('p', { class: 'badge warn' }, `${r.missing} holding${r.missing === 1 ? '' : 's'} had no dividend data (shown as —). Try again later.`) : null,
       dataTable(
-        ['Symbol', 'Shares', 'Gain', 'Yield · on cost', 'Yearly income', 'Pays', '5y growth'],
+        ['Symbol', 'Shares', 'Gain', '1Y total return', 'Yield · on cost', 'Yearly income', 'Pays', '5y growth'],
         r.holdings.map((x) => [
           { v: h('span', { title: [x.name, x.nextExDate ? `next ex-date ~${day(x.nextExDate)}` : ''].filter(Boolean).join(' · ') }, h('b', {}, x.symbol), ' ', noteBadge(x) ?? ''), cls: 'label' },
           { v: String(+x.shares.toFixed(4)), cls: 'num' },
           { v: x.gainPct != null ? pct(x.gainPct, 1) : '—', cls: `num ${tone(x.gain)}` },
+          totalReturnCell(x),
           { v: `${pctU(x.yield)} · ${pctU(x.yieldOnCost)}`, cls: 'num' },
           { v: usd(x.annualIncome), cls: 'num' },
           x.frequencyLabel,
@@ -215,6 +229,7 @@ export function drawDividends(out: HTMLElement, r: DividendReport, { hasCash = f
         'p',
         { class: 'ap-note' },
         'Yield = the latest regular dividend × payments per year ÷ price (twice-a-year and yearly payers: the last 12 months added up; one-off specials are left out). Yield · on cost shows today’s yield, then the yield on what you paid. 5y growth is the yearly rate the dividend grew over five years. Future dates and amounts are estimates from each holding’s dividend history; pay dates are about 3 weeks after the ex-date.',
+        ' ', termLabel('1Y total return', 'totalreturn'), ' = price change + dividends reinvested over the last year (hover for the price-only part).',
         hasCash ? ' Cash and money-market balances aren’t included.' : '',
       ),
     ),
