@@ -6,6 +6,8 @@ export interface PriceInfo {
   /** Dividend yield as a fraction (0.015 = 1.5%). */
   yield: number | null;
   name: string;
+  /** Today's change as a fraction (0.01 = +1%), when known. */
+  change?: number | null;
 }
 
 const cache = new Map<string, { at: number; info: PriceInfo }>();
@@ -16,8 +18,8 @@ export async function fetchPrices(symbols: string[]): Promise<Record<string, Pri
   const wanted = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
   const missing = wanted.filter((s) => (cache.get(s)?.at ?? 0) < now - FRESH_MS);
   if (missing.length) {
-    const { rows } = await engineRequest<{ rows: { symbol: string; price: number | null; divYield?: number | null; name?: string }[] }>('invest.board', { symbols: missing }, 60000);
-    for (const r of rows) cache.set(r.symbol, { at: now, info: { price: r.price, yield: r.divYield != null ? r.divYield / 100 : null, name: r.name ?? '' } });
+    const { rows } = await engineRequest<{ rows: { symbol: string; price: number | null; divYield?: number | null; name?: string; change?: number | null }[] }>('invest.board', { symbols: missing }, 60000);
+    for (const r of rows) cache.set(r.symbol, { at: now, info: { price: r.price, yield: r.divYield != null ? r.divYield / 100 : null, name: r.name ?? '', change: r.change ?? null } });
   }
   return Object.fromEntries(wanted.map((s) => [s, cache.get(s)?.info ?? { price: null, yield: null, name: '' }]));
 }

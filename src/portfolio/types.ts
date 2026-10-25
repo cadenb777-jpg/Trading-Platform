@@ -78,7 +78,16 @@ export interface Portfolio {
   /** Optional start date (YYYY-MM-DD) for performance, e.g. when a client account opened. */
   inception?: string;
   notes?: string;
+  /** The owner's own account (shown on the Account page). Unset: true for portfolios synced from a live Webull account. */
+  mine?: boolean;
+  /** Set by the helper's Webull sync. */
+  webullAccount?: string;
+  webullEnv?: 'test' | 'live';
+  syncedAt?: string;
 }
+
+/** Whether a portfolio is one of the owner's own accounts (client portfolios are not). */
+export const isMine = (p: Portfolio) => p.mine ?? (!!p.webullAccount && (p.webullEnv ?? 'live') === 'live');
 
 export interface Point {
   time: string;
