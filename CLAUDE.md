@@ -157,6 +157,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   documented limits (SPACING); reads are cached (account list 10 min, balances/positions/orders 20 s; place/cancel
   clear the account, sync reads fresh); a GET that gets 429 waits and retries twice, orders/previews never retry, and
   429 on place is logged 'failed' (Webull doesn't process rejected requests). One lock makes the access token.
+  Nobody sleeps holding the gate (wait, release, re-queue); place must be sent within PLACE_DEADLINE (10 s) or it is
+  refused as not placed (logged, counted). The browser waits 90 s for place; no answer = "couldn't confirm".
+  forget() bumps a generation so reads begun before an order aren't cached; snapshot.asOf = Webull fetch time.
   `webull.snapshot` = status + balances + positions (Schwab prices, dayGain) + open/recent orders in one request.
   The AI never trades (a test scans ai.py; another checks no other helper file places orders).
   UI: Trade page (src/pages/tradePage.ts, #trade: watchlist, chart with avg cost/open orders, ticket, positions/

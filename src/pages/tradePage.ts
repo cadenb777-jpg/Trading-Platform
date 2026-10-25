@@ -325,8 +325,14 @@ export function createTradePage() {
 
   // ----- account -----
   let refreshing: Promise<void> | null = null;
+  let queued = false;
   function refresh(force = false): Promise<void> {
-    if (refreshing) return refreshing;
+    // A forced refresh (after an order or cancel) asked while one is on its way runs again right after it, so the
+    // page doesn't keep the answer that started before the order.
+    if (refreshing) {
+      if (force) queued = true;
+      return refreshing;
+    }
     if (!force && Date.now() - loadedAt < REFRESH_MS - 1000) return Promise.resolve();
     refreshBtn.disabled = true;
     refreshing = (async () => {
@@ -343,6 +349,10 @@ export function createTradePage() {
       } finally {
         refreshing = null;
         refreshBtn.disabled = false;
+        if (queued) {
+          queued = false;
+          setTimeout(() => refresh(true));
+        }
       }
       drawAccount();
     })();
@@ -400,7 +410,10 @@ export function createTradePage() {
   }
 
   function tickUpdated() {
-    updated.textContent = loadedAt ? `Updated ${timeAgo(loadedAt / 1000)}` : '';
+    // the helper's fetch time (it reuses Webull answers for up to 20 s), not when the browser asked
+    const asOf = snap?.ok ? snap.asOf : null;
+    updated.textContent = asOf ? `As of ${new Date(asOf * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' })}` : '';
+    updated.title = asOf ? `Fetched from Webull ${timeAgo(asOf)}` : '';
   }
 
   function setupSteps(message: string, busy: boolean) {
@@ -423,9 +436,9 @@ export function createTradePage() {
   }
 
   // ----- protect after a buy -----
-  function placed(order: PlacedOrder, protectStop: number | null) {
-    if (order.side === 'BUY' && protectStop && protectStop > 0) protect[order.symbol] = protectStop;
-    if (order.side === 'SELL' && order.orderType.startsWith('STOP')) delete protect[order.symbol];
+  function placed(order: PlacedOrder, protectStop: number | null, ok: boolean) {
+    if (ok && order.side === 'BUY' && protectStop && protectStop > 0) protect[order.symbol] = protectStop;
+    if (ok && order.side === 'SELL' && order.orderType.startsWith('STOP')) delete protect[order.symbol];
     save(PROTECT_KEY, protect);
     refresh(true);
   }

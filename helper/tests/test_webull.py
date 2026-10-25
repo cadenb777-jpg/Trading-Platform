@@ -40,6 +40,8 @@ class FakeWebull:
         self.lookup_finds = False     # whether GET /trading/orders/get then finds it
         self.placed_ids = []
         self.busy = {}                # path -> how many times to answer 429 first
+        self.retry_after = '0'        # the Retry-After header sent with those 429s
+        self.delay = {}               # path -> seconds that request takes
         self.in_flight = self.max_in_flight = 0
 
     async def request(self, method, url, headers=None, content=None):
@@ -50,12 +52,12 @@ class FakeWebull:
         self.in_flight += 1
         self.max_in_flight = max(self.max_in_flight, self.in_flight)
         try:
-            await asyncio.sleep(0.01)  # a real request yields to other tasks
+            await asyncio.sleep(self.delay.get(u.path, 0.01))  # a real request yields to other tasks
         finally:
             self.in_flight -= 1
         if self.busy.get(u.path):
             self.busy[u.path] -= 1
-            return Resp(429, {'message': 'Too Many Requests'}, {'Retry-After': '0'})
+            return Resp(429, {'message': 'Too Many Requests'}, {'Retry-After': self.retry_after})
         if self.status != 200:
             return Resp(self.status, {'message': 'nope'})
         p = u.path
@@ -511,6 +513,68 @@ class RateLimits(Base):
         run(webull.snapshot(self.ctx, {}))
         self.assertEqual(self.fake.paths().count('/trading/assets/balances/get'), 3)
         self.assertEqual(self.fake.paths().count('/trading/accounts/list'), 1)
+
+    def test_read_waiting_after_429_does_not_hold_up_an_order(self):
+        token = self.preview()['token']
+        self.fake.busy['/trading/assets/positions/list'] = 1
+        self.fake.retry_after = '1.5'
+        webull.SPACING = {'/trading/assets/positions/list': 0.5}
+
+        async def both():
+            read = asyncio.create_task(webull.positions_handler(self.ctx, {}))
+            read2 = asyncio.create_task(webull._call(self.ctx, 'GET', '/trading/assets/positions/list'))  # waits for spacing
+            await asyncio.sleep(0.1)  # the read has had its 429 and is waiting 1.5 s
+            start = time.monotonic()
+            placed = await webull.place_order(self.ctx, {'token': token})
+            took = time.monotonic() - start
+            await read
+            await read2
+            return placed, took
+
+        placed, took = run(both())
+        self.assertTrue(placed['placed'])
+        self.assertLess(took, 0.5)
+
+    def test_order_that_cannot_be_sent_in_time_is_refused_and_counted(self):
+        token = self.preview()['token']
+        webull.PLACE_DEADLINE = 0.2
+        self.addCleanup(setattr, webull, 'PLACE_DEADLINE', 10)
+        self.fake.delay['/trading/assets/balances/get'] = 0.8  # a slow read holds the gate
+
+        async def both():
+            read = asyncio.create_task(webull.account(self.ctx, {}))
+            await asyncio.sleep(0.05)
+            try:
+                return await webull.place_order(self.ctx, {'token': token})
+            finally:
+                await read
+
+        with self.assertRaises(core.EngineError) as e:
+            run(both())
+        self.assertIn('NOT placed', str(e.exception))
+        self.assertEqual(self.fake.placed_ids, [])
+        self.assertEqual([x['result'] for x in self.log() if x.get('action') == 'place'], ['attempt', 'failed'])
+        self.assertEqual(webull.placed_today(), 1)
+
+    def test_read_started_before_an_order_is_not_kept(self):
+        self.fake.delay['/trading/assets/balances/get'] = 0.2
+
+        async def go():
+            read = asyncio.create_task(webull.account(self.ctx, {}))
+            await asyncio.sleep(0.05)
+            webull.forget('ACC123456')  # an order was placed while the read was on its way
+            await read
+            self.fake.delay.clear()
+            await webull.account(self.ctx, {})
+
+        run(go())
+        self.assertEqual(self.fake.paths().count('/trading/assets/balances/get'), 2)
+
+    def test_snapshot_says_when_it_was_fetched(self):
+        before = time.time()
+        snap = run(webull.snapshot(self.ctx, {}))
+        self.assertGreaterEqual(snap['asOf'], before - 1)
+        self.assertLessEqual(snap['asOf'], time.time())
 
     def test_sync_reads_fresh(self):
         run(webull.snapshot(self.ctx, {}))

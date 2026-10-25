@@ -74,6 +74,8 @@ export interface Snapshot {
   open?: Order[] | null;
   recent?: Order[] | null;
   errors?: Record<string, string>;
+  /** When the oldest section was fetched from Webull (unix seconds; the helper reuses answers for 20 s). */
+  asOf?: number | null;
 }
 interface Preview {
   token: string;
@@ -163,7 +165,10 @@ export function takePrefill(): TicketPrefill | null {
 // ----- The confirm window -----
 
 /** Asks the helper for a preview, restates it, and only then enables "Place order". */
-export function confirmOrder(order: PlacedOrder, onPlaced: (order: PlacedOrder) => void) {
+const UNCONFIRMED = 'We couldn’t confirm whether the order was placed. Check Orders before trying again.';
+
+/** onPlaced(order, ok): ok=false after a failed or unconfirmed place (the caller only refreshes). */
+export function confirmOrder(order: PlacedOrder, onPlaced: (order: PlacedOrder, ok: boolean) => void) {
   const content = h('div', { class: 'wb-confirm' }, h('div', { class: 'muted pad' }, 'Checking the order…'));
   const place = h('button', { class: 'btn primary', disabled: true }, 'Place order') as HTMLButtonElement;
   const timer = h('span', { class: 'muted small' });
@@ -209,13 +214,17 @@ export function confirmOrder(order: PlacedOrder, onPlaced: (order: PlacedOrder) 
           clearInterval(tick);
           timer.textContent = 'Sending…';
           try {
-            const r = await engineRequest<{ orderId: string; summary: string; env: Env }>('webull.place_order', { token: p.token }, 30000);
+            // 90 s: well above the helper's 10 s send deadline plus Webull's answer and a lookup by order id
+            const r = await engineRequest<{ orderId: string; summary: string; env: Env }>('webull.place_order', { token: p.token }, 90000);
             close();
             toast(`Order placed${r.env === 'live' ? ' (LIVE)' : ' (Test)'}: ${r.summary}`);
-            onPlaced(order);
+            onPlaced(order, true);
           } catch (err) {
             timer.textContent = '';
-            content.append(h('div', { class: 'ap-error' }, friendly(err)));
+            // No answer from the helper (timeout or lost connection): the order may have gone through.
+            const unknown = /took too long|Lost connection/i.test((err as Error).message);
+            content.append(h('div', { class: 'ap-error' }, unknown ? UNCONFIRMED : friendly(err)));
+            onPlaced(order, false); // refresh the account anyway, so Orders shows what Webull has
           }
         },
         { once: true },

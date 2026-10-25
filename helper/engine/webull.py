@@ -70,7 +70,12 @@ RETRY_WAITS = (2, 5)
 #: How long read results are reused (seconds): the account list rarely changes; balances/positions/orders briefly.
 ACCOUNTS_TTL = 600
 READ_TTL = 20
+#: An order must be on its way to Webull within this many seconds of the place request arriving, or it is refused as
+#: not placed (so the browser never gives up while the helper still sends it later).
+PLACE_DEADLINE = 10
 BUSY = 'Webull is busy (too many requests). It will refresh automatically in a minute.'
+NOT_SENT = ('Webull requests were queued, so the order could not be sent within a few seconds and was NOT placed. '
+            'Wait a few seconds and preview again.')
 BUSY_PLACE = 'Webull was busy and did not take the order; nothing was placed. Wait a few seconds and preview again.'
 
 #: preview token -> the exact order it allows (in memory only: a helper restart cancels every pending preview)
@@ -138,9 +143,14 @@ class Busy(EngineError):
     """HTTP 429: Webull rejected the request before processing it (its docs: no partial processing)."""
 
 
+class NotSent(EngineError):
+    """The request was never sent: its deadline passed while it waited for its turn."""
+
+
 _locks = {}
 _last_call = {}   # path -> monotonic time of the last request to it
-_reads = {}       # cache key -> (expires, value)
+_reads = {}       # cache key -> (expires, value, fetched at (unix time))
+_gen = {}         # account id (or '*') -> generation, bumped by forget(): older reads are not stored
 
 
 def _lock(name):
@@ -160,13 +170,28 @@ async def _cached(key, ttl, fetch, fresh=False):
         hit = _reads.get(key)
         if not fresh and hit and hit[0] > time.monotonic():
             return hit[1]
+        before = _generation(key)
         value = await fetch()
-        _reads[key] = (time.monotonic() + ttl, value)
+        if _generation(key) == before:  # an order/cancel since the read started: its result may be old, don't keep it
+            _reads[key] = (time.monotonic() + ttl, value, time.time())
         return value
 
 
+def _generation(key):
+    return _gen.get('*', 0), _gen.get(key[2] if len(key) > 2 else None, 0)
+
+
+def fetched_at(key):
+    """When a cached read was fetched from Webull (unix time), or None."""
+    hit = _reads.get((_fingerprint(),) + tuple(key))
+    return hit[2] if hit else None
+
+
 def forget(account_id=None):
-    """Drops cached reads for one account (after an order, a cancel or a sync), or all of them."""
+    """Drops cached reads for one account (after an order, a cancel or a sync), or all of them, and makes reads that
+    are already on their way not store their (possibly older) result."""
+    name = '*' if account_id is None else account_id
+    _gen[name] = _gen.get(name, 0) + 1
     for key in list(_reads):
         if account_id is None or account_id in key:
             _reads.pop(key, None)
@@ -196,7 +221,9 @@ def _message(data, status):
     return f'Webull returned an error ({status}).'
 
 
-async def _call(ctx, method, path, query=None, body=None, version='v3', extra=None, use_token=True):
+async def _call(ctx, method, path, query=None, body=None, version='v3', extra=None, use_token=True, deadline=None):
+    """One Webull request through the gate. deadline (time.monotonic()) = the latest moment it may be sent; if it
+    can't be sent by then it raises NotSent and nothing reached Webull. Once sent, no deadline applies."""
     if not available():
         raise EngineError(NO_KEYS)
     host = HOSTS[env()]
@@ -204,25 +231,50 @@ async def _call(ctx, method, path, query=None, body=None, version='v3', extra=No
     body_text = json.dumps(body, ensure_ascii=False, separators=(',', ':')) if body is not None else None
     headers = sign(host, path, query, body_text, settings.get('webull_app_key'), settings.get('webull_app_secret'))
     headers.update({'x-version': version, 'Content-Type': 'application/json', 'Accept': 'application/json', **(extra or {})})
+    def left():
+        return None if deadline is None else deadline - time.monotonic()
+
     if use_token:
-        token = await _access_token(ctx)
+        try:
+            token = await asyncio.wait_for(_access_token(ctx), max(left(), 0)) if deadline is not None else await _access_token(ctx)
+        except asyncio.TimeoutError:
+            raise NotSent(NOT_SENT) from None
         if token:
             headers['x-access-token'] = token
     url = f'https://{host}{path}' + (f'?{urlencode(query)}' if query else '')
     attempt = 0
+    gate = _lock('gate')
     while True:
-        async with _lock('gate'):  # one Webull request at a time, spaced per endpoint
-            wait = _last_call.get(path, -1e9) + SPACING.get(path, DEFAULT_SPACING) - time.monotonic()
-            if wait > 0:
-                await asyncio.sleep(wait)
+        # One Webull request at a time, spaced per endpoint. Nobody sleeps while holding the gate: a request that
+        # must wait for its endpoint lets go, sleeps and queues again, so it can't hold up an order.
+        response = None
+        while response is None:
+            if deadline is not None:
+                try:
+                    await asyncio.wait_for(gate.acquire(), max(left(), 0))
+                except asyncio.TimeoutError:
+                    raise NotSent(NOT_SENT) from None
+            else:
+                await gate.acquire()
             try:
-                response = await ctx.http.request(method, url, headers=headers, content=body_text.encode() if body_text is not None else None)
-            except EngineError:
-                raise
-            except Exception as err:
-                raise Uncertain(f'Could not reach Webull ({type(err).__name__}). Check your internet connection.') from err
+                wait = _last_call.get(path, -1e9) + SPACING.get(path, DEFAULT_SPACING) - time.monotonic()
+                if wait <= 0:
+                    if deadline is not None and left() <= 0:
+                        raise NotSent(NOT_SENT)
+                    try:
+                        response = await ctx.http.request(method, url, headers=headers, content=body_text.encode() if body_text is not None else None)
+                    except EngineError:
+                        raise
+                    except Exception as err:
+                        raise Uncertain(f'Could not reach Webull ({type(err).__name__}). Check your internet connection.') from err
+                    finally:
+                        _last_call[path] = time.monotonic()
             finally:
-                _last_call[path] = time.monotonic()
+                gate.release()
+            if response is None:
+                if deadline is not None and wait > left():
+                    raise NotSent(NOT_SENT)
+                await asyncio.sleep(wait)
         if response.status_code != 429:
             break
         if method != 'GET' or attempt >= len(RETRY_WAITS):
@@ -729,7 +781,8 @@ async def snapshot(ctx, msg):
         return head
     chosen = await _account(ctx, msg)
     account_id = chosen['id']
-    out = {**head, 'accountId': account_id, 'account': chosen['label'], 'balances': None, 'positions': None, 'open': None, 'recent': None, 'errors': {}}
+    out = {**head, 'accountId': account_id, 'account': chosen['label'], 'balances': None, 'positions': None, 'open': None, 'recent': None, 'errors': {},
+           'asOf': None}
     for section, read in (('balances', lambda: cached_balances(ctx, account_id)), ('positions', lambda: priced_positions(ctx, account_id)),
                           ('orders', lambda: cached_orders(ctx, account_id))):
         try:
@@ -741,6 +794,9 @@ async def snapshot(ctx, msg):
             out['open'], out['recent'] = value['open'], value['recent']
         else:
             out[section] = value
+    # when the oldest shown section was fetched from Webull (unix time); now if a result wasn't kept
+    stamps = [fetched_at((k, account_id)) or time.time() for k in ('balances', 'positions', 'orders') if k not in out['errors']]
+    out['asOf'] = min(stamps) if stamps else None
     return out
 
 
@@ -800,6 +856,7 @@ async def preview_order(ctx, msg):
 
 @handler('webull.place_order')
 async def place_order(ctx, msg):
+    deadline = time.monotonic() + PLACE_DEADLINE  # the order must be sent by then, or it is refused as not placed
     extra = {k for k in msg if k not in ('id', 'type', 'token') and not str(k).startswith('_')}  # '_emit' is added by the helper
     token = msg.get('token')
     preview = _previews.pop(token, None) if isinstance(token, str) else None  # one use: gone even if placing fails
@@ -834,7 +891,11 @@ async def place_order(ctx, msg):
     done = {'placed': True, 'orderId': client_order_id, 'env': env(), 'summary': describe(order)}
     forget(preview['account'])  # whatever happens next, the account's cached balances/positions/orders are old
     try:
-        await _call(ctx, 'POST', '/trading/orders/place', body=preview['body'], extra={'category': 'US_EQUITY'})
+        await _call(ctx, 'POST', '/trading/orders/place', body=preview['body'], extra={'category': 'US_EQUITY'}, deadline=deadline)
+    except NotSent as err:
+        # Never sent: it waited too long for its turn. Logged and counted as an attempt, reported as not placed.
+        _log({**base, 'result': 'failed', 'reason': 'not sent: waited past the deadline'})
+        raise EngineError(NOT_SENT) from err
     except Busy as err:
         # 429: Webull rejected it before processing (documented), so it was not placed. Still counted as an attempt.
         _log({**base, 'result': 'failed', 'reason': 'webull busy (429)'})
