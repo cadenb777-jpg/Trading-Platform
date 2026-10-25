@@ -153,9 +153,17 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   the position minus open sells (stock positions only), every attempt logged to ~/.trading-platform/orders.log and
   counted toward the daily limit (unreadable log = refuse). A timeout/5xx on place is "unknown": looked up once by
   client_order_id, never reported as not placed. Reply fields are the documented names; missing ones fail closed.
+  Rate limits (v27): every Webull call goes one at a time through `_call`'s gate, spaced per endpoint from Webull's
+  documented limits (SPACING); reads are cached (account list 10 min, balances/positions/orders 20 s; place/cancel
+  clear the account, sync reads fresh); a GET that gets 429 waits and retries twice, orders/previews never retry, and
+  429 on place is logged 'failed' (Webull doesn't process rejected requests). One lock makes the access token.
+  `webull.snapshot` = status + balances + positions (Schwab prices, dayGain) + open/recent orders in one request.
   The AI never trades (a test scans ai.py; another checks no other helper file places orders).
-  UI: Portfolios > Webull (src/portfolio/webullView.ts: balances, positions, orders, Sync to Portfolios, order
-  ticket + confirm); the trade guide only pre-fills the ticket.
+  UI: Trade page (src/pages/tradePage.ts, #trade: watchlist, chart with avg cost/open orders, ticket, positions/
+  orders/fills, snapshot every 30 s while visible). Ticket = src/trade/ticket.ts (shares/dollars/risk sizing, maths in
+  src/trade/sizing.ts); preview -> confirm window = src/trade/webull.ts (the only copy). Keys: B/S side, Enter
+  previews; nothing places without the confirm button. Portfolios > Webull (webullView.ts) shows balances/positions/
+  orders and Sync; the trade guide's "Open in order ticket" only pre-fills #trade (BUY, plus its stop for "Protect").
 
 ## Conventions
 
