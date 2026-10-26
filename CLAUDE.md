@@ -15,7 +15,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 - `helper/schwab_helper.py` runs on the owner's computer (schwab-py). It talks to `src/data/schwab.ts`
   over `ws://127.0.0.1:8765`. Requests: history {symbol, resolution (1m/5m/10m/15m/30m/1D/1W), days},
   news {symbols, query}, summary {links, title}, calendar, subscribe/unsubscribe {symbol}. Pushes: status (with version), trade,
-  quote {last, prevClose}. HELPER_VERSION in the helper must match LATEST_HELPER_VERSION in schwab.ts. Older helpers
+  quote {last, prevClose}, alert {title, message}. HELPER_VERSION in the helper must match LATEST_HELPER_VERSION in schwab.ts. Older helpers
   keep working for core requests (charts/quotes/news/calendar); engine requests need ENGINE_HELPER_VERSION, and the
   site shows an update banner instead of blocking. Unknown requests get an error reply (never silence).
   Engine modules load independently (`engine.LOAD_ERRORS`); optional packages are in requirements-extra.txt and the
@@ -106,6 +106,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   writes update-pending.json and exits 75. splash.py then pips changed requirements and starts the new copy; a pip
   failure or a helper crash before updater.confirm_started (first line of main(), so not login/port errors) rolls back (splash.roll_back). Setting auto_update
   (default off) only installs when no tab is connected; the banner uses update.latest from the helper.
+  Alerts (v32, engine/alerts.py, store collection `alerts`, saved only via alerts.save): price above/below, day move %,
+  a watched setup's entry zone (entry_zone = port of src/home/entryZone.ts) and `setups_ab` (every A/B setup, once each).
+  Checked in send_quotes from the quotes the helper already has; alert symbols join `watched()` (stream + 30 s poll), no
+  extra Schwab calls. Fire once; `repeat` re-arms after price crosses back; 30-min cool-down. Delivery: ntfy, Telegram
+  (topic/token in settings.json, never sent back), plus an `alert` push to open tabs; failures logged and kept on the
+  alert (lastDelivery). Alerts never touch orders (a test checks). Browser: Alerts window (rail bell, chart bell;
+  src/ui/alerts.ts), crypto/old helpers keep browser-only alerts. Home/Account show news on the owner's holdings.
   Quotes: the helper polls Schwab's REST quotes every 30 s (`refresh_official`); prevClose = lastPrice - netChange.
   The stream's CLOSE_PRICE is only a fallback (after the session it becomes today's close, which read as 0%).
   Scanner (engine/scanner.py + engine/strategies.py): a background task (`market_scanner`) scans the

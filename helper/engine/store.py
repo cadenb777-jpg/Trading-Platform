@@ -12,7 +12,9 @@ from .core import EngineError, handler
 
 DB_PATH = Path.home() / '.trading-platform' / 'platform.db'
 # alt_holdings: your private/alternative investments (e.g. from iCapital statements), entered or imported by you.
-COLLECTIONS = {'portfolios', 'clients', 'branding', 'alt_holdings'}
+# alerts: run by the helper (engine/alerts.py); saved only through alerts.save, which checks them.
+COLLECTIONS = {'portfolios', 'clients', 'branding', 'alt_holdings', 'alerts'}
+ENGINE_ONLY = {'alerts'}
 
 _db = None
 
@@ -67,6 +69,8 @@ async def _list(ctx, msg):
 
 @handler('store.save')
 async def _save(ctx, msg):
+    if msg.get('collection') in ENGINE_ONLY:
+        raise EngineError('Save alerts with alerts.save')
     return {'doc': save_doc(str(msg.get('collection')), msg.get('doc'))}
 
 

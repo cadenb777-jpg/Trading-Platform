@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_ACCOUNTS, allocation, combineHoldings, combinedValue, dividendPayload, myPortfolios, pickAccounts, todayChange } from './account';
+import { ALL_ACCOUNTS, allocation, combineHoldings, combinedValue, dividendPayload, holdingNewsSymbols, myPortfolios, pickAccounts, todayChange } from './account';
 import { isMine, type Portfolio } from './types';
 
 const base = { benchmark: 'SPY', rebalance: 'none' as const };
@@ -104,5 +104,17 @@ describe('the account switcher', () => {
       ['CASH', 0, 300],
     ]);
     expect(dividendPayload(rows)).toEqual([{ symbol: 'SCHD', shares: 40, costBasis: 1100 }]);
+  });
+});
+
+describe('holdings news', () => {
+  it('uses listed securities from my own portfolios, biggest first, capped', () => {
+    const notMine: Portfolio = { ...schwab, name: 'Client', mine: false, holdings: [{ symbol: 'TSLA', shares: 5, weight: 0, assetClass: 'US stocks', kind: 'security' }] };
+    expect(holdingNewsSymbols([schwab, notMine])).toEqual(['SCHD', 'KO']);
+    const many: Portfolio = { ...schwab, holdings: Array.from({ length: 15 }, (_, i) => ({ symbol: `S${String.fromCharCode(65 + i)}`, shares: i + 1, weight: 0, assetClass: 'US stocks' as const, kind: 'security' as const })) };
+    const out = holdingNewsSymbols([many]);
+    expect(out).toHaveLength(12);
+    expect(out[0]).toBe('SO');
+    expect(holdingNewsSymbols([])).toEqual([]);
   });
 });

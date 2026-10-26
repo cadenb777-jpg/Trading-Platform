@@ -50,7 +50,7 @@ from engine.core import is_safe_url  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 31
+HELPER_VERSION = 32
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -706,6 +706,27 @@ class Market:
             except Exception:
                 pass
 
+    @staticmethod
+    def alert_monitor():
+        """The helper's alerts (engine/alerts.py) once the engine has loaded it, else None."""
+        return sys.modules.get('engine.alerts')
+
+    def watched(self):
+        """Symbols to stream and poll: those open in a tab plus those the helper's alerts need (even with no tab open)."""
+        wanted = set(self.listeners)
+        mod = self.alert_monitor()
+        if mod:
+            try:
+                wanted |= mod.MONITOR.symbols()
+            except Exception as err:
+                log.debug('Alert symbols unavailable: %s', err)
+        return wanted
+
+    def push_alert(self, event):
+        """Shows a fired alert as a desktop notification in every open tab; returns how many tabs got it."""
+        broadcast(self.browsers, json.dumps({'type': 'alert', **event}))
+        return len(self.browsers)
+
     def remove_listener(self, ws, symbol):
         listeners = self.listeners.get(symbol)
         if listeners is None:
@@ -884,7 +905,7 @@ class Market:
     async def refresh_official(self):
         """Refreshes the official quote of every watched symbol every 30 seconds (and soon after a new one)."""
         while True:
-            symbols = sorted(s for s in self.listeners if SYMBOL_PATTERN.match(s))
+            symbols = sorted(s for s in self.watched() if SYMBOL_PATTERN.match(s))
             for i in range(0, len(symbols), 100):
                 chunk = symbols[i:i + 100]
                 try:
@@ -915,10 +936,18 @@ class Market:
         """Sends price changes for the watchlist and index cards a few times a second."""
         while True:
             await asyncio.sleep(0.3)
+            dirty = bool(self.dirty_quotes)
             for symbol in list(self.dirty_quotes):
                 if symbol in self.quotes:
                     broadcast(self.listeners.get(symbol, set()), json.dumps(self.quote_message(symbol)))
             self.dirty_quotes.clear()
+            mod = self.alert_monitor()
+            if dirty and mod:
+                mod.MONITOR.push, mod.MONITOR.http = self.push_alert, self.engine.http
+                try:
+                    mod.MONITOR.check(self.quotes)
+                except Exception as err:  # alerts must never stop the quotes
+                    log.warning('Alert check failed: %s', err)
 
     async def run_stream(self):
         attempt = 0
@@ -935,7 +964,7 @@ class Market:
                 log.info('Connected to the Schwab live stream')
                 attempt = 0
                 while True:
-                    wanted = set(self.listeners)
+                    wanted = self.watched()
                     to_add = sorted(wanted - subscribed)
                     to_remove = sorted(subscribed - wanted)
                     if to_add:
@@ -994,6 +1023,9 @@ async def engine_ready(market):
     await engine.wait_loaded()
     for name, err in engine.LOAD_ERRORS.items():
         log.warning('Feature unavailable: %s (%s)', name, err)
+    mod = market.alert_monitor()
+    if mod:  # alerts can reach open tabs (and the phone) from now on, even before the first quote
+        mod.MONITOR.push, mod.MONITOR.http = market.push_alert, market.engine.http
     market.set_status(market.status['status'], market.status['message'])
 
 

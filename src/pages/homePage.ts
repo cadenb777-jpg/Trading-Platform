@@ -6,6 +6,9 @@ import { insightButton } from '../ai/insight';
 import { createSetupsTeaser } from '../home/setupsTeaser';
 import { createUpcomingPanel } from './calendarPage';
 import { openNewsSummary } from '../ui/newsSummary';
+import { listDocs } from '../data/store';
+import { holdingNewsSymbols } from '../portfolio/account';
+import type { Portfolio } from '../portfolio/types';
 import { persist, state } from '../state';
 import { bucketStart, type Bar, type Timeframe } from '../types';
 import { formatPrice, h, timeAgo } from '../ui/dom';
@@ -186,7 +189,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
 
   // ---------- News ----------
 
-  type NewsTab = 'top' | NewsSection | 'watchlist';
+  type NewsTab = 'top' | NewsSection | 'watchlist' | 'holdings';
   const TABS: [NewsTab, string][] = [
     ['top', 'Top stories'],
     ['economy', 'Economy'],
@@ -194,6 +197,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     ['companies', 'Companies'],
     ['crypto', 'Crypto'],
     ['watchlist', 'My watchlist'],
+    ['holdings', 'My holdings'],
   ];
   let newsTab: NewsTab = 'top';
   let importantOnly = false;
@@ -224,7 +228,9 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
   function setTab(id: NewsTab) {
     newsTab = id;
     tabs.querySelectorAll<HTMLElement>('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === id));
-    if (id === 'watchlist') refreshNews();
+    // Holdings news is ranked by market impact (rank_news) unless you pick Latest.
+    if (id === 'holdings' && !holdingsNews) setSort('impact');
+    if (id === 'watchlist' || id === 'holdings') refreshNews();
     else showNews();
   }
 
@@ -250,7 +256,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
 
   /** Picks and orders headlines for the current tab: newest first, or by market impact. */
   function visibleNews(items: NewsItem[]): NewsItem[] {
-    let list = newsTab === 'top' || newsTab === 'watchlist' ? items : items.filter((i) => i.section === newsTab);
+    let list = newsTab === 'top' || newsTab === 'watchlist' || newsTab === 'holdings' ? items : items.filter((i) => i.section === newsTab);
     if (importantOnly) list = list.filter((i) => i.impact !== 'low');
     list = [...list].sort((a, b) => (sortBy === 'latest' ? b.published - a.published : b.score - a.score || b.published - a.published));
     return list.slice(0, 50);
@@ -267,21 +273,38 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
   }
 
   let watchNews: { items: NewsItem[]; failed: string[] } | null = null;
+  let holdingsNews: { items: NewsItem[]; failed: string[] } | null = null;
+  /** Set when there are no holdings to fetch news for (explains how to add them). */
+  let holdingsEmpty = false;
   function showNews() {
-    const data = newsTab === 'watchlist' ? watchNews : general;
+    if (newsTab === 'holdings' && holdingsEmpty) {
+      newsList.replaceChildren(h('div', { class: 'muted pad' }, 'No holdings yet. Import a statement in Portfolios (or connect Webull) and mark it "This is my account": news on those stocks then shows here.'));
+      newsFooter.textContent = '';
+      return;
+    }
+    const data = newsTab === 'watchlist' ? watchNews : newsTab === 'holdings' ? holdingsNews : general;
     if (data) renderNews(data.items, data.failed);
   }
 
   let newsRequest = 0;
   async function refreshNews(force = false) {
     const request = ++newsRequest;
-    const wantWatchlist = newsTab === 'watchlist';
-    if (!force && (wantWatchlist ? watchNews : general)) showNews();
-    else if (!newsList.childElementCount) newsList.append(h('div', { class: 'muted pad' }, 'Loading headlines…'));
+    const tab = newsTab === 'watchlist' || newsTab === 'holdings' ? newsTab : 'general';
+    const have = tab === 'watchlist' ? watchNews : tab === 'holdings' ? holdingsNews : general;
+    if (!force && have) showNews();
+    else if (!newsList.childElementCount || tab === 'holdings') newsList.replaceChildren(h('div', { class: 'muted pad' }, 'Loading headlines…'));
     const symbols = state.watchlist.filter((r) => r.provider === 'schwab' && !r.symbol.startsWith('$')).map((r) => r.symbol);
     try {
-      const result = await loadNews(wantWatchlist ? (symbols.length ? symbols : ['SPY']) : []);
-      if (wantWatchlist) watchNews = result;
+      if (tab === 'holdings') {
+        const held = holdingNewsSymbols(await listDocs<Portfolio>('portfolios'));
+        holdingsEmpty = !held.length;
+        if (holdingsEmpty) return request === newsRequest ? showNews() : undefined;
+        holdingsNews = await loadNews(held);
+        if (request === newsRequest) showNews();
+        return;
+      }
+      const result = await loadNews(tab === 'watchlist' ? (symbols.length ? symbols : ['SPY']) : []);
+      if (tab === 'watchlist') watchNews = result;
       else general = result;
       if (request === newsRequest) showNews();
     } catch {

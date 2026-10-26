@@ -16,7 +16,7 @@ import { openIndicatorManager, openIndicatorSettings } from '../ui/indicatorDial
 import { openIndicatorInfo } from '../ui/indicatorInfo';
 import { externalError } from '../indicators/external';
 import { createTimeframePicker } from '../ui/timeframePicker';
-import { activeAlertCount, openAlertsDialog } from '../ui/alerts';
+import { activeAlertCount, onAlertsChange, openAlertsDialog } from '../ui/alerts';
 import { createWatchlist, displaySymbol } from '../ui/watchlist';
 
 const SYMBOL_SUGGESTIONS: Record<ProviderId, string[]> = {
@@ -66,6 +66,7 @@ export function createChartPage() {
     alertBtn.querySelector('.alert-count')!.textContent = alerts ? ` ${alerts}` : '';
   };
   onStateChange(updateAlertCount);
+  onAlertsChange(updateAlertCount);
   alertBtn.addEventListener('click', () => openAlertsDialog(currentRef(), bars[bars.length - 1]?.close ?? null));
   const extBtn = h('button', { class: 'btn fit-btn ext-btn', title: 'Extended hours: show pre-market (4:00-9:30 am ET) and after-hours (4-8 pm ET) trading on intraday stock charts. Shaded areas are outside regular hours.', 'aria-label': 'Extended hours' }, 'Ext');
   const fitBtn = h('button', { class: 'btn fit-btn', title: 'Fit the chart to the candles (F)', 'aria-label': 'Fit chart', onclick: () => chart?.fit() }, icon('fit', 18), ' Fit');

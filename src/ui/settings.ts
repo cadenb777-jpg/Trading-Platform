@@ -1,9 +1,10 @@
 /**
- * Settings: the AI key and model, the SEC email, an optional FRED key, optional Alpaca keys (free price history) and Webull (trading:
- * keys, Test/Live, order limits). Values go straight to the helper,
+ * Settings: the AI key and model, the SEC email, an optional FRED key, optional Alpaca keys (free price history), Webull (trading:
+ * keys, Test/Live, order limits) and where alerts are sent (ntfy, Telegram). Values go straight to the helper,
  * which saves them on this computer; keys are never stored in the browser or shown again.
  */
 import { LATEST_HELPER_VERSION, engineRequest, helper, setAlpacaConnected } from '../data/schwab';
+import { deliverySummary } from './alertsLogic';
 import { h, openModal, toast } from './dom';
 
 export interface PlatformSettings {
@@ -20,6 +21,10 @@ export interface PlatformSettings {
   webullFutures?: boolean;
   webullFuturesMaxContracts?: number;
   webullFuturesMaxPerDay?: number;
+  /** Where alerts are sent (helper 32+): ntfy topic / Telegram bot saved. The topic and token are never sent back. */
+  ntfySet?: boolean;
+  ntfyCustomServer?: boolean;
+  telegramSet?: boolean;
   secContact: string;
   model: string;
   models: { id: string; name: string }[];
@@ -173,6 +178,110 @@ function alpacaRow(isSet: boolean, refresh: () => void): HTMLElement {
           )
         : null,
     ),
+    result,
+  );
+}
+
+const secretInput = (isSet: boolean, placeholder: string, label: string) =>
+  h('input', { class: 'input', type: 'password', placeholder: isSet ? 'Saved ✓ (paste a new one to replace it)' : placeholder, autocomplete: 'off', spellcheck: false, 'aria-label': label });
+
+/** A long random ntfy topic (anyone who knows the topic can read the alerts, so it works like a password). */
+export function randomTopic(): string {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return `tp-alerts-${[...bytes].map((b) => b.toString(36).padStart(2, '0')).join('').slice(0, 20)}`;
+}
+
+/** Alerts: free phone delivery by ntfy or Telegram. The topic and token stay in the helper. */
+function alertsRow(s: PlatformSettings, refresh: () => void): HTMLElement {
+  const result = h('p', { class: 'muted small', 'aria-live': 'polite' });
+  const run = async (work: () => Promise<unknown>, done = 'Saved') => {
+    try {
+      await work();
+      toast(done);
+      refresh();
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  };
+  const topic = secretInput(!!s.ntfySet, 'Topic: long and random', 'ntfy topic');
+  const server = h('input', { class: 'input', placeholder: s.ntfyCustomServer ? 'Own server saved ✓ (empty = keep it)' : 'Server (optional; empty = ntfy.sh)', autocomplete: 'off', spellcheck: false, 'aria-label': 'ntfy server' });
+  const token = secretInput(!!s.telegramSet, 'Bot token from BotFather', 'Telegram bot token');
+  const chat = h('input', { class: 'input', placeholder: s.telegramSet ? 'Chat saved ✓' : 'Chat id (or use Find my chat)', autocomplete: 'off', spellcheck: false, 'aria-label': 'Telegram chat id' });
+  const status = (on: boolean | undefined) => h('span', { class: `key-status ${on ? 'ok' : ''}` }, on ? '● Set up' : '○ Not set');
+  const test = async () => {
+    result.textContent = 'Sending a test…';
+    try {
+      const r = await engineRequest<{ results: Record<string, string> }>('alerts.test', {}, 30000);
+      result.textContent = [deliverySummary(r.results).text, r.results.note].filter(Boolean).join(' · ');
+    } catch (err) {
+      result.textContent = `✗ ${(err as Error).message}`;
+    }
+  };
+  return h(
+    'div',
+    { class: 'settings-row', id: 'settings-alerts' },
+    h('p', { class: 'muted small' }, 'Stock alerts are checked by the helper, so they fire even when the platform is closed (the helper must be running). Pick one or both free ways to get them on your phone. Alerts only tell you something: they never place or change orders.'),
+    h('div', { class: 'settings-label' }, h('b', {}, 'ntfy (easiest)'), status(s.ntfySet)),
+    h(
+      'ol',
+      { class: 'muted small settings-steps' },
+      h('li', {}, 'Install the free ntfy app (', h('a', { href: 'https://ntfy.sh', target: '_blank', rel: 'noopener' }, 'ntfy.sh'), ', on iPhone and Android).'),
+      h('li', {}, 'Click "Make one" for a long random topic (anyone who knows it can read your alerts, so treat it like a password), then Save.'),
+      h('li', {}, 'In the app, tap +, "Subscribe to topic" and type the same topic. Then click Send test.'),
+    ),
+    h(
+      'div',
+      { class: 'ap-controls' },
+      topic,
+      h('button', { class: 'btn', onclick: () => ((topic.type = 'text'), (topic.value = randomTopic()), topic.select()) }, 'Make one'),
+      h(
+        'button',
+        {
+          class: 'btn primary',
+          onclick: () => {
+            const changes: Record<string, string> = {};
+            if (topic.value.trim()) changes.ntfyTopic = topic.value.trim();
+            if (server.value.trim()) changes.ntfyServer = server.value.trim();
+            if (!Object.keys(changes).length) return toast('Enter the topic first');
+            return run(() => save(changes));
+          },
+        },
+        'Save',
+      ),
+      s.ntfySet ? h('button', { class: 'btn', onclick: () => run(() => save({ ntfyTopic: '', ntfyServer: '' }), 'Removed') }, 'Remove') : null,
+    ),
+    h('div', { class: 'ap-controls' }, server),
+    h('div', { class: 'settings-label' }, h('b', {}, 'Telegram'), status(s.telegramSet)),
+    h(
+      'ol',
+      { class: 'muted small settings-steps' },
+      h('li', {}, 'In Telegram, open ', h('a', { href: 'https://t.me/BotFather', target: '_blank', rel: 'noopener' }, '@BotFather'), ', send /newbot and follow the questions. It gives you a token (numbers, a colon, a long code).'),
+      h('li', {}, 'Paste the token here and Save.'),
+      h('li', {}, 'Open your new bot in Telegram and press Start (or send it "hi"), then click Find my chat.'),
+    ),
+    h(
+      'div',
+      { class: 'ap-controls' },
+      token,
+      h('button', { class: 'btn primary', onclick: () => (token.value.trim() ? run(() => save({ telegramToken: token.value.trim() })) : toast('Paste the token first')) }, 'Save'),
+      h(
+        'button',
+        {
+          class: 'btn',
+          onclick: () =>
+            run(async () => {
+              const r = await engineRequest<PlatformSettings & { name: string }>('alerts.telegram_link', {}, 20000);
+              cached = r;
+              result.textContent = `✓ Linked to ${r.name}. Click Send test.`;
+            }, 'Chat found'),
+        },
+        'Find my chat',
+      ),
+      s.telegramSet ? h('button', { class: 'btn', onclick: () => run(() => save({ telegramToken: '', telegramChat: '' }), 'Removed') }, 'Remove') : null,
+    ),
+    h('div', { class: 'ap-controls' }, chat, h('button', { class: 'btn', onclick: () => (chat.value.trim() ? run(() => save({ telegramChat: chat.value.trim() })) : toast('Type the chat id first')) }, 'Save chat id')),
+    h('div', { class: 'ap-controls' }, h('button', { class: 'btn', onclick: test }, 'Send test')),
     result,
   );
 }
@@ -444,7 +553,7 @@ function aboutSection(): HTMLElement {
   );
 }
 
-export async function openSettings(focus?: 'ai') {
+export async function openSettings(focus?: 'ai' | 'alerts') {
   const body = h('div', { class: 'settings' }, h('div', { class: 'muted pad' }, 'Loading…'));
   const close = openModal('Settings', body, { wide: true });
   async function render() {
@@ -522,6 +631,7 @@ export async function openSettings(focus?: 'ai') {
         render,
       ),
       alpacaRow(!!s.alpacaSet, render),
+      ...(s.ntfySet !== undefined ? [h('h3', { class: 'settings-section' }, 'Alerts'), alertsRow(s, render)] : []),
       h('h3', { class: 'settings-section' }, 'Trading'),
       webullRow(s, render),
       h('h3', { class: 'settings-section' }, 'Helper'),
@@ -557,6 +667,7 @@ export async function openSettings(focus?: 'ai') {
       aboutSection(),
     );
     if (focus === 'ai' && !s.aiKeySet) body.querySelector<HTMLInputElement>('input[type=password]')?.focus();
+    if (focus === 'alerts') body.querySelector('#settings-alerts')?.scrollIntoView({ block: 'start' });
   }
   render();
   return close;

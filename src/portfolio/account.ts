@@ -98,3 +98,18 @@ export function pickAccounts<T extends { id: string }>(mine: T[], choice: string
   const one = choice && choice !== ALL_ACCOUNTS ? mine.find((p) => p.id === choice) : undefined;
   return one ? { choice: one.id, chosen: [one] } : { choice: ALL_ACCOUNTS, chosen: mine };
 }
+
+/** How many tickers the helper's news request reads (MAX_TICKER_FEEDS in schwab_helper.py). */
+export const NEWS_TICKERS = 12;
+
+/**
+ * The tickers to fetch "My holdings" news for: listed securities across the owner's own portfolios (combined), the
+ * biggest positions first (by cost, then shares) so the helper's 12-ticker limit keeps the ones that matter most.
+ */
+export function holdingNewsSymbols(portfolios: Portfolio[], max = NEWS_TICKERS): string[] {
+  return combineHoldings(myPortfolios(portfolios))
+    .filter((r) => r.kind === 'security' && /^[A-Z][A-Z.]{0,5}$/.test(r.symbol))
+    .sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0) || b.shares - a.shares || a.symbol.localeCompare(b.symbol))
+    .slice(0, max)
+    .map((r) => r.symbol);
+}
