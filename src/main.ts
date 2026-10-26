@@ -188,15 +188,46 @@ if (isAiWindow) {
   const views = h('div', { class: 'views' });
   const updateBanner = h('div', { class: 'update-banner', hidden: true, role: 'status' });
   let bannerDismissed = false;
+  let updateError = '';
+  /** What the new helper adds, by the version you have. */
+  const updateReason = (v: number) =>
+    v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : v < 12 ? 'It adds the Nasdaq-100 swing scanner (weekly swing with COT, z-score and Williams; mean reversion; breakouts) every 5 minutes, RIA fee schedules in client reports and fresher fund data. ' : v < 21 ? 'It adds the free Alpaca history option (Settings), a faster and steadier helper and fixes. ' : v < 22 ? 'It reworks the Setups scanner: honest tests (trades from the same week count as one bet, results after costs, corrected for many tests), 15 years of daily history, hourly history kept for good, simpler rules and weekly rule tests on your own data. ' : v < 23 ? 'The AI assistant can now see the page you’re on, so you can ask about anything on screen. ' : v < 24 ? 'It adds dividend tracking (import a statement, yields, income calendar). ' : v < 25 ? 'It fixes dividend estimates after raises and for twice-a-year payers. ' : v < 26 ? 'It adds Webull: view and sync your account, and place orders (Test first). ' : v < 27 ? 'It fixes Webull "too many requests" and adds the Trade page. ' : v < 28 ? 'It adds total return (with dividends) to Account, Investments and Research. ' : v < 29 ? 'It rebuilds the portfolio optimizer (shrinkage, risk parity, resampling, walk-forward test) and shows cash as Cash. ' : 'It includes bug fixes. ';
+  async function updateNow() {
+    updateError = '';
+    try {
+      await helper.installUpdate();
+    } catch (err) {
+      updateError = (err as Error).message;
+    }
+    showUpdateBanner();
+  }
   /** A slim notice when a newer helper is available; everything that works with the old one keeps working. */
   function showUpdateBanner() {
     const v = helper.version;
-    updateBanner.hidden = bannerDismissed || v == null || !helper.outdated;
+    const up = helper.update;
+    const busy = up?.state === 'updating' || up?.state === 'restarting';
+    updateBanner.hidden = v == null || (!busy && (bannerDismissed || !helper.outdated));
     if (updateBanner.hidden || v == null) return;
+    const dismiss = h('button', { class: 'icon-btn', 'aria-label': 'Dismiss', title: 'Dismiss', onclick: () => ((bannerDismissed = true), showUpdateBanner()) }, '✕');
+    if (!up) {
+      // Helpers older than the self-update need one last manual download.
+      updateBanner.replaceChildren(
+        h('span', {}, h('b', {}, `Helper update available (you have version ${v}, newest is ${LATEST_HELPER_VERSION}). `), updateReason(v), 'After this one, updates are a single click. '),
+        h('a', { href: 'https://github.com/cadenb777-jpg/Trading-Platform', target: '_blank', rel: 'noopener' }, 'Get it: Code → Download ZIP, replace your helper folder, restart it'),
+        dismiss,
+      );
+      return;
+    }
+    const latest = Math.max(up.latest ?? 0, LATEST_HELPER_VERSION);
+    if (busy) {
+      updateBanner.replaceChildren(h('span', {}, h('b', {}, up.message || 'Updating the helper...'), up.state === 'restarting' ? ' The page reconnects by itself in a few seconds.' : ' Keep the helper window open.'));
+      return;
+    }
+    const error = updateError || (up.state === 'failed' ? up.message : '');
     updateBanner.replaceChildren(
-      h('span', {}, h('b', {}, `Helper update available (you have version ${v}, newest is ${LATEST_HELPER_VERSION}). `), v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : v < 12 ? 'It adds the Nasdaq-100 swing scanner (weekly swing with COT, z-score and Williams; mean reversion; breakouts) every 5 minutes, RIA fee schedules in client reports and fresher fund data. ' : v < 21 ? 'It adds the free Alpaca history option (Settings), a faster and steadier helper and fixes. ' : v < 22 ? 'It reworks the Setups scanner: honest tests (trades from the same week count as one bet, results after costs, corrected for many tests), 15 years of daily history, hourly history kept for good, simpler rules and weekly rule tests on your own data. ' : v < 23 ? 'The AI assistant can now see the page you’re on, so you can ask about anything on screen. ' : v < 24 ? 'It adds dividend tracking (import a statement, yields, income calendar). ' : v < 25 ? 'It fixes dividend estimates after raises and for twice-a-year payers. ' : v < 26 ? 'It adds Webull: view and sync your account, and place orders (Test first). ' : v < 27 ? 'It fixes Webull "too many requests" and adds the Trade page. ' : v < 28 ? 'It adds total return (with dividends) to Account, Investments and Research. ' : v < 29 ? 'It rebuilds the portfolio optimizer (shrinkage, risk parity, resampling, walk-forward test) and shows cash as Cash. ' : 'It includes bug fixes. '),
-      h('a', { href: 'https://github.com/cadenb777-jpg/Trading-Platform', target: '_blank', rel: 'noopener' }, 'Get it: Code → Download ZIP, replace your helper folder, restart it'),
-      h('button', { class: 'icon-btn', 'aria-label': 'Dismiss', title: 'Dismiss', onclick: () => ((bannerDismissed = true), showUpdateBanner()) }, '✕'),
+      h('span', {}, h('b', {}, `Update available (v${v} → v${latest}). `), error ? `${error} ` : updateReason(v)),
+      h('button', { class: 'btn small primary', onclick: () => void updateNow() }, error ? 'Try again' : 'Update now'),
+      dismiss,
     );
   }
   appViews = views;
@@ -263,6 +294,7 @@ if (isAiWindow) {
     drawer,
   );
   helper.onAvailability(showUpdateBanner);
+  helper.onUpdateChange(showUpdateBanner);
 
   window.addEventListener('hashchange', route);
   window.addEventListener('hashchange', () => { if (!drawer.hidden) assistant.reload(); }); // page-specific example questions

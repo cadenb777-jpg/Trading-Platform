@@ -21,6 +21,8 @@ export interface PlatformSettings {
   models: { id: string; name: string }[];
   /** Open the platform in Chrome when the helper finishes starting (helper version 9+). */
   openBrowser?: boolean;
+  /** Install helper updates without asking (default off; helpers with the self-update only). */
+  autoUpdate?: boolean;
 }
 
 let cached: PlatformSettings | null = null;
@@ -336,7 +338,9 @@ function connectionCheck(): HTMLElement {
     rows.push(['Schwab helper', 'Not running. Double-click start-windows.bat (or start-mac.command) in your helper folder.', 'bad']);
   } else {
     const v = helper.version ?? 0;
-    rows.push(['Schwab helper', `Running, version ${v}${v < LATEST_HELPER_VERSION ? ` (newest is ${LATEST_HELPER_VERSION}: download the project ZIP again to update)` : ' (up to date)'}`, v < LATEST_HELPER_VERSION ? 'warn' : 'ok']);
+    const newest = Math.max(LATEST_HELPER_VERSION, helper.update?.latest ?? 0);
+    const how = helper.update ? 'click Update now in the banner at the top' : 'download the project ZIP again to update';
+    rows.push(['Schwab helper', `Running, version ${v}${v < newest ? ` (newest is ${newest}: ${how})` : ' (up to date)'}`, v < newest ? 'warn' : 'ok']);
     const st = helper.status;
     rows.push(['Schwab data', st.status === 'live' ? 'Streaming live prices' : st.message || st.status, st.status === 'live' ? 'ok' : st.status === 'error' ? 'bad' : 'warn']);
     for (const p of helper.problems) rows.push(['Feature unavailable', p, 'bad']);
@@ -464,6 +468,21 @@ export async function openSettings(focus?: 'ai') {
           h('p', { class: 'muted small' }, 'Skipped automatically when the platform is already open in a tab. Uses your default browser if Chrome isn’t installed.'),
         );
       })(),
+      ...(helper.update
+        ? [(() => {
+            const box = h('input', { type: 'checkbox', checked: !!s.autoUpdate });
+            box.addEventListener('change', async () => {
+              await save({ autoUpdate: box.checked }).catch((err) => toast((err as Error).message));
+              toast(box.checked ? 'New helper versions will install by themselves' : 'The helper will ask before updating');
+            });
+            return h(
+              'div',
+              { class: 'settings-row' },
+              h('label', { class: 'check-item' }, box, h('b', {}, 'Install updates automatically')),
+              h('p', { class: 'muted small' }, 'Off: you get an "Update now" button when a new version is out. On: the helper installs it by itself (it checks every 6 hours) and restarts. Your settings and data are kept either way.'),
+            );
+          })()]
+        : []),
       h('p', { class: 'muted small' }, 'Everything here is saved by the helper in your user folder (.trading-platform), not in the browser or online.'),
       aboutSection(),
     );

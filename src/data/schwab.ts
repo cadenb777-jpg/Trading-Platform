@@ -17,7 +17,9 @@ export const LATEST_HELPER_VERSION = 29;
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
 const ENGINE_HELPER_VERSION = 6;
-const CORE_REQUESTS = new Set(['history', 'news', 'calendar', 'summary']);
+const CORE_REQUESTS = new Set(['history', 'news', 'calendar', 'summary', 'update']);
+/** Installing an update downloads the new version and its Python parts, which can take a few minutes. */
+const UPDATE_TIMEOUT_MS = 15 * 60 * 1000;
 /** The Investments page (markets, bonds, private funds) needs at least this version. */
 const INVEST_HELPER_VERSION = 8;
 const INVEST_REQUEST = /^(invest|bonds|alts)\./;
@@ -124,8 +126,16 @@ export interface HelperListener {
   onStatus?(status: ConnectionStatus, message?: string): void;
 }
 
+/** The helper's self-update (helper/updater.py): the newest version on GitHub and what an update is doing. */
+export interface HelperUpdate {
+  latest: number | null;
+  state: 'idle' | 'updating' | 'restarting' | 'failed';
+  message: string;
+}
+
 type HelperMessage =
-  | { type: 'status'; status: ConnectionStatus; message: string; version?: number; problems?: string[]; log?: string }
+  | { type: 'status'; status: ConnectionStatus; message: string; version?: number; problems?: string[]; log?: string; update?: HelperUpdate }
+  | { type: 'update'; id: number; version: number }
   | { type: 'history'; id: number; bars: Bar[] }
   | { type: 'news'; id: number; items: NewsItem[]; failed: string[] }
   | { type: 'calendar'; id: number; events: CalendarEvent[]; failed: string[] }
@@ -147,6 +157,7 @@ class HelperConnection {
   private readonly pending = new Map<number, { resolve: (msg: HelperMessage) => void; reject: (err: Error) => void; event?: (e: EngineEvent) => void }>();
   private readonly listeners = new Map<string, Set<HelperListener>>();
   private readonly availability = new Set<(up: boolean) => void>();
+  private readonly updateListeners = new Set<() => void>();
   private helperStatus: { status: ConnectionStatus; message: string } = { status: 'connecting', message: 'Connecting' };
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   /** The running helper's version (null until it says hello). */
@@ -158,6 +169,8 @@ class HelperConnection {
   /** Helper features that couldn't start, and where the helper's log file is. */
   problems: string[] = [];
   logPath = '';
+  /** Self-update state; null for helpers too old to update themselves (they need one manual download). */
+  update: HelperUpdate | null = null;
   /** Finishes connecting once the helper's first status message (with its version) arrives. */
   private onReady: (() => void) | null = null;
 
@@ -168,6 +181,17 @@ class HelperConnection {
 
   get isConnected() {
     return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /** Calls `fn` when the newest version or an update's progress changes. */
+  onUpdateChange(fn: () => void): () => void {
+    this.updateListeners.add(fn);
+    return () => this.updateListeners.delete(fn);
+  }
+
+  /** Asks the helper to download and install the newest version; it restarts by itself and the page reconnects. */
+  async installUpdate(): Promise<void> {
+    await this.request({ type: 'update' }, undefined, UPDATE_TIMEOUT_MS);
   }
 
   /** Calls `fn(true)` when the helper connects and `fn(false)` when it can't be reached. */
@@ -294,14 +318,19 @@ class HelperConnection {
         this.version = version;
         this.problems = msg.problems ?? [];
         this.logPath = msg.log ?? '';
-        this.outdated = version < LATEST_HELPER_VERSION;
+        const update = msg.update ?? null;
+        const updateChanged = JSON.stringify(update) !== JSON.stringify(this.update);
+        this.update = update;
+        this.outdated = version < Math.max(LATEST_HELPER_VERSION, update?.latest ?? 0);
         this.tooOld = version < CORE_HELPER_VERSION;
         if (changed && !this.onReady) this.notify(true);
         this.onReady?.();
         this.helperStatus = { status: msg.status, message: msg.message };
         for (const l of this.allListeners()) l.onStatus?.(msg.status, msg.message);
+        if (updateChanged) for (const fn of this.updateListeners) fn();
         break;
       }
+      case 'update':
       case 'history':
       case 'news':
       case 'calendar':
