@@ -6204,3 +6204,4 @@ a.btn {
   .fut-lower { grid-template-columns: minmax(0, 1fr); }
 }
 .modal:has(.fut-detail) { max-width: 860px; }
+.fut-name { display: inline-block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }

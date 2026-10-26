@@ -63,6 +63,12 @@ class Calendar(unittest.TestCase):
         self.assertEqual(fm.expiry('ZC', 2026, 12), D(2026, 12, 14))
         self.assertIsNone(fm.first_notice('ES', 2026, 12))
 
+    def test_live_cattle_rolls_before_first_notice(self):
+        self.assertEqual(fm.first_notice('LE', 2026, 12), D(2026, 12, 7))  # matches Webull's first_notice_date
+        self.assertEqual(fm.first_notice('LE', 2027, 2), D(2027, 2, 8))
+        self.assertEqual(fm.roll_date('LE', 2026, 12), D(2026, 12, 3))
+        self.assertEqual(fm.expiry('LE', 2026, 12), D(2026, 12, 31))
+
     def test_fx_crypto_vix_and_sofr(self):
         self.assertEqual(fm.expiry('6E', 2026, 12), D(2026, 12, 14))
         self.assertEqual(fm.expiry('6C', 2026, 12), D(2026, 12, 15))
@@ -179,6 +185,34 @@ class FakeCtx:
         return self._cache[key]
 
 
+class HistoryRetry(unittest.TestCase):
+    def test_empty_reply_waits_6_hours_error_5_minutes(self):
+        fm._NO_HISTORY.clear()
+        calls = []
+
+        async def empty(ctx, s):
+            calls.append(s)
+            return []
+
+        async def broken(ctx, s):
+            calls.append(s)
+            raise EngineError('Schwab returned 500 for /X')
+        orig = invest.closes
+        try:
+            invest.closes = empty
+            asyncio.run(fm._closes(None, '/A'))
+            invest.closes = broken
+            asyncio.run(fm._closes(None, '/B'))
+            now = fm.time.time()
+            self.assertAlmostEqual(fm._NO_HISTORY['/A'] - now, fm.EMPTY_RETRY, delta=5)
+            self.assertAlmostEqual(fm._NO_HISTORY['/B'] - now, fm.ERROR_RETRY, delta=5)
+            asyncio.run(fm._closes(None, '/A'))
+            self.assertEqual(calls, ['/A', '/B'])  # not asked again yet
+        finally:
+            invest.closes = orig
+            fm._NO_HISTORY.clear()
+
+
 class Handlers(unittest.TestCase):
     def setUp(self):
         fm._NO_HISTORY.clear()
@@ -243,10 +277,10 @@ class Handlers(unittest.TestCase):
 
     def test_cot_latest_parses_one_cftc_request(self):
         fm.cot_latest = self._orig
-        rows = [{'cftc_contract_market_code': '088691', 'report_date_as_yyyy_mm_dd': f'2026-0{m}-01T00:00:00.000',
+        rows = [{'cftc_contract_market_code': '088691', 'report_date_as_yyyy_mm_dd': (dt.date(2026, 1, 6) + dt.timedelta(weeks=m)).isoformat() + 'T00:00:00.000',
                  'comm_positions_long_all': str(100 + m), 'comm_positions_short_all': '100', 'noncomm_positions_long_all': '50',
                  'noncomm_positions_short_all': str(40 + m), 'nonrept_positions_long_all': '10', 'nonrept_positions_short_all': '5',
-                 'open_interest_all': '1000'} for m in range(1, 5)]
+                 'open_interest_all': '1000'} for m in range(1, 31)]
         seen = {}
 
         class Http:
@@ -262,9 +296,13 @@ class Handlers(unittest.TestCase):
         ctx.http = Http()
         out = asyncio.run(fm.cot_latest(ctx))
         self.assertIn("'088691'", seen['$where'])
-        self.assertEqual(out['088691']['commNet'], 4)
+        self.assertEqual(out['088691']['commNet'], 30)
         self.assertEqual(out['088691']['commIndex'], 100.0)
         self.assertEqual(out['088691']['specIndex'], 0.0)
+        rows[:] = rows[:10]  # under 26 weeks: no index, like the detail panel
+        ctx2 = FakeCtx(None)
+        ctx2.http = Http()
+        self.assertIsNone(asyncio.run(fm.cot_latest(ctx2))['088691']['commIndex'])
         self.assertEqual(flow.COT_URL.split('/')[2], 'publicreporting.cftc.gov')
 
 

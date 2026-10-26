@@ -60,7 +60,7 @@ SPECS = [
     _s('ZW', 'Wheat (Chicago SRW)', 'Ags', 'CBOT', '5,000 bushels (price in cents)', 50, 0.25, 12.50, 'HKNUZ', 'grain', '001602', GRAINS, fnd=True),
     _s('ZL', 'Soybean Oil', 'Ags', 'CBOT', '60,000 pounds (price in cents)', 600, 0.01, 6.00, 'FHKNQUVZ', 'grain', '007601', GRAINS, fnd=True),
     _s('ZM', 'Soybean Meal', 'Ags', 'CBOT', '100 short tons', 100, 0.10, 10.00, 'FHKNQUVZ', 'grain', '026603', GRAINS, fnd=True),
-    _s('LE', 'Live Cattle', 'Ags', 'CME', '40,000 pounds (price in cents)', 400, 0.025, 10.00, 'GJMQVZ', 'last_bday', '057642', 'Mon-Fri 9:30 am - 2:05 pm ET'),
+    _s('LE', 'Live Cattle', 'Ags', 'CME', '40,000 pounds (price in cents)', 400, 0.025, 10.00, 'GJMQVZ', 'last_bday', '057642', 'Mon-Fri 9:30 am - 2:05 pm ET', fnd=True),
     _s('HE', 'Lean Hogs', 'Ags', 'CME', '40,000 pounds (price in cents)', 400, 0.025, 10.00, 'GJKMNQVZ', 'tenth_bday', '054642', 'Mon-Fri 9:30 am - 2:05 pm ET'),
     _s('KC', 'Coffee C', 'Ags', 'ICE US', '37,500 pounds (price in cents)', 375, 0.05, 18.75, 'HKNUZ', 'coffee', '083731', 'Mon-Fri 4:15 am - 1:30 pm ET', fnd=True),
     _s('SB', 'Sugar No. 11', 'Ags', 'ICE US', '112,000 pounds (price in cents)', 1120, 0.01, 11.20, 'HKNV', 'prior_last_bday', '080732', 'Mon-Fri 3:30 am - 1:00 pm ET'),
@@ -184,6 +184,9 @@ def first_notice(root, year, month):
         return add_bdays(first_bday(year, month), -7)
     if rule == 'cocoa':
         return add_bdays(first_bday(year, month), -10)
+    if root == 'LE':  # live cattle: the Monday after the first Friday of the contract month (next business day if a holiday)
+        d = nth_weekday(year, month, 4, 1) + dt.timedelta(days=3)
+        return d if is_bday(d) else add_bdays(d, 1)
     return last_bday(*_prev_month(year, month))
 
 
@@ -279,24 +282,33 @@ def williams_note(comm_index):
 
 # ---------- Data ----------
 
-#: Symbols Schwab had no daily history for, with when we last asked (asked again after 6 hours).
+#: Symbols with no daily history: symbol -> time to ask Schwab again. An empty reply (Schwab has none) is
+#: remembered for 6 hours, an error (maybe a hiccup) for 5 minutes.
 _NO_HISTORY = {}
+EMPTY_RETRY, ERROR_RETRY = 6 * 3600, 300
 
 
 async def _closes(ctx, symbol):
-    if time.time() - _NO_HISTORY.get(symbol, 0) < 6 * 3600:
+    if time.time() < _NO_HISTORY.get(symbol, 0):
         return []
     try:
         rows = await invest.closes(ctx, symbol)
     except EngineError as err:
         if 'login expired' in str(err):
             raise
-        rows = []
+        _NO_HISTORY[symbol] = time.time() + ERROR_RETRY
+        return []
     except Exception:
-        rows = []
+        _NO_HISTORY[symbol] = time.time() + ERROR_RETRY
+        return []
     if not rows:
-        _NO_HISTORY[symbol] = time.time()
+        _NO_HISTORY[symbol] = time.time() + EMPTY_RETRY
     return rows
+
+
+def cot_index(values):
+    """The latest 3-year (156-week) COT index, the same rule as the detail panel's history (None under 26 weeks)."""
+    return positioning.rolling_index(values)[-1] if values else None
 
 
 def _num(v):
@@ -356,8 +368,8 @@ async def cot_latest(ctx):
             if rows:
                 last = rows[-1]
                 out[code] = {'date': last['date'], 'commNet': last['commNet'], 'specNet': last['specNet'], 'smallNet': last['smallNet'],
-                             'openInterest': last['openInterest'], 'commIndex': flow.cot_index([x['commNet'] for x in rows]),
-                             'specIndex': flow.cot_index([x['specNet'] for x in rows]), 'smallIndex': flow.cot_index([x['smallNet'] for x in rows])}
+                             'openInterest': last['openInterest'], 'commIndex': cot_index([x['commNet'] for x in rows]),
+                             'specIndex': cot_index([x['specNet'] for x in rows]), 'smallIndex': cot_index([x['smallNet'] for x in rows])}
         return out
     return await ctx.cached(('fut-cot',), 6 * 3600, load, persist=True, stale_ok=True)
 

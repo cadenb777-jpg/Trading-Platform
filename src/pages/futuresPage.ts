@@ -10,6 +10,7 @@ import { compact, createLineChart, dataTable, money, pageFrame, pct, statCards }
 import { openChartWindow } from '../ui/chartWindow';
 import { h, openModal } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
+import { THEME } from '../ui/theme';
 import { xySvg } from '../ui/xyChart';
 
 interface Positioning {
@@ -109,6 +110,8 @@ const tone = (v: number | null | undefined) => (v == null ? '' : v > 0 ? 'up' : 
 const pctCell = (v: number | null | undefined) => ({ v: pct(v), cls: tone(v) });
 const indexText = (v: number | null | undefined) => (v == null ? '—' : v.toFixed(0));
 const dollars = (v: number) => `$${v.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+/** A theme colour from the CSS variables (canvas charts can't read CSS, so read it when drawing). */
+const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const signed = (v: number | null | undefined) => (v == null ? '—' : `${v > 0 ? '+' : ''}${compact(v)}`);
 
 export function createFuturesPage() {
@@ -239,12 +242,11 @@ export function createFuturesPage() {
       h('span', { class: 'muted small' }, 'Front month (', termLabel('what is that?', 'frontmonth'), '). Click a row for details.'),
       ...(sector ? [h('button', { class: 'btn small', onclick: () => setSector(null) }, 'Show all')] : []),
     );
-    const headers = ['Market', 'Sector', 'Price', 'Day', 'Move (σ)', '1W', '1M', 'YTD', 'Contract', 'Roll by', 'Multiplier', 'Tick value', 'Notional', 'Commercials (COT)'];
+    const headers = ['Market', 'Price', 'Day', 'Move (σ)', '1W', '1M', 'YTD', 'Contract', 'Roll by', 'Multiplier', 'Tick value', 'Notional', 'Commercials (COT)'];
     const table = dataTable(
       headers,
       rows.map((r) => [
-        h('span', { class: 'fut-market', 'data-root': r.root }, h('b', {}, r.root), ' ', h('span', { class: 'muted' }, r.name)),
-        r.sector,
+        h('span', { class: 'fut-market', 'data-root': r.root, title: `${r.name} · ${r.sector}` }, h('b', {}, r.root), ' ', h('span', { class: 'muted fut-name' }, r.name)),
         { v: futuresPrice(r.price, r.tick), cls: r.price == null ? 'muted' : '' },
         pctCell(r.change),
         { v: sigmaText(r.sigma), cls: r.sigma != null && Math.abs(r.sigma) >= 2 ? `${tone(r.sigma)} fut-strong` : '' },
@@ -268,7 +270,7 @@ export function createFuturesPage() {
       const term = tips[th.textContent?.trim() ?? ''];
       if (term) th.append(infoTip(term));
     });
-    boardBox.replaceChildren(table, h('p', { class: 'muted small' }, 'Roll and expiry dates are estimates from the exchange rules; check your broker before trading. "unavailable" = Schwab didn’t send it.'));
+    boardBox.replaceChildren(table, h('p', { class: 'muted small' }, 'Roll and expiry dates are estimates from the exchange rules; check your broker before trading. σ and 1W/1M/YTD use Schwab’s continuous front-month history, so a roll can add a jump (most in CL, NG, LE, HE and VX). "unavailable" = Schwab didn’t send it.'));
   }
 
   function renderCot() {
@@ -334,7 +336,7 @@ export function createFuturesPage() {
   function renderDetail(body: HTMLElement, d: Detail) {
     const r = d.row;
     const priceFmt = (v: number) => futuresPrice(v, d.spec.tick);
-    const line = { name: `/${d.root}`, color: '#2962ff', data: d.closes.map(([t, c]) => ({ time: t, value: c })) };
+    const line = { name: `/${d.root}`, color: THEME.accent, data: d.closes.map(([t, c]) => ({ time: t, value: c })) };
     const openChart = () => openChartWindow({ title: `/${d.root} ${r.name}`, subtitle: 'Daily closes, front month (continuous) from Schwab', lines: [line], format: priceFmt });
     const chartBox = h('div', {});
     const cotChartBox = h('div', {});
@@ -401,9 +403,9 @@ export function createFuturesPage() {
     if (d.closes.length) createLineChart(chartBox, { height: 240, format: priceFmt, title: `/${d.root} ${r.name}` }).set([line]);
     if (d.cot.length) {
       createLineChart(cotChartBox, { height: 240, format: (v) => v.toFixed(0), title: `${d.root} COT index` }).set([
-        { name: 'Commercials', color: '#ff9800', data: d.cot.map((c) => ({ time: c.date, value: c.commIndex ?? NaN })) },
-        { name: 'Large specs', color: '#2962ff', data: d.cot.map((c) => ({ time: c.date, value: c.specIndex ?? NaN })) },
-        { name: 'Small specs', color: '#787b86', width: 1, data: d.cot.map((c) => ({ time: c.date, value: c.smallIndex ?? NaN })) },
+        { name: 'Commercials', color: cssVar('--warn'), data: d.cot.map((c) => ({ time: c.date, value: c.commIndex ?? NaN })) },
+        { name: 'Large specs', color: THEME.accent, data: d.cot.map((c) => ({ time: c.date, value: c.specIndex ?? NaN })) },
+        { name: 'Small specs', color: cssVar('--muted'), width: 1, data: d.cot.map((c) => ({ time: c.date, value: c.smallIndex ?? NaN })) },
       ]);
     }
     loadCurve(curveBoxD, d.root);
@@ -421,7 +423,7 @@ export function createFuturesPage() {
       }
       const label = (x: number) => c.points[Math.round(x)]?.code ?? '';
       box.replaceChildren(
-        xySvg([{ name: root, color: '#2962ff', points: priced.map((p) => ({ x: c.points.indexOf(p), y: p.price })) }], { x: label, y: (v) => futuresPrice(v, tick), xName: 'Contract', height: 200 }),
+        xySvg([{ name: root, color: THEME.accent, points: priced.map((p) => ({ x: c.points.indexOf(p), y: p.price })) }], { x: label, y: (v) => futuresPrice(v, tick), xName: 'Contract', height: 200 }),
         h('p', { class: 'small' }, c.shape === 'contango' ? termLabel('Contango', 'contango') : c.shape === 'backwardation' ? termLabel('Backwardation', 'backwardation') : h('b', {}, 'Flat'), ': ', curveReading(c.shape, root)),
         h('p', { class: 'muted small' }, priced.map((p) => `${p.code} ${futuresPrice(p.price, tick)}`).join(' · ')),
       );
