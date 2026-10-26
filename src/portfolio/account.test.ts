@@ -48,7 +48,7 @@ describe('combineHoldings', () => {
   it('merges the same symbol and all cash across accounts, keeping each part', () => {
     expect(rows.map((r) => r.symbol)).toEqual(['SCHD', 'KO', 'CASH']);
     expect(by('SCHD')).toMatchObject({ shares: 140, cost: 3600 });
-    expect(by('SCHD').parts).toEqual([
+    expect(by('SCHD').parts).toMatchObject([
       { account: 'Schwab IRA', shares: 100, amount: 0, cost: 2500 },
       { account: 'Webull 5MV2', shares: 40, amount: 0, cost: 1100 },
     ]);

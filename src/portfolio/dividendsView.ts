@@ -9,6 +9,7 @@ import { FIELD_LABELS, jsonToRows, parseStatement, type Columns, type Position, 
 import type { Portfolio } from './types';
 import { tickerAttr } from '../ui/tickerCard';
 import { asOfStamp } from '../ui/dataHealth';
+import type { Received } from './returns';
 
 interface Upcoming {
   exDate: string;
@@ -18,7 +19,7 @@ interface Upcoming {
   exPassed: boolean;
 }
 
-interface DividendHolding {
+export interface DividendHolding {
   symbol: string;
   name: string;
   shares: number;
@@ -40,6 +41,13 @@ interface DividendHolding {
   price1y?: number | null;
   tr3y?: number | null;
   tr5y?: number | null;
+  price3y?: number | null;
+  price5y?: number | null;
+  /** Since the first close read (a fund's start when younger than 6 years); yearly when sinceYears >= 1. */
+  trSince?: number | null;
+  priceSince?: number | null;
+  sinceStart?: string | null;
+  sinceYears?: number | null;
   nextExDate: string | null;
   nextPayDate: string | null;
   note: string;
@@ -71,6 +79,8 @@ export interface DividendReport {
   calendar: { month: string; total: number; payments: Payment[] }[];
   /** 1-year total and price return weighted by today's value (as if every holding was held all year). */
   totalReturn?: { tr1y: number | null; price1y: number | null };
+  /** v33: dividends received per account holding (partKey -> figure and method), when asked for. */
+  received?: Record<string, Received>;
 }
 
 /** "1Y total return" table cell; its hover shows the price-only return. */
@@ -110,12 +120,13 @@ export async function renderDividends(out: HTMLElement, p: Portfolio) {
 
 /** Share holdings for the helper's dividends.portfolio request (the same symbol may appear more than once; the helper adds them up). */
 export type DividendInput = { symbol: string; shares?: number; costBasis?: number };
-export const fetchDividends = (holdings: DividendInput[]) => engineRequest<DividendReport>('dividends.portfolio', { holdings }, 120000);
+export const fetchDividends = (holdings: DividendInput[], received?: unknown[]) =>
+  engineRequest<DividendReport>('dividends.portfolio', received ? { holdings, received } : { holdings }, 120000);
 
 const divStats = (el: HTMLElement) => (el.classList.add('div-stats'), el);
 
 /** Draws a dividends report: headline cards (unless `stats` is false), income by month, calendar, ex-dates, holdings. */
-export function drawDividends(out: HTMLElement, r: DividendReport, { hasCash = false, stats = true }: { hasCash?: boolean; stats?: boolean } = {}) {
+export function drawDividends(out: HTMLElement, r: DividendReport, { hasCash = false, stats = true, holdings = true }: { hasCash?: boolean; stats?: boolean; holdings?: boolean } = {}) {
   const max = Math.max(1, ...r.calendar.map((m) => m.total));
   const detail = h('div', {});
   const bars: HTMLElement[] = [];
@@ -207,7 +218,7 @@ export function drawDividends(out: HTMLElement, r: DividendReport, { hasCash = f
           )
         : h('div', { class: 'empty-state' }, 'No ex-dates expected in the next 30 days.'),
     ),
-    h(
+    !holdings ? '' : h(
       'section',
       { class: 'panel' },
       h('div', { class: 'panel-head' }, h('h3', {}, stats ? 'Holdings' : 'Dividends by holding'), asOfStamp(null, { reply: r, source: 'Schwab prices, Yahoo dividends' }).el),
@@ -380,7 +391,11 @@ function preview(rows: string[][], fileName: string, onSaved: (p: Portfolio & { 
                 mode: 'shares',
                 mine: true,
                 holdings: [
-                  ...stocks.map((x) => ({ symbol: x.symbol, name: x.name, weight: 0, assetClass: 'US stocks' as const, kind: 'security' as const, shares: x.shares, cost: x.cost })),
+                  ...stocks.map((x) => ({
+                    symbol: x.symbol, name: x.name, weight: 0, assetClass: 'US stocks' as const, kind: 'security' as const, shares: x.shares, cost: x.cost,
+                    // a statement's dividends column is a real record (as of today's import); the helper adds later payments as estimates
+                    ...(x.dividends != null ? { dividends: x.dividends, dividendsSource: 'statement' as const, dividendsAsOf: new Date().toISOString().slice(0, 10) } : {}),
+                  })),
                   ...(cash?.value ? [{ symbol: 'CASH', name: 'Cash / money market', weight: 0, assetClass: 'Cash' as const, kind: 'cash' as const, amount: cash.value }] : []),
                 ],
               };
