@@ -602,7 +602,8 @@ export function createPortfolioPage() {
       tip.replaceChildren(infoTip(METHOD_TERMS[method.value as keyof typeof METHOD_TERMS]));
     });
     async function run() {
-      out.replaceChildren(h('div', { class: 'muted pad' }, 'Optimising and testing every method on data it hadn’t seen (about 20 seconds)…'));
+      const progress = h('div', { class: 'muted pad' }, 'Optimising and testing every method on data it hadn’t seen (about 20 seconds)…');
+      out.replaceChildren(progress);
       const parsedViews = views.value
         .split(',')
         .map((v) => v.trim().match(/^([A-Za-z.$^-]+)\s+(-?[\d.]+)%?(?:\s+([\d.]+)%?)?$/))
@@ -623,6 +624,9 @@ export function createPortfolioPage() {
             views: parsedViews,
           },
           180000,
+          (e) => {
+            if (e.type === 'status') progress.textContent = `${e.text}…`;
+          },
         );
         renderOptimisation(out, r);
       } catch (err) {
@@ -654,14 +658,21 @@ export function createPortfolioPage() {
   }
 
   /** The 10th-90th percentile of a weight across bootstrap refits as a small bar, with a tick at the suggestion. */
-  function rangeCell(lo: number, hi: number, w: number, scale: number) {
+  function rangeCell(lo: number, hi: number, w: number, scale: number, pinned = false) {
     const at = (x: number) => `${Math.min(100, (100 * x) / scale).toFixed(1)}%`;
     return h(
       'span',
-      { class: 'opt-range-cell', title: `80% of refits put this weight between ${pctU(lo, 1)} and ${pctU(hi, 1)}` },
+      { class: 'opt-range-cell', title: pinned ? 'Every refit landed on one of your limits (max per holding, max change, keep cash or 1% minimum): your limit, not the data, sets this weight' : `80% of refits put this weight between ${pctU(lo, 1)} and ${pctU(hi, 1)}` },
       h('span', { class: 'opt-range', 'aria-hidden': 'true' }, h('span', { class: 'opt-range-fill', style: `left:${at(lo)};width:max(2px, ${at(hi - lo)})` }), h('span', { class: 'opt-range-mark', style: `left:${at(w)}` })),
-      h('span', { class: 'muted small' }, `${pctU(lo, 0)}–${pctU(hi, 0)}`),
+      h('span', { class: 'muted small' }, pinned ? 'held by your limit' : `${pctU(lo, 0)}–${pctU(hi, 0)}`),
     );
+  }
+
+  /** One line comparing the chosen method with the current mix in a walk-forward table. */
+  function compareLine(t: NonNullable<Optimisation['realOnly']>, key: keyof typeof METHOD_NAMES): string {
+    const m = t.rows.find((x) => x.key === key)!;
+    const c = t.rows.find((x) => x.key === 'current')!;
+    return `${METHOD_NAMES[key]} Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)} for your mix, ${pct(m.return, 1)} vs ${pct(c.return, 1)} a year`;
   }
 
   function verdict(r: Optimisation): string {
@@ -672,8 +683,9 @@ export function createPortfolioPage() {
     const m = wf.rows.find((x) => x.key === key)!;
     const c = wf.rows.find((x) => x.key === 'current')!;
     const edge = (m.sharpe ?? 0) - (c.sharpe ?? 0);
-    if (edge <= 0) return `On data it hadn’t seen, ${name} did not beat your current mix (Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)}). Keeping what you have is a reasonable choice.`;
-    const base = `On data it hadn’t seen, ${name} beat your current mix: Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)}, ${pct(m.return, 1)} vs ${pct(c.return, 1)} a year, worst drop ${pct(m.maxDrawdown, 0)} vs ${pct(c.maxDrawdown, 0)}.`;
+    const chance = wf.short ? ' With this little history, differences between methods are likely chance.' : '';
+    if (edge <= 0) return `On data it hadn’t seen, ${name} did not beat your current mix (Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)}). Keeping what you have is a reasonable choice.${chance}`;
+    const base = `On data it hadn’t seen, ${name} beat your current mix: Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)}, ${pct(m.return, 1)} vs ${pct(c.return, 1)} a year, worst drop ${pct(m.maxDrawdown, 0)} vs ${pct(c.maxDrawdown, 0)}.${chance}`;
     const rw = r.randomWalk;
     if (!rw || !rw.runs) return base;
     return rw.p <= 0.1
@@ -699,25 +711,25 @@ export function createPortfolioPage() {
           'div',
           {},
           h('h4', {}, 'Suggested weights'),
-          dataTable(
+          h('div', { class: 'opt-weights' }, dataTable(
             ['Holding', 'Current', 'Suggested', 'Change', ...(st ? ['Likely range'] : [])],
             r.symbols.map((s, i) => [
               holdingCell(s),
               pctU(r.current[i], 1),
               pctU(r.weights[i], 1),
               { v: pct(r.weights[i] - r.current[i], 1), cls: tone(r.weights[i] - r.current[i]) },
-              ...(st ? [rangeCell(st.low[i], st.high[i], r.weights[i], scale)] : []),
+              ...(st ? [rangeCell(st.low[i], st.high[i], r.weights[i], scale, st.pinned?.[i])] : []),
             ]),
             undefined,
             false,
-          ),
+          )),
           st
             ? h(
                 'p',
                 { class: 'ap-note' },
                 h('b', {}, 'How firm are these weights? '),
                 infoTip('weightRange'),
-                ` The method was refit on ${st.runs} reshuffled versions of your real history (1-month blocks); each bar shows where that weight landed 80% of the time. Narrow = the data pins the weight down; wide = it can’t, so don’t read much into the exact number. This checks robustness, not whether returns will be better.`,
+                ` The method was refit on ${st.runs} reshuffled versions of your real history (1-month blocks); each bar shows where that weight landed 80% of the time. Narrow = the data or your limits pin it down; wide = the data can’t, so don’t read much into the exact number.${key === 'growth' ? ' Growth’s bars also include a little noise from its own resampling.' : ''} This checks robustness, not whether returns will be better.`,
               )
             : null,
           h('p', { class: 'ap-note' }, `Expected volatility ${pctU(r.volatility.suggested, 1)} (now ${pctU(r.volatility.current, 1)}).${r.keepCash ? ' Cash is kept as is; only the invested part moves.' : ''} History ${r.start} to ${r.end}.`),
@@ -747,6 +759,9 @@ export function createPortfolioPage() {
           'div',
           {},
           h('h4', {}, 'How each method did on data it hadn’t seen ', infoTip('walkForward')),
+          wf && r.estimatedShare
+            ? h('p', { class: 'opt-estimated' }, `${Math.round(r.estimatedShare * 100)}% of the test period uses estimated (stand-in) history `, infoTip('standIn'), '. The estimate uses relationships measured later, which can flatter results.')
+            : null,
           wf
             ? dataTable(
                 ['Method', 'Return/yr', 'Volatility', 'Worst drop', 'Sharpe', 'Traded/yr'],
@@ -762,6 +777,14 @@ export function createPortfolioPage() {
                 wf.short ? h('b', {}, 'Short test: low confidence. ') : null,
                 `Refit on the previous ${wf.windowYears.toFixed(0)} year${wf.windowYears >= 2 ? 's' : ''}, held each ${wf.short ? 'month' : 'quarter'}, over ${(wf.days / 252).toFixed(1)} years. Dividends included.`,
                 r.testStart && r.testStart < r.start ? ` Tested from ${r.testStart}, before the ${r.start} start of your real shared history: see the notes on young holdings above.` : '',
+              )
+            : null,
+          wf && r.estimatedShare
+            ? h(
+                'p',
+                { class: 'ap-note' },
+                h('b', {}, 'Real prices only: '),
+                r.realOnly ? `${compareLine(r.realOnly, key)}${r.realOnly.short ? ' (short test, low confidence)' : ''}.` : 'not enough real shared history (2.5 years) for this test without stand-ins.',
               )
             : null,
           r.randomWalk

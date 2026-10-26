@@ -6282,8 +6282,12 @@ a.btn {
 .opt-range { position: relative; display: inline-block; flex: none; width: 72px; height: 8px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--border); }
 .opt-range-fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: var(--accent); opacity: 0.55; }
 .opt-range-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text); }
+.opt-estimated { margin: 0 0 8px; padding: 6px 10px; border-radius: var(--radius); background: var(--warn-soft); border: 1px solid var(--warn-border); color: var(--warn-text); font-size: 13px; }
 @media (max-width: 600px) {
-  .opt-range { width: 44px; }
+  /* Phones: drop the Change column (Current vs Suggested shows it) and stack the range under its bar. */
+  .opt-weights th:nth-child(4), .opt-weights td:nth-child(4) { display: none; }
+  .opt-range-cell { flex-direction: column; align-items: flex-start; gap: 2px; white-space: normal; }
+  .opt-range { width: 56px; }
 }
 
 /* ---------- Futures page ---------- */

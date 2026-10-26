@@ -206,7 +206,11 @@ export interface Optimisation {
   /** First day of the history the walk-forward used (earlier than `start` when stand-ins extend it). Helper v33+. */
   testStart?: string;
   /** Each weight's 10th-90th percentile when the method is refit on resampled history (v33+). */
-  stability?: { runs: number; low: number[]; high: number[] };
+  stability?: { runs: number; low: number[]; high: number[]; pinned?: boolean[] };
+  /** Share of the walk-forward's out-of-sample days that use estimated (stand-in) history, 0-1; null without stand-ins. */
+  estimatedShare?: number | null;
+  /** The same walk-forward on real prices only, when real shared history alone is long enough (with stand-ins in use). */
+  realOnly?: { windowYears: number; days: number; rows: WalkForwardRow[]; stepDays?: number; short?: boolean } | null;
   /** Young holdings whose earlier history is estimated from a long-running ETF (v33+). */
   standIns?: { symbol: string; standIn: string; correlation: number; beta: number; realStart: string }[];
   /** Young holdings with no good stand-in: left out of the walk-forward (v33+). */

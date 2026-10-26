@@ -3,6 +3,7 @@ Portfolio analytics, risk and optimisation from daily prices (Schwab history), u
 """
 import asyncio
 import datetime as dt
+import zlib
 
 import numpy as np
 from scipy.optimize import minimize
@@ -447,11 +448,12 @@ def ledoit_wolf(returns):
     return delta * target + (1 - delta) * s, float(delta)
 
 
-def _block_sample(t, rng, block=BLOCK):
-    """Day indices for a block bootstrap: random 1-month stretches (with replacement) glued to length t."""
+def _block_sample(t, rng, block=BLOCK, size=None):
+    """Indices into t days for a block bootstrap: random 1-month stretches (with replacement) glued to length size (default t)."""
+    size = size or t
     block = min(block, t)
-    starts = rng.integers(0, t - block + 1, -(-t // block))
-    return (starts[:, None] + np.arange(block)).ravel()[:t]
+    starts = rng.integers(0, t - block + 1, -(-size // block))
+    return (starts[:, None] + np.arange(block)).ravel()[:size]
 
 
 def _block_shuffle(t, rng, block=BLOCK):
@@ -613,9 +615,12 @@ def oos_stats(port, rf):
 STAND_INS = ('SPY', 'QQQ', 'IWM', 'MDY', 'EFA', 'EEM', 'VTI', 'AGG', 'BND', 'TLT', 'IEF', 'SHY', 'LQD', 'HYG', 'TIP', 'GLD', 'SLV',
              'DBC', 'VNQ', 'XLK', 'XLF', 'XLV', 'XLE', 'XLI', 'XLY', 'XLP', 'XLU', 'XLB', 'XLRE', 'XLC', 'SCHD', 'VIG', 'DVY', 'MTUM',
              'QUAL', 'USMV')
+CORE_STAND_INS = ('SPY', 'QQQ', 'AGG', 'TLT', 'GLD', 'EFA', 'VNQ')  # tried first; the full list only if none fits
 MIN_OVERLAP, MIN_CORRELATION, YOUNG_DAYS = TRADING_DAYS, 0.7, 90  # 1 year of overlap; "young" = starts 90+ days after the oldest
 SHORT_TEST_DAYS = int(2.5 * TRADING_DAYS)  # below this even the short walk-forward isn't run
-STABILITY_RUNS, STABILITY_INNER = 200, 10
+STABILITY_RUNS = 200
+STABILITY_INNER = {'growth': 20, 'black_litterman': 20}  # Growth's own resamples per refit (more = less extra noise, slower)
+PIN_TOL = 0.005  # a weight within 0.5% of a limit at both ends of its range is "held by your limit"
 
 
 def _daily_returns(series, dates):
@@ -642,41 +647,55 @@ def pick_stand_in(own, candidates):
     return best
 
 
-def backfill(own, proxy, beta, floor):
-    """`own` extended back to `floor`: before its first real day each day's return is beta x the stand-in's return
-    (no alpha). Real days are never changed."""
+def backfill(own, proxy, beta, floor, seed=0):
+    """`own` extended back to `floor`. Before its first real day each day's return is beta x the stand-in's return
+    plus a residual drawn (seeded 1-month block bootstrap) from the real overlap's residuals own - beta x stand-in,
+    centred so there is no alpha. The residuals keep the estimate's volatility and its correlation with the stand-in
+    realistic (beta x stand-in alone would move in lockstep with it). Real days are never changed."""
     first = min(own)
     days = sorted(d for d in proxy if floor <= d <= first)
     out = dict(own)
-    if not days:
+    if len(days) < 2:
         return out
+    common = sorted(own.keys() & proxy.keys())
+    resid = _daily_returns(own, common) - beta * _daily_returns(proxy, common) if len(common) > 2 else np.zeros(1)
+    resid = resid - resid.mean()
+    noise = resid[_block_sample(len(resid), np.random.default_rng(seed), size=len(days) - 1)]
     v = own[first]
     if days[-1] != first:
         out[days[-1]] = v  # the stand-in has no bar on the real start: treat that one gap as flat
     for i in range(len(days) - 2, -1, -1):
-        r = proxy[days[i + 1]] / proxy[days[i]] - 1
-        v = v / max(1 + beta * r, 1e-6)
+        r = beta * (proxy[days[i + 1]] / proxy[days[i]] - 1) + noise[i]
+        v = v / max(1 + r, 1e-6)
         out[days[i]] = v
     return out
 
 
-def extend_history(series, symbols, candidates):
+def young_holdings(series, symbols):
+    """Holdings whose prices start 90+ days after the oldest holding's."""
+    ref = min(min(series[s]) for s in symbols)
+    return [s for s in symbols if (min(series[s]) - ref).days > YOUNG_DAYS]
+
+
+def extend_history(series, symbols, candidates, core=()):
     """Proxy-extended history (as in Morningstar's extended performance) for holdings younger than the rest.
 
-    series/candidates: {symbol: {date: total-return value}}. Returns (extended {symbol: {date: value}}, stand-ins used,
+    series/candidates: {symbol: {date: total-return value}}. The owner's own holdings never stand in. Funds in `core`
+    are tried first; the rest only when none of them fits. Returns (extended {symbol: {date: value}}, stand-ins used,
     young holdings with no good stand-in)."""
-    starts = {s: min(series[s]) for s in symbols}
-    ref = min(starts.values())
-    young = [s for s in symbols if (starts[s] - ref).days > YOUNG_DAYS]
+    ref = min(min(series[s]) for s in symbols)
+    pool = {c: v for c, v in candidates.items() if c not in symbols}
     out, used, left_out = {s: series[s] for s in symbols}, [], []
-    for s in young:
-        pick = pick_stand_in(series[s], {c: v for c, v in candidates.items() if c != s and c not in young})
+    for s in young_holdings(series, symbols):
+        pick = pick_stand_in(series[s], {c: v for c, v in pool.items() if c in core}) if core else None
+        pick = pick or pick_stand_in(series[s], pool)
+        real_start = min(series[s]).isoformat()
         if pick is None:
-            left_out.append({'symbol': s, 'realStart': starts[s].isoformat()})
+            left_out.append({'symbol': s, 'realStart': real_start})
             continue
         proxy, corr, beta = pick
-        out[s] = backfill(series[s], candidates[proxy], beta, ref)
-        used.append({'symbol': s, 'standIn': proxy, 'correlation': round(corr, 3), 'beta': round(beta, 3), 'realStart': starts[s].isoformat()})
+        out[s] = backfill(series[s], pool[proxy], beta, ref, zlib.crc32(s.encode()))
+        used.append({'symbol': s, 'standIn': proxy, 'correlation': round(corr, 3), 'beta': round(beta, 3), 'realStart': real_start})
     return out, used, left_out
 
 
@@ -690,45 +709,78 @@ def test_window(t):
     return None
 
 
+def weight_limits(n, o):
+    """Each holding's lowest and highest allowed weight under the options fit() uses (cash fixed, max per holding,
+    max change)."""
+    fixed = o.get('fixed') or {}
+    lo, hi = np.zeros(n), np.zeros(n)
+    for j, v in fixed.items():
+        lo[j] = hi[j] = v
+    inv = [j for j in range(n) if j not in fixed]
+    s = 1 - sum(fixed.values())
+    if not inv or s <= 1e-9:
+        return lo, hi
+    if len(inv) == 1:
+        lo[inv] = hi[inv] = s
+        return lo, hi
+    cur, mc = o.get('cur'), o.get('maxChange')
+    b = np.array(_bounds(len(inv), o['lo'] / s, o['hi'] / s, None if cur is None else cur[inv] / s, None if mc is None else mc / s))
+    lo[inv], hi[inv] = s * b[:, 0], s * b[:, 1]
+    return lo, hi
+
+
 def weight_stability(returns, method, o, seed=11, runs=None):
     """Refit `method` on `runs` block-bootstrap resamples (1-month blocks) of the real history: each weight's
-    10th-90th percentile. A robustness check (can the data pin the weights down?), not evidence of better returns."""
+    10th-90th percentile, and whether both ends sit on one of the owner's limits (pinned by the limit, not the data).
+    A robustness check (can the data pin the weights down?), not evidence of better returns."""
     rng, runs = np.random.default_rng(seed), runs or STABILITY_RUNS
-    inner = {**o, 'runs': STABILITY_INNER}
+    inner = {**o, 'runs': STABILITY_INNER.get(method, 10)}
     ws = np.array([fit(returns[_block_sample(len(returns), rng)], method, inner, rng) for _ in range(runs)])
-    return {'runs': runs, 'low': np.percentile(ws, 10, axis=0).round(4).tolist(), 'high': np.percentile(ws, 90, axis=0).round(4).tolist()}
+    low, high = np.percentile(ws, 10, axis=0), np.percentile(ws, 90, axis=0)
+    lim_lo, lim_hi = weight_limits(returns.shape[1], o)
+    at = lambda x, b: np.abs(x - b) <= PIN_TOL  # noqa: E731
+    # A floor of 0 isn't a limit the owner set (the method simply doesn't want the holding), so it doesn't count.
+    pinned = (at(low, lim_lo) & at(high, lim_lo) & (lim_lo > PIN_TOL)) | (at(low, lim_hi) & at(high, lim_hi))
+    return {'runs': runs, 'low': low.round(4).tolist(), 'high': high.round(4).tolist(), 'pinned': pinned.tolist()}
+
+
+def _test_table(returns, current, o, rf, rng, plan):
+    window, step, short = plan
+    wf = {**o, 'runs': WF_RESAMPLES, 'views': []}
+    rows = []
+    for k in ('current', 'equal', 'min_var', 'risk_parity', 'growth'):
+        weigh = (lambda past: current) if k == 'current' else (lambda past, k=k: fit(past, k, wf, rng))
+        port, _, turnover = walk_forward(returns, weigh, window, step)
+        rows.append({'key': k, **oos_stats(port, rf), 'turnover': turnover})
+    return {'windowYears': window / TRADING_DAYS, 'stepDays': step, 'short': short, 'days': len(port), 'rows': rows}
 
 
 def run_optimizer(returns, current, method, o, seed=7, test=None, stability_runs=None):
     """Suggested weights (fit on the real shared history), the weight-stability ranges, the walk-forward table and the
     random-walk check. test = (returns, current, options) of the history to test on (stand-in extended); default the
-    real one. Pure: arrays in, plain dict out."""
+    real one. With a test history, the real-data-only table is added too (realOnly) when real history is long enough.
+    Pure: arrays in, plain dict out."""
     rng = np.random.default_rng(seed)
     test_method = 'growth' if method == 'black_litterman' else method
     weights = fit(returns, method, {**o, 'cur': current}, rng)
     cov = ledoit_wolf(returns)[0] * TRADING_DAYS
     out = {'weights': weights, 'volatility': {'current': float(np.sqrt(current @ cov @ current)), 'suggested': float(np.sqrt(weights @ cov @ weights))},
-           'stability': weight_stability(returns, method, {**o, 'cur': current}, seed + 4, stability_runs), 'walkForward': None, 'randomWalk': None}
+           'stability': weight_stability(returns, method, {**o, 'cur': current}, seed + 4, stability_runs), 'walkForward': None, 'randomWalk': None, 'realOnly': None}
     t_returns, t_current, t_o = test or (returns, current, o)
     plan = test_window(len(t_returns)) if t_returns.shape[1] >= 2 else None
     if not plan:
         return out
-    window, step, short = plan
-    wf = {**t_o, 'runs': WF_RESAMPLES, 'views': []}
-    keys = ['current', 'equal', 'min_var', 'risk_parity', 'growth']
-    weighers = {k: (lambda past: t_current) if k == 'current' else (lambda past, k=k: fit(past, k, wf, rng)) for k in keys}
-    rows, ports = [], {}
-    for k in keys:
-        port, _, turnover = walk_forward(t_returns, weighers[k], window, step)
-        ports[k] = port
-        rows.append({'key': k, **oos_stats(port, o['rf']), 'turnover': turnover})
-    out['walkForward'] = {'windowYears': window / TRADING_DAYS, 'stepDays': step, 'short': short, 'days': len(ports['current']), 'rows': rows}
-    by = {r['key']: r for r in rows}
+    window, step, _ = plan
+    out['walkForward'] = table = _test_table(t_returns, t_current, t_o, o['rf'], rng, plan)
+    real_plan = test_window(len(returns)) if test is not None else None
+    if real_plan:  # same test on real prices only: no estimated history at all
+        out['realOnly'] = _test_table(returns, current, o, o['rf'], np.random.default_rng(seed + 8), real_plan)
+    by = {r['key']: r for r in table['rows']}
     edge = (by[test_method]['sharpe'] or 0) - (by['current']['sharpe'] or 0)
     if edge <= 0:  # no edge to explain: skip the shuffles
         out['randomWalk'] = {'method': test_method, 'runs': 0, 'edge': float(edge), 'p': 1.0}
         return out
-    rw = {**wf, 'runs': RW_RESAMPLES}
+    rw = {**t_o, 'runs': RW_RESAMPLES, 'views': []}
     beats = 0
     for _ in range(RW_RUNS):
         shuffled = t_returns[_block_shuffle(len(t_returns), rng)]
@@ -745,11 +797,37 @@ def _aligned(series, symbols):
     return common, np.array([[series[s][d] for s in symbols] for d in common], dtype=float).reshape(len(common), len(symbols))
 
 
+async def stand_in_series(ctx, symbol):
+    """A stand-in ETF's 10-year total-return index, kept on disk (stale_ok) so later runs don't wait on Schwab."""
+    async def load():
+        s = (await total_return_series(ctx, [symbol], 10))[0]
+        if not s:
+            raise EngineError(f'No history for {symbol}')
+        return [[d.isoformat(), v] for d, v in sorted(s.items())]
+    rows = await ctx.cached(('stand-in', symbol), 86400, load, persist=True, stale_ok=True)
+    return {dt.date.fromisoformat(d): v for d, v in rows}
+
+
+async def _load_stand_ins(ctx, names, emit, done, total):
+    """{symbol: series or None}, reporting "Finding stand-ins 12/36" as each arrives."""
+    async def one(name):
+        try:
+            v = await stand_in_series(ctx, name)
+        except Exception:
+            v = None
+        done[0] += 1
+        if emit:
+            await emit({'type': 'status', 'text': f'Finding stand-ins {done[0]}/{total}'})
+        return name, v
+    return dict(await asyncio.gather(*(one(n) for n in names)))
+
+
 @handler('portfolio.optimize')
 async def optimize(ctx, msg):
     symbols, current = _clean_holdings(msg)
     if len(symbols) < 2:
         raise EngineError('Optimisation needs at least two holdings.')
+    emit = msg.get('_emit')
     method = msg.get('method') if msg.get('method') in METHODS else 'risk_parity'
     years = min(int(msg.get('years') or 10), 10)  # stand-in history goes back at most 10 years
     cash = {str(h['symbol']).upper().strip() for h in msg.get('holdings') or [] if h.get('cash')}
@@ -769,12 +847,16 @@ async def optimize(ctx, msg):
          'maxChange': float(msg['maxChange']) if msg.get('maxChange') else None, 'views': views if method == 'black_litterman' else [], 'symbols': symbols}
 
     used, left_out, test, test_dates = [], [], None, dates
-    starts = [min(v) for v in loaded]
-    if msg.get('standIns', True) is not False and any((d - min(starts)).days > YOUNG_DAYS for d in starts):
-        names = [c for c in STAND_INS if c not in symbols]
-        candidates = dict(zip(names, await total_return_series(ctx, names, years)))
-        candidates.update(series)  # a long-history holding can stand in too (already loaded)
-        extended, used, left_out = extend_history(series, symbols, candidates)
+    young = young_holdings(series, symbols) if msg.get('standIns', True) is not False else []
+    if young:
+        core = [c for c in CORE_STAND_INS if c not in symbols]
+        rest = [c for c in STAND_INS if c not in symbols and c not in core]
+        done = [0]
+        candidates = await _load_stand_ins(ctx, core, emit, done, len(core))
+        if any(pick_stand_in(series[s], candidates) is None for s in young):  # wider search only when needed
+            candidates.update(await _load_stand_ins(ctx, rest, emit, done, len(core) + len(rest)))
+        candidates = {c: v for c, v in candidates.items() if v}
+        extended, used, left_out = extend_history(series, symbols, candidates, core)
         dropped = {x['symbol'] for x in left_out}
         keep = [j for j, s in enumerate(symbols) if s not in dropped]
         test_dates, values = _aligned(extended, [symbols[j] for j in keep])
@@ -782,7 +864,14 @@ async def optimize(ctx, msg):
         index = {j: k for k, j in enumerate(keep)}
         t_fixed = {index[j]: float(t_cur[index[j]]) for j in fixed if j in index}
         test = (values[1:] / values[:-1] - 1, t_cur, {**o, 'fixed': t_fixed, 'symbols': [symbols[j] for j in keep]})
+    if emit:
+        await emit({'type': 'status', 'text': 'Testing every method on data it hadn’t seen'})
     r = await asyncio.to_thread(run_optimizer, returns, current, method, o, 7, test)
+    estimated = None
+    if test is not None and r['walkForward']:
+        # Share of the test's out-of-sample days on which at least one holding's history is estimated.
+        oos = test_dates[-r['walkForward']['days']:]
+        estimated = round(sum(d <= dates[0] for d in oos) / len(oos), 3)
     return {
         'method': method,
         'start': dates[0].isoformat(),
@@ -798,6 +887,8 @@ async def optimize(ctx, msg):
         'stability': r['stability'],
         'standIns': used,
         'leftOut': left_out,
+        'estimatedShare': estimated,
         'walkForward': r['walkForward'],
+        'realOnly': r['realOnly'],
         'randomWalk': r['randomWalk'],
     }

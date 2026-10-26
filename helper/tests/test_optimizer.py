@@ -96,7 +96,7 @@ class StandInTest(unittest.TestCase):
         rng = np.random.default_rng(5)
         self.start = dt.date(2016, 1, 1)
         self.market = rng.normal(4e-4, 0.01, 3000)
-        self.noise = rng.normal(0, 0.004, 3000)
+        self.noise = rng.normal(0, 0.008, 3000)
         self.spy = _series(self.market, self.start)
         self.gld = _series(rng.normal(2e-4, 0.01, 3000), self.start)  # unrelated
         young = 1.3 * self.market[2500:] + self.noise[2500:]  # starts on day 2500 (~1.4 years of data)
@@ -106,7 +106,7 @@ class StandInTest(unittest.TestCase):
     def test_picks_most_correlated_above_threshold(self):
         symbol, corr, beta = quant.pick_stand_in(self.young, {'SPY': self.spy, 'GLD': self.gld})
         self.assertEqual(symbol, 'SPY')
-        self.assertGreater(corr, 0.9)
+        self.assertGreater(corr, 0.8)
         self.assertAlmostEqual(beta, 1.3, delta=0.1)
 
     def test_no_stand_in_below_correlation_or_overlap(self):
@@ -114,27 +114,43 @@ class StandInTest(unittest.TestCase):
         short = {d: v for d, v in self.young.items() if d < self.young_start + dt.timedelta(days=200)}
         self.assertIsNone(quant.pick_stand_in(short, {'SPY': self.spy}))  # under a year of overlap
 
-    def test_backfill_is_beta_times_proxy_before_start_and_real_after(self):
-        out = quant.backfill(self.young, self.spy, 1.3, self.start)
+    def test_backfill_keeps_real_data_volatility_and_correlation(self):
+        _, corr, beta = quant.pick_stand_in(self.young, {'SPY': self.spy})
+        out = quant.backfill(self.young, self.spy, beta, self.start, seed=1)
         for d, v in self.young.items():
             self.assertEqual(out[d], v)  # real data untouched
+        self.assertEqual(out, quant.backfill(self.young, self.spy, beta, self.start, seed=1))  # seeded
         days = sorted(out)
         self.assertEqual(days[0], self.start)
-        for a, b in zip(days[:-1], days[1:]):
-            if b > self.young_start:
-                break
-            self.assertAlmostEqual(out[b] / out[a] - 1, 1.3 * (self.spy[b] / self.spy[a] - 1), places=10)
+        est = [d for d in days if d <= self.young_start]
+        real = [d for d in days if d >= self.young_start]
+        est_r, real_r = quant._daily_returns(out, est), quant._daily_returns(out, real)
+        self.assertLess(abs(est_r.std() / real_r.std() - 1), 0.15)  # residuals restore the real volatility
+        est_corr = np.corrcoef(est_r, quant._daily_returns(self.spy, est))[0, 1]
+        self.assertLess(abs(est_corr - corr), 0.1)  # like the overlap's correlation...
+        self.assertLess(est_corr, 0.99)  # ...not a lockstep copy of the stand-in
+        # No alpha: the estimate's average return is beta x the stand-in's (residuals are centred).
+        self.assertLess(abs(est_r.mean() - beta * quant._daily_returns(self.spy, est).mean()), 0.0006)
 
     def test_extend_history_lists_stand_ins_and_left_out(self):
         rng = np.random.default_rng(9)
         odd = _series(rng.normal(0, 0.01, 500), self.start + dt.timedelta(days=2500))  # young, like nothing
-        series = {'SPY': self.spy, 'NEW': self.young, 'ODD': odd}
-        ext, used, left = quant.extend_history(series, ['SPY', 'NEW', 'ODD'], {'GLD': self.gld, **series})
-        self.assertEqual([(u['symbol'], u['standIn']) for u in used], [('NEW', 'SPY')])
+        old = _series(1.3 * self.market + self.noise, self.start)  # owned, and moves even more like NEW than SPY does
+        series = {'OLD': old, 'NEW': self.young, 'ODD': odd}
+        ext, used, left = quant.extend_history(series, ['OLD', 'NEW', 'ODD'], {'GLD': self.gld, 'SPY': self.spy, **series})
+        self.assertEqual([(u['symbol'], u['standIn']) for u in used], [('NEW', 'SPY')])  # never an owned holding
         self.assertEqual(used[0]['realStart'], self.young_start.isoformat())
         self.assertEqual([x['symbol'] for x in left], ['ODD'])
         self.assertEqual(min(ext['NEW']), self.start)
         self.assertIs(ext['ODD'], odd)
+
+    def test_core_funds_tried_first(self):
+        qqq = _series(self.market + np.random.default_rng(2).normal(0, 0.006, 3000), self.start)  # fits, less well than SPY
+        series = {'OLD': self.gld, 'NEW': self.young}
+        _, used, _ = quant.extend_history(series, ['OLD', 'NEW'], {'SPY': self.spy, 'QQQ': qqq}, core=('QQQ',))
+        self.assertEqual(used[0]['standIn'], 'QQQ')
+        _, used, _ = quant.extend_history(series, ['OLD', 'NEW'], {'SPY': self.spy, 'QQQ': qqq})
+        self.assertEqual(used[0]['standIn'], 'SPY')
 
 
 class ShortHistoryTest(unittest.TestCase):
@@ -165,6 +181,17 @@ class ShortHistoryTest(unittest.TestCase):
         self.assertGreater((high - low).max(), 0.01)  # 1.5 years can't pin weights exactly
         eq = quant.weight_stability(r, 'equal', o, runs=10)
         self.assertEqual(eq['low'], eq['high'])
+        self.assertFalse(any(a['pinned']))
+        capped = quant.weight_stability(r, 'min_var', {**o, 'hi': 0.25}, runs=10)  # 4 holdings at max 25%: all held by the limit
+        self.assertTrue(all(capped['pinned']))
+
+    def test_real_only_table_when_real_history_is_long_enough(self):
+        o = {'rf': 0.04, 'lo': 0, 'hi': 1}
+        cur = np.full(4, 0.25)
+        with mock.patch.object(quant, 'RW_RUNS', 2):
+            r = quant.run_optimizer(_returns(t=700), cur, 'min_var', o, test=(_returns(t=1500, seed=4), cur, o), stability_runs=5)
+        self.assertTrue(r['realOnly']['short'])
+        self.assertFalse(r['walkForward']['short'])
 
 
 class HandlerTest(unittest.TestCase):
@@ -209,13 +236,28 @@ class HandlerTest(unittest.TestCase):
             async def dividends(self, s):
                 return {}
 
+            async def cached(self, key, max_age, load, persist=False, stale_ok=False):
+                cached_keys.append((key, persist, stale_ok))
+                return await load()
+
         async def rf(ctx):
             return 0.04
 
+        events, cached_keys = [], []
+
+        async def emit(e):
+            events.append(e['text'])
+
         msg = {'holdings': [{'symbol': 'OLD', 'weight': 60}, {'symbol': 'NEW', 'weight': 40}], 'method': 'min_var', 'maxWeight': 1}
         with mock.patch.object(quant, 'risk_free', rf), mock.patch.object(quant, 'RW_RUNS', 3), mock.patch.object(quant, 'STABILITY_RUNS', 20):
-            out = asyncio.run(quant.optimize(Ctx(), msg))
+            out = asyncio.run(quant.optimize(Ctx(), {**msg, '_emit': emit}))
             off = asyncio.run(quant.optimize(Ctx(), {**msg, 'standIns': False}))
+        # SPY (a core fund) fits, so the wider list is never loaded; stand-ins are kept on disk.
+        self.assertEqual(len(cached_keys), len(quant.CORE_STAND_INS))
+        self.assertTrue(all(p and s for _, p, s in cached_keys))
+        self.assertIn(f'Finding stand-ins 7/{len(quant.CORE_STAND_INS)}', events)
+        self.assertTrue(0 < out['estimatedShare'] <= 1)
+        self.assertIsNone(out['realOnly'])  # real shared history alone is too short to test
         self.assertEqual(out['symbols'], ['OLD', 'NEW'])  # SPY only stands in: never added
         self.assertEqual([(x['symbol'], x['standIn']) for x in out['standIns']], [('NEW', 'SPY')])
         self.assertGreater(out['standIns'][0]['correlation'], 0.9)
