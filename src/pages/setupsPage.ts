@@ -3,7 +3,8 @@
  * weekly bars); see the evidence behind each strategy (pooled backtest, 1,000-run random-entry test, Monte Carlo,
  * and the COT + z-score edge study); browse every Nasdaq-100 setup in a sortable list; and open one to get its
  * live entry status, a chart with the entry, stop and target, and the step-by-step trade guide. Watched setups
- * follow the live price and alert when it is time to enter (or too late to chase).
+ * follow the live price and alert when it is time to enter (or too late to chase). With helper 32+ the entry alerts
+ * also run in the helper (engine/alerts.py), so they reach the phone with this tab closed.
  */
 import { CandlestickSeries, ColorType, LineStyle, createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { subscribeQuote } from '../data/quotes';
@@ -15,6 +16,7 @@ import { tradeGuideBody } from '../home/tradeGuide';
 import type { Timeframe } from '../types';
 import { pageFrame, pct as fmtPct } from '../ui/charts';
 import { formatPrice, h, timeAgo, toast } from '../ui/dom';
+import { deleteHelperAlert, helperAlertsAvailable, listHelperAlerts, saveHelperAlert } from '../ui/alerts';
 import { infoTip, termLabel } from '../ui/glossary';
 import { withTableTools } from '../ui/tableTools';
 import { THEME, followTheme } from '../ui/theme';
@@ -174,7 +176,7 @@ function dailyRoutine() {
       step('Before the open (around 9:00 AM New York).', 'Pick a time frame: Swing for trades lasting about a week, Short swing for 1-3 days, Position for weeks. Look at "trades worth a look". Click one to read its summary and steps.'),
       step('Decide and size it.', 'Only A (normal size) and B (half size). Use the "How much to buy" calculator: risk about 0.5% of your account per trade. Star ☆ the ones you want, or tick "Alert me on A & B entries".'),
       step('Place the orders at your broker.', 'For a "buy above" entry use a buy-stop order at the entry price, with a stop-loss at the stop price (many brokers let you attach both at once as a bracket order, with the target as the take-profit). This platform never places orders.'),
-      step('During the day.', 'Leave this tab open: you\'ll hear an alert when price gets close to or reaches an entry. If it says "Too far to chase", don\'t buy: wait for a pullback or skip it.'),
+      step('During the day.', 'You\'ll get an alert when price gets close to or reaches an entry (with the helper running, also on your phone with the tab closed: set it up in Settings). If it says "Too far to chase", don\'t buy: wait for a pullback or skip it.'),
       step('Managing an open trade.', 'Keep the stop where it is and follow the exit in the setup\'s guide (pullbacks: stop to break-even once up by the risk, then the target or the "Out by" date; breakouts: trail the stop, no fixed target).'),
       step('After 4 PM.', 'New setups appear (marked New) once the day\'s bar closes. Repeat tomorrow. Hourly setups appear through the day; weekly ones after Friday\'s close.'),
     ),
@@ -191,6 +193,8 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   const zones = new Map<string, Zone>();
   const quoteStops = new Map<string, () => void>();
   const alerts: { at: number; text: string; tone: string }[] = [];
+  /** True when the helper runs the entry alerts too (works with this tab closed; it sends the notification). */
+  let helperOn = false;
 
   const status = h('div', { class: 'sp-status muted small' });
   const horizonTabs = h('div', { class: 'segmented sp-horizons' }, ...HORIZONS.map((x) => h('button', { 'data-h': x.key, onclick: () => setPref('horizon', x.key) }, h('b', {}, x.label), h('span', { class: 'muted tiny' }, ` ${x.hold}`))));
@@ -236,6 +240,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       data = await engineRequest<Scan>('scanner.results', force ? { refresh: true } : {}, 30_000);
       render();
       syncWatches();
+      syncHelperAlerts();
       // While a scan is running (or only a saved one is shown), check again soon: each time frame appears when done.
       clearTimeout(soon);
       if (data.scanning || (data.loading && !data.error)) soon = setTimeout(() => refresh(), 5_000); // otherwise the 60 s timer
@@ -433,7 +438,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       seg('grade', [['ab', 'A & B only'], ['all', 'All grades']]),
       seg('side', [['all', 'Buys & sells'], ['buy', 'Buys'], ['sell', 'Sells']]),
       h('label', { class: 'small muted' }, 'Sort ', h('select', { class: 'input small-select', onchange: (e: Event) => setPref('sort', (e.target as HTMLSelectElement).value as never) }, ...([['grade', 'Best grade'], ['rr', 'Reward:risk'], ['mc', 'Monte Carlo % ahead'], ['new', 'Newest']] as const).map(([v, l]) => h('option', { value: v, selected: prefs.sort === v }, l)))),
-      h('label', { class: 'small sp-auto', title: 'Watch every A and B setup automatically and alert when one reaches its entry' }, h('input', { type: 'checkbox', checked: prefs.autoAlert, onchange: (e: Event) => (setPref('autoAlert', (e.target as HTMLInputElement).checked), syncWatches()) }), ' Alert me on A & B entries'),
+      h('label', { class: 'small sp-auto', title: 'Watch every A and B setup automatically and alert when one reaches its entry' }, h('input', { type: 'checkbox', checked: prefs.autoAlert, onchange: (e: Event) => (setPref('autoAlert', (e.target as HTMLInputElement).checked), syncWatches(), syncHelperAlerts()) }), ' Alert me on A & B entries'),
       prefs.strategy !== 'all' ? h('button', { class: 'btn small', onclick: () => setPref('strategy', 'all') }, `${horizon()?.strategies[prefs.strategy]?.short ?? STRATEGY_LABEL[prefs.strategy]} only ✕`) : '',
     );
   }
@@ -573,14 +578,40 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
 
   function toggleWatch(s: Setup) {
     const id = idOf(s);
-    if (watched.has(id)) watched.delete(id);
-    else {
+    if (watched.has(id)) {
+      watched.delete(id);
+      if (helperOn) deleteHelperAlert({ setupId: id }).catch(() => {});
+    } else {
       watched.add(id);
-      toast(`Watching ${s.symbol}: you'll get an alert when it's time to enter.`);
+      toast(`Watching ${s.symbol}: you'll get an alert when it's time to enter${helperOn ? ', even with the platform closed' : ''}.`);
     }
     save(WATCH_KEY, [...watched]);
     syncWatches();
+    syncHelperAlerts();
     render();
+  }
+
+  /** Mirrors the stars and "Alert me on A & B entries" into helper alerts, so they fire with this tab closed. */
+  let syncing = false;
+  async function syncHelperAlerts() {
+    if (syncing) return;
+    syncing = true;
+    try {
+      helperOn = await helperAlertsAvailable();
+      if (!helperOn) return;
+      const list = (await listHelperAlerts()).alerts;
+      const hasAll = list.some((a) => a.kind === 'setups_ab');
+      if (prefs.autoAlert && !hasAll) await saveHelperAlert({ kind: 'setups_ab', note: 'From the Setups page' });
+      if (!prefs.autoAlert && hasAll) await deleteHelperAlert({ kind: 'setups_ab' });
+      const have = new Set(list.filter((a) => a.kind === 'setup').map((a) => a.setupId));
+      const all = Object.values(data?.horizons ?? {}).flatMap((x) => x?.setups ?? []);
+      for (const s of all) if (watched.has(idOf(s)) && !have.has(idOf(s))) await saveHelperAlert({ kind: 'setup', setup: s, note: 'Watched on the Setups page' });
+      renderAlerts();
+    } catch {
+      /* the page's own alerts keep working */
+    } finally {
+      syncing = false;
+    }
   }
 
   /** Setups followed live: the starred ones, plus every A and B setup when auto-alerts are on. */
@@ -628,6 +659,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     alerts.unshift({ at: Date.now(), text, tone: z.tone });
     alerts.splice(20);
     renderAlerts();
+    if (helperOn && z.zone === 'entry') return; // the helper sends this one (to open tabs and the phone)
     beep();
     toast(`${s.symbol}: ${z.label}`);
     if ('Notification' in window && Notification.permission === 'granted') {
@@ -644,7 +676,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       h('h3', {}, 'Entry alerts'),
       alerts.length
         ? h('ul', { class: 'sp-alert-list small' }, ...alerts.map((a) => h('li', { class: a.tone }, h('span', { class: 'muted tiny' }, new Date(a.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })), ' ', a.text)))
-        : h('p', { class: 'muted tiny' }, `Following ${followed().length} setup${followed().length === 1 ? '' : 's'} with live prices. An alert appears here (with a sound${'Notification' in window && Notification.permission === 'granted' ? ' and a notification' : ''}) when one gets close to or reaches its entry. Keep this tab open.`),
+        : h('p', { class: 'muted tiny' }, `Following ${followed().length} setup${followed().length === 1 ? '' : 's'} with live prices. An alert appears here (with a sound${'Notification' in window && Notification.permission === 'granted' ? ' and a notification' : ''}) when one gets close to or reaches its entry. ${helperOn ? 'The helper also sends entry alerts with this tab closed (to your phone if set up in Settings).' : 'Keep this tab open.'}`),
     );
   }
 

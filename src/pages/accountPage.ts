@@ -5,7 +5,8 @@
  * Webull view's preview → confirm ticket.
  */
 import { listDocs, saveDoc } from '../data/store';
-import { ALL_ACCOUNTS, allocation, combineHoldings, combinedValue, dividendPayload, myPortfolios, pickAccounts, todayChange, type CombinedHolding } from '../portfolio/account';
+import { loadNews, type NewsItem } from '../data/schwab';
+import { ALL_ACCOUNTS, allocation, combineHoldings, holdingNewsSymbols, combinedValue, dividendPayload, myPortfolios, pickAccounts, todayChange, type CombinedHolding } from '../portfolio/account';
 import { drawDividends, fetchDividends, totalReturnCell, type DividendReport } from '../portfolio/dividendsView';
 import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
 import { fetchRisk, fetchTax, type RiskInput, type RiskReport, type TaxReport, type TaxType } from '../portfolio/risk';
@@ -13,8 +14,9 @@ import { holdingGroup, riskCard, taxSection } from '../portfolio/riskView';
 import { isMine, positions, type Portfolio } from '../portfolio/types';
 import { renderWebullCard } from '../portfolio/webullView';
 import { dataTable, money, pageFrame, pct, pctU, statCards } from '../ui/charts';
-import { h, toast } from '../ui/dom';
+import { h, timeAgo, toast } from '../ui/dom';
 import { termLabel } from '../ui/glossary';
+import { openNewsSummary } from '../ui/newsSummary';
 
 type Saved = Portfolio & { id: string };
 
@@ -102,6 +104,8 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
     const riskBox = h('div', {}, h('section', { class: 'panel' }, h('div', { class: 'muted pad' }, 'Measuring risk from a year of daily prices…')));
     const taxBox = h('div', {}, h('section', { class: 'panel' }, h('div', { class: 'muted pad' }, 'Working out the tax view…')));
     const holdingsBox = h('div', {});
+    const newsBox = h('div', {});
+    showHoldingsNews(newsBox, holdingNewsSymbols(chosen), run);
     let sectorOf: Record<string, RiskReport['sectors'][string]> = {};
     let filter: string | null = null;
     let card: ReturnType<typeof riskCard> | null = null;
@@ -127,6 +131,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
       unpriced.length ? h('p', { class: 'badge warn' }, `No live price for ${unpriced.join(', ')}: left out of the totals. Check the helper is logged in to Schwab, then Refresh.`) : '',
       riskBox,
       holdingsBox,
+      newsBox,
       h('h2', { class: 'section-label acct-section' }, 'Dividends'),
       divBox,
       allocationPanel(valued),
@@ -205,6 +210,28 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
   }
 
   /** "All accounts (combined)" plus one button per account; the choice is remembered on this device. */
+  /** News on the holdings shown (combined or one account), most market-moving first (the helper's rank_news score). */
+  async function showHoldingsNews(box: HTMLElement, symbols: string[], run: number) {
+    if (!symbols.length) return;
+    const body = h('div', { class: 'news-list acct-news' }, h('div', { class: 'muted pad' }, 'Loading headlines…'));
+    box.replaceChildren(panel('News on your holdings', `${symbols.length > 6 ? `${symbols.slice(0, 6).join(', ')} and ${symbols.length - 6} more` : symbols.join(', ')} · most important first`, body));
+    const row = (item: NewsItem) =>
+      h(
+        'button',
+        { class: `news-item impact-${item.impact}`, onclick: () => openNewsSummary(item) },
+        h('div', { class: 'news-meta' }, item.impact !== 'low' ? h('span', { class: `impact-badge ${item.impact}` }, item.impact === 'high' ? 'High impact' : 'Medium') : null, h('span', { class: 'news-source' }, item.source), h('span', { class: 'muted' }, timeAgo(item.published))),
+        h('div', { class: 'news-title' }, item.title),
+      );
+    try {
+      const { items } = await loadNews(symbols);
+      if (run !== loading) return;
+      const top = [...items].sort((a, b) => b.score - a.score || b.published - a.published).slice(0, 8);
+      body.replaceChildren(...(top.length ? top.map(row) : [h('div', { class: 'muted pad' }, 'No recent headlines on these holdings.')]));
+    } catch (err) {
+      body.replaceChildren(h('div', { class: 'muted pad' }, `News unavailable: ${(err as Error).message}`));
+    }
+  }
+
   function switcher(mine: Saved[], current: string) {
     const options = [{ id: ALL_ACCOUNTS, label: 'All accounts (combined)' }, ...mine.map((p) => ({ id: p.id, label: p.name }))];
     return h(

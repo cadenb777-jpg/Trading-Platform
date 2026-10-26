@@ -1,15 +1,19 @@
 """
 Settings the platform's Settings window can change: the AI key and model, an optional FRED key, optional Alpaca
-keys (free price history), the SEC contact email and Webull (keys, Test/Live, order limits). They are saved on this computer (~/.trading-platform/settings.json). Keys are never
+keys (free price history), the SEC contact email, Webull (keys, Test/Live, order limits) and where alerts are sent
+(ntfy topic and server, Telegram bot token and chat id). They are saved on this computer (~/.trading-platform/settings.json). Keys are never
 sent back to the browser; it only learns whether each one is set.
 """
+import ipaddress
 import json
+import re
 from pathlib import Path
 
 from .core import EngineError, handler
 
 SETTINGS_PATH = Path.home() / '.trading-platform' / 'settings.json'
-SECRET_KEYS = {'anthropic_key', 'fred_key', 'alpaca_key_id', 'alpaca_secret', 'webull_app_key', 'webull_app_secret'}
+SECRET_KEYS = {'anthropic_key', 'fred_key', 'alpaca_key_id', 'alpaca_secret', 'webull_app_key', 'webull_app_secret',
+               'ntfy_topic', 'ntfy_server', 'telegram_token', 'telegram_chat'}
 AI_MODELS = {
     'claude-opus-5-5': 'Best: Claude Opus 5.5',
     'claude-sonnet-5-5': 'Balanced: Claude Sonnet 5.5',
@@ -18,6 +22,18 @@ AI_MODELS = {
 DEFAULT_MODEL = 'claude-opus-5-5'
 
 _cache = None
+
+
+def _local_host(host):
+    """True for this computer or the home network (localhost, 10.x, 192.168.x, 172.16-31.x, *.local)."""
+    host = host.lower()
+    if host == 'localhost' or host.endswith('.local'):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private and ip.version == 4 and any(ip in ipaddress.ip_network(n) for n in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'))
 
 
 def load():
@@ -59,6 +75,9 @@ def public():
         'webullFutures': data.get('webull_futures_ok') is True,
         'webullFuturesMaxContracts': data.get('webull_futures_max_contracts') or 1,
         'webullFuturesMaxPerDay': data.get('webull_futures_max_per_day') or 3,
+        'ntfySet': bool(data.get('ntfy_topic')),
+        'ntfyCustomServer': bool(data.get('ntfy_server')),
+        'telegramSet': bool(data.get('telegram_token') and data.get('telegram_chat')),
         'secContact': data.get('sec_contact', ''),
         'model': data.get('model') or DEFAULT_MODEL,
         'openBrowser': data.get('open_browser') is not False,
@@ -154,6 +173,31 @@ async def set_settings(ctx, msg):
         if email and ('@' not in email or ' ' in email):
             raise EngineError('Enter a valid email address.')
         changes['sec_contact'] = email
+    if 'ntfyTopic' in msg:
+        topic = str(msg['ntfyTopic'] or '').strip()
+        if topic and not re.fullmatch(r'[A-Za-z0-9_-]{12,64}', topic):
+            raise EngineError('An ntfy topic is 12 to 64 letters, numbers, - or _. Make it long and random: anyone who knows it can read your alerts.')
+        changes['ntfy_topic'] = topic
+    if 'ntfyServer' in msg:
+        server = str(msg['ntfyServer'] or '').strip().rstrip('/')
+        if server == 'https://ntfy.sh':
+            server = ''
+        m = re.fullmatch(r'(https?)://([^\s/?#@:]+)(:\d{1,5})?(/[^\s?#]*)?', server) if server else None
+        if server and not m:
+            raise EngineError('Enter your ntfy server address, like https://ntfy.example.com (leave empty for ntfy.sh).')
+        if m and m.group(1) == 'http' and not _local_host(m.group(2)):
+            raise EngineError('Use https:// for an ntfy server on the internet (plain http:// only for one on your own network).')
+        changes['ntfy_server'] = server
+    if 'telegramToken' in msg:
+        token = str(msg['telegramToken'] or '').strip()
+        if token and not re.fullmatch(r'\d{5,15}:[A-Za-z0-9_-]{30,60}', token):
+            raise EngineError('That doesn’t look like a Telegram bot token (numbers, a colon, then a long code from BotFather).')
+        changes['telegram_token'] = token
+    if 'telegramChat' in msg:
+        chat = str(msg['telegramChat'] or '').strip()
+        if chat and not re.fullmatch(r'-?\d{3,20}|@[A-Za-z0-9_]{5,40}', chat):
+            raise EngineError('A Telegram chat id is a number (like 123456789).')
+        changes['telegram_chat'] = chat
     if 'openBrowser' in msg:
         changes['open_browser'] = bool(msg['openBrowser'])
     if 'autoUpdate' in msg:

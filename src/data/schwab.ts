@@ -12,7 +12,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 31;
+export const LATEST_HELPER_VERSION = 32;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -28,6 +28,8 @@ const SCANNER_HELPER_VERSION = 10;
 const NEW_INSIGHTS = new Set(['scanner', 'market', 'macro', 'bonds', 'board', 'fund', 'backtest']);
 /** The Futures market page (board, term structure, positioning) needs at least this version. */
 const FUTURES_MARKET_HELPER_VERSION = 31;
+/** Alerts run by the helper (work with the tab closed; ntfy/Telegram) need at least this version. */
+export const ALERTS_HELPER_VERSION = 32;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
@@ -146,7 +148,14 @@ type HelperMessage =
   | { type: 'engine_event'; id: number; event: EngineEvent }
   | { type: 'error'; id: number | null; message: string }
   | { type: 'trade'; symbol: string; price: number; size: number; time: number }
-  | { type: 'quote'; symbol: string; last: number | null; prevClose: number | null };
+  | { type: 'quote'; symbol: string; last: number | null; prevClose: number | null }
+  | { type: 'alert'; title: string; message: string };
+
+/** A helper alert that just fired (shown as a desktop notification in every open tab). */
+export interface FiredAlert {
+  title: string;
+  message: string;
+}
 
 /** Progress sent by a long-running engine request before its final reply (e.g. AI text as it is written). */
 export type EngineEvent = { type: 'text'; text: string } | { type: 'status'; text: string };
@@ -160,6 +169,7 @@ class HelperConnection {
   private readonly listeners = new Map<string, Set<HelperListener>>();
   private readonly availability = new Set<(up: boolean) => void>();
   private readonly updateListeners = new Set<() => void>();
+  private readonly alertListeners = new Set<(a: FiredAlert) => void>();
   private helperStatus: { status: ConnectionStatus; message: string } = { status: 'connecting', message: 'Connecting' };
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   /** The running helper's version (null until it says hello). */
@@ -189,6 +199,12 @@ class HelperConnection {
   onUpdateChange(fn: () => void): () => void {
     this.updateListeners.add(fn);
     return () => this.updateListeners.delete(fn);
+  }
+
+  /** Calls `fn` when one of the helper's alerts fires. */
+  onAlert(fn: (a: FiredAlert) => void): () => void {
+    this.alertListeners.add(fn);
+    return () => this.alertListeners.delete(fn);
   }
 
   /** Asks the helper to download and install the newest version; it restarts by itself and the page reconnects. */
@@ -251,6 +267,7 @@ class HelperConnection {
     if (!CORE_REQUESTS.has(type) && (this.version ?? 0) < ENGINE_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((INVEST_REQUEST.test(type) || msg.collection === 'alt_holdings') && (this.version ?? 0) < INVEST_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('futures.') || (type === 'ai.insight' && msg.topic === 'futures')) && (this.version ?? 0) < FUTURES_MARKET_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if (type.startsWith('alerts.') && (this.version ?? 0) < ALERTS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('scanner.') || (type === 'ai.insight' && NEW_INSIGHTS.has(String(msg.topic)))) && (this.version ?? 0) < SCANNER_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {
@@ -353,6 +370,9 @@ class HelperConnection {
         break;
       case 'quote':
         for (const l of this.listeners.get(msg.symbol) ?? []) l.onQuote?.(msg);
+        break;
+      case 'alert':
+        for (const fn of this.alertListeners) fn({ title: msg.title, message: msg.message });
         break;
     }
   }
