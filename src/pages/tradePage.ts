@@ -12,7 +12,7 @@ import { quoteChange, subscribeQuote, type Quote } from '../data/quotes';
 import { engineRequest, schwab } from '../data/schwab';
 import { state } from '../state';
 import { createTicket, type TicketQuote } from '../trade/ticket';
-import { cancelOrder, envBadge, friendly, loadSnapshot, OPEN, orderPrice, takePrefill, usd, type Order, type PlacedOrder, type Snapshot, type TicketPrefill } from '../trade/webull';
+import { cancelOrder, envBadge, friendly, IRA_NOTE, loadSnapshot, OPEN, orderPrice, stockAccounts, takePrefill, usd, type Order, type PlacedOrder, type Snapshot, type TicketPrefill } from '../trade/webull';
 import { dataTable } from '../ui/charts';
 import { formatPrice, h, timeAgo, toast } from '../ui/dom';
 import { THEME, followTheme } from '../ui/theme';
@@ -20,6 +20,8 @@ import { THEME, followTheme } from '../ui/theme';
 const WATCH_KEY = 'tp-trade-watch';
 const SYMBOL_KEY = 'tp-trade-symbol';
 const PROTECT_KEY = 'tp-trade-protect';
+/** The last account chosen in the header (the ticket always uses exactly this one account). */
+const ACCOUNT_KEY = 'tp-trade-account';
 const REFRESH_MS = 30_000;
 const DEFAULT_WATCH = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'SPY', 'QQQ'];
 
@@ -46,7 +48,7 @@ export function createTradePage() {
   let snap: Snapshot | null = null;
   /** Set while the last refresh failed (busy or slow) and the page shows older data: the reason. */
   let stale: string | null = null;
-  let accountId = '';
+  let accountId = load<string>(ACCOUNT_KEY, '');
   let loadedAt = 0;
   let started = false;
   let symbol = (load<string>(SYMBOL_KEY, '') || DEFAULT_WATCH[0]).toUpperCase();
@@ -87,6 +89,7 @@ export function createTradePage() {
   const protectSlot = h('div', { class: 'tr-protect-slot' });
   const ticket = createTicket({
     snapshot: () => snap,
+    accountId: () => accountId || snap?.accountId || '',
     quote: (s) => quoteFor(s),
     onSymbol: (s) => select(s, false),
     onPlaced: placed,
@@ -348,7 +351,7 @@ export function createTradePage() {
         if (next.ok) {
           snap = next;
           stale = null;
-          accountId = next.accountId ?? accountId;
+          if (!accountId) accountId = next.accountId ?? ''; // never overwrite a choice made while this was loading
         } else if (next.busy && snap?.ok) {
           stale = next.message; // Webull busy: keep showing the last data, marked as old
         } else {
@@ -358,6 +361,13 @@ export function createTradePage() {
       } catch (err) {
         loadedAt = Date.now();
         const message = friendly(err);
+        if (accountId && /not one of yours|only US stock accounts/i.test(message)) {
+          // the remembered account is gone or can't be traded here: fall back to the first stock account
+          accountId = '';
+          save(ACCOUNT_KEY, '');
+          queued = true;
+          return;
+        }
         const slow = /took too long|busy/i.test(message);
         // Keep the last data (marked old) while Webull or the helper is slow or briefly away
         if (snap?.ok && (slow || /Lost connection|isn.t running/i.test(message))) stale = message;
@@ -415,9 +425,16 @@ export function createTradePage() {
     grid.classList.remove('tr-offline');
     el.classList.toggle('tr-is-live', snap.env === 'live');
     envSlot.replaceChildren(envBadge(snap.env));
-    if (snap.accounts.length > 1) {
-      const sel = h('select', { class: 'input', 'aria-label': 'Account' }, ...snap.accounts.map((a) => h('option', { value: a.id, selected: a.id === accountId }, a.label))) as HTMLSelectElement;
-      sel.addEventListener('change', () => ((accountId = sel.value), refresh(true)));
+    // Trading needs one account, so there is no "all" here; futures/crypto accounts aren't listed (not supported yet).
+    const tradable = stockAccounts(snap.accounts);
+    if (tradable.length > 1) {
+      const sel = h('select', { class: 'input', 'aria-label': 'Account' }, ...tradable.map((a) => h('option', { value: a.id, selected: a.id === accountId }, a.label))) as HTMLSelectElement;
+      sel.addEventListener('change', () => {
+        accountId = sel.value;
+        save(ACCOUNT_KEY, accountId);
+        ticket.refresh(); // Preview off until the new account's data is in
+        refresh(true);
+      });
       acctSlot.replaceChildren(sel);
     } else acctSlot.replaceChildren(h('span', { class: 'muted small' }, snap.account ?? ''));
     const b = snap.balances;
@@ -435,6 +452,7 @@ export function createTradePage() {
         ? h('div', { class: 'tr-stale' }, h('b', {}, `${/took too long|busy/i.test(stale) ? 'Webull is busy' : 'Can’t reach the helper'} — showing data as of ${clock(snap.asOf)}.`), h('span', { class: 'muted small' }, ` ${stale} The page tries again by itself.`))
         : '',
       snap.env === 'live' ? h('p', { class: 'wb-warning small' }, 'LIVE: orders placed here use real money in your Webull account.') : '',
+      snap.retirement ? h('p', { class: 'muted small' }, `${snap.account}: ${IRA_NOTE}`) : '',
       ...[...new Set(errs)].map((e) => h('div', { class: 'ap-error' }, e)),
     );
     for (const s of rowEls.keys()) drawWatchRow(s);
@@ -600,7 +618,7 @@ export function createTradePage() {
     const btn = h('button', { class: 'btn small', type: 'button' }, 'Cancel') as HTMLButtonElement;
     btn.addEventListener('click', async () => {
       btn.disabled = true;
-      if (await cancelOrder(o)) refresh(true);
+      if (await cancelOrder(o, snap?.accountId)) refresh(true);
       else btn.disabled = false;
     });
     return btn;

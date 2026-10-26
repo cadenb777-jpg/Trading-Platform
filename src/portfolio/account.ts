@@ -86,3 +86,15 @@ export function allocation<T>(rows: T[], group: (r: T) => string, value: (r: T) 
   const total = [...sums.values()].reduce((a, b) => a + b, 0);
   return [...sums.entries()].map(([label, v]) => ({ label, value: v, weight: total ? v / total : 0 })).sort((a, b) => b.value - a.value);
 }
+
+/** The switcher's "All accounts (combined)" choice. */
+export const ALL_ACCOUNTS = 'all';
+
+/**
+ * The accounts a view covers: every account for "all" (or a choice that no longer exists, e.g. a removed portfolio),
+ * otherwise only the chosen one. `choice` comes back cleaned, ready to remember.
+ */
+export function pickAccounts<T extends { id: string }>(mine: T[], choice: string | null | undefined): { choice: string; chosen: T[] } {
+  const one = choice && choice !== ALL_ACCOUNTS ? mine.find((p) => p.id === choice) : undefined;
+  return one ? { choice: one.id, chosen: [one] } : { choice: ALL_ACCOUNTS, chosen: mine };
+}

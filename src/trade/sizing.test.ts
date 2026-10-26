@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { basisPrice, estimate, maxBuyShares, riskShares, sellFraction, sharesForDollars } from './sizing';
+import { accountReady, basisPrice, estimate, maxBuyShares, riskShares, sellFraction, sharesForDollars } from './sizing';
 
 describe('order ticket sizing', () => {
   it('turns dollars into whole shares and shows the rounding', () => {
@@ -38,5 +38,14 @@ describe('order ticket sizing', () => {
     expect(estimate('BUY', 3, 100, 1000)).toEqual({ value: 300, after: 700 });
     expect(estimate('SELL', 3, 100, 1000)).toEqual({ value: 300, after: 1300 });
     expect(estimate('BUY', 0, 100, 1000)).toEqual({ value: null, after: null });
+  });
+});
+
+describe('the ticket account', () => {
+  it('previews only once the chosen account has loaded', () => {
+    expect(accountReady('ROTH', 'ROTH')).toBe(true);
+    expect(accountReady('TRAD', 'ROTH')).toBe(false); // just switched: the old snapshot is still shown
+    expect(accountReady(undefined, 'ROTH')).toBe(false);
+    expect(accountReady('ROTH', '')).toBe(false);
   });
 });

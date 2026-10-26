@@ -71,3 +71,6 @@ export function saveSize(v: { account: number; risk: number }) {
     /* not essential */
   }
 }
+
+/** Preview is allowed only when the loaded account data is for the account chosen in the header (never "all"). */
+export const accountReady = (loaded: string | null | undefined, chosen: string | null | undefined) => !!loaded && !!chosen && loaded === chosen;

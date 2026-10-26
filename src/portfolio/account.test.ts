@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocation, combineHoldings, combinedValue, dividendPayload, myPortfolios, todayChange } from './account';
+import { ALL_ACCOUNTS, allocation, combineHoldings, combinedValue, dividendPayload, myPortfolios, pickAccounts, todayChange } from './account';
 import { isMine, type Portfolio } from './types';
 
 const base = { benchmark: 'SPY', rebalance: 'none' as const };
@@ -76,5 +76,33 @@ describe('combineHoldings', () => {
     expect(a.map((x) => x.label)).toEqual(['US stocks', 'Cash']);
     expect(a[0].value).toBe(3920 + 700);
     expect(a[0].weight + a[1].weight).toBeCloseTo(1);
+  });
+});
+
+describe('the account switcher', () => {
+  const roth = { ...webull, id: 'p-roth', name: 'Webull Roth IRA ••1234' };
+  const ira = { ...schwab, id: 'p-ira' };
+  const mine = [ira, roth];
+
+  it('combines every account for "all", an empty or a stale choice', () => {
+    for (const choice of [ALL_ACCOUNTS, null, undefined, '', 'p-deleted']) {
+      const r = pickAccounts(mine, choice);
+      expect(r.choice).toBe(ALL_ACCOUNTS);
+      expect(r.chosen).toEqual(mine);
+    }
+    const schd = combineHoldings(pickAccounts(mine, ALL_ACCOUNTS).chosen).find((x) => x.symbol === 'SCHD')!;
+    expect(schd.shares).toBe(140);
+    expect(schd.parts.map((p) => p.account)).toEqual(['Schwab IRA', 'Webull Roth IRA ••1234']);
+  });
+
+  it('shows only the chosen account’s makeup', () => {
+    const r = pickAccounts(mine, 'p-roth');
+    expect(r.choice).toBe('p-roth');
+    const rows = combineHoldings(r.chosen);
+    expect(rows.map((x) => [x.symbol, x.shares, x.amount])).toEqual([
+      ['SCHD', 40, 0],
+      ['CASH', 0, 300],
+    ]);
+    expect(dividendPayload(rows)).toEqual([{ symbol: 'SCHD', shares: 40, costBasis: 1100 }]);
   });
 });

@@ -57,6 +57,18 @@ export interface Order {
   status: string;
   placedAt: string;
 }
+/** One Webull account: "Roth IRA ••1234". stocks=false (futures, crypto) = listed only, never viewed or traded here.
+ * Helpers before the account names send only id and label. */
+export interface WebullAccount {
+  id: string;
+  label: string;
+  stocks?: boolean;
+  retirement?: boolean;
+}
+/** The accounts the Trade page and the Webull view can show (older helpers: all of them). */
+export const stockAccounts = (accounts: WebullAccount[]) => accounts.filter((a) => a.stocks !== false);
+export const IRA_NOTE = 'Retirement account (IRA): no margin and no short selling here; orders use the cash in the account.';
+
 /** webull.snapshot (helper v27): the status fields plus everything a view shows, in one request. */
 export interface Snapshot {
   ok: boolean;
@@ -64,11 +76,13 @@ export interface Snapshot {
   env: Env;
   liveEnabled?: boolean;
   message: string;
-  accounts: { id: string; label: string }[];
+  accounts: WebullAccount[];
   limits: { maxOrder: number; maxPerDay: number };
   placedToday?: number | null;
   accountId?: string;
   account?: string;
+  /** The chosen account is an IRA (no margin, no short selling). */
+  retirement?: boolean;
   balances?: Balances | null;
   positions?: Position[] | null;
   open?: Order[] | null;
@@ -83,6 +97,8 @@ interface Preview {
   summary: string;
   env: Env;
   account: string;
+  accountId?: string;
+  retirement?: boolean;
   estimate: { value: number; last: number };
   warnings: string[];
   marketNote: string;
@@ -119,11 +135,15 @@ export function loadSnapshot(accountId?: string) {
   return engineRequest<Snapshot>('webull.snapshot', accountId ? { accountId } : {}, 60000);
 }
 
-/** Cancels an open order after a plain confirm. Resolves true when the cancel was sent. */
-export async function cancelOrder(o: Order): Promise<boolean> {
+/** Cancels an open order of that account after a plain confirm. Resolves true when the cancel was sent. */
+export async function cancelOrder(o: Order, accountId: string | undefined): Promise<boolean> {
+  if (!accountId) {
+    toast('The account for this order isn’t known yet. Refresh and try again.');
+    return false;
+  }
   if (!confirm(`Cancel the ${o.side.toLowerCase()} order for ${o.qty} ${o.symbol}?`)) return false;
   try {
-    await engineRequest('webull.cancel_order', { orderId: o.orderId }, 30000);
+    await engineRequest('webull.cancel_order', { orderId: o.orderId, accountId }, 30000);
     toast('Cancel sent');
     return true;
   } catch (err) {
@@ -167,8 +187,9 @@ export function takePrefill(): TicketPrefill | null {
 /** Asks the helper for a preview, restates it, and only then enables "Place order". */
 const UNCONFIRMED = 'We couldn’t confirm whether the order was placed. Check Orders before trying again.';
 
-/** onPlaced(order, ok, orderId): ok=false after a failed or unconfirmed place (the caller only refreshes). */
-export function confirmOrder(order: PlacedOrder, onPlaced: (order: PlacedOrder, ok: boolean, orderId?: string) => void) {
+/** onPlaced(order, ok, orderId): ok=false after a failed or unconfirmed place (the caller only refreshes).
+ * accountId: the one account the order is for (never "all"); the window names it as the helper read it. */
+export function confirmOrder(order: PlacedOrder, accountId: string, onPlaced: (order: PlacedOrder, ok: boolean, orderId?: string) => void) {
   const content = h('div', { class: 'wb-confirm' }, h('div', { class: 'muted pad' }, 'Checking the order…'));
   const place = h('button', { class: 'btn primary', disabled: true }, 'Place order') as HTMLButtonElement;
   const timer = h('span', { class: 'muted small' });
@@ -177,12 +198,17 @@ export function confirmOrder(order: PlacedOrder, onPlaced: (order: PlacedOrder, 
     noAutofocus: true,
     onClose: () => clearInterval(tick),
   });
-  engineRequest<Preview>('webull.preview_order', { ...order }, 30000).then(
+  engineRequest<Preview>('webull.preview_order', { ...order, accountId }, 30000).then(
     (p) => {
+      if (p.accountId && p.accountId !== accountId) {
+        content.replaceChildren(h('div', { class: 'ap-error' }, 'The preview came back for a different account than the one chosen. Nothing was placed; close and preview again.'));
+        return;
+      }
       const live = p.env === 'live';
       content.replaceChildren(
-        h('div', { class: 'wb-confirm-env' }, envBadge(p.env), h('span', { class: 'muted small' }, `Account ${p.account}`)),
+        h('div', { class: 'wb-confirm-env' }, envBadge(p.env), h('span', { class: 'wb-confirm-acct' }, 'Account: ', h('b', {}, p.account))),
         live ? h('p', { class: 'wb-warning' }, 'This is a REAL order with real money.') : '',
+        p.retirement ? h('p', { class: 'muted small' }, IRA_NOTE) : '',
         h('p', { class: `wb-summary ${order.side === 'SELL' ? 'is-sell' : 'is-buy'}` }, p.summary),
         statCards([
           { label: 'Estimated value', value: usd(p.estimate.value), hint: 'Shares × price (limit, stop, or the last price for market orders)' },

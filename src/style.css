@@ -5793,6 +5793,15 @@ a.btn {
 }
 
 /* ---------- Account page ---------- */
+.acct-switch {
+  flex-wrap: wrap;
+  width: fit-content;
+  max-width: 100%;
+  gap: 2px;
+}
+.acct-switch button {
+  white-space: nowrap;
+}
 .acct-section {
   margin: var(--sp-2) 0 0;
 }

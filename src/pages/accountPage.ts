@@ -5,7 +5,7 @@
  * Webull view's preview → confirm ticket.
  */
 import { listDocs } from '../data/store';
-import { allocation, combineHoldings, combinedValue, dividendPayload, myPortfolios, todayChange, type CombinedHolding } from '../portfolio/account';
+import { ALL_ACCOUNTS, allocation, combineHoldings, combinedValue, dividendPayload, myPortfolios, pickAccounts, todayChange, type CombinedHolding } from '../portfolio/account';
 import { drawDividends, fetchDividends, totalReturnCell, type DividendReport } from '../portfolio/dividendsView';
 import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
 import { isMine, positions, type Portfolio } from '../portfolio/types';
@@ -15,6 +15,23 @@ import { h, toast } from '../ui/dom';
 import { termLabel } from '../ui/glossary';
 
 type Saved = Portfolio & { id: string };
+
+/** The switcher's last choice (a portfolio id or "all"): a convenience, so storage errors are ignored. */
+const VIEW_KEY = 'tp-account-view';
+function readView() {
+  try {
+    return localStorage.getItem(VIEW_KEY) ?? ALL_ACCOUNTS;
+  } catch {
+    return ALL_ACCOUNTS;
+  }
+}
+function saveView(v: string) {
+  try {
+    localStorage.setItem(VIEW_KEY, v);
+  } catch {
+    /* only a convenience */
+  }
+}
 
 const usd = (v: number | null | undefined) =>
   v == null || !Number.isFinite(v) ? '—' : v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: Math.abs(v) >= 1000 ? 0 : 2, minimumFractionDigits: Math.abs(v) >= 1000 ? 0 : 2 });
@@ -28,6 +45,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
     h('button', { class: 'btn', onclick: () => load() }, 'Refresh'),
   ]);
   let loading = 0;
+  let view = readView();
 
   async function load() {
     const run = ++loading;
@@ -45,7 +63,11 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
       renderWebullCard(webull, synced, () => openPortfolio('webull'));
       return;
     }
-    const rows = combineHoldings(mine);
+    // Thumb through: every account combined, or one account's own makeup. Every figure below follows the choice.
+    const picked = pickAccounts(mine, view);
+    const chosen = picked.chosen;
+    const single = picked.choice === ALL_ACCOUNTS ? null : chosen[0];
+    const rows = combineHoldings(chosen);
     const symbols = rows.filter((r) => r.shares > 0).map((r) => r.symbol);
     const payload = dividendPayload(rows);
     const [pr, dv] = await Promise.allSettled([symbols.length ? fetchPrices(symbols) : Promise.resolve({}), payload.length ? fetchDividends(payload) : Promise.reject(new Error('No share holdings, so there are no dividends to show.'))]);
@@ -68,29 +90,58 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
     else divBox.replaceChildren(h('div', { class: 'ap-error' }, (dv as PromiseRejectedResult).reason?.message ?? 'Dividend data unavailable.'));
 
     frame.body.replaceChildren(
-      overview(report, total, today, todayBase ? (today ?? 0) / todayBase : null, rows),
+      mine.length > 1 ? switcher(mine, picked.choice) : '',
+      overview(report, total, today, todayBase ? (today ?? 0) / todayBase : null, rows, single),
       unpriced.length ? h('p', { class: 'badge warn' }, `No live price for ${unpriced.join(', ')}: left out of the totals. Check the helper is logged in to Schwab, then Refresh.`) : '',
       panel(
         'Holdings',
-        `${rows.length} holding${rows.length === 1 ? '' : 's'} across ${mine.length} account${mine.length === 1 ? '' : 's'}`,
+        single ? `${rows.length} holding${rows.length === 1 ? '' : 's'} in ${single.name}` : `${rows.length} holding${rows.length === 1 ? '' : 's'} across ${chosen.length} account${chosen.length === 1 ? '' : 's'}`,
         holdingsTable(valued, total, report),
       ),
       h('h2', { class: 'section-label acct-section' }, 'Dividends'),
       divBox,
       allocationPanel(valued),
-      panel('Accounts', 'Marked "This is my account" in Portfolios', h('div', { class: 'acct-cards' }, ...mine.map((p) => accountCard(p, prices, report))), webull),
+      panel(single ? 'Account' : 'Accounts', 'Marked "This is my account" in Portfolios', h('div', { class: 'acct-cards' }, ...chosen.map((p) => accountCard(p, prices, report))), webull),
     );
-    renderWebullCard(webull, synced, () => openPortfolio('webull'));
+    // the Webull balances card follows the choice too: all Webull accounts, the chosen one, or none
+    if (!single) renderWebullCard(webull, synced, () => openPortfolio('webull'));
+    else if (single.webullAccount) renderWebullCard(webull, synced, () => openPortfolio('webull'), single.webullAccount);
+  }
+
+  /** "All accounts (combined)" plus one button per account; the choice is remembered on this device. */
+  function switcher(mine: Saved[], current: string) {
+    const options = [{ id: ALL_ACCOUNTS, label: 'All accounts (combined)' }, ...mine.map((p) => ({ id: p.id, label: p.name }))];
+    return h(
+      'div',
+      { class: 'segmented acct-switch', role: 'group', 'aria-label': 'Show account' },
+      ...options.map((o) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: o.id === current ? 'active' : '',
+            'aria-pressed': o.id === current,
+            onclick: () => {
+              if (o.id === view) return;
+              view = o.id;
+              saveView(view);
+              load();
+            },
+          },
+          o.label,
+        ),
+      ),
+    );
   }
 
   /** Snowball-style headline numbers. Gain, income and yields come from the helper's dividends report (share holdings). */
-  function overview(r: DividendReport | null, total: number, today: number | null, todayPct: number | null, rows: CombinedHolding[]) {
+  function overview(r: DividendReport | null, total: number, today: number | null, todayPct: number | null, rows: CombinedHolding[], single: Saved | null) {
     const cash = rows.filter((x) => x.kind !== 'security' || !x.shares).reduce((s, x) => s + x.amount, 0);
     return h(
       'div',
       { class: 'acct-stats' },
       statCards([
-        { label: 'Total value', value: usd(total), hint: cash ? `Includes ${usd(cash)} cash and other amounts` : 'All your accounts added together' },
+        { label: 'Total value', value: usd(total), hint: cash ? `Includes ${usd(cash)} cash and other amounts` : single ? `Only ${single.name}` : 'All your accounts added together' },
         { label: 'Total cost', value: usd(r?.cost), hint: 'What you paid for the shares (where your broker gave a cost basis)' },
         { label: 'Gain', value: r?.gain != null ? `${signed(r.gain)} (${pct(r.gainPct, 1)})` : '—', tone: tone(r?.gain), hint: 'Value − cost, on holdings with a cost basis' },
         {

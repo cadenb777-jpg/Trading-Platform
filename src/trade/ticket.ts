@@ -5,8 +5,8 @@
  */
 import { formatPrice, h, toast } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
-import { basisPrice, estimate, maxBuyShares, readSize, riskShares, saveSize, sellFraction, sharesForDollars } from './sizing';
-import { confirmOrder, OPEN, TYPE_LABELS, usd, type OrderType, type PlacedOrder, type Snapshot, type TicketPrefill } from './webull';
+import { accountReady as isAccountReady, basisPrice, estimate, maxBuyShares, readSize, riskShares, saveSize, sellFraction, sharesForDollars } from './sizing';
+import { confirmOrder, IRA_NOTE, OPEN, TYPE_LABELS, usd, type OrderType, type PlacedOrder, type Snapshot, type TicketPrefill } from './webull';
 
 export interface TicketQuote {
   last: number | null;
@@ -15,6 +15,8 @@ export interface TicketQuote {
 }
 export interface TicketHost {
   snapshot(): Snapshot | null;
+  /** The account chosen in the page header; Preview waits until the snapshot is for this account. */
+  accountId(): string;
   quote(symbol: string): TicketQuote | null;
   /** The symbol field changed (the Trade page loads that symbol's chart and quote). */
   onSymbol?(symbol: string): void;
@@ -167,15 +169,21 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
     sizeNote.textContent = s.note;
     sizeNote.hidden = !s.note;
     const est = estimate(side, s.n, price, snap?.balances?.buyingPower);
+    // right after switching account the snapshot is still the old one: no preview until it matches
+    const ready = accountReady();
+    previewBtn.disabled = !ready;
+    previewBtn.title = ready ? '' : 'Loading the chosen account…';
     const warns: string[] = [];
     if (est.value != null && snap && est.value > snap.limits.maxOrder) warns.push(`Above your max order value of ${money(snap.limits.maxOrder)} (Settings).`);
     if (side === 'BUY' && est.after != null && est.after < 0) warns.push('More than your buying power.');
     if (side === 'SELL' && s.n > available()) warns.push('More than you can sell (no short selling).');
     summary.replaceChildren(
+      snap?.account ? h('div', { class: 'tk-sum-row' }, h('span', { class: 'muted' }, 'Account'), h('b', {}, snap.account)) : '',
       h('div', { class: 'tk-sum-row' }, h('span', { class: 'muted' }, 'Shares'), h('b', { class: 'num' }, s.n ? s.n.toLocaleString('en-US') : '—')),
       h('div', { class: 'tk-sum-row tk-sum-main' }, h('span', { class: 'muted' }, side === 'BUY' ? 'Estimated cost' : 'Estimated proceeds'), h('b', { class: 'num' }, usd(est.value))),
       h('div', { class: 'tk-sum-row' }, h('span', { class: 'muted' }, 'Buying power after'), h('span', { class: `num${est.after != null && est.after < 0 ? ' down' : ''}` }, usd(est.after))),
       ...warns.map((w) => h('p', { class: 'wb-warn small tk-warn' }, `⚠ ${w}`)),
+      snap?.retirement ? h('p', { class: 'muted small tk-warn' }, IRA_NOTE) : '',
     );
   }
 
@@ -202,9 +210,16 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
     if (p.symbol) host.onSymbol?.(sym());
   }
 
+  function accountReady() {
+    return isAccountReady(host.snapshot()?.accountId, host.accountId());
+  }
+
   function preview() {
     const s = sym();
     if (!s) return toast('Enter a symbol');
+    // always one account (the one chosen in the header, once its data has loaded), never "all"
+    if (!accountReady()) return toast('Wait for the chosen account to load');
+    const accountId = host.accountId();
     const n = shares().n;
     if (!(n > 0)) return toast(mode === 'shares' ? 'Enter the number of shares' : 'The size works out to 0 shares');
     const order: PlacedOrder = { symbol: s, side, qty: n, orderType: type, tif };
@@ -219,7 +234,7 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
       order.stopPrice = v;
     }
     const protect = side === 'BUY' ? num(riskStop) : null;
-    confirmOrder(order, (placed, ok, orderId) => host.onPlaced(placed, protect, ok, orderId));
+    confirmOrder(order, accountId, (placed, ok, orderId) => host.onPlaced(placed, protect, ok, orderId));
   }
 
   for (const i of [qty, dollars, riskStop, limit, stop]) i.addEventListener('input', refresh);
