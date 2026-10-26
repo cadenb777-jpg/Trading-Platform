@@ -1,0 +1,41 @@
+{
+ "quoteSummary": {
+  "result": [
+   {
+    "summaryDetail": {
+     "previousClose": {
+      "raw": 27.95,
+      "fmt": "27.95"
+     },
+     "yield": {
+      "raw": 0.0381,
+      "fmt": "3.81%"
+     },
+     "navPrice": {
+      "raw": 28.09,
+      "fmt": "28.09"
+     },
+     "trailingAnnualDividendYield": {}
+    },
+    "fundProfile": {
+     "feesExpensesInvestment": {
+      "annualReportExpenseRatio": {
+       "raw": 0.0006,
+       "fmt": "0.06%"
+      }
+     }
+    },
+    "defaultKeyStatistics": {
+     "annualReportExpenseRatio": {}
+    },
+    "price": {
+     "regularMarketTime": 1792785600,
+     "regularMarketPrice": {
+      "raw": 28.1
+     }
+    }
+   }
+  ],
+  "error": null
+ }
+}

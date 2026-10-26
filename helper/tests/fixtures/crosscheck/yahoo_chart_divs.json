@@ -1,0 +1,53 @@
+{
+ "chart": {
+  "result": [
+   {
+    "meta": {
+     "symbol": "SCHD",
+     "instrumentType": "ETF",
+     "regularMarketTime": 1792785600,
+     "regularMarketPrice": 28.1
+    },
+    "timestamp": [
+     1758225600,
+     1792785600
+    ],
+    "events": {
+     "dividends": {
+      "1758225600": {
+       "amount": 0.25,
+       "date": 1758225600
+      },
+      "1766001600": {
+       "amount": 0.26,
+       "date": 1766001600
+      },
+      "1773777600": {
+       "amount": 0.25,
+       "date": 1773777600
+      },
+      "1781553600": {
+       "amount": 0.27,
+       "date": 1781553600
+      },
+      "1789329600": {
+       "amount": 0.27,
+       "date": 1789329600
+      }
+     }
+    },
+    "indicators": {
+     "quote": [
+      {
+       "close": [
+        27.5,
+        28.1
+       ]
+      }
+     ]
+    }
+   }
+  ],
+  "error": null
+ }
+}

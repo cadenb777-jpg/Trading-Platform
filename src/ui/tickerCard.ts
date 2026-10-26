@@ -14,6 +14,8 @@ import { combineHoldings, myPortfolios } from '../portfolio/account';
 import type { Portfolio } from '../portfolio/types';
 import { asOfStamp } from './dataHealth';
 import { clickTargets, formatPrice, h } from './dom';
+import { formatCheckValue } from './confidence';
+import { canCrossCheck, sourcesChip } from './sourcesChip';
 import { sparkline } from './sparkline';
 import { THEME } from './theme';
 
@@ -215,6 +217,7 @@ function buildCard(symbol: string, pinned: boolean) {
   const sparkLabel = h('div', { class: 'muted tiny' });
   const pos = h('div', { class: 'tc-pos' });
   const facts = h('div', { class: 'tc-facts muted small' });
+  const checks = h('div', { class: 'tc-checks' });
   const stamp = asOfStamp('quotes');
   const btn = (label: string, title: string, run: () => void) =>
     h('button', { type: 'button', class: 'btn small', title, onclick: () => (close(), run()) }, label);
@@ -234,6 +237,7 @@ function buildCard(symbol: string, pinned: boolean) {
     sparkLabel,
     pos,
     facts,
+    checks,
     h(
       'div',
       { class: 'tc-actions' },
@@ -249,6 +253,7 @@ function buildCard(symbol: string, pinned: boolean) {
       ),
     ),
   );
+  card.addEventListener('xc:resize', () => open?.card === card && place(card, open.anchor)); // the Sources panel opened
   card.addEventListener('pointerenter', () => clearTimeout(hideTimer));
   card.addEventListener('pointerleave', () => !open?.pinned && scheduleHide());
   void fill();
@@ -277,6 +282,23 @@ function buildCard(symbol: string, pinned: boolean) {
           spark.replaceChildren(sparkline(r.spark, null, up ? THEME.up : THEME.down));
           sparkLabel.textContent = `3 months${r.m3 != null ? `: ${pctText(r.m3)}` : ''}`;
         }
+        if (canCrossCheck() && !index && !future) {
+          // Compare the price across free sources on click; with no Schwab quote, check straight away and show the
+          // best estimate (always labelled with where it came from).
+          const missing = r?.price == null;
+          checks.replaceChildren(
+            sourcesChip({ field: 'last', symbol }, {
+              auto: missing,
+              onResult: (c) => {
+                if (!missing || c.best == null || !still()) return;
+                price.replaceChildren(
+                  h('span', { class: 'tc-last' }, formatCheckValue(c.best, 'usd')),
+                  h('span', { class: 'muted small' }, `best estimate from ${c.agreeing} other source${c.agreeing === 1 ? '' : 's'} (no Schwab quote)`),
+                );
+              },
+            }),
+          );
+        }
         const f = [
           r?.divYield ? `Dividend yield ${r.divYield.toFixed(2)}%` : '',
           r?.peRatio ? `P/E ${r.peRatio.toFixed(1)}` : '',
@@ -285,6 +307,7 @@ function buildCard(symbol: string, pinned: boolean) {
         facts.textContent = f.join(' · ');
       } catch (err) {
         if (still()) price.replaceChildren(h('span', { class: 'muted small' }, (err as Error).message || 'No quote right now'));
+        if (still() && canCrossCheck() && !index && !future) checks.replaceChildren(sourcesChip({ field: 'last', symbol }));
       }
     }
     if (open?.card === card) place(card, open.anchor); // it grew: keep it on screen

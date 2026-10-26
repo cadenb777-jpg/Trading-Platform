@@ -81,6 +81,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (real-prices-only table when >= 2.5y). Toggle payload `standIns`. test_window: 4y+ full test, 2.5-4y short 1y fit/
   monthly hold ("low confidence"), less none. weight_stability: 200 block-bootstrap refits -> 10th-90th percentile bars,
   `pinned` = held by the owner's limit. Texts in src/portfolio/optimiserText.ts.
+  Cross-check (v34, engine/crosscheck.py `crosscheck.value` {field last/prevClose/nav/divYield/expenseRatio, symbol, cik}):
+  one adapter per free source (Schwab, SEC XBRL + NAV filings, Nasdaq.com, Yahoo chart/quoteSummary, Stooq, Google
+  Finance page), paced per site, cached per source+symbol+field in cache.db; every source is returned with value, time
+  and link (failures too). Score rubric in the module docstring (reliability x freshness, agreement, one source capped
+  at 60%); best = median of agreeing sources; glossary `confidence`. UI: src/ui/sourcesChip.ts (chip + panel + meter,
+  formatting in src/ui/confidence.ts) on the fund NAV (auto) and the ticker card (on click; auto when no Schwab quote).
+  Parsers are tested on saved fixtures (helper/tests/fixtures/crosscheck), built from documented shapes.
   Account page (src/pages/accountPage.ts, #account): portfolios with Portfolio.mine (set by Import statement; unset = live
   Webull sync) merged by src/portfolio/account.ts, figures from dividends.portfolio + dividendsView; read-only (orders only in Webull view).
   Account risk/sectors/taxes (v30, follow the account switcher): engine/risk.py `risk.account` {holdings: symbol, value, kind}
