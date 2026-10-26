@@ -3,7 +3,9 @@
  * detail per position, the sector bars) and the folded Taxes section. Maths in ./risk.ts.
  */
 import { pct, pctU, statCards } from '../ui/charts';
+import { asOfStamp } from '../ui/dataHealth';
 import { h } from '../ui/dom';
+import { tickerAttr } from '../ui/tickerCard';
 import { infoTip, termLabel } from '../ui/glossary';
 import { concentration, dividendsThisYear, groupOf, sectorBreakdown, varDollars, warnings, type RiskInput, type RiskReport, type TaxReport, type TaxRow, type TaxType } from './risk';
 
@@ -12,7 +14,12 @@ const usd = (v: number | null | undefined) =>
 const signed = (v: number | null | undefined) => (v == null ? '—' : `${v >= 0 ? '+' : '−'}${usd(Math.abs(v))}`);
 const tone = (v: number | null | undefined) => (v == null ? '' : v >= 0 ? 'up' : 'down');
 const num = (v: number | null | undefined, d = 2) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(d));
-const time = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+/** A stat value that opens a chart of the numbers behind it. */
+function drill(value: string, tone: string, label: string, onOpen: (() => void) | null) {
+  if (!onOpen) return h('b', { class: `stat-value ${tone}` }, value);
+  return h('button', { type: 'button', class: `stat-value stat-drill ${tone}`, title: `${label} (opens a chart)`, 'aria-label': `${value}: ${label}`, onclick: onOpen }, value, h('span', { class: 'stat-drill-mark', 'aria-hidden': 'true' }, ' ›'));
+}
 
 /**
  * The live risk card. `update(rows)` redraws the live parts (weights, warnings, the dollar bad-day loss) from new
@@ -22,7 +29,9 @@ export function riskCard(report: RiskReport | null, error: string | null, onSect
   let rows: RiskInput[] = [];
   let picked: string | null = null;
   let sectorPicked: string | null = null;
-  const stamp = h('span', { class: 'muted small' });
+  const stamp = asOfStamp('quotes', { source: 'live prices' });
+  const open = (kind: 'var' | 'beta' | 'drawdown') =>
+    report?.stats ? () => void import('./riskCharts').then((m) => m.openRiskDrill(kind, report)) : null;
   const stats = h('div', { class: 'acct-stats' });
   const warn = h('div', { class: 'risk-warn' });
   const list = h('div', { class: 'risk-list', role: 'list' });
@@ -41,14 +50,15 @@ export function riskCard(report: RiskReport | null, error: string | null, onSect
         { label: 'Top 5 holdings', value: pctU(c.top5, 0), hint: 'The five largest positions together' },
         { label: termLabel('Effective holdings', 'effholdings'), value: c.effective != null ? `${num(c.effective, 1)} of ${held}` : '—', hint: 'How many equal-sized holdings your mix behaves like' },
         { label: termLabel('Volatility (1 yr)', 'volatility'), value: pctU(s?.volatility, 1), hint: s ? 'Yearly swing; the S&P 500 is usually 15–20%' : (report?.note ?? error ?? '') },
-        { label: termLabel('Beta vs SPY', 'beta'), value: num(s?.beta), hint: s?.beta != null ? `When SPY moves 1%, this money moved about ${num(s.beta)}%` : '' },
+        { label: termLabel('Beta vs SPY', 'beta'), value: num(s?.beta), node: drill(num(s?.beta), '', 'See each day against SPY', s?.beta != null ? open('beta') : null), hint: s?.beta != null ? `When SPY moves 1%, this money moved about ${num(s.beta)}%` : '' },
         {
           label: termLabel('Bad-day loss', 'var'),
           value: bad != null ? usd(bad) : '—',
           tone: bad ? 'down' : '',
+          node: drill(bad != null ? usd(bad) : '—', bad ? 'down' : '', 'See every day’s profit and loss', bad != null ? open('var') : null),
           hint: bad != null ? `On a bad day (1 in 20), you could lose about ${usd(bad)} (${pctU(s?.var95, 1)})` : '',
         },
-        { label: termLabel('Max drawdown (1 yr)', 'drawdown'), value: pct(s?.maxDrawdown, 1), tone: s ? 'down' : '', hint: s ? `High ${s.peak} → low ${s.trough}` : '' },
+        { label: termLabel('Max drawdown (1 yr)', 'drawdown'), value: pct(s?.maxDrawdown, 1), tone: s ? 'down' : '', node: drill(pct(s?.maxDrawdown, 1), s ? 'down' : '', 'See the drawdown curve', open('drawdown')), hint: s ? `High ${s.peak} → low ${s.trough}` : '' },
       ]),
     );
     const w = warnings(rows, sectors);
@@ -69,7 +79,7 @@ export function riskCard(report: RiskReport | null, error: string | null, onSect
               draw();
             },
           },
-          h('b', { class: 'risk-sym' }, x.symbol),
+          h('b', { class: 'risk-sym', ...tickerAttr(x.symbol) }, x.symbol),
           h('span', { class: 'alloc-track' }, h('span', { class: `alloc-fill${x.weight > 0.2 && sectors[x.symbol]?.sector !== 'Fund' ? ' over' : ''}`, style: `width:${(x.weight / max) * 100}%` })),
           h('span', { class: 'num' }, pctU(x.weight, 1)),
           h('span', { class: 'muted small risk-sector' }, sectorLabel(x.symbol)),
@@ -100,7 +110,7 @@ export function riskCard(report: RiskReport | null, error: string | null, onSect
         ),
       ),
     );
-    stamp.textContent = `Live prices · updated ${time()}`;
+    stamp.set(Date.now());
   }
 
   function sectorLabel(symbol: string) {
@@ -149,7 +159,7 @@ export function riskCard(report: RiskReport | null, error: string | null, onSect
   const el = h(
     'section',
     { class: 'panel risk-card' },
-    h('div', { class: 'panel-head' }, h('h3', {}, 'Risk'), stamp),
+    h('div', { class: 'panel-head' }, h('h3', {}, 'Risk'), stamp.el),
     stats,
     warn,
     h(
@@ -259,7 +269,7 @@ export function taxSection(
                 h(
                   'tr',
                   {},
-                  h('td', { class: 'label' }, h('b', {}, r.symbol)),
+                  h('td', { class: 'label' }, h('b', tickerAttr(r.symbol), r.symbol)),
                   h('td', { class: 'muted' }, r.account),
                   h('td', { class: 'num' }, usd(r.value)),
                   h('td', { class: 'num' }, r.cost != null ? usd(r.cost) : h('span', { class: 'muted', title: 'No cost basis from your broker or statement' }, 'unknown')),

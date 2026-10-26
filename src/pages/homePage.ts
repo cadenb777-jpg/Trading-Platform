@@ -16,6 +16,7 @@ import { icon } from '../ui/icons';
 import { greeting, marketStatus } from '../ui/marketClock';
 import { THEME, chartThemeOptions, followTheme } from '../ui/theme';
 import { createWatchlist } from '../ui/watchlist';
+import { tickerAttr, tickersIn } from '../ui/tickerCard';
 
 const INDEXES: { symbol: string; name: string }[] = [
   { symbol: '$SPX', name: 'S&P 500' },
@@ -68,7 +69,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
   const card = h(
     'div',
     { class: 'idx-card', role: 'button', tabindex: 0, title: `Open ${index.name} chart`, onclick: onOpen, onkeydown: (e: Event) => (e as KeyboardEvent).key === 'Enter' && e.target === card && onOpen() },
-    h('div', { class: 'idx-head' }, h('span', { class: 'idx-name' }, index.name), h('span', { class: 'idx-sym' }, index.symbol.replace('$', ''))),
+    h('div', { class: 'idx-head' }, h('span', { class: 'idx-name' }, index.name), h('span', { class: 'idx-sym', ...tickerAttr(index.symbol) }, index.symbol.replace('$', ''))),
     h('div', { class: 'idx-quote' }, h('div', {}, price, change), h('div', { class: 'segmented tiny idx-ranges' }, ...rangeButtons)),
     h('div', { class: 'idx-chart-wrap' }, chartBox, legend),
     h('div', { class: 'idx-range' }, rangePrev),
@@ -257,6 +258,9 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
         h('span', { class: 'muted' }, timeAgo(item.published)),
         item.alsoReportedBy.length ? h('span', { class: 'muted', title: `Also reported by ${item.alsoReportedBy.join(', ')}` }, `+${item.alsoReportedBy.length} sources`) : null,
         ...item.tags.map((t) => h('span', { class: 'news-tag' }, t)),
+        ...tickersIn(item.title, state.watchlist.filter((r) => r.provider === 'schwab').map((r) => r.symbol)).map((t) =>
+          h('span', { class: 'news-chip', ...tickerAttr(t), title: `${t}: hover or tap for a quick look` }, t),
+        ),
       ),
       h('div', { class: 'news-title' }, item.title),
       item.summary && item.summary !== item.title ? h('div', { class: 'news-summary' }, item.summary) : null,

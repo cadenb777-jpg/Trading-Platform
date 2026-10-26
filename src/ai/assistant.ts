@@ -294,7 +294,14 @@ export function createAssistant(opts: AssistantOptions) {
   }
 
   renderAll();
-  return { el, ask, continueConversation, focus: () => input.focus(), reload: () => {
+  /** Puts a question in the box without sending it (the owner presses Enter). */
+  const prefill = (text: string) => {
+    input.value = text;
+    autosize();
+    input.focus();
+    input.setSelectionRange(text.length, text.length);
+  };
+  return { el, ask, prefill, continueConversation, focus: () => input.focus(), reload: () => {
       if (!busy) {
         chat = loadState();
         renderAll();

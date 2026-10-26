@@ -7,6 +7,8 @@ import { h, openModal, toast } from '../ui/dom';
 import { termLabel } from '../ui/glossary';
 import { FIELD_LABELS, jsonToRows, parseStatement, type Columns, type Position, type StatementField } from './statement';
 import type { Portfolio } from './types';
+import { tickerAttr } from '../ui/tickerCard';
+import { asOfStamp } from '../ui/dataHealth';
 
 interface Upcoming {
   exDate: string;
@@ -127,7 +129,7 @@ export function drawDividends(out: HTMLElement, r: DividendReport, { hasCash = f
       m.payments.length
         ? dataTable(
             ['Symbol', 'Ex-date', 'Pay date', 'Per share', 'Amount'],
-            m.payments.map((x) => [h('b', {}, x.symbol), h('span', {}, day(x.exDate), ' ', est()), h('span', {}, day(x.payDate), ' ', est()), { v: `$${x.perShare.toFixed(4)}`, cls: 'num' }, { v: usd(x.amount), cls: 'num' }]),
+            m.payments.map((x) => [h('b', tickerAttr(x.symbol), x.symbol), h('span', {}, day(x.exDate), ' ', est()), h('span', {}, day(x.payDate), ' ', est()), { v: `$${x.perShare.toFixed(4)}`, cls: 'num' }, { v: usd(x.amount), cls: 'num' }]),
             undefined,
             false,
           )
@@ -199,7 +201,7 @@ export function drawDividends(out: HTMLElement, r: DividendReport, { hasCash = f
       soon.length
         ? dataTable(
             ['Ex-date', 'Symbol', 'Pay date', 'Amount'],
-            soon.map((u) => [h('span', {}, day(u.exDate), ' ', est()), h('b', {}, u.symbol), day(u.payDate), { v: usd(u.amount), cls: 'num' }]),
+            soon.map((u) => [h('span', {}, day(u.exDate), ' ', est()), h('b', tickerAttr(u.symbol), u.symbol), day(u.payDate), { v: usd(u.amount), cls: 'num' }]),
             undefined,
             false,
           )
@@ -208,12 +210,12 @@ export function drawDividends(out: HTMLElement, r: DividendReport, { hasCash = f
     h(
       'section',
       { class: 'panel' },
-      h('div', { class: 'panel-head' }, h('h3', {}, stats ? 'Holdings' : 'Dividends by holding')),
+      h('div', { class: 'panel-head' }, h('h3', {}, stats ? 'Holdings' : 'Dividends by holding'), asOfStamp(null, { reply: r, source: 'Schwab prices, Yahoo dividends' }).el),
       r.missing ? h('p', { class: 'badge warn' }, `${r.missing} holding${r.missing === 1 ? '' : 's'} had no dividend data (shown as —). Try again later.`) : null,
       dataTable(
         ['Symbol', 'Shares', 'Gain', '1Y total return', 'Yield · on cost', 'Yearly income', 'Pays', '5y growth'],
         r.holdings.map((x) => [
-          { v: h('span', { title: [x.name, x.nextExDate ? `next ex-date ~${day(x.nextExDate)}` : ''].filter(Boolean).join(' · ') }, h('b', {}, x.symbol), ' ', noteBadge(x) ?? ''), cls: 'label' },
+          { v: h('span', { title: [x.name, x.nextExDate ? `next ex-date ~${day(x.nextExDate)}` : ''].filter(Boolean).join(' · ') }, h('b', tickerAttr(x.symbol), x.symbol), ' ', noteBadge(x) ?? ''), cls: 'label' },
           { v: String(+x.shares.toFixed(4)), cls: 'num' },
           { v: x.gainPct != null ? pct(x.gainPct, 1) : '—', cls: `num ${tone(x.gain)}` },
           totalReturnCell(x),
@@ -334,7 +336,7 @@ function preview(rows: string[][], fileName: string, onSaved: (p: Portfolio & { 
     tableBox.replaceChildren(
       dataTable(
         ['Symbol', 'Shares', 'Cost basis', 'Market value'],
-        positions.map((x) => [h('b', { title: x.name ?? '' }, x.symbol), { v: x.cash ? '—' : String(x.shares), cls: 'num' }, { v: usd(x.cost), cls: 'num' }, { v: usd(x.value), cls: 'num' }]),
+        positions.map((x) => [h('b', { title: x.name ?? '', ...(x.cash ? {} : tickerAttr(x.symbol)) }, x.symbol), { v: x.cash ? '—' : String(x.shares), cls: 'num' }, { v: usd(x.cost), cls: 'num' }, { v: usd(x.value), cls: 'num' }]),
         undefined,
         false,
       ),

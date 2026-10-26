@@ -5,6 +5,8 @@ import { barList, compact, createLineChart, dataTable, money, pageFrame, pct, st
 import { formatPrice, h } from '../ui/dom';
 import { withTableTools } from '../ui/tableTools';
 import { xySvg } from '../ui/xyChart';
+import { tickerAttr } from '../ui/tickerCard';
+import { asOfStamp } from '../ui/dataHealth';
 
 interface Contract {
   type: 'call' | 'put';
@@ -198,7 +200,7 @@ export function createFlowPage() {
     frame.body.replaceChildren(
       noVolume ? h('div', { class: 'ap-note' }, 'No options have traded yet today (Schwab resets volume each morning), so volume-based ratios are blank. Open interest is from the last session.') : '',
       statCards([
-        { label: `${d.symbol} price`, value: formatPrice(d.spot) },
+        { label: h('span', tickerAttr(d.symbol), `${d.symbol} price`), value: formatPrice(d.spot) },
         { label: 'Put/call volume', value: ratioText(s.putCallVolume), hint: `${compact(s.putVolume)} puts vs ${compact(s.callVolume)} calls traded today · ${pcReading(s.putCallVolume)}`, tone: pcTone(s.putCallVolume) },
         { label: 'Put/call by premium ($)', value: ratioText(s.putCallPremium), hint: s.callPremium != null ? `${money(s.putPremium ?? 0)} in puts vs ${money(s.callPremium)} in calls · money-weighted, so big trades count more` : '', tone: pcTone(s.putCallPremium) },
         { label: 'Put/call, out-of-the-money', value: ratioText(s.putCallOtm), hint: 'Bets on a move: OTM puts (downside) vs OTM calls (upside)', tone: pcTone(s.putCallOtm) },
@@ -453,7 +455,7 @@ export function createFlowPage() {
     const chartBox = h('div', {});
     const netBox = h('div', {});
     frame.body.replaceChildren(
-      h('div', { class: 'callout' }, h('b', {}, `${d.symbol} → ${d.market} futures. `), d.reason, ' The CFTC only publishes positioning for futures, so this is the closest view of how big traders are positioned for this stock’s market.'),
+      h('div', { class: 'callout' }, h('b', {}, h('span', tickerAttr(d.symbol), d.symbol), ` → ${d.market} futures. `), d.reason, ' The CFTC only publishes positioning for futures, so this is the closest view of how big traders are positioned for this stock’s market.'),
       statCards([
         { label: 'Report date', value: latest.date },
         { label: 'Speculator index (3y)', value: idx(latest.specIndex), hint: 'Near 100 = most bullish in 3 years; near 0 = most bearish. Extremes often come before reversals.', tone: (latest.specIndex ?? 50) >= 50 ? 'up' : 'down' },
@@ -461,7 +463,7 @@ export function createFlowPage() {
         { label: 'Speculators net', value: compact(latest.specNet), hint: `Week change ${compact(latest.specNet - prev.specNet)}`, tone: latest.specNet >= 0 ? 'up' : 'down' },
         { label: 'Open interest', value: compact(latest.openInterest) },
       ]),
-      h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Positioning index (0-100, 3-year range)'), h('span', { class: 'muted small' }, 'Above 80 or below 20 = crowded')), chartBox),
+      h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Positioning index (0-100, 3-year range)'), asOfStamp('cftc').set(latest.date, { prefix: 'report', source: 'CFTC (weekly)' }).el, h('span', { class: 'muted small' }, 'Above 80 or below 20 = crowded')), chartBox),
       h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Net positions (contracts)')), netBox),
     );
     const recent = d.rows.slice(-260);

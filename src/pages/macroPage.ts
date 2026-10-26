@@ -6,6 +6,7 @@ import { h } from '../ui/dom';
 import { openChartWindow } from '../ui/chartWindow';
 import { openFredWindow } from '../ui/fredWindow';
 import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
+import { asOfStamp } from '../ui/dataHealth';
 
 interface Series {
   id: string;
@@ -115,7 +116,7 @@ export function createMacroPage() {
     const card = cards.get(s.id);
     if (!card) return;
     card.el.classList.remove('loading');
-    card.el.querySelector('.macro-value')!.replaceChildren(h('b', {}, fmt(s.value, s.unit)), h('span', { class: 'muted small' }, s.date));
+    card.el.querySelector('.macro-value')!.replaceChildren(h('b', {}, fmt(s.value, s.unit)), h('span', { class: 'muted small asof', title: 'The date of the latest reading FRED has published' }, `${s.date} · FRED`));
     card.el.querySelector('.macro-changes')!.replaceChildren(...[change(s, s.monthAgo, '1m'), change(s, s.yearAgo, '1y')].filter((n): n is HTMLSpanElement => !!n));
     drawChart(s.id);
   }
@@ -191,7 +192,8 @@ export function createMacroPage() {
 
   async function loadCurve() {
     try {
-      ({ curve } = await engineRequest<{ curve: CurvePoint[] }>('macro.curve', {}, 45000));
+      const reply = await engineRequest<{ curve: CurvePoint[] }>('macro.curve', {}, 45000);
+      ({ curve } = reply);
       const ten = curve.find((p) => p.label === '10Y')?.now;
       const two = curve.find((p) => p.label === '2Y')?.now;
       const spread = ten != null && two != null ? ten - two : 0;
@@ -200,6 +202,7 @@ export function createMacroPage() {
           'div',
           { class: 'panel-head' },
           h('h3', {}, 'Treasury yield curve'),
+          asOfStamp('fred', { reply, source: 'FRED / treasury.gov' }).el,
           h('span', { class: 'muted small' }, spread < 0 ? 'Inverted: short-term rates are above long-term ones, which has often come before recessions.' : 'Normal shape: longer loans pay more than short ones.'),
         ),
         yieldCurve(curve),
