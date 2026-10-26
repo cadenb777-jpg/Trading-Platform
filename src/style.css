@@ -5902,6 +5902,132 @@ a.btn {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+/* Account risk card, sector bars and Taxes (src/portfolio/riskView.ts) */
+.risk-card .acct-stats .stat-cards {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+@media (max-width: 700px) {
+  .risk-card .acct-stats .stat-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.risk-warn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: var(--sp-2) 0;
+}
+.risk-warn:empty {
+  display: none;
+}
+.risk-badge {
+  display: block;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  white-space: normal;
+}
+.risk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-sm);
+}
+.risk-row,
+.risk-sector-row {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.risk-row {
+  display: grid;
+  grid-template-columns: 56px minmax(40px, 1fr) 52px minmax(0, 1.2fr);
+  align-items: center;
+  gap: var(--sp-2);
+}
+.risk-row:hover,
+.risk-sector-row:hover,
+.risk-row:focus-visible,
+.risk-sector-row:focus-visible {
+  background: var(--panel-2);
+  outline: none;
+}
+.risk-row.active,
+.risk-sector-row.active {
+  border-color: var(--link);
+  background: var(--panel-2);
+}
+.risk-row .num {
+  text-align: right;
+}
+.risk-sym,
+.risk-sector {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alloc-fill.over {
+  background: var(--warn);
+}
+.risk-detail:empty {
+  display: none;
+}
+.risk-detail-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.risk-detail-box .stat-cards {
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+}
+.acct-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.tax-section > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.tax-section > summary::-webkit-details-marker {
+  display: none;
+}
+.tax-section > summary h3::before {
+  content: '▸ ';
+  color: var(--muted);
+}
+.tax-section[open] > summary h3::before {
+  content: '▾ ';
+}
+.tax-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+.tax-acct {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.tax-acct select {
+  max-width: 100%;
+}
+.tax-body .badge + .badge {
+  margin-left: 4px;
+}
 
 /* ---------- Trade page (src/pages/tradePage.ts) and the order ticket (src/trade/ticket.ts) ---------- */
 .trade-page { --page-max: 1560px; }
