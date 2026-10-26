@@ -424,8 +424,9 @@ NOT_SUPPORTED = 'view not supported yet'
 
 
 def account_info(row):
-    """One account-list row in plain words: {id, label ("Roth IRA ••1234"), name, stocks, retirement}. stocks=False
-    (futures, crypto, anything unknown) means it is listed but never read, synced or traded here."""
+    """One account-list row in plain words: {id, label ("Roth IRA ••1234"), name, stocks, retirement, managed}.
+    stocks=False (futures, crypto, anything unknown) means it is listed but never read, synced or traded here.
+    managed=True (Webull's robo-advisor IRAs) can be viewed and synced, but orders are refused."""
     if not isinstance(row, dict) or not row.get('account_id'):
         raise EngineError(FORMAT)
     cls = str(row.get('account_class') or '').strip().upper()
@@ -438,7 +439,8 @@ def account_info(row):
         name = label or ACCOUNT_TYPES.get(typ) or (cls or typ).replace('_', ' ').title() or 'Account'
     number = str(row.get('account_number') or row['account_id'])
     shown = f"{name} ••{number[-4:]}" + ('' if stocks else f' ({NOT_SUPPORTED})')
-    return {'id': str(row['account_id']), 'label': shown, 'name': name, 'stocks': stocks, 'retirement': 'IRA' in (cls or name.upper())}
+    return {'id': str(row['account_id']), 'label': shown, 'name': name, 'stocks': stocks, 'retirement': 'IRA' in (cls or name.upper()),
+            'managed': cls.startswith('MANAGED_')}
 
 
 async def accounts(ctx, fresh=False):
@@ -866,18 +868,30 @@ async def _sync_one(ctx, chosen, keep_empty):
     if not holdings and not existing and not keep_empty:
         return None, skipped
     name = f"Webull {chosen['label']}{' (Test)' if env() == 'test' else ''}"
-    old_name = (existing or {}).get('name') or ''
-    # a name the platform made (it starts "Webull ") follows the account's label; one the owner typed is kept
-    doc = {**(existing or {'benchmark': 'SPY', 'rebalance': 'none'}), 'name': name if not old_name or old_name.startswith('Webull ') else old_name,
-           'mode': 'shares', 'holdings': holdings, 'webullAccount': account_id, 'webullEnv': env(), 'webullRetirement': chosen['retirement'],
+    doc = {**(existing or {'benchmark': 'SPY', 'rebalance': 'none'}), 'name': name if _auto_name(existing) else existing['name'], 'webullAutoName': name,
+           'mode': 'shares', 'holdings': holdings, 'webullAccount': account_id, 'webullEnv': env(),
            'syncedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')}
     return store.save_doc('portfolios', doc), skipped
+
+
+#: The names older helpers gave synced portfolios, e.g. "Webull …2345 (Cash) (Test)".
+OLD_AUTO_NAME = re.compile(r'Webull …?\S{1,4}( \([^()]*\))?( \(Test\))?')
+MANAGED = "This account is managed by Webull's robo-advisor; place orders in the Webull app."
+
+
+def _auto_name(existing):
+    """True when the saved portfolio still has a name the platform made (so it follows the account's label); a name
+    the owner typed is kept."""
+    old = (existing or {}).get('name') or ''
+    return not old or old == (existing or {}).get('webullAutoName') or bool(OLD_AUTO_NAME.fullmatch(old))
 
 
 @handler('webull.preview_order')
 async def preview_order(ctx, msg):
     order = normalise(msg)
     chosen = await _account(ctx, msg)
+    if chosen.get('managed'):
+        raise EngineError(MANAGED)
     account_id = chosen['id']
     lim = limits()
     held = None

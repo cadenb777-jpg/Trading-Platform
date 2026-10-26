@@ -89,6 +89,7 @@ export function createTradePage() {
   const protectSlot = h('div', { class: 'tr-protect-slot' });
   const ticket = createTicket({
     snapshot: () => snap,
+    accountId: () => accountId || snap?.accountId || '',
     quote: (s) => quoteFor(s),
     onSymbol: (s) => select(s, false),
     onPlaced: placed,
@@ -350,7 +351,7 @@ export function createTradePage() {
         if (next.ok) {
           snap = next;
           stale = null;
-          accountId = next.accountId ?? accountId;
+          if (!accountId) accountId = next.accountId ?? ''; // never overwrite a choice made while this was loading
         } else if (next.busy && snap?.ok) {
           stale = next.message; // Webull busy: keep showing the last data, marked as old
         } else {
@@ -428,7 +429,12 @@ export function createTradePage() {
     const tradable = stockAccounts(snap.accounts);
     if (tradable.length > 1) {
       const sel = h('select', { class: 'input', 'aria-label': 'Account' }, ...tradable.map((a) => h('option', { value: a.id, selected: a.id === accountId }, a.label))) as HTMLSelectElement;
-      sel.addEventListener('change', () => ((accountId = sel.value), save(ACCOUNT_KEY, accountId), refresh(true)));
+      sel.addEventListener('change', () => {
+        accountId = sel.value;
+        save(ACCOUNT_KEY, accountId);
+        ticket.refresh(); // Preview off until the new account's data is in
+        refresh(true);
+      });
       acctSlot.replaceChildren(sel);
     } else acctSlot.replaceChildren(h('span', { class: 'muted small' }, snap.account ?? ''));
     const b = snap.balances;

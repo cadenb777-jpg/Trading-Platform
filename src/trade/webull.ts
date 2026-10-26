@@ -97,6 +97,7 @@ interface Preview {
   summary: string;
   env: Env;
   account: string;
+  accountId?: string;
   retirement?: boolean;
   estimate: { value: number; last: number };
   warnings: string[];
@@ -136,9 +137,13 @@ export function loadSnapshot(accountId?: string) {
 
 /** Cancels an open order of that account after a plain confirm. Resolves true when the cancel was sent. */
 export async function cancelOrder(o: Order, accountId: string | undefined): Promise<boolean> {
+  if (!accountId) {
+    toast('The account for this order isn’t known yet. Refresh and try again.');
+    return false;
+  }
   if (!confirm(`Cancel the ${o.side.toLowerCase()} order for ${o.qty} ${o.symbol}?`)) return false;
   try {
-    await engineRequest('webull.cancel_order', { orderId: o.orderId, ...(accountId ? { accountId } : {}) }, 30000);
+    await engineRequest('webull.cancel_order', { orderId: o.orderId, accountId }, 30000);
     toast('Cancel sent');
     return true;
   } catch (err) {
@@ -195,6 +200,10 @@ export function confirmOrder(order: PlacedOrder, accountId: string, onPlaced: (o
   });
   engineRequest<Preview>('webull.preview_order', { ...order, accountId }, 30000).then(
     (p) => {
+      if (p.accountId && p.accountId !== accountId) {
+        content.replaceChildren(h('div', { class: 'ap-error' }, 'The preview came back for a different account than the one chosen. Nothing was placed; close and preview again.'));
+        return;
+      }
       const live = p.env === 'live';
       content.replaceChildren(
         h('div', { class: 'wb-confirm-env' }, envBadge(p.env), h('span', { class: 'wb-confirm-acct' }, 'Account: ', h('b', {}, p.account))),

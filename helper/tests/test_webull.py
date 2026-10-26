@@ -683,7 +683,8 @@ class Accounts(Base):
         self.assertEqual(sorted(r['empty']), ['Cash ••4444', 'Margin ••3333'])  # listed, not saved
         roth = next(d for d in r['portfolios'] if d['webullAccount'] == 'ROTH0001')
         self.assertEqual([(h['symbol'], h.get('shares'), h.get('amount')) for h in roth['holdings']], [('SCHD', 100.0, None), ('CASH', None, 500.0)])
-        self.assertTrue(roth['webullRetirement'])
+        self.assertNotIn('webullRetirement', roth)
+        self.assertEqual(roth['webullAutoName'], 'Webull Roth IRA ••1234 (Test)')
         self.assertNotIn('FUT00001', [c['query'].get('account_id') for c in self.fake.calls])
         # re-sync updates by account id (an old auto name is replaced; nothing is duplicated)
         store.save_doc('portfolios', {**roth, 'name': 'Webull …1234 (Cash) (Test)'})
@@ -695,6 +696,46 @@ class Accounts(Base):
         # a name the owner typed is kept
         store.save_doc('portfolios', {**roth2, 'name': 'My Roth'})
         self.assertEqual(run(webull.sync(self.ctx, {'accountId': 'ROTH0001'}))['portfolio']['name'], 'My Roth')
+
+    def test_owner_names_are_kept_even_when_they_start_with_webull(self):
+        doc = run(webull.sync(self.ctx, {'accountId': 'ROTH0001'}))['portfolio']
+        store.save_doc('portfolios', {**doc, 'name': 'Webull retirement money'})
+        self.assertEqual(run(webull.sync(self.ctx, {'accountId': 'ROTH0001'}))['portfolio']['name'], 'Webull retirement money')
+        for old in ('Webull …1234 (Cash)', 'Webull …1234', 'Webull 1234 (Test)'):
+            self.assertTrue(webull._auto_name({'name': old}), old)
+
+    def test_place_uses_the_previewed_account_whatever_the_browser_picks_later(self):
+        p = run(webull.preview_order(self.ctx, {**ORDER, 'accountId': 'ROTH0001'}))
+        run(webull.snapshot(self.ctx, {'accountId': 'TRAD0001'}))  # the owner switches account after the preview
+        with self.assertRaises(core.EngineError):  # the token is the only thing place accepts: no account can be added
+            run(webull.place_order(self.ctx, {'token': p['token'], 'accountId': 'TRAD0001'}))
+        p = run(webull.preview_order(self.ctx, {**ORDER, 'accountId': 'ROTH0001'}))
+        run(webull.place_order(self.ctx, {'token': p['token']}))
+        placed = [c for c in self.fake.calls if c['path'] == '/trading/orders/place']
+        self.assertEqual([c['body']['account_id'] for c in placed], ['ROTH0001'])
+
+    def test_sell_availability_uses_the_chosen_accounts_positions(self):
+        sell = {'symbol': 'VTI', 'side': 'SELL', 'qty': 5, 'orderType': 'LIMIT', 'limitPrice': 200, 'tif': 'DAY'}
+        self.assertEqual(run(webull.preview_order(self.ctx, {**sell, 'accountId': 'TRAD0001'}))['accountId'], 'TRAD0001')  # 20 VTI here
+        with self.assertRaises(core.EngineError) as e:
+            run(webull.preview_order(self.ctx, {**sell, 'accountId': 'ROTH0001'}))  # no VTI in the Roth
+        self.assertIn('short sale', str(e.exception))
+
+    def test_cancel_refuses_a_futures_account(self):
+        with self.assertRaises(core.EngineError):
+            run(webull.cancel_order(self.ctx, {'orderId': 'o1', 'accountId': 'FUT00001'}))
+        self.assertNotIn('/trading/orders/cancel', self.fake.paths())
+
+    def test_managed_ira_is_viewable_and_syncable_but_never_ordered(self):
+        self.fake.accounts.append({'account_id': 'MGD00001', 'account_number': '5MV07777', 'account_type': 'CASH', 'account_class': 'MANAGED_ROTH_IRA'})
+        self.fake.by_account['MGD00001'] = self.fake.by_account['ROTH0001']
+        snap = run(webull.snapshot(self.ctx, {'accountId': 'MGD00001'}))
+        self.assertEqual(snap['account'], 'Managed Roth IRA ••7777')
+        self.assertEqual(run(webull.sync(self.ctx, {'accountId': 'MGD00001'}))['portfolio']['holdings'][0]['symbol'], 'SCHD')
+        with self.assertRaises(core.EngineError) as e:
+            run(webull.preview_order(self.ctx, {**ORDER, 'accountId': 'MGD00001'}))
+        self.assertIn('robo-advisor', str(e.exception))
+        self.assertNotIn('/trading/orders/preview', self.fake.paths())
 
     def test_owner_can_save_an_empty_account(self):
         r = run(webull.sync(self.ctx, {'accountId': 'CASH0001'}))
