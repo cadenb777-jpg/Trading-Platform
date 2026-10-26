@@ -70,10 +70,29 @@ market dropdown.
 - If the browser asks to allow the site to access apps or devices on your computer or network,
   click **Allow**.
 
-## Updating the helper
+## Updating
 
-When the platform gets new features, you may need a new copy of the helper. Download the ZIP
-again (step 2), replace your old folder, and start it as usual. Your keys and login are kept.
+**One time only:** if your helper is older than the version with "Update now", download the ZIP
+again (step 2), copy the new files into your helper folder (or replace it) and start it as usual.
+Your keys and login are kept.
+
+**After that, updating is one click.** The helper checks GitHub for a newer version when it starts and
+every 6 hours. When there is one, the platform shows **"Update available (v X → v Y)"** with an
+**Update now** button (the helper window also offers it: type `u` and press Enter). Clicking it:
+
+1. downloads the newest ZIP straight from GitHub (only from github's own download servers, over HTTPS),
+2. checks it (a real ZIP with the expected newer helper inside) before anything from it runs,
+3. installs any new Python parts out of sight,
+4. saves your current helper next to it as `helper_backup_v<old version>` (the last 2 are kept),
+5. copies in the new files and restarts the helper by itself. The page reconnects in a few seconds.
+
+If anything goes wrong, nothing is changed (or the backup is put back) and the platform says what happened.
+Your keys, logins, portfolios and settings live in `~/.trading-platform`, not in the helper folder, and the
+hidden `.venv` folder with the installed parts is never touched. Nothing updates unless you click
+**Update now**, or turn on **Settings → Helper → Install updates automatically** (off by default).
+
+To go back to a previous version, close the helper and copy the files from a `helper_backup_v…` folder
+into your helper folder.
 
 Tip: to make updates start faster, copy the new files *into* your existing helper folder (choose
 "Replace the files" when Windows asks) instead of deleting the folder. That keeps the hidden `.venv`

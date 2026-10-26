@@ -84,6 +84,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   0-100% bar and starts the helper with TP_SPLASH (seed) and TP_HANDOFF; the helper then continues the bar
   (splash.HelperScreen), logs only to the file and shows one live status line. Interactive steps (Schwab keys,
   login) pause the screen. Keep splash.py standard-library only.
+  Self-update (helper/updater.py, standard library; downloads via the helper's httpx): reads HELPER_VERSION from raw
+  GitHub main at start and every 6 h (status.update); request `update` (Update now) downloads the codeload main ZIP
+  (only raw.githubusercontent.com/codeload.github.com, https, redirects checked), verifies it, unpacks only helper/,
+  pips changed requirements, backs up to ../helper_backup_v<old> (keeps 2), copies in (restores on failure; dot files
+  and .venv untouched), exits 75 so splash.py starts the new copy. Setting auto_update (default off).
   Quotes: the helper polls Schwab's REST quotes every 30 s (`refresh_official`); prevClose = lastPrice - netChange.
   The stream's CLOSE_PRICE is only a fallback (after the session it becomes today's close, which read as 0%).
   Scanner (engine/scanner.py + engine/strategies.py): a background task (`market_scanner`) scans the
