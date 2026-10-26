@@ -38,7 +38,7 @@ from pathlib import Path
 from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo
 
-from . import settings
+from . import diagnostics, settings
 from .core import EngineError, handler, market_session
 
 DATA_DIR = Path.home() / '.trading-platform'
@@ -290,6 +290,8 @@ async def _call(ctx, method, path, query=None, body=None, version='v3', extra=No
         data = response.json()
     except Exception:
         data = None
+    diagnostics.note('webull', env=env(), method=method, endpoint=path, status=response.status_code,
+                     **({} if response.status_code == 200 else {'message': _message(data, response.status_code)}))
     if response.status_code in (401, 403):
         if use_token:
             _forget_token()
@@ -445,6 +447,8 @@ def account_info(row):
         stocks = not cls and typ in ACCOUNT_TYPES  # an unknown class is never treated as a stock account
         name = label or ACCOUNT_TYPES.get(typ) or (cls or typ).replace('_', ' ').title() or 'Account'
     number = str(row.get('account_number') or row['account_id'])
+    diagnostics.account(row['account_id'])  # masked in the diagnostics file (logs and errors too)
+    diagnostics.account(number)
     shown = f"{name} ••{number[-4:]}" + ('' if stocks or futures else f' ({NOT_SUPPORTED})')
     return {'id': str(row['account_id']), 'label': shown, 'name': name, 'stocks': stocks, 'futures': futures, 'retirement': 'IRA' in (cls or name.upper()),
             'managed': cls.startswith('MANAGED_'), 'accountClass': cls}

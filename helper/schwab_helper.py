@@ -46,11 +46,12 @@ from schwab.streaming import StreamClient  # noqa: E402
 from websockets.asyncio.server import broadcast, serve  # noqa: E402
 import updater  # noqa: E402  (standard library only)
 import engine  # noqa: E402  (light: its big modules load in the background, see engine.start_loading)
+from engine import diagnostics  # noqa: E402  (standard library only: records requests for the diagnostics file)
 from engine.core import is_safe_url  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 33
+HELPER_VERSION = 34
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -137,6 +138,7 @@ CALENDAR_CACHE_SECONDS = 3600
 # Fed rate decision days (2:00 PM ET). Check https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
 FOMC_DECISIONS = ['2026-01-28', '2026-03-18', '2026-04-29', '2026-06-17', '2026-07-29', '2026-09-16', '2026-10-28', '2026-12-09']
 EASTERN = ZoneInfo('America/New_York')
+STARTED = time.time()
 # Headlines for one ticker, e.g. from your watchlist.
 TICKER_NEWS_QUERY = '{symbol}+stock+when:3d'
 MAX_TICKER_FEEDS = 12
@@ -629,12 +631,23 @@ class Market:
         self.restart = asyncio.Event()
         self.offered = None
         self.status = {**self._status('connecting', 'Connecting to Schwab'), 'update': self.updater.public()}
+        # The diagnostics file (Settings > Send diagnostics): outside calls' status/latency and this helper's state.
+        diagnostics.watch_http(getattr(self.news, 'http', None))
+        diagnostics.watch_http(getattr(client, 'session', None))
+        diagnostics.SECTIONS['helper'] = self.diagnostics_section
 
     @staticmethod
     def _status(status, message):
         # `problems` lists features that couldn't start, shown in the platform's Settings window.
         problems = [f'{name}: {err}' for name, err in engine.LOAD_ERRORS.items()]
         return {'type': 'status', 'status': status, 'message': message, 'version': HELPER_VERSION, 'problems': problems, 'log': str(LOG_PATH)}
+
+    def diagnostics_section(self):
+        """This helper's state for the diagnostics file (counts only, no prices or holdings)."""
+        now = time.time()
+        return {'version': HELPER_VERSION, 'status': self.status.get('status'), 'message': self.status.get('message'),
+                'tabsOpen': len(self.browsers), 'symbolsWatched': len(self.listeners), 'quotesLive': len(self.quotes),
+                'officialQuotes': len(self.official), 'update': self.updater.public(), 'uptimeSeconds': round(now - STARTED)}
 
     def set_status(self, status, message):
         self.status = {**self._status(status, message), 'update': self.updater.public()}
@@ -660,20 +673,20 @@ class Market:
                 if kind in ('history', 'subscribe', 'unsubscribe') and not SYMBOL_PATTERN.match(symbol):
                     await ws.send(json.dumps({'type': 'error', 'id': msg.get('id'), 'message': f'Invalid symbol "{symbol}"'}))
                 elif kind == 'history':
-                    engine.background(self.reply(ws, msg.get('id'), self.history_reply(symbol, msg.get('resolution'), msg.get('days'))))
+                    engine.background(self.reply(ws, msg.get('id'), self.history_reply(symbol, msg.get('resolution'), msg.get('days')), 'history'))
                 elif kind == 'calendar':
-                    engine.background(self.reply(ws, msg.get('id'), self.calendar_reply()))
+                    engine.background(self.reply(ws, msg.get('id'), self.calendar_reply(), 'calendar'))
                 elif kind == 'update':
-                    engine.background(self.reply(ws, msg.get('id'), self.update_reply()))
+                    engine.background(self.reply(ws, msg.get('id'), self.update_reply(), 'update'))
                 elif kind == 'summary':
                     links = [str(u) for u in msg.get('links') or [] if str(u).startswith(('https://', 'http://'))]
-                    engine.background(self.reply(ws, msg.get('id'), self.summary_reply(links, str(msg.get('title', '')))))
+                    engine.background(self.reply(ws, msg.get('id'), self.summary_reply(links, str(msg.get('title', ''))), 'summary'))
                 elif kind == 'news':
                     symbols = [str(s).upper() for s in msg.get('symbols') or [] if isinstance(s, str)]
-                    engine.background(self.reply(ws, msg.get('id'), self.news_reply(symbols, str(msg.get('query') or ''))))
+                    engine.background(self.reply(ws, msg.get('id'), self.news_reply(symbols, str(msg.get('query') or '')), 'news'))
                 elif kind in engine.HANDLERS:
                     msg['_emit'] = self.emitter(ws, msg.get('id'))
-                    engine.background(self.reply(ws, msg.get('id'), self.engine_reply(kind, msg)))
+                    engine.background(self.reply(ws, msg.get('id'), self.engine_reply(kind, msg), kind))
                 elif kind == 'subscribe':
                     if symbol not in self.official:
                         self.official_wake.set()
@@ -686,6 +699,7 @@ class Market:
                     # The analysis engine is still loading in the background: answer once it's ready.
                     engine.background(self.after_engine_loads(ws, msg))
                 else:
+                    diagnostics.record_request(kind, time.time(), False, 'unknown request')
                     await ws.send(json.dumps({'type': 'error', 'id': msg.get('id'), 'message': unknown_request_message(kind)}))
         finally:
             self.browsers.discard(ws)
@@ -699,7 +713,7 @@ class Market:
         kind = msg.get('type')
         if kind in engine.HANDLERS:
             msg['_emit'] = self.emitter(ws, msg.get('id'))
-            await self.reply(ws, msg.get('id'), self.engine_reply(kind, msg))
+            await self.reply(ws, msg.get('id'), self.engine_reply(kind, msg), kind)
         else:
             try:
                 await ws.send(json.dumps({'type': 'error', 'id': msg.get('id'), 'message': unknown_request_message(kind)}))
@@ -837,15 +851,19 @@ class Market:
         items, failed = await self.news.get(symbols, query)
         return {'type': 'news', 'items': items, 'failed': failed}
 
-    async def reply(self, ws, request_id, work):
+    async def reply(self, ws, request_id, work, kind=None):
+        started = time.time()
         try:
             reply = await work
         except Exception as err:  # Report every failure to the browser instead of crashing.
             log.warning('Request failed: %s', err)
             reply = {'type': 'error', 'message': str(err)}
         reply['id'] = request_id
+        text = json.dumps(reply)
+        failed = reply.get('type') == 'error'
+        diagnostics.record_request(kind or reply.get('type'), started, not failed, reply.get('message', '') if failed else '', len(text))
         try:
-            await ws.send(json.dumps(reply))
+            await ws.send(text)
         except Exception:
             pass
 
@@ -1112,6 +1130,7 @@ async def open_when_ready(market, enabled):
 
 
 async def run(client, sec_contact='', open_browser=True):
+    diagnostics.PERSIST = True  # remember account ids between runs so the diagnostics file masks them from the start
     market = Market(client, engine_ctx=engine.EngineContext(client, sec_contact))
     try:
         # Room for files attached to AI questions (spreadsheets, PDFs, images).

@@ -109,7 +109,8 @@ export function openPopover(anchor: HTMLElement, content: Node, opts: { align?: 
   const width = el.offsetWidth;
   const left = opts.align === 'right' ? rect.right - width : rect.left;
   el.style.left = `${Math.max(8, Math.min(left, window.innerWidth - width - 8))}px`;
-  el.style.top = `${rect.bottom + 6}px`;
+  // Below the anchor, moved up when it would run off the bottom (e.g. the Data button low in the sidebar).
+  el.style.top = `${Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - el.offsetHeight - 8))}px`;
   let open = true;
   const close = (refocus = true) => {
     if (!open) return;
