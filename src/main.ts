@@ -16,6 +16,7 @@ import { initTheme } from './ui/theme';
 import { PAGE_SUGGESTIONS, screenText } from './ai/screen';
 import { followHealth, openDataHealth } from './ui/dataHealth';
 import { initTickerCards } from './ui/tickerCard';
+import { initCommandBar } from './ui/command';
 
 initTheme();
 
@@ -45,20 +46,18 @@ const openChart = (ref: MarketRef) => {
 };
 
 /** Opens the Research page on a company (from the Investments page, for example). */
-const openResearch = (symbol: string) => {
-  const entry = pages.find((p) => p.route === 'research');
-  if (!entry) return;
-  location.hash = '#research';
-  ensurePage(entry).then((page) => (page as Page & { open?(symbol: string): void }).open?.(symbol));
-};
+const openResearch = (symbol: string) => openPageWith('research', 'open', symbol);
 
 /** Opens a saved portfolio (or, with 'webull', the Webull view) on the Portfolios page (from the Account page). */
-const openPortfolio = (id: string) => {
-  const entry = pages.find((p) => p.route === 'portfolio');
+const openPortfolio = (id: string) => openPageWith('portfolio', 'open', id);
+
+/** Goes to a page and, once it's built, calls one of its methods (e.g. the Research page's open(symbol, tab)). */
+function openPageWith(route: string, method?: string, ...args: unknown[]) {
+  const entry = pages.find((p) => p.route === route);
   if (!entry) return;
-  location.hash = '#portfolio';
-  ensurePage(entry).then((page) => (page as Page & { open?(id: string): void }).open?.(id));
-};
+  location.hash = `#${route}`;
+  if (method) ensurePage(entry).then((page) => (page as unknown as Record<string, ((...a: unknown[]) => void) | undefined>)[method]?.(...args));
+}
 
 /** The chart's Backtest button: open the backtester with the chart's symbol, timeframe and indicators. */
 window.addEventListener('tp:backtest-chart', () => {
@@ -265,7 +264,7 @@ if (isAiWindow) {
   );
   followHealth(healthDot);
   initTickerCards({ openChart, openResearch });
-  const aiBtn = h('button', { class: 'nav-btn ai-nav', title: 'AI assistant (Ctrl+K)', 'aria-label': 'AI assistant', onclick: () => toggleAssistant() }, icon('spark', 24), h('span', { class: 'nav-label' }, 'AI'));
+  const aiBtn = h('button', { class: 'nav-btn ai-nav', title: 'AI assistant (Ctrl+I)', 'aria-keyshortcuts': 'Control+I Meta+I', 'aria-label': 'AI assistant', onclick: () => toggleAssistant() }, icon('spark', 24), h('span', { class: 'nav-label' }, 'AI'));
   function toggleAssistant(show: boolean = drawer.hidden === true) {
     drawer.hidden = !show;
     aiBtn.classList.toggle('active', show);
@@ -290,11 +289,14 @@ if (isAiWindow) {
       toggleAssistant(true);
     },
   });
-  document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-      e.preventDefault();
-      toggleAssistant();
-    }
+  // The command bar (/ or Ctrl/Cmd+K) and the global shortcuts (g h, n a, ?, Ctrl/Cmd+I for the AI)
+  const commandBtn = initCommandBar({
+    pages: pages.map((p) => ({ route: p.route, label: p.label, group: GROUPS[p.group] })),
+    currentRoute: () => currentPage().route,
+    openChart,
+    openPage: openPageWith,
+    toggleAssistant: () => toggleAssistant(),
+    openHealth: () => openDataHealth(healthBtn),
   });
 
   document.querySelector('#app')!.append(
@@ -303,6 +305,7 @@ if (isAiWindow) {
       'nav',
       { class: 'rail', 'aria-label': 'Main' },
       h('div', { class: 'brand', title: 'Trading Platform' }, '◆'),
+      commandBtn,
       ...pages.flatMap((p, i) => [
         p.group !== pages[i - 1]?.group ? h('div', { class: 'rail-group', role: 'separator', 'aria-label': GROUPS[p.group], title: GROUPS[p.group] }) : null,
         h('a', { class: 'nav-btn', href: `#${p.route}`, 'data-route': p.route, title: p.label, 'aria-label': p.label }, icon(p.icon, 22), h('span', { class: 'nav-label' }, p.label)),
