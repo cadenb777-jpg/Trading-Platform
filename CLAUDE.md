@@ -174,6 +174,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   src/trade/sizing.ts); preview -> confirm window = src/trade/webull.ts (the only copy). Keys: B/S side, Enter
   previews; nothing places without the confirm button. Portfolios > Webull (webullView.ts) shows balances/positions/
   orders and Sync; the trade guide's "Open in order ticket" only pre-fills #trade (BUY, plus its stop for "Protect").
+  Accounts: labels from account_class (webull.account_info: "Roth IRA ••1234"; futures/crypto/unknown = listed, never
+  read/synced/traded); sync = one portfolio per stock account (empty ones only when chosen), updated by account id;
+  Account page switcher = all combined or one (pickAccounts); Trade page picks one account, sent with preview/cancel.
 
 ## Conventions
 
