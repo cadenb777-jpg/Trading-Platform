@@ -372,7 +372,7 @@ async def _access_token_locked(ctx):
 # ---------- reading the account ----------
 
 # Field names used below are the documented ones (Webull OpenAPI reference: accounts account_id/account_number/
-# account_type; balance total_cash_balance and account_currency_assets[] {currency, cash_balance, buying_power},
+# account_type/account_class (see CLASS_NAMES); balance total_cash_balance and account_currency_assets[] {currency, cash_balance, buying_power},
 # total_asset; positions symbol, quantity, cost_price, instrument_type, unrealized_profit_loss, items[]; orders
 # {has_next, orders[]} with client_order_id, symbol, side, quantity, filled_quantity, order_type, limit_price,
 # stop_price, time_in_force, status). Nothing is guessed: a missing required field is an error, never a default.
@@ -411,33 +411,61 @@ def _mask(account_id):
     return f'…{s[-4:]}' if len(s) > 4 else s
 
 
+#: Webull's account_class values for US accounts (verified: Webull's official MCP server, webull-openapi-mcp 1.2.5,
+#: region_config.py and its tests, which show replies like {"account_type": "CASH", "account_class": "INDIVIDUAL_CASH",
+#: "account_label": "Individual Cash"}). Only the stock classes can be viewed and traded here.
+CLASS_NAMES = {'INDIVIDUAL_CASH': 'Cash', 'INDIVIDUAL_MARGIN': 'Margin', 'ROTH_IRA': 'Roth IRA', 'TRADITIONAL_IRA': 'Traditional IRA',
+               'ROLLOVER_IRA': 'Rollover IRA', 'MANAGED_ROTH_IRA': 'Managed Roth IRA', 'MANAGED_TRADITIONAL_IRA': 'Managed Traditional IRA',
+               'FUTURES': 'Futures', 'CRYPTO': 'Crypto', 'EVENTS_CASH': 'Event contracts'}
+STOCK_CLASSES = {'INDIVIDUAL_CASH', 'INDIVIDUAL_MARGIN', 'ROTH_IRA', 'TRADITIONAL_IRA', 'ROLLOVER_IRA', 'MANAGED_ROTH_IRA', 'MANAGED_TRADITIONAL_IRA'}
+#: account_type alone (older replies without account_class): CASH and US_MARGIN are the documented stock types.
+ACCOUNT_TYPES = {'CASH': 'Cash', 'MARGIN': 'Margin', 'US_MARGIN': 'Margin'}
+NOT_SUPPORTED = 'view not supported yet'
+
+
+def account_info(row):
+    """One account-list row in plain words: {id, label ("Roth IRA ••1234"), name, stocks, retirement}. stocks=False
+    (futures, crypto, anything unknown) means it is listed but never read, synced or traded here."""
+    if not isinstance(row, dict) or not row.get('account_id'):
+        raise EngineError(FORMAT)
+    cls = str(row.get('account_class') or '').strip().upper()
+    typ = str(row.get('account_type') or '').strip().upper()
+    label = row.get('account_label').strip() if isinstance(row.get('account_label'), str) else ''
+    if cls in CLASS_NAMES:
+        name, stocks = CLASS_NAMES[cls], cls in STOCK_CLASSES
+    else:
+        stocks = not cls and typ in ACCOUNT_TYPES  # an unknown class is never treated as a stock account
+        name = label or ACCOUNT_TYPES.get(typ) or (cls or typ).replace('_', ' ').title() or 'Account'
+    number = str(row.get('account_number') or row['account_id'])
+    shown = f"{name} ••{number[-4:]}" + ('' if stocks else f' ({NOT_SUPPORTED})')
+    return {'id': str(row['account_id']), 'label': shown, 'name': name, 'stocks': stocks, 'retirement': 'IRA' in (cls or name.upper())}
+
+
 async def accounts(ctx, fresh=False):
-    """The owner's accounts [{id, label}], reused for 10 minutes (Webull allows 10 account-list calls per 30 s)."""
+    """The owner's accounts (account_info rows), reused for 10 minutes (Webull allows 10 account-list calls per 30 s)."""
     return await _cached(('accounts',), ACCOUNTS_TTL, lambda: _fetch_accounts(ctx), fresh)
 
 
 async def _fetch_accounts(ctx):
-    data = await _call(ctx, 'GET', '/trading/accounts/list')
-    out = []
-    for a in _list(data, 'accounts'):
-        if not isinstance(a, dict) or not a.get('account_id'):
-            raise EngineError(FORMAT)
-        number = a.get('account_number') or a.get('account_id')
-        kind = str(a.get('account_type') or '')
-        out.append({'id': str(a['account_id']), 'label': f"{_mask(number)}{f' ({kind.title()})' if kind else ''}"})
-    return out
+    return [account_info(a) for a in _list(await _call(ctx, 'GET', '/trading/accounts/list'), 'accounts')]
 
 
 async def _account(ctx, msg):
-    """The chosen account ({id, label}); the first one when none is named. Refuses an id that isn't the owner's."""
+    """The chosen account; the first stock account when none is named. Refuses an id that isn't the owner's, and
+    an account that isn't a US stock account (futures, crypto: not supported yet)."""
     found = await accounts(ctx)
     if not found:
         raise EngineError('Webull returned no accounts for these keys.')
     wanted = str(msg.get('accountId') or '')
     if not wanted:
-        return found[0]
+        stock = [a for a in found if a['stocks']]
+        if not stock:
+            raise EngineError('None of your Webull accounts is a US stock account, so there is nothing to show yet.')
+        return stock[0]
     for a in found:
         if a['id'] == wanted:
+            if not a['stocks']:
+                raise EngineError(f"{a['label']}: only US stock accounts (cash, margin, IRA) can be viewed and traded here.")
             return a
     raise EngineError('That account is not one of yours on Webull.')
 
@@ -776,7 +804,7 @@ async def snapshot(ctx, msg):
         return head
     chosen = await _account(ctx, msg)
     account_id = chosen['id']
-    out = {**head, 'accountId': account_id, 'account': chosen['label'], 'balances': None, 'positions': None, 'open': None, 'recent': None, 'errors': {},
+    out = {**head, 'accountId': account_id, 'account': chosen['label'], 'retirement': chosen['retirement'], 'balances': None, 'positions': None, 'open': None, 'recent': None, 'errors': {},
            'asOf': None}
     for section, read in (('balances', lambda: cached_balances(ctx, account_id)), ('positions', lambda: priced_positions(ctx, account_id)),
                           ('orders', lambda: cached_orders(ctx, account_id))):
@@ -797,9 +825,31 @@ async def snapshot(ctx, msg):
 
 @handler('webull.sync')
 async def sync(ctx, msg):
-    """Saves (or updates) the portfolio "Webull <account>" with the account's stocks (shares + total cost) and cash."""
+    """Saves (or updates, by account id) one portfolio per Webull stock account, e.g. "Webull Roth IRA ••1234", with
+    its stocks (shares + total cost) and cash. With accountId: that account, even when empty (the owner chose it).
+    Without: every stock account; one with no stocks and no cash is listed in 'empty', not saved."""
+    if msg.get('accountId'):
+        chosen = [await _account(ctx, msg)]
+    else:
+        chosen = [a for a in await accounts(ctx) if a['stocks']]
+    saved, empty, skipped = [], [], 0
+    for a in chosen:
+        doc, left_out = await _sync_one(ctx, a, keep_empty=bool(msg.get('accountId')))
+        skipped += left_out
+        if doc is None:
+            empty.append(a['label'])
+        else:
+            saved.append(doc)
+    out = {'portfolios': saved, 'empty': empty, 'skipped': skipped}
+    if msg.get('accountId'):
+        out['portfolio'] = saved[0]
+    return out
+
+
+async def _sync_one(ctx, chosen, keep_empty):
+    """One account -> its saved portfolio (None when it's empty and keep_empty is False), and how many positions were
+    left out (not stocks)."""
     from . import store
-    chosen = await _account(ctx, msg)
     account_id = chosen['id']
     held = await cached_positions(ctx, account_id, fresh=True)  # a sync always reads Webull now (still through the gate)
     try:
@@ -809,15 +859,19 @@ async def sync(ctx, msg):
     holdings = [{'symbol': p['symbol'], 'weight': 0, 'assetClass': 'US stocks', 'kind': 'security', 'shares': p['qty'],
                  **({'cost': round(p['cost'], 2)} if p['cost'] is not None else {})}
                 for p in held if p['qty'] > 0 and p['type'] in STOCK_TYPES]
-    if cash:
+    if cash and abs(cash) >= 0.01:
         holdings.append({'symbol': 'CASH', 'name': 'Webull cash', 'weight': 0, 'assetClass': 'Cash', 'kind': 'cash', 'amount': round(cash, 2)})
-    name = f"Webull {chosen['label']}{' (Test)' if env() == 'test' else ''}"  # same masked number as the rest of the UI
-    existing = next((p for p in store.list_docs('portfolios') if p.get('webullAccount') == account_id and p.get('webullEnv', 'live') == env()), None)
-    doc = {**(existing or {'benchmark': 'SPY', 'rebalance': 'none'}), 'name': (existing or {}).get('name') or name, 'mode': 'shares',
-           'holdings': holdings, 'webullAccount': account_id, 'webullEnv': env(), 'syncedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')}
-    saved = store.save_doc('portfolios', doc)
     skipped = len(held) - len([h for h in holdings if h['kind'] == 'security'])
-    return {'portfolio': saved, 'skipped': skipped}
+    existing = next((p for p in store.list_docs('portfolios') if p.get('webullAccount') == account_id and p.get('webullEnv', 'live') == env()), None)
+    if not holdings and not existing and not keep_empty:
+        return None, skipped
+    name = f"Webull {chosen['label']}{' (Test)' if env() == 'test' else ''}"
+    old_name = (existing or {}).get('name') or ''
+    # a name the platform made (it starts "Webull ") follows the account's label; one the owner typed is kept
+    doc = {**(existing or {'benchmark': 'SPY', 'rebalance': 'none'}), 'name': name if not old_name or old_name.startswith('Webull ') else old_name,
+           'mode': 'shares', 'holdings': holdings, 'webullAccount': account_id, 'webullEnv': env(), 'webullRetirement': chosen['retirement'],
+           'syncedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')}
+    return store.save_doc('portfolios', doc), skipped
 
 
 @handler('webull.preview_order')
@@ -846,7 +900,7 @@ async def preview_order(ctx, msg):
     _previews[token] = {'order': order, 'body': body, 'env': env(), 'fp': _fingerprint(), 'expires': time.monotonic() + TOKEN_SECONDS,
                         'value': value, 'account': account_id}
     return {'token': token, 'expiresIn': TOKEN_SECONDS, 'order': order, 'summary': describe(order), 'estimate': estimate,
-            'env': env(), 'account': chosen['label'], 'warnings': warnings, 'marketNote': note,
+            'env': env(), 'account': chosen['label'], 'accountId': account_id, 'retirement': chosen['retirement'], 'warnings': warnings, 'marketNote': note,
             'limits': lim, 'placedToday': placed_today()}
 
 

@@ -43,6 +43,8 @@ class FakeWebull:
         self.retry_after = '0'        # the Retry-After header sent with those 429s
         self.delay = {}               # path -> seconds that request takes
         self.in_flight = self.max_in_flight = 0
+        self.accounts = [{'account_id': 'ACC123456', 'account_number': '5MV12345', 'account_type': 'CASH'}]
+        self.by_account = {}          # account_id -> {'positions': [...], 'balances': {...}} (else the defaults)
 
     async def request(self, method, url, headers=None, content=None):
         u = urlparse(url)
@@ -79,7 +81,12 @@ class FakeWebull:
         if p == '/auth/tokens/check':
             return Resp(200, {'token': 'tok-1', 'expires': 9999999999999, 'status': self.token_status})
         if p == '/trading/accounts/list':
-            return Resp(200, [{'account_id': 'ACC123456', 'account_number': '5MV12345', 'account_type': 'CASH'}])
+            return Resp(200, self.accounts)
+        acct = self.by_account.get(parse_qs(u.query).get('account_id', [''])[0])
+        if p == '/trading/assets/balances/get' and acct:
+            return Resp(200, acct['balances'])
+        if p == '/trading/assets/positions/list' and acct:
+            return Resp(200, acct['positions'])
         if p == '/trading/assets/balances/get':
             return Resp(200, {'total_asset': '12000.5', 'account_currency_assets': [{'currency': 'USD', 'cash_balance': '2000', 'buying_power': '4000'}]})
         if p == '/trading/assets/positions/list':
@@ -207,15 +214,15 @@ class Reading(Base):
         self.assertIn('/auth/tokens/check', self.fake.paths())
 
     def test_sync_saves_and_updates_one_portfolio(self):
-        doc = run(webull.sync(self.ctx, {}))['portfolio']
+        doc = run(webull.sync(self.ctx, {}))['portfolios'][0]
         self.assertEqual(doc['mode'], 'shares')
-        self.assertEqual(doc['name'], 'Webull …2345 (Cash) (Test)')  # the account label shown everywhere else
+        self.assertEqual(doc['name'], 'Webull Cash ••2345 (Test)')  # the account label shown everywhere else
         stock = doc['holdings'][0]
         self.assertEqual((stock['symbol'], stock['shares'], stock['cost']), ('AAPL', 10.0, 1500.0))
         self.assertEqual(doc['holdings'][-1]['kind'], 'cash')
         self.fake.positions = [{'symbol': 'MSFT', 'quantity': '3', 'cost_price': '400', 'instrument_type': 'EQUITY'},
                                {'symbol': 'XYZ', 'quantity': '1', 'cost_price': '5'}]  # unknown type: left out
-        again = run(webull.sync(self.ctx, {}))['portfolio']
+        again = run(webull.sync(self.ctx, {}))['portfolios'][0]
         self.assertEqual(again['id'], doc['id'])
         self.assertEqual(len(store.list_docs('portfolios')), 1)
         self.assertEqual(again['holdings'][0]['symbol'], 'MSFT')
@@ -610,6 +617,97 @@ class RateLimits(Base):
         run(webull.snapshot(self.ctx, {}))
         run(webull.sync(self.ctx, {}))
         self.assertEqual(self.fake.paths().count('/trading/assets/positions/list'), 2)
+
+
+#: The owner's five Webull accounts, as Webull's account list sends them (account_class values from Webull's official
+#: MCP server; the futures account is in the list but isn't a stock account).
+FIVE = [
+    {'account_id': 'TRAD0001', 'account_number': '5MV05678', 'account_type': 'CASH', 'account_class': 'TRADITIONAL_IRA', 'account_label': 'Traditional IRA'},
+    {'account_id': 'ROTH0001', 'account_number': '5MV01234', 'account_type': 'CASH', 'account_class': 'ROTH_IRA', 'account_label': 'Roth IRA'},
+    {'account_id': 'CASH0001', 'account_number': '5MV04444', 'account_type': 'CASH', 'account_class': 'INDIVIDUAL_CASH', 'account_label': 'Individual Cash'},
+    {'account_id': 'MRGN0001', 'account_number': '5MV03333', 'account_type': 'US_MARGIN', 'account_class': 'INDIVIDUAL_MARGIN', 'account_label': 'Individual Margin'},
+    {'account_id': 'FUT00001', 'account_number': '5MF02222', 'account_type': 'MARGIN', 'account_class': 'FUTURES', 'account_label': 'Futures'},
+]
+EMPTY = {'positions': [], 'balances': {'total_asset': '0', 'total_cash_balance': '0', 'account_currency_assets': [{'currency': 'USD', 'cash_balance': '0', 'buying_power': '0'}]}}
+
+
+class Accounts(Base):
+    def setUp(self):
+        super().setUp()
+        self.fake.accounts = [dict(a) for a in FIVE]
+        self.fake.by_account = {
+            'ROTH0001': {'positions': [{'symbol': 'SCHD', 'quantity': '100', 'cost_price': '25', 'instrument_type': 'EQUITY'}],
+                         'balances': {'total_asset': '3000', 'total_cash_balance': '500', 'account_currency_assets': [{'currency': 'USD', 'cash_balance': '500', 'buying_power': '500'}]}},
+            'TRAD0001': {'positions': [{'symbol': 'VTI', 'quantity': '20', 'cost_price': '200', 'instrument_type': 'ETF'}],
+                         'balances': {'total_asset': '6000', 'total_cash_balance': '1200', 'account_currency_assets': [{'currency': 'USD', 'cash_balance': '1200', 'buying_power': '1200'}]}},
+            'CASH0001': EMPTY, 'MRGN0001': EMPTY,
+        }
+
+    def test_labels_from_a_realistic_account_list(self):
+        found = run(webull.accounts(self.ctx))
+        self.assertEqual([a['label'] for a in found], ['Traditional IRA ••5678', 'Roth IRA ••1234', 'Cash ••4444', 'Margin ••3333', 'Futures ••2222 (view not supported yet)'])
+        self.assertEqual([a['stocks'] for a in found], [True, True, True, True, False])
+        self.assertEqual([a['retirement'] for a in found], [True, True, False, False, False])
+
+    def test_labels_without_account_class(self):
+        info = webull.account_info
+        self.assertEqual(info({'account_id': 'A1', 'account_number': '9999', 'account_type': 'CASH'})['label'], 'Cash ••9999')
+        self.assertEqual(info({'account_id': 'A1', 'account_number': '9999', 'account_type': 'US_MARGIN'})['label'], 'Margin ••9999')
+        unknown = info({'account_id': 'A1', 'account_number': '9999', 'account_type': 'CASH', 'account_class': 'SOMETHING_NEW', 'account_label': 'Something New'})
+        self.assertEqual((unknown['label'], unknown['stocks']), ('Something New ••9999 (view not supported yet)', False))  # unknown class: never a stock account
+        self.assertEqual(info({'account_id': 'A1', 'account_class': 'ROLLOVER_IRA'})['label'], 'Rollover IRA ••A1')
+        with self.assertRaises(core.EngineError):
+            info({'account_number': '1'})
+
+    def test_snapshot_for_a_chosen_account(self):
+        snap = run(webull.snapshot(self.ctx, {'accountId': 'ROTH0001'}))
+        self.assertEqual((snap['accountId'], snap['account'], snap['retirement']), ('ROTH0001', 'Roth IRA ••1234', True))
+        self.assertEqual(snap['balances']['cash'], 500.0)
+        self.assertEqual([p['symbol'] for p in snap['positions']], ['SCHD'])
+        self.assertTrue(all(c['query'].get('account_id') in (None, 'ROTH0001') for c in self.fake.calls))
+        first = run(webull.snapshot(self.ctx, {}))  # none named: the first stock account
+        self.assertEqual(first['accountId'], 'TRAD0001')
+
+    def test_futures_account_is_listed_but_never_read_or_traded(self):
+        with self.assertRaises(core.EngineError) as e:
+            run(webull.snapshot(self.ctx, {'accountId': 'FUT00001'}))
+        self.assertIn('only US stock accounts', str(e.exception))
+        with self.assertRaises(core.EngineError):
+            run(webull.preview_order(self.ctx, {**ORDER, 'accountId': 'FUT00001'}))
+        self.assertFalse(any(c['query'].get('account_id') == 'FUT00001' or (c['body'] or {}).get('account_id') == 'FUT00001' for c in self.fake.calls))
+
+    def test_sync_saves_one_portfolio_per_account_with_assets(self):
+        r = run(webull.sync(self.ctx, {}))
+        names = sorted(d['name'] for d in r['portfolios'])
+        self.assertEqual(names, ['Webull Roth IRA ••1234 (Test)', 'Webull Traditional IRA ••5678 (Test)'])
+        self.assertEqual(sorted(r['empty']), ['Cash ••4444', 'Margin ••3333'])  # listed, not saved
+        roth = next(d for d in r['portfolios'] if d['webullAccount'] == 'ROTH0001')
+        self.assertEqual([(h['symbol'], h.get('shares'), h.get('amount')) for h in roth['holdings']], [('SCHD', 100.0, None), ('CASH', None, 500.0)])
+        self.assertTrue(roth['webullRetirement'])
+        self.assertNotIn('FUT00001', [c['query'].get('account_id') for c in self.fake.calls])
+        # re-sync updates by account id (an old auto name is replaced; nothing is duplicated)
+        store.save_doc('portfolios', {**roth, 'name': 'Webull …1234 (Cash) (Test)'})
+        self.fake.by_account['ROTH0001']['positions'][0]['quantity'] = '120'
+        again = run(webull.sync(self.ctx, {}))
+        self.assertEqual(len(store.list_docs('portfolios')), 2)
+        roth2 = next(d for d in again['portfolios'] if d['webullAccount'] == 'ROTH0001')
+        self.assertEqual((roth2['id'], roth2['name'], roth2['holdings'][0]['shares']), (roth['id'], 'Webull Roth IRA ••1234 (Test)', 120.0))
+        # a name the owner typed is kept
+        store.save_doc('portfolios', {**roth2, 'name': 'My Roth'})
+        self.assertEqual(run(webull.sync(self.ctx, {'accountId': 'ROTH0001'}))['portfolio']['name'], 'My Roth')
+
+    def test_owner_can_save_an_empty_account(self):
+        r = run(webull.sync(self.ctx, {'accountId': 'CASH0001'}))
+        self.assertEqual((r['portfolio']['name'], r['portfolio']['holdings']), ('Webull Cash ••4444 (Test)', []))
+
+    def test_preview_uses_the_chosen_account(self):
+        p = run(webull.preview_order(self.ctx, {**ORDER, 'accountId': 'ROTH0001'}))
+        self.assertEqual((p['account'], p['accountId'], p['retirement']), ('Roth IRA ••1234', 'ROTH0001', True))
+        sent = [c for c in self.fake.calls if c['path'] == '/trading/orders/preview'][-1]
+        self.assertEqual(sent['body']['account_id'], 'ROTH0001')
+        run(webull.place_order(self.ctx, {'token': p['token']}))
+        placed = [c for c in self.fake.calls if c['path'] == '/trading/orders/place'][-1]
+        self.assertEqual(placed['body']['account_id'], 'ROTH0001')
 
 
 class Isolation(unittest.TestCase):
