@@ -124,6 +124,10 @@ interface FuturesPreview {
   margin: number | null;
   marginNote: string;
   closing: boolean;
+  /** "Opens a new LONG position of 1 contract", "Closes 1 of your 2 contracts (LONG position)". */
+  effect?: string;
+  stopNote?: string;
+  buyingPowerNote?: string;
   contractsToday: number;
   limits: { maxContracts: number; maxPerDay: number };
 }
@@ -258,15 +262,16 @@ export function confirmOrder(order: PlacedOrder, accountId: string, onPlaced: (o
         f ? h('p', { class: 'wb-warning wb-fut-warning' }, FUTURES_WARNING) : '',
         p.retirement ? h('p', { class: 'muted small' }, IRA_NOTE) : '',
         h('p', { class: `wb-summary ${order.side === 'SELL' ? 'is-sell' : 'is-buy'}` }, p.summary),
+        f?.effect ? h('p', { class: 'wb-effect' }, h('b', {}, f.effect)) : '',
         f
           ? statCards([
               { label: 'Contract', value: f.contract, hint: f.name },
-              { label: 'Expiry', value: f.expiry, hint: `Last trading day. Can't be traded here from 2 days before ${f.cutoff} (${f.daysLeft} days left).` },
-              { label: 'Contracts', value: String(order.qty), hint: f.closing ? 'Closes (part of) your position' : 'Opens or adds to a position' },
+              { label: 'Expiry', value: f.expiry, hint: `Last trading day. New positions stop 2 trading days before ${f.cutoff} (${f.daysLeft} trading days left); closing is allowed to the last day.` },
+              { label: 'Contracts', value: String(order.qty), hint: f.closing ? 'Closing order (reduce only)' : 'Opening order (long only)' },
               { label: 'Notional', value: usd(f.notional), hint: 'Price × multiplier × contracts: what the contracts control' },
               { label: 'Tick value', value: usd(f.tickValue), hint: `One tick (${f.tickSize}) on one contract; multiplier ${f.multiplier}` },
               { label: 'Initial margin', value: f.margin != null ? usd(f.margin) : 'Set by Webull', hint: f.margin != null ? 'Money Webull sets aside to open the position' : `${f.marginNote}: money Webull sets aside to open the position` },
-              { label: 'Max loss to stop', value: f.lossToStop != null ? usd(f.lossToStop) : 'No stop entered', hint: 'If your protective stop fills exactly; gaps can lose more' },
+              { label: 'Max loss to stop', value: f.lossToStop != null ? usd(f.lossToStop) : 'No stop entered', hint: `${f.stopNote ?? 'Not placed: no stop order is sent. Place a stop separately.'} If the stop fills exactly; gaps can lose more.` },
               { label: 'Last price', value: p.estimate.last != null ? String(p.estimate.last) : '—' },
               { label: 'Contracts today', value: `${f.contractsToday} of ${f.limits.maxPerDay}`, hint: 'Every futures order sent today counts, even one that failed' },
             ])
@@ -275,6 +280,8 @@ export function confirmOrder(order: PlacedOrder, accountId: string, onPlaced: (o
               { label: 'Last price', value: usd(p.estimate.last) },
               { label: 'Orders today', value: `${p.placedToday} of ${p.limits.maxPerDay}`, hint: 'Every order sent today counts, even one that failed' },
             ]),
+        f ? h('p', { class: 'wb-warn small' }, f.stopNote ?? 'Not placed: no stop order is sent. Place a stop separately.') : '',
+        f?.buyingPowerNote ? h('p', { class: 'muted small' }, f.buyingPowerNote) : '',
         h('p', { class: 'muted small' }, p.marketNote),
         ...p.warnings.map((w) => h('p', { class: 'wb-warn small' }, `⚠ ${w}`)),
       );

@@ -82,7 +82,8 @@ class FakeWebull:
         if p == '/auth/tokens/check':
             return Resp(200, {'token': 'tok-1', 'expires': 9999999999999, 'status': self.token_status})
         if p == webull.CONTRACTS_PATH:
-            return Resp(200, self.contracts.get(parse_qs(u.query)['code'][0], []))
+            q = parse_qs(u.query)
+            return Resp(200, [r for r in self.contracts.get(q['code'][0], []) if r.get('status', 'OC') == q.get('status', ['OC'])[0]])
         if p == '/trading/accounts/list':
             return Resp(200, self.accounts)
         acct = self.by_account.get(parse_qs(u.query).get('account_id', [''])[0])
@@ -813,7 +814,7 @@ class Futures(FiveAccounts):
         self.assertEqual((c['multiplier'], c['tick'], c['tickValue'], c['schwab']), (5.0, 0.25, 1.25, '/MESZ26'))
         cl = run(webull.futures_contracts_handler(self.ctx, {'root': 'CL'}))
         self.assertEqual(cl['front'], None)  # CLZ6 expires tomorrow, CLF7's first notice is in 2 days: neither can be traded
-        self.assertEqual(cl['contracts'][1]['daysLeft'], 2)
+        self.assertLessEqual(cl['contracts'][1]['daysLeft'], 2)  # first notice in 2 calendar days: at most 2 trading days
 
     def test_missing_contract_fields_fail_closed(self):
         for key in ('size', 'min_tick', 'last_trading_date'):
@@ -999,6 +1000,128 @@ class Futures(FiveAccounts):
     def test_cancel_in_the_futures_account(self):
         run(webull.cancel_order(self.ctx, {'orderId': 'f1', 'accountId': 'FUT00001', 'asset': 'futures'}))
         self.assertEqual(self.fake.calls[-1]['body'], {'account_id': 'FUT00001', 'client_order_id': 'f1'})
+
+    # ----- review fixes -----
+
+    def test_trading_days_not_calendar_days(self):
+        import datetime as dt
+        fri = dt.date(2026, 10, 23)
+        self.assertEqual(webull.trading_days_until(dt.date(2026, 10, 26), fri), 1)  # Friday -> Monday: one trading day
+        self.assertEqual(webull.trading_days_until(dt.date(2026, 10, 27), fri), 2)
+        self.assertEqual(webull.trading_days_until(fri, fri), 0)
+        row = contract_row('MESZ6', 40)
+        row['last_trading_date'] = row['settlement_date'] = '2026-10-27'
+        c = webull.contract_info(row, today=fri)  # 4 calendar days but 2 trading days: no new positions
+        self.assertEqual((c['daysLeft'], c['tradable'], c['closable']), (2, False, True))
+
+    def test_contracts_are_read_as_tradable_and_liquidate_only(self):
+        self.fake.contracts['MES'].append(contract_row('MESU6', 20, status='CO', month='202609'))
+        rows = run(webull.futures_contracts(self.ctx, 'MES'))
+        self.assertEqual(sorted(c['query']['status'] for c in self.fake.calls if c['path'] == webull.CONTRACTS_PATH), ['CO', 'OC'])
+        co = next(r for r in rows if r['symbol'] == 'MESU6')
+        self.assertEqual((co['tradable'], co['closable']), (False, True))
+
+    def test_liquidate_only_contract_can_be_closed_but_not_opened(self):
+        self.fake.contracts['MES'].append(contract_row('MESU6', 20, status='CO', month='202609'))
+        self.fake.by_account['FUT00001']['positions'] = [{'symbol': 'MESU6', 'quantity': '1', 'cost_price': '4990', 'last_price': '5000', 'instrument_type': 'FUTURES'}]
+        p = self.fpreview(symbol='MESU6', side='SELL')
+        self.assertEqual(p['futures']['effect'], 'Closes 1 of your 1 contracts (LONG position)')
+        self.assertTrue(self.place(p)['placed'])
+        with self.assertRaisesRegex(core.EngineError, 'closed to new positions'):
+            self.fpreview(symbol='MESU6', side='BUY')
+
+    def test_closing_allowed_on_the_last_trading_day_opening_is_not(self):
+        self.fake.contracts['MES'].append(contract_row('MESU6', 0, month='202609'))  # last trading day today
+        self.fake.by_account['FUT00001']['positions'] = [{'symbol': 'MESU6', 'quantity': '2', 'cost_price': '4990', 'last_price': '5000', 'instrument_type': 'FUTURES'}]
+        self.assertTrue(self.place(self.fpreview(symbol='MESU6', side='SELL'))['placed'])
+        with self.assertRaisesRegex(core.EngineError, 'Roll to the next contract'):
+            self.fpreview(symbol='MESU6', side='BUY')  # adding is opening
+
+    def test_past_the_last_trading_day_nothing_is_sent(self):
+        self.fake.contracts['MES'].append(contract_row('MESU6', -1, month='202609'))
+        self.fake.by_account['FUT00001']['positions'] = [{'symbol': 'MESU6', 'quantity': '1', 'cost_price': '4990', 'instrument_type': 'FUTURES'}]
+        with self.assertRaisesRegex(core.EngineError, 'can no longer be traded'):
+            self.fpreview(symbol='MESU6', side='SELL')
+
+    def test_closing_is_not_held_back_by_the_daily_contract_count(self):
+        with webull.ORDERS_LOG.open('a') as f:
+            f.write(json.dumps({'time': webull.dt.datetime.now(webull.dt.timezone.utc).isoformat(), 'env': 'test', 'action': 'place', 'result': 'attempt',
+                                'asset': 'futures', 'contracts': 3}) + '\n')
+        with self.assertRaisesRegex(core.EngineError, 'daily maximum of 3'):
+            self.fpreview()  # opening: refused
+        self.fake.by_account['FUT00001']['positions'] = [{'symbol': 'MESZ6', 'quantity': '1', 'cost_price': '4990', 'instrument_type': 'FUTURES'}]
+        self.assertTrue(self.place(self.fpreview(side='SELL'))['placed'])  # closing: still allowed (and counted)
+        self.assertEqual(webull.placed_contracts_today(), 4)
+
+    def test_no_short_selling(self):
+        with self.assertRaisesRegex(core.EngineError, "Short selling futures isn't enabled"):
+            self.fpreview(side='SELL')  # no position: a sell would open a short
+        self.fake.by_account['FUT00001']['positions'] = [{'symbol': 'MESZ6', 'quantity': '-1', 'cost_price': '5010', 'instrument_type': 'FUTURES'}]
+        with self.assertRaisesRegex(core.EngineError, "Short selling futures isn't enabled"):
+            self.fpreview(side='SELL')  # adding to a short
+        self.assertEqual(self.fpreview(side='BUY')['futures']['effect'], 'Closes 1 of your 1 contracts (SHORT position)')
+        self.assertNotIn('/trading/orders/place', self.fake.paths())
+
+    def test_effect_words(self):
+        self.assertEqual(self.fpreview()['futures']['effect'], 'Opens a new LONG position of 1 contract')
+        self.fake.by_account['FUT00001']['positions'] = [{'symbol': 'MESZ6', 'quantity': '2', 'cost_price': '4990', 'instrument_type': 'FUTURES'}]
+        self.assertEqual(self.fpreview()['futures']['effect'], 'Adds 1 to your LONG position of 2 contracts')
+
+    def test_position_direction_must_be_confirmed(self):
+        base = {'symbol': 'MESZ6', 'quantity': '2', 'cost_price': '4990', 'instrument_type': 'FUTURES'}
+        for extra in ({'position_side': 'SHORT'}, {'side': 'SELL'}, {'direction': 'FLAT'}, {'long_short': 2}):
+            self.fake.by_account['FUT00001']['positions'] = [{**base, **extra}]
+            with self.assertRaisesRegex(core.EngineError, "Couldn't confirm the position direction"):
+                self.fpreview(side='SELL')
+            with self.assertRaisesRegex(core.EngineError, "Couldn't confirm the position direction"):
+                self.fpreview(side='BUY')
+        self.fake.by_account['FUT00001']['positions'] = [{**base, 'position_side': 'LONG'}]
+        self.assertTrue(self.fpreview(side='SELL')['futures']['closing'])
+
+    def test_position_change_after_preview_refuses_place(self):
+        self.fake.by_account['FUT00001']['positions'] = [{'symbol': 'MESZ6', 'quantity': '1', 'cost_price': '4990', 'instrument_type': 'FUTURES'}]
+        p = self.fpreview(side='SELL')
+        self.fake.by_account['FUT00001']['positions'] = []  # closed in the Webull app meanwhile: the sell would now be a short
+        with self.assertRaisesRegex(core.EngineError, "Short selling futures isn't enabled"):
+            self.place(p)
+        self.assertNotIn('/trading/orders/place', self.fake.paths())
+        self.assertEqual(self.log()[-1]['result'], 'refused')
+        self.assertNotIn('attempt', [e['result'] for e in self.log()])
+
+    def test_confirm_notes(self):
+        f = self.fpreview(protectStop=4990)['futures']
+        self.assertEqual(f['stopNote'], 'Not placed: no stop order is sent. Place a stop separately.')
+        self.assertIn('only checked to be above $0', f['buyingPowerNote'])
+        self.assertNotIn('protect', json.dumps(next(c for c in self.fake.calls if c['path'] == '/trading/orders/preview')['body']).lower())
+
+    def test_switching_environment_turns_futures_off(self):
+        settings._cache = dict(KEYS)
+        run(settings.set_settings(mock.Mock(), {'webullFutures': True, 'webullFuturesConfirm': 'FUTURES'}))
+        run(settings.set_settings(mock.Mock(), {'webullEnv': 'live', 'webullLiveConfirm': 'LIVE'}))
+        self.assertFalse(webull.futures_enabled())  # typed in Test: doesn't carry to Live
+        run(settings.set_settings(mock.Mock(), {'webullFutures': True, 'webullFuturesConfirm': 'FUTURES'}))
+        self.assertTrue(webull.futures_enabled())
+        run(settings.set_settings(mock.Mock(), {'webullEnv': 'live', 'webullLiveConfirm': 'LIVE'}))  # no change: kept
+        self.assertTrue(webull.futures_enabled())
+        run(settings.set_settings(mock.Mock(), {'webullEnv': 'test'}))
+        self.assertFalse(webull.futures_enabled())
+
+    def test_non_finite_numbers_refused_plainly(self):
+        for qty in ('inf', '-inf', 'nan', 1e309, float('nan')):
+            with self.assertRaisesRegex(core.EngineError, 'whole number of contracts'):
+                self.fpreview(qty=qty)
+        for price in ('inf', 'nan', float('inf')):
+            with self.assertRaisesRegex(core.EngineError, 'limit price above 0'):
+                self.fpreview(limitPrice=price)
+            with self.assertRaisesRegex(core.EngineError, 'protective stop above 0'):
+                self.fpreview(protectStop=price)
+
+    def test_limits_clamped_to_the_settings_caps(self):
+        for per_order, per_day, expect in ((999, 999, (1, 3)), ('abc', None, (1, 3)), (0, -1, (1, 3)), (True, True, (1, 3)), (20, 50, (20, 50)), ('5', '7', (5, 7))):
+            settings._cache = {**ON, 'webull_futures_max_contracts': per_order, 'webull_futures_max_per_day': per_day}
+            lim = webull.futures_limits()
+            self.assertEqual((lim['maxContracts'], lim['maxPerDay']), expect, (per_order, per_day))
+
 
 
 class Isolation(unittest.TestCase):

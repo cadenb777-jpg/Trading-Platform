@@ -18,7 +18,10 @@ export interface FuturesContract {
   daysLeft: number;
   month: string;
   status: string;
+  /** New positions may be opened (tradable status, more than 2 trading days left). */
   tradable: boolean;
+  /** A closing order may still be sent (tradable or liquidate-only, up to the last trading day). */
+  closable?: boolean;
   price?: number | null;
 }
 

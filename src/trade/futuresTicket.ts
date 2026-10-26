@@ -103,7 +103,7 @@ export function createFuturesTicket(host: FuturesTicketHost): FuturesTicket {
       const reply = await engineRequest<{ contracts: FuturesContract[]; front: string | null }>('webull.futures_contracts', { root: r }, 30000);
       if (mine !== seq) return;
       contracts = reply.contracts;
-      chosen = contracts.find((c) => c.symbol === keep && c.tradable) ?? frontMonth(contracts);
+      chosen = contracts.find((c) => c.symbol === keep && (c.tradable || c.closable)) ?? frontMonth(contracts);
     } catch (err) {
       if (mine !== seq) return;
       contracts = [];
@@ -118,7 +118,7 @@ export function createFuturesTicket(host: FuturesTicketHost): FuturesTicket {
   function drawMonths() {
     month.replaceChildren(
       ...contracts.map((c) =>
-        h('option', { value: c.symbol, selected: c.symbol === chosen?.symbol, disabled: !c.tradable }, `${c.symbol} · expires ${c.lastTrade}${c.tradable ? '' : ' (too close to expiry: roll)'}`),
+        h('option', { value: c.symbol, selected: c.symbol === chosen?.symbol, disabled: !c.tradable && !c.closable }, `${c.symbol} · expires ${c.lastTrade}${c.tradable ? '' : c.closable ? ' (closing only: roll)' : ' (not tradable)'}`),
       ),
     );
     if (!contracts.length) month.append(h('option', { value: '' }, loadError ? 'No contracts' : 'Loading…'));
@@ -182,6 +182,8 @@ export function createFuturesTicket(host: FuturesTicketHost): FuturesTicket {
     const warns: string[] = [];
     if (lim && n > lim.maxContracts) warns.push(`Above your maximum of ${lim.maxContracts} contract${lim.maxContracts === 1 ? '' : 's'} per order (Settings).`);
     if (lim && snap?.placedContractsToday != null && snap.placedContractsToday + n > lim.maxPerDay) warns.push(`Would pass your daily maximum of ${lim.maxPerDay} contracts.`);
+    if (!closing && side === 'SELL') warns.push("Short selling futures isn't enabled in this version: a sell can only close a long position.");
+    if (!closing && c && !c.tradable) warns.push('This contract only takes closing orders now (near expiry or liquidate-only). Roll to the next contract.');
     if (closing && n > Math.abs(held) - pending()) warns.push(`A closing order can be at most ${Math.max(Math.abs(held) - pending(), 0)} (your position minus open orders).`);
     if (c) for (const [label, v] of [['Limit', num(limit)], ['Stop', num(stop)], ['Protective stop', stopPrice]] as const) if (v && !onTick(v, c.tick)) warns.push(`${label} price must be a multiple of the tick (${c.tick}).`);
     if (stopPrice && entry && risk == null) warns.push(side === 'BUY' ? 'For a buy, the protective stop must be below the entry.' : 'For a sell, the protective stop must be above the entry.');

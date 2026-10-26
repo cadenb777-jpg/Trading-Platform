@@ -6136,6 +6136,7 @@ a.btn {
 .tk-foot { margin: -4px 0 0; }
 .wb-summary.is-buy { border-left: 3px solid var(--up); padding-left: 10px; }
 .wb-summary.is-sell { border-left: 3px solid var(--down); padding-left: 10px; }
+.wb-effect { margin: 0 0 var(--sp-2); padding: 6px 10px; border-radius: var(--radius); background: var(--panel-2); border: 1px solid var(--border); color: var(--text-strong); }
 
 @media (max-width: 1100px) {
   .tr-grid { grid-template-columns: 200px minmax(0, 1fr) 320px; }

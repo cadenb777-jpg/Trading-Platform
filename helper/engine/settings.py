@@ -145,6 +145,10 @@ async def set_settings(ctx, msg):
             if not 1 <= value <= top or isinstance(msg[field], bool):
                 raise EngineError(f'{label} must be between 1 and {top}.')
             changes[name] = value
+    old_env = 'live' if load().get('webull_env') == 'live' else 'test'
+    if changes.get('webull_env', old_env) != old_env:
+        # A FUTURES typed in Test never carries over to Live (or back): switching environment turns futures off.
+        changes['webull_futures_ok'] = False
     if 'secContact' in msg:
         email = str(msg['secContact'] or '').strip()
         if email and ('@' not in email or ' ' in email):
