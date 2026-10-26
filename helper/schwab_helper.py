@@ -26,7 +26,6 @@ import logging.handlers
 import os
 import re
 import sys
-import threading
 import time
 import urllib.parse
 import warnings
@@ -788,20 +787,19 @@ class Market:
         up = self.updater
         if up.available and up.state == 'idle' and self.offered != up.latest:
             self.offered = up.latest
-            SCREEN.message(f'Update available (v{HELPER_VERSION} → v{up.latest}). Type u and press Enter here to install it, '
-                           'or click Update now in the platform.', tone='ok')
-            listen_for_update_key(self)
+            SCREEN.message(f'Update available (v{HELPER_VERSION} → v{up.latest}): click Update now in the platform.', tone='ok')
         elif up.state == 'failed':
             SCREEN.message(up.message, tone='bad')
         elif up.state in ('updating', 'restarting') and up.message:
             SCREEN.message(up.message, tone='ok')
 
     async def update_loop(self):
-        """Checks GitHub for a newer helper at start and every 6 hours; installs it only if Settings allows."""
+        """Checks GitHub for a newer helper at start and every 6 hours. Installs it by itself only if Settings allows
+        and no platform tab is open (with a tab open, the page offers the Update now button instead)."""
         await asyncio.sleep(5)
         while True:
             await self.updater.check(self.news.http)
-            if self.updater.available and self.updater.state == 'idle' and auto_update_on():
+            if self.updater.available and self.updater.state == 'idle' and not self.browsers and auto_update_on():
                 try:
                     await self.updater.update(self.news.http)
                     self.restart.set()
@@ -975,36 +973,6 @@ def auto_update_on():
         return False
 
 
-def listen_for_update_key(market):
-    """On the start screen: typing u + Enter installs the update (a background thread reads the window's input)."""
-    if getattr(market, 'key_thread', None) or not sys.stdin or not sys.stdin.isatty():
-        return
-    loop = asyncio.get_running_loop()
-
-    def read():
-        while True:
-            try:
-                line = sys.stdin.readline()
-            except (OSError, ValueError, EOFError):
-                return
-            if not line:
-                return
-            if line.strip().lower() == 'u':
-                asyncio.run_coroutine_threadsafe(update_from_screen(market), loop)
-
-    market.key_thread = threading.Thread(target=read, daemon=True)
-    market.key_thread.start()
-
-
-async def update_from_screen(market):
-    try:
-        await market.updater.update(market.news.http)
-    except updater.UpdateError as err:
-        log.warning('Update failed: %s', err)  # the start screen shows it via update_changed
-        return
-    market.restart.set()
-
-
 async def screen_clock():
     """Keeps the start screen's status line ticking (clock and live dot)."""
     while True:
@@ -1122,7 +1090,8 @@ async def run(client, sec_contact='', open_browser=True):
         sys.exit(f'Port {PORT} is already in use. Is the helper already running in another window?')
     async with server:
         jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market), warm_up(market),
-                open_when_ready(market, open_browser), market_scanner(market), market.update_loop()]
+                open_when_ready(market, open_browser), market_scanner(market), market.update_loop(),
+                updater.confirm_started()]
         if SCREEN:
             SCREEN.ready(PLATFORM_URL, LOG_PATH, os.environ.get('TP_LAUNCH_WARNING', ''))
             return await until_restart(market, [*jobs, screen_clock()])
@@ -1155,16 +1124,15 @@ async def until_restart(market, jobs):
 
 
 def restart_helper():
-    """Starts the updated helper. Under the launcher, a special exit code makes splash.py start it again (and
-    install anything new); run directly, the new copy is started in this window."""
+    """After an update: under the launcher, a special exit code makes splash.py install any new parts and start the
+    new version (rolling back if it won't start). Run directly, it asks you to start it again with the start file."""
     log.info('Restarting after the update')
-    if SCREEN:
-        SCREEN.close('Restarting with the new version...')
-    else:
-        print('\nRestarting with the new version...')
     if os.environ.get('TP_LAUNCHER'):
+        if SCREEN:
+            SCREEN.close('Restarting with the new version...')
         sys.exit(updater.RESTART_CODE)
-    sys.exit(subprocess.call([sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]]))
+    print('\nUpdated. Start the helper again with start-windows.bat or start-mac.command (it installs any new parts).')
+    sys.exit(0)
 
 
 def start_screen():

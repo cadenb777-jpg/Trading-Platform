@@ -87,8 +87,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Self-update (helper/updater.py, standard library; downloads via the helper's httpx): reads HELPER_VERSION from raw
   GitHub main at start and every 6 h (status.update); request `update` (Update now) downloads the codeload main ZIP
   (only raw.githubusercontent.com/codeload.github.com, https, redirects checked), verifies it, unpacks only helper/,
-  pips changed requirements, backs up to ../helper_backup_v<old> (keeps 2), copies in (restores on failure; dot files
-  and .venv untouched), exits 75 so splash.py starts the new copy. Setting auto_update (default off).
+  backs up to ../helper_backup_v<old> (keeps 1), copies changed files in (splash.copy_files; dot files untouched),
+  writes update-pending.json and exits 75. splash.py then pips changed requirements and starts the new copy; a pip
+  failure or a helper error before updater.confirm_started (60 s) rolls back (splash.roll_back). Setting auto_update
+  (default off) only installs when no tab is connected; the banner uses update.latest from the helper.
   Quotes: the helper polls Schwab's REST quotes every 30 s (`refresh_official`); prevClose = lastPrice - netChange.
   The stream's CLOSE_PRICE is only a fallback (after the session it becomes today's close, which read as 0%).
   Scanner (engine/scanner.py + engine/strategies.py): a background task (`market_scanner`) scans the

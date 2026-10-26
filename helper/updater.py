@@ -1,14 +1,16 @@
 """
-Updates the helper from the public GitHub repository, only when you click Update (or turn on "Install updates
+Updates the helper from the public GitHub repository, only when you click Update now (or turn on "Install updates
 automatically" in Settings).
 
 Steps: read the newest HELPER_VERSION from GitHub, download the main-branch ZIP, check it (a real zip whose
 helper/schwab_helper.py has exactly that newer version, a sane size, no odd paths), unpack only its helper/ folder
-into a temporary folder, install any changed Python parts, back up this folder to helper_backup_v<old> next to it
-(the last 2 are kept), copy the new files in, then restart. If copying fails the backup is put back.
+into a temporary folder, back up this folder to helper_backup_v<old> next to it (only the newest backup is kept),
+copy the changed files in (the backup is put back if that fails), note the update in ~/.trading-platform and exit
+with RESTART_CODE. splash.py then installs any changed Python parts and starts the new version; if that fails, or
+the new version stops with an error in its first minute, splash.py puts the backup back (splash.roll_back).
 
-Your keys, logins, portfolios and caches live in ~/.trading-platform, never in this folder; the hidden .venv folder
-(the helper's installed parts) and anything else starting with a dot are never touched.
+Your keys, logins, portfolios and caches live in ~/.trading-platform, never in this folder. The update itself never
+writes hidden files (the .venv folder with the installed parts, .DS_Store); only start-up's pip install changes .venv.
 
 Standard library only (the downloads themselves use the helper's httpx client, passed in).
 """
@@ -17,15 +19,14 @@ import io
 import logging
 import re
 import shutil
-import subprocess
-import sys
 import tempfile
 import time
 import urllib.parse
 import zipfile
 from pathlib import Path
 
-from splash import PIP_ARGS, RESTART_CODE, same_file  # noqa: F401  (splash.py is standard library only too)
+# splash.py is standard library only too; it owns the file copying so it can roll an update back by itself.
+from splash import RESTART_CODE, clear_pending, copy_files, protected, write_pending  # noqa: F401
 
 REPO = 'cadenb777-jpg/Trading-Platform'
 VERSION_URL = f'https://raw.githubusercontent.com/{REPO}/main/helper/schwab_helper.py'
@@ -37,7 +38,7 @@ MIN_ZIP_BYTES = 20_000
 MAX_ZIP_BYTES = 150_000_000
 MAX_HELPER_BYTES = 60_000_000  # unpacked size of the helper folder (guards against zip bombs)
 REQUIRED_FILES = ('schwab_helper.py', 'splash.py', 'requirements.txt')
-KEEP_BACKUPS = 2
+KEEP_BACKUPS = 1
 CHECK_EVERY_SECONDS = 6 * 3600
 BACKUP_PATTERN = re.compile(r'^helper_backup_v(\d+)$')
 
@@ -71,11 +72,6 @@ def is_newer(latest, current):
     return isinstance(latest, int) and isinstance(current, int) and latest > current
 
 
-def _protected(rel):
-    """Files the update never writes: hidden ones (.venv, .DS_Store) and Python's caches."""
-    return any(part.startswith('.') or part == '__pycache__' for part in Path(rel).parts)
-
-
 def _safe_name(rel):
     if not rel or rel.startswith('/') or '\\' in rel or ':' in rel:
         return False
@@ -105,7 +101,7 @@ def verify_zip(data, expected, current):
         rel = e.filename[len(prefix):]
         if not _safe_name(rel) or (e.external_attr >> 16) & 0o170000 == 0o120000:  # odd paths or links
             raise UpdateError(f'The download contains an unsafe file name ({rel}).')
-        if _protected(rel):
+        if protected(rel):
             continue
         members[rel] = e
         total += e.file_size
@@ -141,18 +137,6 @@ def extract_helper(zf, members, dest):
             target.chmod(0o755)  # the Mac start file must stay double-clickable
 
 
-def copy_files(src, dst):
-    """Copies every file from src into dst, overwriting; hidden files and caches are left alone on both sides."""
-    src, dst = Path(src), Path(dst)
-    for path in sorted(src.rglob('*')):
-        rel = path.relative_to(src)
-        if path.is_dir() or _protected(rel):
-            continue
-        target = dst / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target)
-
-
 def backup(here, version, keep=KEEP_BACKUPS):
     """Copies the current helper (without .venv and caches) to helper_backup_v<version> next to it."""
     here = Path(here)
@@ -175,41 +159,16 @@ def prune_backups(parent, keep=KEEP_BACKUPS):
         shutil.rmtree(path, ignore_errors=True)
 
 
-def install_requirements(new, here=HERE, python=None, log_path=None):
-    """Installs the new version's Python parts when its requirements changed (pip output hidden, as at start-up).
-
-    The main parts must install, or nothing changes; optional parts that fail are retried at the next start."""
-    python = python or sys.executable
-    log_path = log_path or Path.home() / '.trading-platform' / 'launcher.log'
-    for name, marker, needed in (('requirements.txt', 'installed-core.txt', True),
-                                 ('requirements-extra.txt', 'installed-extra.txt', False)):
-        req = Path(new) / name
-        marker_path = Path(here) / '.venv' / marker
-        if not req.exists() or same_file(req, marker_path if marker_path.exists() else Path(here) / name):
-            continue
-        log.info('Installing %s for the update', name)
-        with open(log_path, 'a', encoding='utf-8') as out:
-            code = subprocess.call([python, *PIP_ARGS, '--progress-bar', 'off', '-r', str(req)],
-                                   stdout=out, stderr=subprocess.STDOUT, timeout=1800)
-        if code == 0:
-            if marker_path.parent.is_dir():
-                shutil.copyfile(req, marker_path)
-        elif needed:
-            raise UpdateError("Couldn't download the new version's Python parts. Check your internet connection "
-                              f'and try again. Nothing was changed. Details: {log_path}')
-
-
-def install(data, expected, current, here=HERE, pip=install_requirements):
+def install(data, expected, current, here=HERE):
     """Verifies the download, then swaps the new helper files in. Returns the backup folder.
 
-    Nothing from the download runs before it is verified; if copying fails, the backup is put back."""
+    Nothing from the download runs before it is verified; if copying fails, the backup is put back. Python parts
+    are installed by splash.py after this helper has stopped."""
     here = Path(here)
     zf, members = verify_zip(data, expected, current)
     with tempfile.TemporaryDirectory(prefix='tp-update-') as tmp:
         new = Path(tmp) / 'helper'
         extract_helper(zf, members, new)
-        if pip:
-            pip(new, here)
         saved = backup(here, current)
         try:
             copy_files(new, here)
@@ -222,6 +181,7 @@ def install(data, expected, current, here=HERE, pip=install_requirements):
                 raise UpdateError(f'The update failed ({err}) and the old files could not all be put back. '
                                   f'Your previous version is saved in {saved}: copy its files into {here}.')
             raise UpdateError(f'The update failed ({err}). Your previous version was put back.')
+    write_pending(saved, current, expected)
     return saved
 
 
@@ -279,6 +239,8 @@ class Updater:
         self.on_change()
 
     async def check(self, http):
+        if self.state == 'failed':
+            self.state, self.message = 'idle', ''  # each check gives a failed update a fresh start
         try:
             self.latest = await latest_version(http)
             self.checked = time.time()
@@ -313,3 +275,9 @@ class Updater:
             log.exception('Update failed')
             self._set('failed', f'The update failed: {err}. Nothing was changed.')
             raise UpdateError(self.message)
+
+
+async def confirm_started(delay=60):
+    """After a minute of running, the new version counts as working: splash.py no longer rolls it back."""
+    await asyncio.sleep(delay)
+    clear_pending()

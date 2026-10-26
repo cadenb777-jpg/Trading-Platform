@@ -78,17 +78,18 @@ Your keys and login are kept.
 
 **After that, updating is one click.** The helper checks GitHub for a newer version when it starts and
 every 6 hours. When there is one, the platform shows **"Update available (v X → v Y)"** with an
-**Update now** button (the helper window also offers it: type `u` and press Enter). Clicking it:
+**Update now** button (the helper window points you to it). Clicking it:
 
-1. downloads the newest ZIP straight from GitHub (only from github's own download servers, over HTTPS),
+1. downloads the newest ZIP straight from GitHub (only from GitHub's own download servers, over HTTPS),
 2. checks it (a real ZIP with the expected newer helper inside) before anything from it runs,
-3. installs any new Python parts out of sight,
-4. saves your current helper next to it as `helper_backup_v<old version>` (the last 2 are kept),
-5. copies in the new files and restarts the helper by itself. The page reconnects in a few seconds.
+3. saves your current helper next to it as `helper_backup_v<old version>` (only the newest backup is kept),
+4. copies in the changed files and restarts: the start screen installs any new Python parts out of sight and
+   starts the new version. The page reconnects by itself.
 
-If anything goes wrong, nothing is changed (or the backup is put back) and the platform says what happened.
-Your keys, logins, portfolios and settings live in `~/.trading-platform`, not in the helper folder, and the
-hidden `.venv` folder with the installed parts is never touched. Nothing updates unless you click
+If the download or its check fails, nothing is changed. If the new version can't install its parts or stops with
+an error in its first minute, your previous version is put back automatically and the start screen says so.
+Your keys, logins, portfolios and settings live in `~/.trading-platform`, not in the helper folder; the update
+doesn't copy anything into the hidden `.venv` folder (only the usual start-up install adds parts there). Nothing updates unless you click
 **Update now**, or turn on **Settings → Helper → Install updates automatically** (off by default).
 
 To go back to a previous version, close the helper and copy the files from a `helper_backup_v…` folder

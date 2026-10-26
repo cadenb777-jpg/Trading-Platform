@@ -9,6 +9,7 @@ starts the helper behind a single 0-100% loading bar, keeping the install and lo
 anything is installed.
 """
 import collections
+import json
 import math
 import os
 import random
@@ -685,6 +686,10 @@ def launch(args):
         bar.stage('Starting the helper...', 94, expect_seconds=3)
     except LaunchError as err:
         bar.stop(failed=True)
+        log.write(f'\n{err}\n')
+        log.close()
+        if pending_update():
+            return after_failed_update(args, "couldn't install its Python parts")
         print()
         fail(str(err))
         errors = [line for line in err.details if 'error' in line.lower()]
@@ -699,13 +704,18 @@ def launch(args):
         return ALREADY_WAITED
     finally:
         log.close()
+    warning = ' '.join(filter(None, [os.environ.pop('TP_ROLLBACK_NOTE', ''), warning]))
     env = {**os.environ, 'TP_SPLASH': str(seed), 'TP_HANDOFF': str(HANDOFF), 'TP_LAUNCHER': '1', 'PYTHONIOENCODING': 'utf-8'}
     if warning:
         env['TP_LAUNCH_WARNING'] = warning
     code = run_helper(args, env, bar)
     if code == RESTART_CODE:
         return start_again(args)
-    if code not in STOPPED_CODES:
+    if code in STOPPED_CODES:
+        clear_pending()  # stopped on purpose: nothing to roll back
+    elif pending_update():
+        return after_failed_update(args, 'stopped with an error when it started')
+    else:
         print()
         fail(f'The helper stopped unexpectedly (code {code}).')
         warn(f"Details are in {DATA_DIR / 'helper.log'}. Start it again; if it keeps happening, send me that file.")
@@ -716,6 +726,9 @@ def launch(args):
 
 def plain_launch(args):
     """The same steps without the fancy screen (used if colours aren't available or the screen breaks)."""
+    note = os.environ.pop('TP_ROLLBACK_NOTE', '')
+    if note:
+        print(note)
     py = venv_python()
     if not py.exists():
         print('Setting up Python for the helper...')
@@ -730,6 +743,8 @@ def plain_launch(args):
         if subprocess.call([str(py), *PIP_ARGS, '-r', req], cwd=HERE) == 0:
             shutil.copyfile(HERE / req, HERE / '.venv' / marker)
         elif needed:
+            if pending_update():
+                return after_failed_update(args, "couldn't install its Python parts")
             print(' '.join(NETWORK_HINTS))
             wait_for_enter()
             return ALREADY_WAITED
@@ -738,10 +753,89 @@ def plain_launch(args):
     code = run_helper(args, {**os.environ, 'TP_LAUNCHER': '1'})
     if code == RESTART_CODE:
         return start_again(args)
-    if code not in STOPPED_CODES:
+    if code in STOPPED_CODES:
+        clear_pending()
+    elif pending_update():
+        return after_failed_update(args, 'stopped with an error when it started')
+    else:
         wait_for_enter()
         return ALREADY_WAITED
     return 0
+
+
+# ---------- After a self-update (updater.py) ----------
+
+# Written once new files are in place; the new helper removes it after a minute of running. While it exists, a failed
+# start (Python parts that won't install, or the helper stopping with an error) puts the backup back.
+PENDING = DATA_DIR / 'update-pending.json'
+
+
+def protected(rel):
+    """Files an update never writes: hidden ones (.venv, .DS_Store) and Python's caches."""
+    return any(part.startswith('.') or part == '__pycache__' for part in Path(rel).parts)
+
+
+def copy_files(src, dst):
+    """Copies the files from src into dst, skipping hidden ones, caches and files that haven't changed. Each changed
+    file is written next to its target and then swapped in, so a running start file is never rewritten in place."""
+    src, dst = Path(src), Path(dst)
+    for path in sorted(src.rglob('*')):
+        rel = path.relative_to(src)
+        if path.is_dir() or protected(rel):
+            continue
+        target = dst / rel
+        if same_file(path, target):
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        part = target.with_name(target.name + '.tp-new')
+        shutil.copy2(path, part)
+        os.replace(part, target)
+
+
+def write_pending(backup, old, new):
+    DATA_DIR.mkdir(exist_ok=True)
+    PENDING.write_text(json.dumps({'backup': str(backup), 'old': old, 'new': new}))
+
+
+def pending_update():
+    try:
+        info = json.loads(PENDING.read_text())
+        return info if Path(info['backup']).is_dir() else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def clear_pending():
+    try:
+        PENDING.unlink()
+    except OSError:
+        pass
+
+
+def roll_back(why):
+    """Puts the previous version back after an update that didn't start. Returns a plain message, or '' if there was
+    no update to roll back."""
+    info = pending_update()
+    clear_pending()
+    if not info:
+        return ''
+    copy_files(info['backup'], HERE)
+    return (f"Version {info.get('new')} {why}, so your previous version ({info.get('old')}) was put back. "
+            f"A copy of it is in {info['backup']}. Details: {DATA_DIR / 'launcher.log'}")
+
+
+def after_failed_update(args, why):
+    """Rolls back an update that didn't start and starts the previous version, which shows why on its screen."""
+    note = roll_back(why)
+    try:
+        with open(DATA_DIR / 'launcher.log', 'a', encoding='utf-8') as f:
+            f.write(f'\n{note}\n')
+    except OSError:
+        pass
+    print()
+    print('  ' + note)
+    os.environ['TP_ROLLBACK_NOTE'] = note
+    return start_again(args)
 
 
 def start_again(args):

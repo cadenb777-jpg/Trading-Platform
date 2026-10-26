@@ -218,14 +218,13 @@ if (isAiWindow) {
       );
       return;
     }
-    const latest = Math.max(up.latest ?? 0, LATEST_HELPER_VERSION);
     if (busy) {
       updateBanner.replaceChildren(h('span', {}, h('b', {}, up.message || 'Updating the helper...'), up.state === 'restarting' ? ' The page reconnects by itself in a few seconds.' : ' Keep the helper window open.'));
       return;
     }
     const error = updateError || (up.state === 'failed' ? up.message : '');
     updateBanner.replaceChildren(
-      h('span', {}, h('b', {}, `Update available (v${v} → v${latest}). `), error ? `${error} ` : updateReason(v)),
+      h('span', {}, h('b', {}, `Update available (v${v} → v${up.latest}). `), error ? `${error} ` : updateReason(v)),
       h('button', { class: 'btn small primary', onclick: () => void updateNow() }, error ? 'Try again' : 'Update now'),
       dismiss,
     );

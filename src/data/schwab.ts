@@ -321,7 +321,8 @@ class HelperConnection {
         const update = msg.update ?? null;
         const updateChanged = JSON.stringify(update) !== JSON.stringify(this.update);
         this.update = update;
-        this.outdated = version < Math.max(LATEST_HELPER_VERSION, update?.latest ?? 0);
+        // Self-updating helpers know the newest version on GitHub; older ones are compared with this site's number.
+        this.outdated = update ? (update.latest ?? 0) > version : version < LATEST_HELPER_VERSION;
         this.tooOld = version < CORE_HELPER_VERSION;
         if (changed && !this.onReady) this.notify(true);
         this.onReady?.();

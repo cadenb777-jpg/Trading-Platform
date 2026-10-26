@@ -338,7 +338,7 @@ function connectionCheck(): HTMLElement {
     rows.push(['Schwab helper', 'Not running. Double-click start-windows.bat (or start-mac.command) in your helper folder.', 'bad']);
   } else {
     const v = helper.version ?? 0;
-    const newest = Math.max(LATEST_HELPER_VERSION, helper.update?.latest ?? 0);
+    const newest = helper.update ? Math.max(v, helper.update.latest ?? 0) : LATEST_HELPER_VERSION;
     const how = helper.update ? 'click Update now in the banner at the top' : 'download the project ZIP again to update';
     rows.push(['Schwab helper', `Running, version ${v}${v < newest ? ` (newest is ${newest}: ${how})` : ' (up to date)'}`, v < newest ? 'warn' : 'ok']);
     const st = helper.status;

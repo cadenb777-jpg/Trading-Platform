@@ -18,6 +18,20 @@ import splash  # noqa: E402
 import updater  # noqa: E402
 
 PAD = b'#' * 30_000  # keeps test zips above the minimum size
+_DATA = tempfile.TemporaryDirectory()
+_PATCHES = [mock.patch.object(splash, 'DATA_DIR', Path(_DATA.name)),
+            mock.patch.object(splash, 'PENDING', Path(_DATA.name) / 'update-pending.json')]
+
+
+def setUpModule():
+    for p in _PATCHES:  # the update note goes to a temporary folder, never the real ~/.trading-platform
+        p.start()
+
+
+def tearDownModule():
+    for p in _PATCHES:
+        p.stop()
+    _DATA.cleanup()
 
 
 def make_zip(version=30, top='Trading-Platform-main', extra=None, skip=()):
@@ -160,7 +174,7 @@ class Files(unittest.TestCase):
             self.assertTrue(os.access(dest / 'start-mac.command', os.X_OK))
 
     def test_install_swaps_files_and_keeps_venv(self):
-        saved = updater.install(make_zip(30), 30, 29, here=self.here, pip=None)
+        saved = updater.install(make_zip(30), 30, 29, here=self.here)
         self.assertEqual(updater.parse_version((self.here / 'schwab_helper.py').read_text()), 30)
         self.assertEqual((self.here / '.venv' / 'keep.txt').read_text(), 'installed parts')
         self.assertEqual(saved, self.root / 'helper_backup_v29')
@@ -169,17 +183,9 @@ class Files(unittest.TestCase):
 
     def test_bad_download_changes_nothing(self):
         with self.assertRaises(updater.UpdateError):
-            updater.install(make_zip(28), 28, 29, here=self.here, pip=None)
+            updater.install(make_zip(28), 28, 29, here=self.here)
         self.assertEqual((self.here / 'splash.py').read_text(), 'old splash\n')
         self.assertFalse((self.root / 'helper_backup_v29').exists())
-
-    def test_pip_failure_changes_nothing(self):
-        def pip(new, here):
-            raise updater.UpdateError("Couldn't download")
-
-        with self.assertRaisesRegex(updater.UpdateError, "Couldn't download"):
-            updater.install(make_zip(30), 30, 29, here=self.here, pip=pip)
-        self.assertEqual((self.here / 'splash.py').read_text(), 'old splash\n')
 
     def test_failed_copy_restores_backup(self):
         real_copy = updater.copy_files
@@ -194,34 +200,76 @@ class Files(unittest.TestCase):
 
         with mock.patch.object(updater, 'copy_files', flaky), self.assertLogs('helper.update', 'ERROR'):
             with self.assertRaisesRegex(updater.UpdateError, 'previous version was put back'):
-                updater.install(make_zip(30), 30, 29, here=self.here, pip=None)
+                updater.install(make_zip(30), 30, 29, here=self.here)
         self.assertEqual((self.here / 'splash.py').read_text(), 'old splash\n')
         self.assertEqual(updater.parse_version((self.here / 'schwab_helper.py').read_text()), 29)
 
-    def test_keeps_last_two_backups(self):
-        for version in (25, 26, 27):
+    def test_keeps_only_the_newest_backup(self):
+        for version in (26, 27):
             (self.root / f'helper_backup_v{version}').mkdir()
         (self.root / 'helper_backup_notes').mkdir()  # not a backup: left alone
         updater.backup(self.here, 29)
         left = sorted(p.name for p in self.root.iterdir() if p.name.startswith('helper_backup'))
-        self.assertEqual(left, ['helper_backup_notes', 'helper_backup_v27', 'helper_backup_v29'])
+        self.assertEqual(left, ['helper_backup_notes', 'helper_backup_v29'])
 
-    def test_install_requirements_only_when_changed(self):
+    def test_copy_skips_unchanged_files_and_swaps_changed_ones(self):
         new = self.root / 'new'
         new.mkdir()
-        (new / 'requirements.txt').write_text('httpx\n')
-        with mock.patch.object(updater.subprocess, 'call', return_value=0) as call:
-            updater.install_requirements(new, self.here, python='py', log_path=self.root / 'log.txt')
-            call.assert_not_called()  # unchanged
-            (new / 'requirements.txt').write_text('httpx\nnumpy\n')
-            updater.install_requirements(new, self.here, python='py', log_path=self.root / 'log.txt')
-            self.assertEqual(call.call_count, 1)
-        self.assertEqual((self.here / '.venv' / 'installed-core.txt').read_text(), 'httpx\nnumpy\n')
-        with mock.patch.object(updater.subprocess, 'call', return_value=1):
-            (new / 'requirements.txt').write_text('httpx\nscipy\n')
-            with self.assertRaises(updater.UpdateError):
-                updater.install_requirements(new, self.here, python='py', log_path=self.root / 'log.txt')
+        (new / 'splash.py').write_text('old splash\n')  # same bytes
+        (new / 'requirements.txt').write_text('httpx\nnumpy\n')
+        (new / '.venv').mkdir()
+        (new / '.venv' / 'keep.txt').write_text('from the download')
+        before = (self.here / 'splash.py').stat().st_mtime_ns
+        os.utime(self.here / 'splash.py', ns=(before - 10**9, before - 10**9))
+        with mock.patch.object(splash.os, 'replace', wraps=os.replace) as replace:
+            splash.copy_files(new, self.here)
+        self.assertEqual(replace.call_count, 1)  # only the changed file, written beside it then swapped in
+        self.assertEqual((self.here / 'splash.py').stat().st_mtime_ns, before - 10**9)  # untouched
+        self.assertEqual((self.here / 'requirements.txt').read_text(), 'httpx\nnumpy\n')
+        self.assertEqual((self.here / '.venv' / 'keep.txt').read_text(), 'installed parts')
+        self.assertEqual(list(self.here.rglob('*.tp-new')), [])
 
+
+class RollBack(unittest.TestCase):
+    """splash.py puts the backup back when the new version can't install its parts or stops in its first minute."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.here = self.root / 'helper'
+        self.here.mkdir()
+        (self.here / 'schwab_helper.py').write_text('HELPER_VERSION = 29\n')
+        (self.here / 'splash.py').write_text('old splash\n')
+        (self.here / 'requirements.txt').write_text('httpx\n')
+        self.patch = mock.patch.object(splash, 'HERE', self.here)
+        self.patch.start()
+        splash.clear_pending()
+
+    def tearDown(self):
+        self.patch.stop()
+        self.tmp.cleanup()
+
+    def test_install_notes_the_update_and_roll_back_restores_it(self):
+        saved = updater.install(make_zip(30), 30, 29, here=self.here)
+        self.assertEqual(splash.pending_update(), {'backup': str(saved), 'old': 29, 'new': 30})
+        note = splash.roll_back('stopped with an error when it started')
+        self.assertIn('previous version (29) was put back', note)
+        self.assertIn(str(saved), note)
+        self.assertEqual(updater.parse_version((self.here / 'schwab_helper.py').read_text()), 29)
+        self.assertIsNone(splash.pending_update())
+        self.assertEqual(splash.roll_back('again'), '')  # nothing left to roll back
+
+    def test_running_a_minute_confirms_the_update(self):
+        updater.install(make_zip(30), 30, 29, here=self.here)
+        asyncio.run(updater.confirm_started(0))
+        self.assertIsNone(splash.pending_update())
+        self.assertEqual(splash.roll_back('x'), '')
+        self.assertEqual(updater.parse_version((self.here / 'schwab_helper.py').read_text()), 30)
+
+    def test_failed_install_leaves_nothing_to_roll_back(self):
+        with self.assertRaises(updater.UpdateError):
+            updater.install(make_zip(28), 28, 29, here=self.here)
+        self.assertIsNone(splash.pending_update())
 
 
 class UpdaterFlow(unittest.TestCase):
@@ -258,6 +306,17 @@ class UpdaterFlow(unittest.TestCase):
         up, _, result = self.run_update(29)
         self.assertIsInstance(result, updater.UpdateError)
         self.assertEqual(up.state, 'idle')
+
+    def test_next_check_clears_a_failure(self):
+        up = updater.Updater(29)
+        up.state, up.message = 'failed', 'GitHub answered 503.'
+
+        async def version(http):
+            return 30
+
+        with mock.patch.object(updater, 'latest_version', version):
+            asyncio.run(up.check(None))
+        self.assertEqual((up.state, up.message, up.available), ('idle', '', True))
 
     def test_failure_is_shown(self):
         up, _, result = self.run_update(30, updater.UpdateError('The download is damaged.'))
