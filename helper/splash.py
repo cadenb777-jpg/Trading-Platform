@@ -765,8 +765,8 @@ def plain_launch(args):
 
 # ---------- After a self-update (updater.py) ----------
 
-# Written once new files are in place; the new helper removes it after a minute of running. While it exists, a failed
-# start (Python parts that won't install, or the helper stopping with an error) puts the backup back.
+# Written once new files are in place; the new helper removes it as soon as its imports worked and main() begins. While
+# it exists, a failed start (Python parts that won't install, or the helper crashing on import) puts the backup back.
 PENDING = DATA_DIR / 'update-pending.json'
 
 

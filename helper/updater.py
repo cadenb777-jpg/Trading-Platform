@@ -7,7 +7,7 @@ helper/schwab_helper.py has exactly that newer version, a sane size, no odd path
 into a temporary folder, back up this folder to helper_backup_v<old> next to it (only the newest backup is kept),
 copy the changed files in (the backup is put back if that fails), note the update in ~/.trading-platform and exit
 with RESTART_CODE. splash.py then installs any changed Python parts and starts the new version; if that fails, or
-the new version stops with an error in its first minute, splash.py puts the backup back (splash.roll_back).
+the new version crashes before its main() begins (on import), splash.py puts the backup back (splash.roll_back).
 
 Your keys, logins, portfolios and caches live in ~/.trading-platform, never in this folder. The update itself never
 writes hidden files (the .venv folder with the installed parts, .DS_Store); only start-up's pip install changes .venv.
@@ -277,7 +277,7 @@ class Updater:
             raise UpdateError(self.message)
 
 
-async def confirm_started(delay=60):
-    """After a minute of running, the new version counts as working: splash.py no longer rolls it back."""
-    await asyncio.sleep(delay)
+def confirm_started():
+    """Called when the new helper's imports worked and main() begins: from then on splash.py no longer rolls it back
+    (a failed Schwab login or a busy port isn't the update's fault)."""
     clear_pending()

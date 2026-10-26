@@ -1090,8 +1090,7 @@ async def run(client, sec_contact='', open_browser=True):
         sys.exit(f'Port {PORT} is already in use. Is the helper already running in another window?')
     async with server:
         jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market), warm_up(market),
-                open_when_ready(market, open_browser), market_scanner(market), market.update_loop(),
-                updater.confirm_started()]
+                open_when_ready(market, open_browser), market_scanner(market), market.update_loop()]
         if SCREEN:
             SCREEN.ready(PLATFORM_URL, LOG_PATH, os.environ.get('TP_LAUNCH_WARNING', ''))
             return await until_restart(market, [*jobs, screen_clock()])
@@ -1153,6 +1152,8 @@ def main():
     parser.add_argument('--reset', action='store_true', help='enter new Schwab keys and log in again')
     parser.add_argument('--no-browser', action='store_true', help="don't open the platform in the browser when ready")
     args = parser.parse_args()
+    # The new version imported fine and is starting: from here on a problem (login, busy port) isn't the update's fault.
+    updater.confirm_started()
     # Big libraries (AI, numpy, scipy) load while we log in and start the server.
     engine.start_loading()
     start_screen()

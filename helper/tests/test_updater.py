@@ -231,7 +231,7 @@ class Files(unittest.TestCase):
 
 
 class RollBack(unittest.TestCase):
-    """splash.py puts the backup back when the new version can't install its parts or stops in its first minute."""
+    """splash.py puts the backup back when the new version can't install its parts or crashes on import."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -259,9 +259,9 @@ class RollBack(unittest.TestCase):
         self.assertIsNone(splash.pending_update())
         self.assertEqual(splash.roll_back('again'), '')  # nothing left to roll back
 
-    def test_running_a_minute_confirms_the_update(self):
+    def test_starting_main_confirms_the_update(self):
         updater.install(make_zip(30), 30, 29, here=self.here)
-        asyncio.run(updater.confirm_started(0))
+        updater.confirm_started()
         self.assertIsNone(splash.pending_update())
         self.assertEqual(splash.roll_back('x'), '')
         self.assertEqual(updater.parse_version((self.here / 'schwab_helper.py').read_text()), 30)

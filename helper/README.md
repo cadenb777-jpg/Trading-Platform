@@ -86,8 +86,8 @@ every 6 hours. When there is one, the platform shows **"Update available (v X �
 4. copies in the changed files and restarts: the start screen installs any new Python parts out of sight and
    starts the new version. The page reconnects by itself.
 
-If the download or its check fails, nothing is changed. If the new version can't install its parts or stops with
-an error in its first minute, your previous version is put back automatically and the start screen says so.
+If the download or its check fails, nothing is changed. If the new version can't install its parts or crashes as
+it starts (before it even asks Schwab to log in), your previous version is put back automatically and the start screen says so.
 Your keys, logins, portfolios and settings live in `~/.trading-platform`, not in the helper folder; the update
 doesn't copy anything into the hidden `.venv` folder (only the usual start-up install adds parts there). Nothing updates unless you click
 **Update now**, or turn on **Settings → Helper → Install updates automatically** (off by default).
