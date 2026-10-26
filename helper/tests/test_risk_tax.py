@@ -87,6 +87,9 @@ class RiskMaths(unittest.TestCase):
         self.assertAlmostEqual(eq['effective'], 10)
         self.assertAlmostEqual(eq['top5'], 0.5)
         self.assertIsNone(risk.concentration({})['effective'])
+        cash = risk.concentration({'A': 30, 'B': 30}, cash=40)  # cash is in the total but isn't a holding
+        self.assertAlmostEqual(cash['largest']['weight'], 0.3)
+        self.assertAlmostEqual(cash['effective'], 2)
 
     def test_value_at_risk_is_the_fifth_percentile_loss(self):
         returns = [-0.05, -0.03] + [0.001] * 18  # 20 days: the 5th percentile sits between the two worst days
@@ -150,7 +153,8 @@ class RiskMaths(unittest.TestCase):
         self.assertEqual(out['alts'], ['BCRED'])
         self.assertAlmostEqual(out['stats']['beta'], 0.6, places=6)  # 60% in a stock that moves exactly with SPY
         self.assertAlmostEqual(out['assets']['AAA']['weight'], 0.6)
-        self.assertAlmostEqual(out['concentration']['weights']['CASH'], 4000 / 11000)
+        self.assertAlmostEqual(out['concentration']['weights']['AAA'], 6000 / 11000)
+        self.assertNotIn('CASH', out['concentration']['weights'])
         self.assertEqual(out['sectors']['AAA']['sector'], 'Information Technology')
 
 

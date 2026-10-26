@@ -85,15 +85,18 @@ async def sector(ctx, symbol, quote):
     return await ctx.cached(('sector', symbol), SECTOR_DAYS * 86400, load, persist=True)
 
 
-def concentration(values):
-    """{symbol: dollars} -> weights, largest, top-5 share and effective number of holdings (1 / sum of weights²)."""
-    total = sum(v for v in values.values() if v and v > 0)
-    if not total:
+def concentration(values, cash=0.0):
+    """{symbol: dollars} of the positions (not cash) -> each one's weight in the whole account (cash included in the
+    total), the largest, the top-5 share and the effective number of holdings (1 / sum of squared position shares)."""
+    positions = {s: v for s, v in values.items() if v and v > 0}
+    invested = sum(positions.values())
+    if not invested:
         return {'weights': {}, 'largest': None, 'top5': None, 'effective': None}
-    weights = {s: v / total for s, v in values.items() if v and v > 0}
+    total = invested + max(cash or 0, 0)
+    weights = {s: v / total for s, v in positions.items()}
     ranked = sorted(weights.items(), key=lambda x: -x[1])
     return {'weights': weights, 'largest': {'symbol': ranked[0][0], 'weight': ranked[0][1]},
-            'top5': sum(w for _, w in ranked[:5]), 'effective': 1 / sum(w * w for w in weights.values())}
+            'top5': sum(w for _, w in ranked[:5]), 'effective': 1 / sum((v / invested) ** 2 for v in positions.values())}
 
 
 def value_at_risk(returns, level=0.95):
@@ -171,7 +174,7 @@ async def account(ctx, msg):
     closes = await asyncio.gather(*(invest.closes(ctx, s) for s in [*stocks, 'SPY']), return_exceptions=True)
     day = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).date()  # noqa: E731
     series = {s: ([] if isinstance(c, Exception) else [(day(t), float(v)) for t, v in c]) for s, c in zip([*stocks, 'SPY'], closes)}
-    out = {'total': total, 'concentration': concentration(values), 'alts': sorted({r['symbol'] for r in rows if r['kind'] == 'alt'}),
+    out = {'total': total, 'concentration': concentration({k: v for k, v in values.items() if k != 'CASH'}, values.get('CASH', 0)), 'alts': sorted({r['symbol'] for r in rows if r['kind'] == 'alt'}),
            'sectors': {}, 'sectorNote': None, 'stats': None, 'assets': {}, 'missing': [], 'note': None}
 
     # sectors, one SEC lookup per stock (cached 30 days); a missing SEC email is said once, never guessed
