@@ -26,6 +26,7 @@ import logging.handlers
 import os
 import re
 import sys
+import threading
 import time
 import urllib.parse
 import warnings
@@ -44,6 +45,7 @@ import httpx  # noqa: E402
 from schwab.auth import easy_client  # noqa: E402
 from schwab.streaming import StreamClient  # noqa: E402
 from websockets.asyncio.server import broadcast, serve  # noqa: E402
+import updater  # noqa: E402  (standard library only)
 import engine  # noqa: E402  (light: its big modules load in the background, see engine.start_loading)
 from engine.core import is_safe_url  # noqa: E402
 warnings.showwarning = _show_warning
@@ -615,7 +617,6 @@ class Market:
         self.stream_factory = stream_factory
         self.browsers = set()
         self.listeners = {}  # symbol -> set of browser connections
-        self.status = self._status('connecting', 'Connecting to Schwab')
         self.quotes = {}  # symbol -> {'last': ..., 'prevClose': ...}
         # Schwab's official quote (REST) per symbol: the previous close it measures the day's change from. The stream's
         # CLOSE_PRICE turns into today's close once the session ends, which made changes read 0%, so it's only a fallback.
@@ -624,6 +625,11 @@ class Market:
         self.dirty_quotes = set()
         self.last_volume = {}
         self.seen = set()
+        # Self-update from GitHub (updater.py); `restart` is set once new files are in place.
+        self.updater = updater.Updater(HELPER_VERSION, on_change=self.update_changed)
+        self.restart = asyncio.Event()
+        self.offered = None
+        self.status = {**self._status('connecting', 'Connecting to Schwab'), 'update': self.updater.public()}
 
     @staticmethod
     def _status(status, message):
@@ -632,7 +638,7 @@ class Market:
         return {'type': 'status', 'status': status, 'message': message, 'version': HELPER_VERSION, 'problems': problems, 'log': str(LOG_PATH)}
 
     def set_status(self, status, message):
-        self.status = self._status(status, message)
+        self.status = {**self._status(status, message), 'update': self.updater.public()}
         broadcast(self.browsers, json.dumps(self.status))
         if SCREEN:
             SCREEN.status(status, message)
@@ -658,6 +664,8 @@ class Market:
                     engine.background(self.reply(ws, msg.get('id'), self.history_reply(symbol, msg.get('resolution'), msg.get('days'))))
                 elif kind == 'calendar':
                     engine.background(self.reply(ws, msg.get('id'), self.calendar_reply()))
+                elif kind == 'update':
+                    engine.background(self.reply(ws, msg.get('id'), self.update_reply()))
                 elif kind == 'summary':
                     links = [str(u) for u in msg.get('links') or [] if str(u).startswith(('https://', 'http://'))]
                     engine.background(self.reply(ws, msg.get('id'), self.summary_reply(links, str(msg.get('title', '')))))
@@ -765,6 +773,41 @@ class Market:
             if isinstance(r, Exception):
                 log.info('FRED %s for the calendar failed: %s', s, r)
         actuals.fill(events, data, EASTERN)
+
+    async def update_reply(self):
+        """Installs the newest helper from GitHub (the owner clicked Update now), then restarts."""
+        await self.updater.update(self.news.http)
+        asyncio.get_running_loop().call_later(1.5, self.restart.set)  # lets this reply reach the browser first
+        return {'type': 'update', 'version': self.updater.latest}
+
+    def update_changed(self):
+        """Tells open tabs (and the start screen) about a newer version or update progress."""
+        self.set_status(self.status['status'], self.status['message'])
+        if not SCREEN:
+            return
+        up = self.updater
+        if up.available and up.state == 'idle' and self.offered != up.latest:
+            self.offered = up.latest
+            SCREEN.message(f'Update available (v{HELPER_VERSION} → v{up.latest}). Type u and press Enter here to install it, '
+                           'or click Update now in the platform.', tone='ok')
+            listen_for_update_key(self)
+        elif up.state == 'failed':
+            SCREEN.message(up.message, tone='bad')
+        elif up.state in ('updating', 'restarting') and up.message:
+            SCREEN.message(up.message, tone='ok')
+
+    async def update_loop(self):
+        """Checks GitHub for a newer helper at start and every 6 hours; installs it only if Settings allows."""
+        await asyncio.sleep(5)
+        while True:
+            await self.updater.check(self.news.http)
+            if self.updater.available and self.updater.state == 'idle' and auto_update_on():
+                try:
+                    await self.updater.update(self.news.http)
+                    self.restart.set()
+                except updater.UpdateError as err:
+                    log.warning('Automatic update failed: %s', err)
+            await asyncio.sleep(updater.CHECK_EVERY_SECONDS)
 
     async def summary_reply(self, links, title):
         if not links:
@@ -924,6 +967,44 @@ class Market:
                 await asyncio.sleep(delay)
 
 
+def auto_update_on():
+    try:
+        from engine import settings
+        return settings.load().get('auto_update') is True
+    except Exception:
+        return False
+
+
+def listen_for_update_key(market):
+    """On the start screen: typing u + Enter installs the update (a background thread reads the window's input)."""
+    if getattr(market, 'key_thread', None) or not sys.stdin or not sys.stdin.isatty():
+        return
+    loop = asyncio.get_running_loop()
+
+    def read():
+        while True:
+            try:
+                line = sys.stdin.readline()
+            except (OSError, ValueError, EOFError):
+                return
+            if not line:
+                return
+            if line.strip().lower() == 'u':
+                asyncio.run_coroutine_threadsafe(update_from_screen(market), loop)
+
+    market.key_thread = threading.Thread(target=read, daemon=True)
+    market.key_thread.start()
+
+
+async def update_from_screen(market):
+    try:
+        await market.updater.update(market.news.http)
+    except updater.UpdateError as err:
+        log.warning('Update failed: %s', err)  # the start screen shows it via update_changed
+        return
+    market.restart.set()
+
+
 async def screen_clock():
     """Keeps the start screen's status line ticking (clock and live dot)."""
     while True:
@@ -1040,11 +1121,11 @@ async def run(client, sec_contact='', open_browser=True):
             SCREEN.pause()
         sys.exit(f'Port {PORT} is already in use. Is the helper already running in another window?')
     async with server:
-        background = [engine_ready(market), warm_up(market), open_when_ready(market, open_browser), market_scanner(market)]
+        jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market), warm_up(market),
+                open_when_ready(market, open_browser), market_scanner(market), market.update_loop()]
         if SCREEN:
             SCREEN.ready(PLATFORM_URL, LOG_PATH, os.environ.get('TP_LAUNCH_WARNING', ''))
-            await asyncio.gather(market.run_stream(), market.send_quotes(), market.refresh_official(), screen_clock(), *background)
-            return
+            return await until_restart(market, [*jobs, screen_clock()])
         print()
         print('=' * 64)
         print(f'  Schwab helper (version {HELPER_VERSION}) is running.')
@@ -1053,7 +1134,37 @@ async def run(client, sec_contact='', open_browser=True):
         print('  To stop the helper, press Ctrl+C or close this window.')
         print('=' * 64)
         print()
-        await asyncio.gather(market.run_stream(), market.send_quotes(), market.refresh_official(), *background)
+        return await until_restart(market, jobs)
+
+
+async def until_restart(market, jobs):
+    """Runs the helper's jobs until one fails or an update asks for a restart (returns True then)."""
+    work = asyncio.gather(*jobs)
+    restart = asyncio.ensure_future(market.restart.wait())
+    await asyncio.wait([work, restart], return_when=asyncio.FIRST_COMPLETED)
+    if restart.done():
+        work.cancel()
+        try:
+            await work
+        except (asyncio.CancelledError, Exception):
+            pass
+        return True
+    restart.cancel()
+    work.result()
+    return False
+
+
+def restart_helper():
+    """Starts the updated helper. Under the launcher, a special exit code makes splash.py start it again (and
+    install anything new); run directly, the new copy is started in this window."""
+    log.info('Restarting after the update')
+    if SCREEN:
+        SCREEN.close('Restarting with the new version...')
+    else:
+        print('\nRestarting with the new version...')
+    if os.environ.get('TP_LAUNCHER'):
+        sys.exit(updater.RESTART_CODE)
+    sys.exit(subprocess.call([sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]]))
 
 
 def start_screen():
@@ -1140,11 +1251,13 @@ def serve_forever(args):
         SCREEN.resume()  # puts the start screen back after the login steps
         SCREEN.step('Starting the live data server...', 99, 1)
     try:
-        asyncio.run(run(client, config.get('sec_contact', ''), open_browser=not args.no_browser))
+        restart = asyncio.run(run(client, config.get('sec_contact', ''), open_browser=not args.no_browser))
     finally:
         scanner = sys.modules.get('engine.scanner')
         if scanner is not None:
             scanner.shutdown()  # stop the scanner's worker processes too
+    if restart:
+        restart_helper()
 
 
 if __name__ == '__main__':

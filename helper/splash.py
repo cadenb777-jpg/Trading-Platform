@@ -520,6 +520,8 @@ PIP_ARGS = ['-m', 'pip', 'install', '--disable-pip-version-check', '--prefer-bin
 EXPECTED_PACKAGES = {'requirements.txt': 22, 'requirements-extra.txt': 14}
 # Exit codes that mean the helper was stopped on purpose (Ctrl+C or window closed).
 STOPPED_CODES = {0, 130, -2, 3221225786, -1073741510}
+# Exit code from the helper after it installed an update: start everything again (the new splash.py and helper).
+RESTART_CODE = 75
 # Exit code telling the start file that "Press Enter to close" was already shown (1 means splash.py itself broke).
 ALREADY_WAITED = 2
 
@@ -697,10 +699,12 @@ def launch(args):
         return ALREADY_WAITED
     finally:
         log.close()
-    env = {**os.environ, 'TP_SPLASH': str(seed), 'TP_HANDOFF': str(HANDOFF), 'PYTHONIOENCODING': 'utf-8'}
+    env = {**os.environ, 'TP_SPLASH': str(seed), 'TP_HANDOFF': str(HANDOFF), 'TP_LAUNCHER': '1', 'PYTHONIOENCODING': 'utf-8'}
     if warning:
         env['TP_LAUNCH_WARNING'] = warning
     code = run_helper(args, env, bar)
+    if code == RESTART_CODE:
+        return start_again(args)
     if code not in STOPPED_CODES:
         print()
         fail(f'The helper stopped unexpectedly (code {code}).')
@@ -731,11 +735,23 @@ def plain_launch(args):
             return ALREADY_WAITED
         else:
             print('Some optional parts did not install; charts and prices still work.')
-    code = run_helper(args, dict(os.environ))
+    code = run_helper(args, {**os.environ, 'TP_LAUNCHER': '1'})
+    if code == RESTART_CODE:
+        return start_again(args)
     if code not in STOPPED_CODES:
         wait_for_enter()
         return ALREADY_WAITED
     return 0
+
+
+def start_again(args):
+    """After an update: runs the new splash.py (it installs any new parts, then starts the new helper)."""
+    proc = subprocess.Popen([sys.executable, str(HERE / 'splash.py'), 'run', *args], cwd=HERE)
+    while True:
+        try:
+            return proc.wait()
+        except KeyboardInterrupt:  # Ctrl+C reaches the new helper directly; wait for it to stop
+            continue
 
 
 # ---------- The screen while the helper runs ----------
