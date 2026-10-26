@@ -16,7 +16,7 @@ import { fetchRisk, fetchTax, type RiskInput, type RiskReport, type TaxReport, t
 import { holdingGroup, riskCard, taxSection } from '../portfolio/riskView';
 import { isMine, type Holding, type Portfolio } from '../portfolio/types';
 import { renderWebullCard, syncButton } from '../portfolio/webullView';
-import { notice19aLink, periods, rocText, yieldCheck, type YieldCheck } from '../portfolio/yieldQuality';
+import { notice19aLink, periods, rocText, splitPeriod, yieldCheck, type YieldCheck } from '../portfolio/yieldQuality';
 import { loadSnapshot } from '../trade/webull';
 import { pct, pctU, statCards, pageFrame, dataTable } from '../ui/charts';
 import { h, openModal, openPopover, timeAgo, toast } from '../ui/dom';
@@ -538,15 +538,14 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
           { label: 'Today', value: fmtDay(d.usd, d.pct), tone: tone(d.usd), hint: 'Change since yesterday’s close on your shares' },
           { label: 'Price gain', value: fmtGain(g.priceGain, g.priceGainPct), tone: tone(g.priceGain), hint: `Value − cost basis ${usd(g.cost)} (unrealized)${withCost < securities ? `, on ${withCost} of ${securities} holdings with a cost basis` : ''}` },
           { label: 'Dividends received', value: usd(g.dividends), hint: divHint },
-          { label: termLabel('Total return', 'totalreturn'), value: fmtGain(g.total, g.totalPct), tone: tone(g.total), hint: 'Price gain + dividends received, on holdings with a cost basis' },
           {
-            label: termLabel('1-yr total return', 'totalreturn'),
-            value: pct(r?.totalReturn?.tr1y, 1),
-            tone: tone(r?.totalReturn?.tr1y),
-            hint: r?.totalReturn?.tr1y != null ? `Price only ${pct(r.totalReturn.price1y, 1)} · if today’s holdings were held all year` : 'Needs a year of price history',
+            label: termLabel('Total return', 'totalreturn'),
+            value: fmtGain(g.total, g.totalPct),
+            tone: tone(g.total),
+            hint: `Price gain + dividends received, on holdings with a cost basis${r?.totalReturn?.tr1y != null ? ` · today’s holdings over the last year: ${pct(r.totalReturn.tr1y, 1)} (price only ${pct(r.totalReturn.price1y, 1)})` : ''}`,
           },
           { label: 'Yearly dividend income', value: usd(r?.annualIncome), hint: r ? `About ${usd(r.monthly)} a month over the next 12 months` : '' },
-          { label: h('span', {}, termLabel('Yield', 'divyield'), ' · ', termLabel('on cost', 'yoc')), value: `${pctU(r?.yield)} · ${pctU(r?.yieldOnCost)}`, hint: 'Yearly income ÷ market value · ÷ what you paid' },
+          { label: h('span', {}, termLabel('Yield', 'divyield'), ' · ', termLabel('on cost', 'yoc')), value: `${pctU(r?.yield)} · ${pctU(r?.yieldOnCost)}`, hint: 'Yearly income ÷ market value · on cost: income ÷ what you paid, only holdings with a cost basis' },
         ]),
       );
     }
@@ -678,14 +677,18 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
         h('p', {}, check.read),
         list.length
           ? dataTable(
-              ['Period', 'Price return', 'Total return', 'Distribution yield', 'Erosion'],
-              list.map((p) => [
-                p.label,
-                { v: `${pct(p.price, 1)}${p.yearly ? '/yr' : ''}`, cls: `num ${tone(p.price)}` },
-                { v: `${pct(p.total, 1)}${p.yearly ? '/yr' : ''}`, cls: `num ${tone(p.total)}` },
-                { v: pctU(check.distYield, 1), cls: 'num' },
-                { v: p.yearly ? pctU(Math.max(0, check.distYield - p.total), 1) : '—', cls: 'num' },
-              ]),
+              ['Period', 'Price return', 'Total return', 'Paid out', 'From the price falling'],
+              list.map((p) => {
+                const sp = splitPeriod(p);
+                const unit = p.yearly ? '/yr' : '';
+                return [
+                  p.label,
+                  { v: `${pct(p.price, 1)}${unit}`, cls: `num ${tone(p.price)}` },
+                  { v: `${pct(p.total, 1)}${unit}`, cls: `num ${tone(p.total)}` },
+                  { v: `${pctU(sp.paid, 1)}${unit}`, cls: 'num' },
+                  { v: sp.share == null ? '—' : `${pctU(sp.fromPrice, 1)}${unit} (${pctU(sp.share, 0)})`, cls: 'num' },
+                ];
+              }),
               undefined,
               false,
             )
@@ -693,10 +696,10 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
         h(
           'p',
           { class: 'ap-note' },
-          termLabel('Distribution yield', 'distributionyield'),
-          ' = the latest payment × payments per year ÷ price (today’s rate, which may differ from what was paid in earlier years). ',
-          termLabel('Erosion', 'naverosion'),
-          ' = distribution yield − total return, when the total return is lower. From market prices, not the fund’s NAV (closed-end funds can trade above or below it).',
+          'Today’s ', termLabel('distribution yield', 'distributionyield'), `: ${pctU(check.distYield, 1)} (latest payment × payments a year ÷ price). `,
+          'Paid out = total return − price return (the payouts actually made). ',
+          termLabel('From the price falling', 'naverosion'),
+          ' = the part of those payouts the price drop paid for (none when the price held or rose). From market prices, not the fund’s NAV (closed-end funds can trade above or below it).',
         ),
         h(
           'p',

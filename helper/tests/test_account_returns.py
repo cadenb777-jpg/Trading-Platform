@@ -49,6 +49,46 @@ class TrackHoldingsTests(unittest.TestCase):
         self.assertNotIn('dividends', cleared['holdings'][0])
         self.assertEqual(cleared['holdings'][0]['purchaseDate'], '2020-05-01')
 
+    def test_statement_never_replaces_typed_dividends(self):
+        typed = store.track_holdings(None, portfolio(stock('KO', 10, dividends=80, dividendsSource='entered', dividendsAsOf='2026-01-01')), D(2026, 1, 1))
+        again = store.track_holdings(typed, portfolio(stock('KO', 10, dividends=55, dividendsSource='statement', dividendsAsOf='2026-02-01')), D(2026, 2, 1))
+        self.assertEqual((again['holdings'][0]['dividends'], again['holdings'][0]['dividendsSource']), (80, 'entered'))
+        # a statement figure can be updated by a newer statement
+        st = store.track_holdings(None, portfolio(stock('KO', 10, dividends=40, dividendsSource='statement', dividendsAsOf='2026-01-01')), D(2026, 1, 1))
+        st2 = store.track_holdings(st, portfolio(stock('KO', 10, dividends=55, dividendsSource='statement', dividendsAsOf='2026-02-01')), D(2026, 2, 1))
+        self.assertEqual(st2['holdings'][0]['dividends'], 55)
+
+    def test_lots_share_one_log_on_the_first_holding(self):
+        a = store.track_holdings(None, portfolio(stock('KO', 10, purchaseDate='2020-01-02'), stock('KO', 5)), D(2026, 1, 1))
+        self.assertEqual(a['holdings'][0]['seen'], [{'date': '2026-01-01', 'shares': 15.0}])
+        self.assertNotIn('seen', a['holdings'][1])
+        # selling one lot changes the total; the owner's fields stay on the first holding only
+        b = store.track_holdings(a, portfolio(stock('KO', 10), stock('KO', 2, purchaseDate='2021-01-01')), D(2026, 2, 1))
+        self.assertEqual([e['shares'] for e in b['holdings'][0]['seen']], [15.0, 12.0])
+        self.assertEqual(b['holdings'][0]['purchaseDate'], '2020-01-02')
+        self.assertNotIn('purchaseDate', b['holdings'][1])
+
+    def test_first_seen_never_moves_forward(self):
+        a = store.track_holdings(None, portfolio(stock('KO', 10)), D(2026, 1, 1))
+        # the browser can't replace the log (a stale or empty copy is ignored)
+        for sent in ([], [{'date': '2026-05-01', 'shares': 10}]):
+            b = store.track_holdings(a, portfolio(stock('KO', 10, seen=sent)), D(2026, 6, 1))
+            self.assertEqual(b['holdings'][0]['seen'][0]['date'], '2026-01-01')
+        # sold out, then bought back: the archived log comes back with a new entry
+        gone = store.track_holdings(a, portfolio(stock('PG', 1)), D(2026, 3, 1))
+        self.assertEqual(gone['seenArchive']['KO']['seen'][0]['date'], '2026-01-01')
+        back = store.track_holdings(gone, portfolio(stock('PG', 1), stock('KO', 4)), D(2026, 4, 1))
+        self.assertEqual([e['date'] for e in back['holdings'][1]['seen']], ['2026-01-01', '2026-04-01'])
+        self.assertNotIn('seenArchive', back)
+
+    def test_owner_fields_checked(self):
+        for bad in ({'purchaseDate': '2099-01-01'}, {'purchaseDate': 'yesterday'}, {'dividends': -5}, {'dividends': float('nan')},
+                    {'rocPct': 1.5}, {'rocPct': -0.1}, {'rocYear': '20x5'}, {'dividendsAsOf': '2026-13-01'}):
+            with self.assertRaises(Exception, msg=bad):
+                store.track_holdings(None, portfolio(stock('KO', 1, **bad)), D(2026, 1, 1))
+        ok = store.track_holdings(None, portfolio(stock('KO', 1, purchaseDate='2025-12-31', dividends=0, rocPct=1, rocYear='2025')), D(2026, 1, 1))
+        self.assertEqual(ok['holdings'][0]['rocPct'], 1)
+
     def test_cash_and_percent_portfolios_untouched(self):
         cash = {'symbol': 'CASH', 'kind': 'cash', 'amount': 50, 'weight': 0, 'assetClass': 'Cash'}
         a = store.track_holdings(None, portfolio(stock('KO', 1), cash), TODAY)
@@ -102,6 +142,17 @@ class ReceivedTests(unittest.TestCase):
         self.assertAlmostEqual(r['amount'], 105.0)
         s = dv.received_dividends(DIVS, TODAY, None, base=40, base_as_of='2026-10-01', base_source='statement')
         self.assertEqual((s['method'], s['amount']), ('statement', 40.0))
+
+    def test_splits_convert_logged_shares_to_todays_shares(self):
+        # 10 shares logged in March, a 2-for-1 split in June: Yahoo's amounts are per today's share
+        log = [{'date': '2026-03-01', 'shares': 10}]
+        r = dv.received_dividends(DIVS, TODAY, log, splits={D(2026, 6, 1): 2.0})
+        self.assertEqual([p['shares'] for p in r['payments']], [20.0, 20.0])
+        self.assertAlmostEqual(r['amount'], 20.0)
+        self.assertIn('split', r['note'])
+        # splits unknown: flagged, not guessed
+        self.assertIn('couldn’t be checked', dv.received_dividends(DIVS, TODAY, log, splits=None)['note'])
+        self.assertNotIn('note', dv.received_dividends(DIVS, TODAY, log, splits={}))
 
     def test_nothing_to_go_on(self):
         r = dv.received_dividends(DIVS, TODAY)

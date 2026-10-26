@@ -242,7 +242,7 @@ def _day(value):
         return None
 
 
-def received_dividends(divs, today, seen=None, purchase=None, base=None, base_as_of=None, base_source='entered'):
+def received_dividends(divs, today, seen=None, purchase=None, base=None, base_as_of=None, base_source='entered', splits=None):
     """Dividends one holding has paid the owner so far, and how that figure was found (`method`):
     - 'entered' / 'statement': the owner's (or a statement's) total up to base_as_of, plus estimated payments after it;
     - 'purchase': Yahoo dividends since the purchase date the owner typed;
@@ -250,7 +250,9 @@ def received_dividends(divs, today, seen=None, purchase=None, base=None, base_as
     - 'none': nothing to go on.
     A payment counts when its ex-date is after the start (you must own the shares before the ex-date) and its estimated
     pay date (ex-date + PAY_LAG_DAYS) has passed. Shares on an ex-date come from the share log: the last entry before
-    it, or the first entry for dates before the log starts. Pure, so it can be tested."""
+    it, or the first entry for dates before the log starts. Yahoo's per-share dividends are in today's shares (split-
+    adjusted), so logged share counts are converted to today's shares with the splits after their date (`splits`
+    {date: ratio}; None = couldn't be read, flagged in `note`). Pure, so it can be tested."""
     log = []
     for e in seen or []:
         d = _day(e.get('date')) if isinstance(e, dict) else None
@@ -273,9 +275,18 @@ def received_dividends(divs, today, seen=None, purchase=None, base=None, base_as
     else:
         return {'amount': None, 'method': 'none', 'since': None, 'base': None, 'estimated': None, 'firstSeen': None, 'payments': []}
 
+    split_list = sorted((splits or {}).items())
+
+    def in_today_shares(logged_on, n):
+        for d, ratio in split_list:
+            if d > logged_on:
+                n *= ratio
+        return n
+
     def shares_on(day):
-        held = [s for d, s in log if d < day]
-        return held[-1] if held else (log[0][1] if log else 0.0)
+        held = [(d, s) for d, s in log if d < day]
+        d, n = held[-1] if held else (log[0] if log else (day, 0.0))
+        return in_today_shares(d, n)
 
     payments = []
     for ex, per in sorted((d, float(a)) for d, a in (divs or {}).items() if a and a > 0):
@@ -285,30 +296,41 @@ def received_dividends(divs, today, seen=None, purchase=None, base=None, base_as
         if n > 0:
             payments.append({'exDate': ex.isoformat(), 'perShare': per, 'shares': n, 'amount': round(per * n, 2)})
     estimated = round(sum(p['amount'] for p in payments), 2)
-    return {'amount': round((base or 0) + estimated, 2), 'method': method, 'since': start.isoformat(),
-            'base': base, 'estimated': estimated, 'firstSeen': first_seen.isoformat() if first_seen else None, 'payments': payments}
+    out = {'amount': round((base or 0) + estimated, 2), 'method': method, 'since': start.isoformat(),
+           'base': base, 'estimated': estimated, 'firstSeen': first_seen.isoformat() if first_seen else None, 'payments': payments}
+    if splits is None and payments:
+        out['note'] = 'Stock splits couldn’t be checked: the estimate assumes none.'
+    elif any(start < d <= today for d, _ in split_list):
+        out['note'] = 'Adjusted for a stock split (shares shown in today’s shares).'
+    return out
 
 
 async def received(ctx, entries, today):
-    """{key: received_dividends} for the Account page's per-account holdings. Entries without a share log belong to
-    portfolios saved before tracking began: saving them once records today as the first-seen date."""
+    """{key: received_dividends} for the Account page's per-account holdings. The share logs and the owner's entries
+    are read from the saved portfolio (the store is the record, not the browser); a portfolio saved before tracking
+    began is saved once, which records today as its first-seen date. Entries without a saved portfolio use what the
+    browser sent."""
     from . import store
     entries = [e for e in entries[:600] if isinstance(e, dict) and e.get('key') and str(e.get('symbol') or '').strip()]
-    untracked = {str(e['portfolioId']) for e in entries if not e.get('seen') and e.get('portfolioId')}
-    logs = {}
-    for pid in untracked:
+    saved = {}
+    for pid in {str(e['portfolioId']) for e in entries if e.get('portfolioId')}:
         doc = store.get_doc('portfolios', pid)
-        if doc:
-            for x in store.save_doc('portfolios', doc).get('holdings') or []:
-                if isinstance(x, dict) and x.get('seen'):
-                    logs[(pid, str(x.get('symbol') or '').strip().upper())] = x['seen']
+        if not doc:
+            continue
+        if any(store._symbol(x) and not x.get('seen') and float(x.get('shares') or 0) > 0 for x in doc.get('holdings') or []):
+            doc = store.save_doc('portfolios', doc)
+        for x in doc.get('holdings') or []:
+            sym = store._symbol(x)
+            if sym and (pid, sym) not in saved:
+                saved[(pid, sym)] = x  # the symbol's first holding carries its log and the owner's fields
     out = {}
     for e in entries:
         symbol = str(e['symbol']).strip().upper()
-        seen = e.get('seen') or logs.get((str(e.get('portfolioId')), symbol))
+        src = saved.get((str(e.get('portfolioId')), symbol), e)
         divs = await ctx.dividends(symbol)  # cached per symbol for a day
-        row = received_dividends(divs or {}, today, seen, e.get('purchaseDate'), e.get('dividends'), e.get('dividendsAsOf'),
-                                 e.get('dividendsSource') or 'entered')
+        splits = await ctx.splits(symbol) if hasattr(ctx, 'splits') else {}
+        row = received_dividends(divs or {}, today, src.get('seen'), src.get('purchaseDate'), src.get('dividends'), src.get('dividendsAsOf'),
+                                 src.get('dividendsSource') or 'entered', splits)
         if divs is None and row['method'] in ('purchase', 'tracked'):
             row.update(amount=None, note='Dividend history unavailable')
         out[str(e['key'])] = row
