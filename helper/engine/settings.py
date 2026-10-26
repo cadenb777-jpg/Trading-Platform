@@ -4,6 +4,7 @@ keys (free price history), the SEC contact email, Webull (keys, Test/Live, order
 (ntfy topic and server, Telegram bot token and chat id). They are saved on this computer (~/.trading-platform/settings.json). Keys are never
 sent back to the browser; it only learns whether each one is set.
 """
+import ipaddress
 import json
 import re
 from pathlib import Path
@@ -21,6 +22,18 @@ AI_MODELS = {
 DEFAULT_MODEL = 'claude-opus-5-5'
 
 _cache = None
+
+
+def _local_host(host):
+    """True for this computer or the home network (localhost, 10.x, 192.168.x, 172.16-31.x, *.local)."""
+    host = host.lower()
+    if host == 'localhost' or host.endswith('.local'):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_loopback or ip.is_private and ip.version == 4 and any(ip in ipaddress.ip_network(n) for n in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'))
 
 
 def load():
@@ -169,8 +182,11 @@ async def set_settings(ctx, msg):
         server = str(msg['ntfyServer'] or '').strip().rstrip('/')
         if server == 'https://ntfy.sh':
             server = ''
-        if server and not re.fullmatch(r'https?://[^\s/?#@]+(/[^\s?#]*)?', server):
+        m = re.fullmatch(r'(https?)://([^\s/?#@:]+)(:\d{1,5})?(/[^\s?#]*)?', server) if server else None
+        if server and not m:
             raise EngineError('Enter your ntfy server address, like https://ntfy.example.com (leave empty for ntfy.sh).')
+        if m and m.group(1) == 'http' and not _local_host(m.group(2)):
+            raise EngineError('Use https:// for an ntfy server on the internet (plain http:// only for one on your own network).')
         changes['ntfy_server'] = server
     if 'telegramToken' in msg:
         token = str(msg['telegramToken'] or '').strip()

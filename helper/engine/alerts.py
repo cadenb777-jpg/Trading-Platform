@@ -13,7 +13,9 @@ notification in any open tab. A failed delivery is logged and shown on the alert
 Alerts only tell you something. This module never places, changes or cancels orders.
 """
 import datetime as dt
+import asyncio
 import logging
+import math
 import re
 import sys
 import time
@@ -28,6 +30,8 @@ COLLECTION = 'alerts'
 KINDS = ('price', 'move', 'setup', 'setups_ab')
 COOLDOWN_SECONDS = 30 * 60
 MAX_ALERTS = 200
+BURST = 10          # at most this many messages per batch of quotes (the last one sums up the rest)
+SEND_GAP = 1.0      # seconds between messages, so a phone isn't flooded
 NTFY_DEFAULT = 'https://ntfy.sh'
 TELEGRAM_API = 'https://api.telegram.org'
 SYMBOL = re.compile(r'^[A-Z0-9.\-/$^]{1,15}$')
@@ -83,10 +87,19 @@ def slim_setup(s):
     trade = s.get('trade') or None
     out = {k: s.get(k) for k in ('symbol', 'strategy', 'strategyName', 'horizon', 'signalDate', 'direction', 'status', 'tier', 'unit')}
     out['plan'] = {k: plan.get(k) for k in ('entryType', 'trigger', 'stop', 'target', 'atr', 'validUntil')}
-    if trade and isinstance(trade.get('entry'), (int, float)):
-        out['trade'] = {'entry': trade['entry']}
-    if not isinstance(out['plan']['trigger'], (int, float)) or not isinstance(out['plan']['stop'], (int, float)):
+    if not isinstance(out['symbol'], str) or not SYMBOL.match(out['symbol']):
+        raise EngineError('That setup has no valid symbol')
+    if not _finite(out['direction']) or out['direction'] == 0:
+        raise EngineError('That setup has no direction')
+    if not _finite(out['plan']['trigger']) or not _finite(out['plan']['stop']):
         raise EngineError('That setup has no entry and stop to watch')
+    for k in ('target', 'atr'):
+        if out['plan'][k] is not None and not _finite(out['plan'][k]):
+            raise EngineError(f'That setup has a bad {k}')
+    if trade and trade.get('entry') is not None:
+        if not _finite(trade['entry']):
+            raise EngineError('That setup has a bad fill price')
+        out['trade'] = {'entry': trade['entry']}
     return out
 
 
@@ -104,12 +117,18 @@ def _scanner_setups():
 
 # ---------- Validation ----------
 
+def _finite(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
 def _num(v, label, low=None):
     try:
         x = float(v)
     except (TypeError, ValueError):
         raise EngineError(f'{label} must be a number')
-    if x != x or (low is not None and x <= low):
+    if not math.isfinite(x):
+        raise EngineError(f'{label} must be a number')
+    if low is not None and x <= low:
         raise EngineError(f'{label} must be above {low}')
     return x
 
@@ -206,9 +225,10 @@ def _setup_message(s, price):
             f"Check the setup on the Setups page before acting.")
 
 
-def evaluate(alert, quotes, now, setups=None, today=None):
+def evaluate(alert, quotes, now, setups=None, today=None, skip_ids=()):
     """Checks one alert. Returns (events, changed): the messages to send and whether the alert's saved state changed.
-    `quotes` maps symbol -> {'last', 'prevClose'}; `setups` is the latest scan's setups (for setup alerts)."""
+    `quotes` maps symbol -> {'last', 'prevClose'}; `setups` is the latest scan's setups (for setup alerts);
+    `skip_ids` are setups with their own (starred) alert, which the "every A and B" alert leaves to that one."""
     if not alert.get('active', True):
         return [], False
     kind = alert['kind']
@@ -258,11 +278,11 @@ def evaluate(alert, quotes, now, setups=None, today=None):
         del fired[key]
         changed = True
     for s in setups or []:
-        if s.get('tier') not in ('A', 'B') or s.get('status') == 'forming':
-            continue
+        if s.get('tier') not in ('A', 'B') or s.get('status') in ('forming', 'in trade') or (s.get('plan') or {}).get('entryType') == 'open':
+            continue  # already triggered, or enters at the open: no live entry moment to alert on
         key = setup_id(s)
         q = quotes.get(s.get('symbol'))
-        if key in fired or not q or not isinstance(q.get('last'), (int, float)):
+        if key in fired or key in skip_ids or not q or not isinstance(q.get('last'), (int, float)):
             continue
         try:
             slim = slim_setup(s)
@@ -279,15 +299,18 @@ def symbols_for(alerts, setups=None):
     """The symbols whose quotes the active alerts need."""
     out = set()
     for a in alerts:
-        if not a.get('active', True):
-            continue
-        if a['kind'] in ('price', 'move'):
-            out.add(a['symbol'])
-        elif a['kind'] == 'setup':
-            out.add(a['setup']['symbol'])
-        elif a['kind'] == 'setups_ab':
-            out.update(s['symbol'] for s in setups or [] if s.get('tier') in ('A', 'B') and s.get('status') != 'forming' and s.get('symbol'))
-    return {s for s in out if SYMBOL.match(str(s))}
+        try:  # one bad row must not stop the quotes for every other alert
+            if not a.get('active', True):
+                continue
+            if a['kind'] in ('price', 'move'):
+                out.add(a['symbol'])
+            elif a['kind'] == 'setup':
+                out.add(a['setup']['symbol'])
+            elif a['kind'] == 'setups_ab':
+                out.update(s['symbol'] for s in setups or [] if isinstance(s, dict) and s.get('tier') in ('A', 'B') and s.get('status') != 'forming' and s.get('symbol'))
+        except Exception as err:
+            log.warning('Skipping alert %s: %s', a.get('id') if isinstance(a, dict) else a, err)
+    return {s for s in out if isinstance(s, str) and SYMBOL.match(s)}
 
 
 # ---------- Delivery ----------
@@ -357,6 +380,7 @@ class Monitor:
         self.alerts = None
         self.push = None   # set by the helper: sends a message to open tabs, returns how many
         self.http = None   # the engine's httpx client
+        self.quotes = {}   # set by the helper: its live quotes (to refuse a level price is already past)
 
     def load(self):
         if self.alerts is None:
@@ -372,7 +396,7 @@ class Monitor:
         return self.load()
 
     def symbols(self):
-        return symbols_for(self.load(), _scanner_setups() if any(a['kind'] == 'setups_ab' for a in self.load()) else None)
+        return symbols_for(self.load(), _scanner_setups() if any(isinstance(a, dict) and a.get('kind') == 'setups_ab' for a in self.load()) else None)
 
     def check(self, quotes, now=None):
         """Evaluates every active alert; sends what fired in the background. Returns the events (for tests)."""
@@ -380,30 +404,46 @@ class Monitor:
         alerts = self.load()
         if not alerts:
             return []
-        setups = _scanner_setups() if any(a['kind'] in ('setup', 'setups_ab') for a in alerts) else []
+        setups = _scanner_setups() if any(a.get('kind') in ('setup', 'setups_ab') for a in alerts) else []
+        starred = {a.get('setupId') for a in alerts if a.get('kind') == 'setup'}
         fired = []
         for a in alerts:
             try:
-                events, changed = evaluate(a, quotes, now, setups)
+                events, changed = evaluate(a, quotes, now, setups, skip_ids=starred)
+                if changed:  # saved at once (fired too), so a restart never fires it twice
+                    store.save_doc(COLLECTION, a)
             except Exception as err:  # a bad alert must never stop the others
                 log.warning('Alert %s could not be checked: %s', a.get('id'), err)
                 continue
-            if changed and not events:
-                store.save_doc(COLLECTION, a)
-            for e in events:
-                fired.append((a, e))
-        for a, e in fired:
-            background(self._send(a, e))
+            fired.extend((a['id'], e) for e in events)
+        if fired:
+            background(self._send_all(fired))
         return [e for _, e in fired]
 
-    async def _send(self, alert, event):
+    async def _send_all(self, fired):
+        """Sends one batch a second apart; past BURST messages the last one sums up the rest."""
+        if len(fired) > BURST:
+            rest = fired[BURST - 1:]
+            fired = fired[:BURST - 1] + [(None, {'title': f'{len(rest)} more alerts', 'message': '; '.join(e['title'] for _, e in rest)[:900]})]
+        for i, (alert_id, event) in enumerate(fired):
+            if i:
+                await asyncio.sleep(SEND_GAP)
+            await self._send(alert_id, event)
+
+    async def _send(self, alert_id, event):
         results = await deliver(self.http, event['title'], event['message'], self.push)
-        alert['lastDelivery'] = {'at': time.time(), 'results': results, 'message': event['message']}
+        if alert_id is None:
+            return
+        delivery = {'at': time.time(), 'results': results, 'message': event['message']}
         try:
-            if store.get_doc(COLLECTION, alert['id']) is None:
+            doc = store.get_doc(COLLECTION, alert_id)  # fresh copy: only the delivery result changes
+            if doc is None:
                 return  # deleted while it was being sent
-            saved = store.save_doc(COLLECTION, alert)
-            alert['updated'] = saved['updated']
+            doc['lastDelivery'] = delivery
+            store.save_doc(COLLECTION, doc)
+            for a in self.alerts or []:
+                if a.get('id') == alert_id:
+                    a['lastDelivery'] = delivery
         except Exception as err:
             log.warning('Could not save alert state: %s', err)
 
@@ -425,12 +465,16 @@ async def list_alerts(ctx, msg):
 @handler('alerts.save')
 async def save_alert(ctx, msg):
     doc = msg.get('alert')
-    existing = None
-    if isinstance(doc, dict) and doc.get('id'):
-        existing = store.get_doc(COLLECTION, str(doc['id']))
-    elif len(MONITOR.load()) >= MAX_ALERTS:
+    existing = store.get_doc(COLLECTION, str(doc['id'])) if isinstance(doc, dict) and doc.get('id') else None
+    if existing is None and len(MONITOR.load()) >= MAX_ALERTS:
         raise EngineError(f'You have {MAX_ALERTS} alerts already. Delete some first.')
     alert = clean_alert(doc, existing)
+    if alert['kind'] == 'price' and alert['active'] and alert.get('armed'):
+        last = (MONITOR.quotes.get(alert['symbol']) or {}).get('last')
+        if _finite(last) and condition_met(alert, {'last': last}):
+            word, other = ('above', 'higher') if alert['condition'] == 'above' else ('below', 'lower')
+            raise EngineError(f"The price is already {word} {_fmt(alert['price'])} (now {_fmt(last)}); pick a {other} level or use "
+                              f"'{'falls to' if alert['condition'] == 'above' else 'rises to'}'.")
     if alert['kind'] == 'setups_ab':  # only one of these
         for a in MONITOR.load():
             if a['kind'] == 'setups_ab' and a['id'] != alert.get('id'):
@@ -464,13 +508,23 @@ async def test_alert(ctx, msg):
     return {'results': results, 'channels': on}
 
 
+_found_chat = {}  # the chat telegram_link found, waiting for the owner to confirm it
+
+
 @handler('alerts.telegram_link')
 async def telegram_link(ctx, msg):
-    """Finds your chat id from the last message you sent the bot (so you don't have to look it up) and saves it."""
+    """Step 1 finds your chat from the last message you sent the bot and shows its name; step 2 (`confirm: true`)
+    saves it once you have checked it is you. The chat id itself never goes to the browser."""
     data = settings.load()
     token = data.get('telegram_token')
     if not token:
         raise EngineError('Save the bot token first.')
+    if msg.get('confirm') is True:
+        chat = _found_chat.pop(token, None)
+        if not chat:
+            raise EngineError('Click Find my chat first.')
+        settings.save({'telegram_chat': chat['id']})
+        return {'ok': True, 'saved': True, 'name': chat['name'], **settings.public()}
     try:
         r = await ctx.http.get(f'{TELEGRAM_API}/bot{token}/getUpdates')
         updates = r.json().get('result') or [] if r.status_code == 200 else None
@@ -483,5 +537,7 @@ async def telegram_link(ctx, msg):
     if not chats:
         raise EngineError('No message found. Open your bot in Telegram, press Start (or send it "hi"), then try again.')
     chat = chats[-1]
-    settings.save({'telegram_chat': str(chat['id'])})
-    return {'ok': True, 'name': chat.get('first_name') or chat.get('title') or chat.get('username') or 'your chat', **settings.public()}
+    name = str(chat.get('first_name') or chat.get('title') or chat.get('username') or 'a chat')[:60]
+    _found_chat.clear()
+    _found_chat[token] = {'id': str(chat['id']), 'name': name}
+    return {'ok': True, 'saved': False, 'name': name}

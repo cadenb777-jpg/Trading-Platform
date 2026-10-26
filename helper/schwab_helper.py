@@ -943,7 +943,7 @@ class Market:
             self.dirty_quotes.clear()
             mod = self.alert_monitor()
             if dirty and mod:
-                mod.MONITOR.push, mod.MONITOR.http = self.push_alert, self.engine.http
+                mod.MONITOR.push, mod.MONITOR.http, mod.MONITOR.quotes = self.push_alert, self.engine.http, self.quotes
                 try:
                     mod.MONITOR.check(self.quotes)
                 except Exception as err:  # alerts must never stop the quotes
@@ -1025,7 +1025,7 @@ async def engine_ready(market):
         log.warning('Feature unavailable: %s (%s)', name, err)
     mod = market.alert_monitor()
     if mod:  # alerts can reach open tabs (and the phone) from now on, even before the first quote
-        mod.MONITOR.push, mod.MONITOR.http = market.push_alert, market.engine.http
+        mod.MONITOR.push, mod.MONITOR.http, mod.MONITOR.quotes = market.push_alert, market.engine.http, market.quotes
     market.set_status(market.status['status'], market.status['message'])
 
 

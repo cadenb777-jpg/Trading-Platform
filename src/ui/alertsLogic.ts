@@ -82,3 +82,6 @@ export function formAlert(symbol: string, choice: AlertChoice, value: number, no
 /** The form choice that matches a saved alert (to edit it). */
 export const choiceOf = (a: HelperAlert): AlertChoice => (a.condition ?? 'above') as AlertChoice;
 
+
+/** The "every A and B setup" alert is switched by the Setups page's "Alert me on A & B entries" box, not deleted here. */
+export const managedOnSetups = (a: Pick<HelperAlert, 'kind'>) => a.kind === 'setups_ab';

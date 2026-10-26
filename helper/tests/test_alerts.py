@@ -282,17 +282,94 @@ class SettingsSecrecy(Base):
         self.assertEqual(reply['results']['ntfy'], 'ok')
         self.assertNotIn(SECRETS['telegram_token'], json.dumps(reply))
 
-    def test_telegram_link_finds_the_chat(self):
+    def test_telegram_link_shows_the_name_and_saves_only_after_confirming(self):
         settings._cache = {'telegram_token': SECRETS['telegram_token']}
         ctx = self.Ctx()
         ctx.http = FakeHttp(data={'ok': True, 'result': [{'message': {'chat': {'id': 555123, 'first_name': 'Caden'}}}]})
-        reply = asyncio.run(alerts.telegram_link(ctx, {}))
+        with self.assertRaises(core.EngineError):
+            asyncio.run(alerts.telegram_link(ctx, {'confirm': True}))  # nothing found yet
+        found = asyncio.run(alerts.telegram_link(ctx, {}))
+        self.assertEqual((found['name'], found['saved']), ('Caden', False))
+        self.assertEqual(settings.get('telegram_chat'), '')  # not saved until confirmed
+        self.assertNotIn('555123', json.dumps(found))
+        reply = asyncio.run(alerts.telegram_link(ctx, {'confirm': True}))
         self.assertEqual(settings.get('telegram_chat'), '555123')
-        self.assertTrue(reply['telegramSet'])
+        self.assertTrue(reply['telegramSet'] and reply['saved'])
         self.assertNotIn(SECRETS['telegram_token'], json.dumps(reply))
         ctx.http = FakeHttp(data={'ok': True, 'result': []})
         with self.assertRaises(core.EngineError):
             asyncio.run(alerts.telegram_link(ctx, {}))
+
+    def test_ntfy_server_https_except_home_network(self):
+        for ok in ('https://ntfy.example.com', 'http://localhost:8080', 'http://192.168.1.20', 'http://10.0.0.5:80', 'http://172.20.1.1', 'http://nas.local'):
+            asyncio.run(settings.set_settings(self.Ctx(), {'ntfyServer': ok}))
+            self.assertEqual(settings.get('ntfy_server'), ok)
+        for bad in ('http://ntfy.example.com', 'http://8.8.8.8', 'http://172.32.0.1', 'ftp://x', 'https://user@x.com'):
+            with self.assertRaises(core.EngineError, msg=bad):
+                asyncio.run(settings.set_settings(self.Ctx(), {'ntfyServer': bad}))
+
+
+class ReviewFixes(Base):
+    def test_fired_alert_is_saved_before_delivery_and_delivery_never_overwrites_edits(self):
+        settings._cache = {}
+
+        async def go():
+            a = (await alerts.save_alert(None, {'alert': {'kind': 'price', 'symbol': 'AAPL', 'condition': 'above', 'price': 100, 'repeat': True}}))['alert']
+            alerts.MONITOR.http, alerts.MONITOR.push = FakeHttp(), (lambda e: 1)
+            with mock.patch.object(alerts, 'background', lambda coro: coro.close()):  # deliver later, by hand
+                alerts.MONITOR.check(q(101), NOW)
+            saved = store.get_doc('alerts', a['id'])
+            self.assertEqual((saved['firedAt'], saved['armed']), (NOW, False))  # saved before any delivery
+            # The owner edits the note while the message is on its way; the delivery only adds lastDelivery.
+            store.save_doc('alerts', {**saved, 'note': 'edited'})
+            await alerts.MONITOR._send(a['id'], {'title': 't', 'message': 'm'})
+            after = store.get_doc('alerts', a['id'])
+            self.assertEqual(after['note'], 'edited')
+            self.assertEqual(after['lastDelivery']['results'], {'browser': '1 tab'})
+        asyncio.run(go())
+
+    def test_bad_setups_are_refused_and_bad_rows_skipped(self):
+        for bad in ({**setup(), 'symbol': 'bad symbol!'}, {**setup(), 'direction': float('nan')}, setup(trigger=float('inf')), setup(atr='2'), {**setup(), 'trade': {'entry': float('nan')}}):
+            with self.assertRaises(core.EngineError):
+                alerts.slim_setup(bad)
+        with self.assertRaises(core.EngineError):
+            alerts.clean_alert({'kind': 'price', 'symbol': 'AAPL', 'condition': 'above', 'price': float('inf')})
+        good = price()
+        with self.assertLogs('engine.alerts', 'WARNING'):
+            self.assertEqual(alerts.symbols_for([{'kind': 'setup', 'id': 'x'}, None, good]), {'AAPL'})
+
+    def test_all_setups_alert_leaves_starred_ones_and_skips_triggered(self):
+        today = '2026-10-23'
+        everyone = alerts.clean_alert({'kind': 'setups_ab'})
+        starred = alerts.clean_alert({'kind': 'setup', 'setup': setup()})
+        scan = [setup(), {**setup(status='in trade'), 'symbol': 'INTR', 'trade': {'entry': 100}}, {**setup(entryType='open'), 'symbol': 'OPEN'}]
+        quotes = {s: {'last': 100.5} for s in ('TEST', 'INTR', 'OPEN')}
+        events = alerts.evaluate(everyone, quotes, NOW, setups=scan, today=today, skip_ids={starred['setupId']})[0]
+        self.assertEqual(events, [])  # TEST has its own alert; the others already triggered / enter at the open
+        self.assertEqual(len(alerts.evaluate(starred, quotes, NOW, setups=scan, today=today)[0]), 1)
+
+    def test_bursts_are_spaced_and_capped(self):
+        sent = []
+
+        async def fake_send(alert_id, event):
+            sent.append(event['title'])
+        alerts.MONITOR._send = fake_send
+        self.addCleanup(delattr, alerts.MONITOR, '_send')
+        with mock.patch.object(alerts, 'SEND_GAP', 0):
+            asyncio.run(alerts.MONITOR._send_all([(str(i), {'title': f'T{i}', 'message': 'm'}) for i in range(15)]))
+        self.assertEqual(len(sent), alerts.BURST)
+        self.assertEqual(sent[-1], '6 more alerts')
+
+    def test_refuses_a_level_already_passed_and_counts_new_ids(self):
+        alerts.MONITOR.quotes = {'AAPL': {'last': 210, 'prevClose': 200}}
+        self.addCleanup(setattr, alerts.MONITOR, 'quotes', {})
+        with self.assertRaises(core.EngineError) as e:
+            asyncio.run(alerts.save_alert(None, {'alert': {'kind': 'price', 'symbol': 'AAPL', 'condition': 'above', 'price': 200}}))
+        self.assertIn('already above $200.00', str(e.exception))
+        self.assertIn("'falls to'", str(e.exception))
+        asyncio.run(alerts.save_alert(None, {'alert': {'kind': 'price', 'symbol': 'AAPL', 'condition': 'above', 'price': 220}}))
+        with mock.patch.object(alerts, 'MAX_ALERTS', 1), self.assertRaises(core.EngineError):
+            asyncio.run(alerts.save_alert(None, {'alert': {'id': 'made-up', 'kind': 'price', 'symbol': 'MSFT', 'condition': 'above', 'price': 1}}))
 
 
 class NeverTrades(unittest.TestCase):

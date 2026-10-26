@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alertStatus, deliverySummary, describeAlert, formAlert, type HelperAlert } from './alertsLogic';
+import { alertStatus, deliverySummary, describeAlert, formAlert, managedOnSetups, type HelperAlert } from './alertsLogic';
 
 const base: HelperAlert = { id: 'a1', kind: 'price', symbol: 'AAPL', condition: 'above', price: 200, note: '', repeat: false, active: true, created: 0 };
 
@@ -35,5 +35,10 @@ describe('helper alerts in the browser', () => {
     expect(formAlert('MSFT', 'up', 3, '', false, 'x1')).toEqual({ id: 'x1', kind: 'move', symbol: 'MSFT', condition: 'up', pct: 3, note: '', repeat: false });
     expect(() => formAlert('AAPL', 'above', NaN, '', false)).toThrow(/price/);
     expect(() => formAlert('AAPL', 'down', 150, '', false)).toThrow(/100%/);
+  });
+
+  it('leaves the all-setups alert to the Setups page', () => {
+    expect(managedOnSetups({ kind: 'setups_ab' })).toBe(true);
+    expect(managedOnSetups({ kind: 'setup' })).toBe(false);
   });
 });

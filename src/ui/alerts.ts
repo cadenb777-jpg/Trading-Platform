@@ -6,7 +6,7 @@
 import { refKey, subscribeQuote, type MarketRef } from '../data/quotes';
 import { ALERTS_HELPER_VERSION, engineRequest, helper } from '../data/schwab';
 import { onStateChange, persist, state } from '../state';
-import { ALERT_CHOICES, alertStatus, choiceOf, deliverySummary, describeAlert, formAlert, type AlertChoice, type AlertsReply, type HelperAlert } from './alertsLogic';
+import { ALERT_CHOICES, alertStatus, choiceOf, deliverySummary, describeAlert, formAlert, managedOnSetups, type AlertChoice, type AlertsReply, type HelperAlert } from './alertsLogic';
 import { formatPrice, h, openModal, toast } from './dom';
 import { openSettings } from './settings';
 import { displaySymbol } from './watchlist';
@@ -259,7 +259,9 @@ export async function openAlertsDialog(ref?: MarketRef, lastPrice: number | null
         { class: 'alert-actions' },
         a.kind === 'price' || a.kind === 'move' ? h('label', { class: 'small', title: 'Fire again each time price crosses back (at most every 30 minutes)' }, rep, ' Repeat') : null,
         a.kind === 'price' || a.kind === 'move' ? h('button', { class: 'mini-btn', title: 'Edit alert', onclick: () => edit(a) }, 'Edit') : null,
-        h(
+        managedOnSetups(a)
+          ? h('a', { class: 'small', href: '#setups', title: 'Switch it off with "Alert me on A & B entries" on the Setups page', onclick: () => close() }, 'Change on Setups')
+          : h(
           'button',
           {
             class: 'mini-btn',

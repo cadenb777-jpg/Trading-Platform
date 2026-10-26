@@ -269,12 +269,18 @@ function alertsRow(s: PlatformSettings, refresh: () => void): HTMLElement {
         'button',
         {
           class: 'btn',
-          onclick: () =>
-            run(async () => {
-              const r = await engineRequest<PlatformSettings & { name: string }>('alerts.telegram_link', {}, 20000);
-              cached = r;
-              result.textContent = `✓ Linked to ${r.name}. Click Send test.`;
-            }, 'Chat found'),
+          onclick: async () => {
+            try {
+              const r = await engineRequest<{ name: string }>('alerts.telegram_link', {}, 20000);
+              // Show who it found and save only once the owner says it's them.
+              result.replaceChildren(
+                `Found the chat of "${r.name}". Is that you? `,
+                h('button', { class: 'btn small primary', onclick: () => run(async () => { cached = await engineRequest<PlatformSettings>('alerts.telegram_link', { confirm: true }, 20000); }, 'Telegram linked: click Send test') }, 'Yes, use it'),
+              );
+            } catch (err) {
+              result.textContent = `✗ ${(err as Error).message}`;
+            }
+          },
         },
         'Find my chat',
       ),
