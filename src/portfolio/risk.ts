@@ -163,6 +163,8 @@ export interface TaxRow {
 
 export interface TaxReport {
   groups: { type: TaxType; label: string; meaning: string; value: number; accounts: string[] }[];
+  /** Per account, in the order sent: the type read from Webull's account class or the name (auto), and the one used. */
+  accounts: { name: string; auto: TaxType; type: TaxType }[];
   taxable: TaxRow[];
   totals: { gain: number; loss: number; harvest: number; noCost: number };
   notAdvice: string;
@@ -176,19 +178,12 @@ export interface TaxAccountInput {
   taxType?: TaxType;
   /** Webull account id: its recent fills date some of the shares (short-term). */
   webullAccount?: string;
+  /** Webull's account class (ROTH_IRA, TRADITIONAL_IRA, INDIVIDUAL_MARGIN …): decides the type for synced accounts. */
+  webullClass?: string;
   holdings: { symbol: string; shares: number; value: number | null; cost: number | null; kind: string }[];
 }
 
 export const fetchTax = (accounts: TaxAccountInput[]) => engineRequest<TaxReport>('tax.account', { accounts }, 120000);
-
-/** Same rule as the helper's tax.tax_type: the owner's choice, else the account's name. */
-export function taxTypeOf(name: string, chosen?: string | null): TaxType {
-  if (chosen === 'roth' || chosen === 'deferred' || chosen === 'taxable') return chosen;
-  const n = name.toLowerCase();
-  if (n.includes('roth')) return 'roth';
-  if (['ira', '401', '403', 'sep', 'traditional', 'rollover', 'pension'].some((w) => n.includes(w))) return 'deferred';
-  return 'taxable';
-}
 
 interface DividendLike {
   symbol: string;

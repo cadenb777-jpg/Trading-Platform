@@ -445,7 +445,7 @@ def account_info(row):
     number = str(row.get('account_number') or row['account_id'])
     shown = f"{name} ••{number[-4:]}" + ('' if stocks or futures else f' ({NOT_SUPPORTED})')
     return {'id': str(row['account_id']), 'label': shown, 'name': name, 'stocks': stocks, 'futures': futures, 'retirement': 'IRA' in (cls or name.upper()),
-            'managed': cls.startswith('MANAGED_')}
+            'managed': cls.startswith('MANAGED_'), 'accountClass': cls}
 
 
 async def accounts(ctx, fresh=False):
@@ -1257,7 +1257,7 @@ async def _sync_one(ctx, chosen, keep_empty):
         return None, skipped
     name = f"Webull {chosen['label']}{' (Test)' if env() == 'test' else ''}"
     doc = {**(existing or {'benchmark': 'SPY', 'rebalance': 'none'}), 'name': name if _auto_name(existing) else existing['name'], 'webullAutoName': name,
-           'mode': 'shares', 'holdings': holdings, 'webullAccount': account_id, 'webullEnv': env(),
+           'mode': 'shares', 'holdings': holdings, 'webullAccount': account_id, 'webullEnv': env(), 'webullClass': chosen.get('accountClass') or '',
            'syncedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')}
     return store.save_doc('portfolios', doc), skipped
 

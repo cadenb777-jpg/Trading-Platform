@@ -702,6 +702,7 @@ class Accounts(FiveAccounts):
         self.assertEqual([(h['symbol'], h.get('shares'), h.get('amount')) for h in roth['holdings']], [('SCHD', 100.0, None), ('CASH', None, 500.0)])
         self.assertNotIn('webullRetirement', roth)
         self.assertEqual(roth['webullAutoName'], 'Webull Roth IRA ••1234 (Test)')
+        self.assertEqual(roth['webullClass'], 'ROTH_IRA')  # for the Account page's Taxes section (tax.auto_type)
         self.assertNotIn('FUT00001', [c['query'].get('account_id') for c in self.fake.calls])
         # re-sync updates by account id (an old auto name is replaced; nothing is duplicated)
         store.save_doc('portfolios', {**roth, 'name': 'Webull …1234 (Cash) (Test)'})

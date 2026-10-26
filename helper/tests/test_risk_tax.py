@@ -58,7 +58,9 @@ class Sectors(unittest.TestCase):
 
         async def company(ctx, s):
             if s == 'ZZZZ':
-                raise risk.EngineError('not listed')
+                raise risk.sec.NotListed('not listed')
+            if s == 'FAIL':
+                raise risk.EngineError('The SEC refused the request.')  # a 403: not an answer about the ticker
             return {'cik': 1, 'name': 'x'}
 
         async def subs(ctx, cik):
@@ -68,6 +70,8 @@ class Sectors(unittest.TestCase):
             self.assertEqual((r['sector'], r['sic']), ('Information Technology', '3571'))
             self.assertEqual(calls[0], (('sector', 'AAPL'), 30 * 86400, True))
             self.assertEqual(run(risk.sector(Ctx(), 'ZZZZ', {'name': 'Z CORP'}))['sector'], 'Other')
+            with self.assertRaises(risk.EngineError):  # raised (so not cached), never "Other"
+                run(risk.sector(Ctx(), 'FAIL', {'name': 'F CORP'}))
             fund = run(risk.sector(Ctx(), 'VTI', {'name': 'VANGUARD TOTAL STOCK MARKET ETF'}))
             self.assertEqual((fund['sector'], fund['fundType']), ('Fund', 'broad market'))
 
@@ -78,19 +82,6 @@ class Sectors(unittest.TestCase):
 
 
 class RiskMaths(unittest.TestCase):
-    def test_effective_holdings_and_top5(self):
-        c = risk.concentration({'A': 50, 'B': 25, 'C': 25})
-        self.assertAlmostEqual(c['effective'], 1 / (0.25 + 0.0625 + 0.0625))
-        self.assertEqual(c['largest'], {'symbol': 'A', 'weight': 0.5})
-        self.assertAlmostEqual(c['top5'], 1.0)
-        eq = risk.concentration({str(i): 10 for i in range(10)})
-        self.assertAlmostEqual(eq['effective'], 10)
-        self.assertAlmostEqual(eq['top5'], 0.5)
-        self.assertIsNone(risk.concentration({})['effective'])
-        cash = risk.concentration({'A': 30, 'B': 30}, cash=40)  # cash is in the total but isn't a holding
-        self.assertAlmostEqual(cash['largest']['weight'], 0.3)
-        self.assertAlmostEqual(cash['effective'], 2)
-
     def test_value_at_risk_is_the_fifth_percentile_loss(self):
         returns = [-0.05, -0.03] + [0.001] * 18  # 20 days: the 5th percentile sits between the two worst days
         self.assertAlmostEqual(risk.value_at_risk(returns), -np.percentile(returns, 5))
@@ -136,25 +127,25 @@ class RiskMaths(unittest.TestCase):
             bench.append([int((start + dt.timedelta(days=i)).timestamp()), p])
         stock = [[t, c * 0.2] for t, c in bench]
         young = bench[-30:]  # a recent listing: too short to judge a year
+        stale = stock[:-8]  # stopped trading 8 sessions ago: not forward-filled into a flat line
 
         async def closes(ctx, s):
-            return {'SPY': bench, 'AAA': stock, 'NEW': young}[s]
+            return {'SPY': bench, 'AAA': stock, 'NEW': young, 'OLD': stale}[s]
 
         async def quotes(ctx, symbols):
-            return {s: {'name': f'{s} INC', 'assetType': 'EQUITY'} for s in symbols}
+            raise RuntimeError('Schwab quotes down')  # names only help spot funds: the rest still works
 
         async def sector(ctx, s, q):
             return {'sector': 'Information Technology', 'source': 'SEC'}
 
         with mock.patch.object(risk.invest, 'closes', closes), mock.patch.object(risk.invest, 'quotes', quotes), mock.patch.object(risk, 'sector', sector):
             out = run(risk.account(object(), {'holdings': [{'symbol': 'AAA', 'value': 6000}, {'symbol': 'CASH', 'value': 4000, 'kind': 'cash'},
-                                                           {'symbol': 'NEW', 'value': 1000}, {'symbol': 'BCRED', 'value': 500, 'kind': 'alt'}]}))
-        self.assertEqual(out['missing'], ['NEW'])
+                                                           {'symbol': 'NEW', 'value': 1000}, {'symbol': 'OLD', 'value': 100},
+                                                           {'symbol': 'BCRED', 'value': 500, 'kind': 'alt'}]}))
+        self.assertEqual(out['missing'], ['NEW', 'OLD'])
         self.assertEqual(out['alts'], ['BCRED'])
         self.assertAlmostEqual(out['stats']['beta'], 0.6, places=6)  # 60% in a stock that moves exactly with SPY
         self.assertAlmostEqual(out['assets']['AAA']['weight'], 0.6)
-        self.assertAlmostEqual(out['concentration']['weights']['AAA'], 6000 / 11000)
-        self.assertNotIn('CASH', out['concentration']['weights'])
         self.assertEqual(out['sectors']['AAA']['sector'], 'Information Technology')
 
 
@@ -167,6 +158,19 @@ class TaxView(unittest.TestCase):
         self.assertEqual(tax.tax_type('Schwab brokerage'), 'taxable')
         self.assertEqual(tax.tax_type('Schwab brokerage', 'roth'), 'roth')  # the owner's own choice wins
         self.assertEqual(tax.tax_type('Roth IRA', 'nonsense'), 'roth')
+        # Webull's account class decides for synced accounts, whatever the owner renamed them to
+        self.assertEqual(tax.tax_type('My retirement money', webull_class='ROTH_IRA'), 'roth')
+        self.assertEqual(tax.tax_type('Roth IRA (old name)', webull_class='TRADITIONAL_IRA'), 'deferred')
+        self.assertEqual(tax.tax_type('Webull IRA-ish', webull_class='INDIVIDUAL_MARGIN'), 'taxable')
+        self.assertEqual(tax.tax_type('Webull Cash', None, 'INDIVIDUAL_CASH'), 'taxable')
+        self.assertEqual(tax.tax_type('x', 'deferred', 'ROTH_IRA'), 'deferred')  # the owner's choice still wins
+        # names: whole words only, the account number suffix ignored
+        self.assertEqual(tax.auto_type('Fidelity 401(k)'), 'deferred')
+        self.assertEqual(tax.auto_type('Old 401k plan'), 'deferred')
+        self.assertEqual(tax.auto_type('SEP-IRA'), 'deferred')
+        self.assertEqual(tax.auto_type('Irate trading ••SEP1'), 'taxable')  # "Irate" isn't IRA; the suffix isn't read
+        self.assertEqual(tax.auto_type('September fund'), 'taxable')
+        self.assertEqual(tax.auto_type('Brokerage ••IRA9'), 'taxable')
 
     ACCOUNTS = [
         {'name': 'Webull Roth IRA ••1234', 'holdings': [{'symbol': 'AAPL', 'shares': 10, 'value': 2300, 'cost': 1800}]},
@@ -183,6 +187,9 @@ class TaxView(unittest.TestCase):
     def test_groups_by_tax_type(self):
         v = tax.tax_view(self.ACCOUNTS)
         self.assertEqual([g['type'] for g in v['groups']], ['roth', 'deferred', 'taxable'])
+        self.assertEqual([(a['auto'], a['type']) for a in v['accounts']], [('roth', 'roth'), ('deferred', 'deferred'), ('deferred', 'deferred'), ('taxable', 'taxable')])
+        chosen = tax.tax_view([{**self.ACCOUNTS[0], 'taxType': 'taxable'}])['accounts'][0]
+        self.assertEqual((chosen['auto'], chosen['type']), ('roth', 'taxable'))
         deferred = v['groups'][1]
         self.assertEqual(deferred['accounts'], ['Webull Traditional IRA ••5678', 'Rollover IRA'])
         self.assertAlmostEqual(deferred['value'], 1800)

@@ -85,6 +85,8 @@ export interface Portfolio {
   /** Set by the helper's Webull sync. */
   webullAccount?: string;
   webullEnv?: 'test' | 'live';
+  /** Webull's account class at the last sync (e.g. ROTH_IRA), for the Taxes section. */
+  webullClass?: string;
   syncedAt?: string;
 }
 
