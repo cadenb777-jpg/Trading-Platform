@@ -106,7 +106,7 @@
   --insight-top: #f1ecff;
   --faint: #9aa1ad;
   --border-strong: #c6cdd8;
-  --up-text: #067a67;
+  --up-text: #057362;
   --down-text: #c62828;
   --up-fill: #067a67;
   --down-fill: #c62828;
@@ -5479,9 +5479,9 @@ a.btn {
 .sp-table .tt-filters .tt-range .input { width: 52px; }
 .sp-table { width: 100%; border-collapse: collapse; font-size: var(--fs-base); }
 .sp-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 6px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-.sp-table td { padding: 6px; border-bottom: 1px solid var(--border); vertical-align: top; white-space: normal; }
+.sp-table td { padding: 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .sp-table .num { text-align: right; white-space: nowrap; }
-.sp-table td:nth-child(2) { text-align: left; }
+.sp-table td:nth-child(2) { text-align: left; white-space: normal; }
 .sp-table tbody tr { cursor: pointer; }
 .sp-table tbody tr:hover { background: var(--panel-2); }
 .sp-table tbody tr.sel { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--link); }
@@ -6404,4 +6404,270 @@ a.btn {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ---------- Ticker card (src/ui/tickerCard.ts): any [data-ticker] shows it on hover, tap or focus ---------- */
+[data-ticker] {
+  cursor: help;
+  text-decoration: underline dotted var(--faint);
+  text-underline-offset: 3px;
+}
+button[data-ticker],
+a[data-ticker] {
+  cursor: pointer;
+}
+.ticker-card {
+  position: fixed;
+  z-index: 60;
+  width: 300px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+  font-size: var(--fs-sm);
+}
+.ticker-card.sheet {
+  left: 8px !important;
+  right: 8px;
+  bottom: 8px;
+  top: auto !important;
+  width: auto;
+}
+.tc-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.tc-sym {
+  font-size: var(--fs-md, 15px);
+}
+.tc-head .asof {
+  flex: 1;
+  text-align: right;
+}
+.tc-close {
+  display: none;
+  padding: 0 4px;
+}
+.ticker-card.pinned .tc-close,
+.ticker-card.sheet .tc-close {
+  display: inline-flex;
+}
+.tc-name {
+  margin-top: -4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tc-price {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tc-last {
+  font-size: var(--fs-num-lg);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.tc-chg.up {
+  color: var(--up-text);
+}
+.tc-chg.down {
+  color: var(--down-text);
+}
+.tc-spark:empty {
+  display: none;
+}
+.tc-spark .sparkline {
+  width: 100%;
+  height: 44px;
+  display: block;
+}
+.tc-pos {
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+.tc-pos:empty,
+.tc-facts:empty {
+  display: none;
+}
+.tc-accts {
+  margin: 2px 0 0;
+  padding-left: 16px;
+}
+.tc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.news-chip {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--link);
+  background: var(--accent-soft);
+  padding: 1px 7px;
+  border-radius: 999px;
+  text-decoration: none;
+}
+
+/* ---------- As-of stamps and data health (src/ui/dataHealth.ts) ---------- */
+.asof {
+  white-space: nowrap;
+}
+.asof.stale {
+  color: var(--warn-text);
+}
+.panel-head .asof {
+  margin-left: auto;
+}
+.health-nav {
+  position: relative;
+}
+.health-badge {
+  position: absolute;
+  top: 6px;
+  right: 14px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+  box-shadow: 0 0 0 2px var(--panel);
+}
+.health-badge[data-health='ok'] {
+  background: var(--up);
+}
+.health-badge[data-health='stale'] {
+  background: var(--warn);
+}
+.health-badge[data-health='error'] {
+  background: var(--down);
+}
+.health-pop {
+  width: min(360px, calc(100vw - 32px));
+  padding: 6px;
+}
+.health-head {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.health-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.health-row {
+  display: grid;
+  grid-template-columns: 12px 1fr;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.health-row:last-child {
+  border-bottom: 0;
+}
+.health-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 4px;
+  background: var(--faint);
+}
+.health-ok .health-dot {
+  background: var(--up);
+}
+.health-stale .health-dot {
+  background: var(--warn);
+}
+.health-error .health-dot {
+  background: var(--down);
+}
+.health-state {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.health-error .health-state {
+  color: var(--down-text);
+}
+.health-stale .health-state {
+  color: var(--warn-text);
+}
+
+/* ---------- Risk card drill-downs (src/portfolio/riskCharts.ts) ---------- */
+button.stat-drill {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-num-lg);
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline dotted var(--faint);
+  text-underline-offset: 4px;
+}
+button.stat-drill.down {
+  color: var(--down-text);
+}
+button.stat-drill:hover .stat-drill-mark,
+button.stat-drill:focus-visible .stat-drill-mark {
+  color: var(--accent);
+}
+.stat-drill-mark {
+  color: var(--muted);
+}
+.rc-body p {
+  margin-top: 0;
+}
+.rc-wrap {
+  position: relative;
+}
+.rc-bar {
+  fill: var(--accent);
+  opacity: 0.85;
+}
+.rc-bar.tail {
+  fill: var(--down);
+}
+.rc-bar.dim {
+  opacity: 0.35;
+}
+.rc-hit {
+  fill: transparent;
+}
+.rc-axis {
+  stroke: var(--border-strong);
+}
+.rc-cut {
+  stroke: var(--down);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
+.rc-dot {
+  fill: var(--link);
+  fill-opacity: 0.6;
+  stroke: var(--panel);
+  stroke-width: 1;
+}
+.rc-fit {
+  stroke: var(--text);
+  stroke-width: 2;
+}
+.rc-ring {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 2;
+}
+.rc-line {
+  min-height: 280px;
+}
+.rc-table {
+  margin-top: 8px;
 }

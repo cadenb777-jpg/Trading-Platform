@@ -212,4 +212,8 @@ async def account(ctx, msg):
     stats = risk_stats(asset_returns, bench_returns, weights, days)
     out['assets'] = {s: {**a, 'weight': values[s] / base} for s, a in zip(measured, stats.pop('assets'))}
     out['stats'] = {**stats, 'start': days[0].isoformat(), 'end': days[-1].isoformat(), 'measured': base}
+    # the daily returns behind the figures, for the risk card's drill-downs (histogram, beta scatter, drawdown curve)
+    port = asset_returns @ np.asarray(weights, dtype=float) if measured else np.zeros(len(days) - 1)
+    out['series'] = {'dates': [d.isoformat() for d in days[1:]], 'account': [round(float(x), 6) for x in port],
+                     'spy': [round(float(x), 6) for x in bench_returns]}
     return out

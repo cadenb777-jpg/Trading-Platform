@@ -3,6 +3,7 @@ import { guessMarket, quoteChange, refKey, subscribeQuote, type MarketRef, type 
 import { onStateChange, persist, state } from '../state';
 import { formatPrice, h, toast } from './dom';
 import { icon } from './icons';
+import { tickerAttr } from './tickerCard';
 
 export const DISPLAY_NAMES: Record<string, string> = {
   $SPX: 'S&P 500',
@@ -66,7 +67,7 @@ export function createWatchlist(opts: { onSelect: (ref: MarketRef) => void; isAc
             h(
               'span',
               { class: 'wl-sym' },
-              h('b', {}, displaySymbol(ref.symbol)),
+              h('b', tickerAttr(ref.symbol), displaySymbol(ref.symbol)),
               h('span', { class: 'wl-sub' }, DISPLAY_NAMES[ref.symbol] ?? (ref.provider === 'coinbase' ? 'Crypto' : 'Stock')),
             ),
             h('span', { class: 'wl-last' }),

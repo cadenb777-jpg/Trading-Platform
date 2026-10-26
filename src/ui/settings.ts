@@ -561,7 +561,7 @@ function aboutSection(): HTMLElement {
 }
 
 /** Appearance: light or dark (saved in this browser, works without the helper). */
-function appearanceRow(): HTMLElement {
+function appearanceRow(): HTMLElement[] {
   const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Theme' });
   const draw = () =>
     seg.replaceChildren(
@@ -570,7 +570,7 @@ function appearanceRow(): HTMLElement {
       ),
     );
   draw();
-  return h('div', { class: 'settings-row' }, h('h3', { class: 'settings-section' }, 'Appearance'), h('div', { class: 'settings-label' }, h('b', {}, 'Theme')), seg);
+  return [h('h3', { class: 'settings-section' }, 'Appearance'), h('div', { class: 'settings-row' }, h('div', { class: 'settings-label' }, h('b', {}, 'Theme')), seg)];
 }
 
 export async function openSettings(focus?: 'ai' | 'alerts') {
@@ -581,7 +581,7 @@ export async function openSettings(focus?: 'ai' | 'alerts') {
     try {
       s = await getSettings(true);
     } catch (err) {
-      body.replaceChildren(appearanceRow(), connectionCheck(), h('div', { class: 'ap-error' }, `${(err as Error).message}`), aboutSection());
+      body.replaceChildren(...appearanceRow(), connectionCheck(), h('div', { class: 'ap-error' }, `${(err as Error).message}`), aboutSection());
       return;
     }
     const model = h('select', { class: 'input' }, ...s.models.map((m) => h('option', { value: m.id, selected: m.id === s.model }, m.name)));
@@ -591,7 +591,7 @@ export async function openSettings(focus?: 'ai' | 'alerts') {
     });
     const email = h('input', { class: 'input', type: 'email', value: s.secContact, placeholder: 'you@example.com' });
     body.replaceChildren(
-      appearanceRow(),
+      ...appearanceRow(),
       connectionCheck(),
       h('h3', { class: 'settings-section' }, 'AI assistant'),
       keyRow(

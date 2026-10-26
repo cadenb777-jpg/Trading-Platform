@@ -147,6 +147,10 @@ class RiskMaths(unittest.TestCase):
         self.assertAlmostEqual(out['stats']['beta'], 0.6, places=6)  # 60% in a stock that moves exactly with SPY
         self.assertAlmostEqual(out['assets']['AAA']['weight'], 0.6)
         self.assertEqual(out['sectors']['AAA']['sector'], 'Information Technology')
+        sr = out['series']  # the returns behind the figures, for the drill-down charts
+        self.assertEqual(len(sr['dates']), len(sr['account']))
+        self.assertEqual(len(sr['account']), len(sr['spy']))
+        self.assertAlmostEqual(sr['account'][5], 0.6 * sr['spy'][5], places=5)
 
 
 class TaxView(unittest.TestCase):

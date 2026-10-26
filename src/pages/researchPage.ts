@@ -6,6 +6,8 @@ import { dcf, impliedGrowth, sensitivity, wacc, type DcfInputs } from '../resear
 import { compact, createLineChart, dataTable, money, numberField, pageFrame, pct, rangeBar, statCards } from '../ui/charts';
 import { formatPrice, h } from '../ui/dom';
 import { termLabel } from '../ui/glossary';
+import { tickerAttr } from '../ui/tickerCard';
+import { asOfStamp } from '../ui/dataHealth';
 
 type Values = Record<string, (number | null)[]>;
 
@@ -137,8 +139,8 @@ export function createResearchPage() {
     const header = h(
       'section',
       { class: 'panel company-head' },
-      h('div', { class: 'panel-head' }, h('h3', {}, `${d.profile.name} (${d.symbol})`), h('span', { class: 'spacer' }), livePrice, liveChange),
-      h('div', { class: 'profile-line muted small' }, h('span', {}, d.profile.industry || 'Industry n/a'), h('span', {}, d.profile.exchange), d.profile.fiscalYearEnd ? h('span', {}, `Fiscal year ends ${d.profile.fiscalYearEnd.slice(0, 2)}/${d.profile.fiscalYearEnd.slice(2)}`) : null, h('span', {}, `SEC CIK ${d.profile.cik}`)),
+      h('div', { class: 'panel-head' }, h('h3', {}, `${d.profile.name} (`, h('span', tickerAttr(d.symbol), d.symbol), ')'), h('span', { class: 'spacer' }), livePrice, liveChange),
+      h('div', { class: 'profile-line muted small' }, h('span', {}, d.profile.industry || 'Industry n/a'), h('span', {}, d.profile.exchange), d.profile.fiscalYearEnd ? h('span', {}, `Fiscal year ends ${d.profile.fiscalYearEnd.slice(0, 2)}/${d.profile.fiscalYearEnd.slice(2)}`) : null, h('span', {}, `SEC CIK ${d.profile.cik}`), d.filings?.[0]?.filed ? asOfStamp('sec').set(d.filings[0].filed, { prefix: 'latest SEC filing', source: d.filings[0].form }).el : null),
       d.totalReturn?.tr1y != null
         ? h('div', { class: 'profile-line small' }, termLabel('Total return', 'totalreturn'), ...([1, 3, 5] as const).map((y) => {
             const tr = d.totalReturn![`tr${y}y`];

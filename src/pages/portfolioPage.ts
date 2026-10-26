@@ -29,6 +29,7 @@ import {
 import { createLineChart, dataTable, money, pageFrame, pct, pctU, statCards } from '../ui/charts';
 import { infoTip } from '../ui/glossary';
 import { h, openModal, toast } from '../ui/dom';
+import { tickerAttr } from '../ui/tickerCard';
 
 const STRATEGY_CLASS: Record<Strategy, AssetClass> = {
   'Private credit': 'Private credit',
@@ -577,7 +578,7 @@ export function createPortfolioPage() {
   /** A holding's name for result tables: cash shows as "Cash" with a note about its stand-in, never as BIL. */
   function holdingCell(symbol: string) {
     const l = holdingLabel(current, symbol);
-    return h('span', {}, h('b', {}, l.label), l.note ? h('span', { class: 'muted small' }, ` ${l.note}`) : null);
+    return h('span', {}, h('b', l.label === symbol ? tickerAttr(symbol) : {}, l.label), l.note ? h('span', { class: 'muted small' }, ` ${l.note}`) : null);
   }
 
   function optimiserForm(out: HTMLElement) {
