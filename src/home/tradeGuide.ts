@@ -7,7 +7,7 @@ import type { MarketRef } from '../data/quotes';
 import { pct as fmtPct } from '../ui/charts';
 import { formatPrice, h, openModal } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
-import { sideRecord, type Setup, type StrategyInfo } from './setupsPanel';
+import { sideRecord, takeProfit, type Setup, type StrategyInfo } from './setupsPanel';
 import { readTrade } from './tradeRead';
 import { readSize, saveSize } from '../trade/sizing';
 
@@ -206,7 +206,7 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
       { class: 'guide-levels' },
       h('div', {}, h('span', { class: 'muted tiny' }, s.trade ? 'Entered' : p.entryType === 'open' ? `${long ? 'Buy' : 'Sell'} at the open, about` : long ? 'Buy above' : 'Sell below'), h('b', {}, usd(entry))),
       h('div', {}, termLabel('Stop', 'stop'), h('b', { class: 'down' }, usd(p.stop))),
-      h('div', {}, h('span', { class: 'muted tiny' }, 'Target'), h('b', { class: 'up' }, p.target != null ? usd(p.target) : 'trailing')),
+      ((tp) => h('div', { title: tp.note }, h('span', { class: 'muted tiny' }, tp.tested ? tp.label : 'Take profit (2R guide)'), h('b', { class: 'up' }, usd(tp.price))))(takeProfit(s)),
       h('div', {}, h('span', { class: 'muted tiny' }, 'Out by'), h('b', {}, shortDate(p.exitBy))),
     ),
 

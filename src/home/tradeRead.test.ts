@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readTrade } from './tradeRead';
-import type { Setup } from './setupsPanel';
+import { takeProfit, type Setup } from './setupsPanel';
 
 const base = {
   symbol: 'TEST', strategy: 'weekly_swing', strategyName: 'Pullback', direction: 1, status: 'ready', statusText: '', signalDate: '2026-10-22',
@@ -42,5 +42,18 @@ describe('the read', () => {
   it('a profitable record that fails the robustness check is not counted for the trade', () => {
     const weak = { ...strat, sides: { long: { ...rec, robust: { ...rec.robust, costs: false } } } };
     expect(readTrade(base, weak, 1).factors.find((f) => f.key === 'record')!.stance).toBe('neutral');
+  });
+});
+
+describe('take profit', () => {
+  it('a pullback uses its tested target and the read says it', () => {
+    expect(takeProfit(base)).toMatchObject({ price: 110, tested: true });
+    expect(readTrade(base, strat, 1).action).toContain('Take profit at $110.00');
+  });
+  it('a trailing exit shows +2R as a guide, long and short', () => {
+    const trail = { ...base, strategy: 'breakout', plan: { ...base.plan, target: null } } as Setup;
+    expect(takeProfit(trail)).toMatchObject({ price: 108, tested: false });
+    expect(takeProfit({ ...trail, direction: -1, plan: { ...trail.plan, trigger: 100, stop: 104 } } as Setup).price).toBe(92);
+    expect(readTrade(trail, strat, 1).action).toContain('not part of the tested rule');
   });
 });

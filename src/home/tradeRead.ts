@@ -4,7 +4,7 @@
  * than the grade allows) and what to do. Each factor is a simple for / against / neutral call. Only things the
  * tests support count (helper v21): COT counts only when the edge study on your data passed.
  */
-import { sideRecord, type Setup, type StrategyInfo } from './setupsPanel';
+import { sideRecord, takeProfit, type Setup, type StrategyInfo } from './setupsPanel';
 
 export type Stance = 'for' | 'against' | 'neutral';
 
@@ -82,8 +82,8 @@ export function readTrade(s: Setup, strat?: StrategyInfo, marketTrend?: number |
   const action =
     s.status === 'forming' ? 'Wait: the signal only counts once this bar closes.'
       : conviction === 'Watch only' ? `Don't trade it. Keep it on the watch list: ${con.length ? `it would need ${con.map((x) => x.label.toLowerCase()).join(', ')} to improve` : 'the evidence is too thin'}.`
-        : s.trade ? `Already triggered at $${entry.toFixed(2)}: manage it with the stop and the exit date.`
-          : `${side === 'buy' ? 'Buy' : 'Sell short'} only if price ${s.plan.entryType === 'stop' ? `trades ${d > 0 ? 'above' : 'below'} $${entry.toFixed(2)}` : 'is still near here at the next open'}, with the stop at $${s.plan.stop.toFixed(2)}, ${conviction === 'High' ? 'at your normal size' : 'at about half your normal size'}.`;
+        : s.trade ? `Already triggered at $${entry.toFixed(2)}: manage it with the stop and the exit date. ${takeProfit(s).note}`
+          : `${side === 'buy' ? 'Buy' : 'Sell short'} only if price ${s.plan.entryType === 'stop' ? `trades ${d > 0 ? 'above' : 'below'} $${entry.toFixed(2)}` : 'is still near here at the next open'}, with the stop at $${s.plan.stop.toFixed(2)}, ${conviction === 'High' ? 'at your normal size' : 'at about half your normal size'}. ${takeProfit(s).note}`;
   return {
     headline: `${d > 0 ? 'Bullish' : 'Bearish'} setup · ${conviction === 'Watch only' ? 'watch only' : `${conviction.toLowerCase()} conviction`} · ${pro.length} for, ${con.length} against`,
     conviction,

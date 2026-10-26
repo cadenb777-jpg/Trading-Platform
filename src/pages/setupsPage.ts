@@ -10,7 +10,7 @@ import { subscribeQuote } from '../data/quotes';
 import { engineRequest, helper, schwab } from '../data/schwab';
 import type { MarketRef } from '../data/quotes';
 import { entryZone, type Zone } from '../home/entryZone';
-import type { SideRecord, Setup, StrategyInfo } from '../home/setupsPanel';
+import { takeProfit, type SideRecord, type Setup, type StrategyInfo } from '../home/setupsPanel';
 import { tradeGuideBody } from '../home/tradeGuide';
 import type { Timeframe } from '../types';
 import { pageFrame, pct as fmtPct } from '../ui/charts';
@@ -495,7 +495,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       h('td', { class: z.tone }, z.label),
       h('td', { class: 'num' }, usd(s.trade?.entry ?? s.plan.trigger)),
       h('td', { class: 'num down' }, usd(s.plan.stop)),
-      h('td', { class: 'num up' }, s.plan.target != null ? usd(s.plan.target) : 'trail'),
+      ((tp) => h('td', { class: 'num up', title: tp.note }, usd(tp.price), tp.tested ? '' : h('span', { class: 'muted tiny' }, ' 2R')))(takeProfit(s)),
       h('td', { class: 'num muted' }, holdShort(s)),
     );
   }
@@ -561,7 +561,8 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       const line = (price: number, color: string, title: string) => series.createPriceLine({ price, color, lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title });
       line(s.trade?.entry ?? s.plan.trigger, '#2962ff', s.trade ? 'Entered' : 'Entry');
       line(s.plan.stop, THEME.down, 'Stop');
-      if (s.plan.target != null) line(s.plan.target, THEME.up, 'Target');
+      const tp = takeProfit(s);
+      line(tp.price, THEME.up, tp.tested ? 'Target' : '2R guide');
       chart.timeScale().fitContent();
     } catch (err) {
       box.replaceChildren(h('p', { class: 'muted small pad' }, `Chart unavailable: ${(err as Error).message}`));

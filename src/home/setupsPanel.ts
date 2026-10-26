@@ -157,6 +157,25 @@ export interface StrategyInfo {
   description?: string | null;
 }
 
+/** Where to take profit. Pullbacks have a tested target; mean reversion's target is the 5-bar average (it moves);
+ *  trailing exits (breakouts) have none, so +2R is shown as a reference that is NOT part of the tested rule. */
+export function takeProfit(s: Setup): { price: number; label: string; tested: boolean; note: string } {
+  const p = s.plan;
+  const entry = s.trade?.entry ?? p.trigger;
+  if (p.target != null) {
+    if (s.strategy === 'mean_reversion')
+      return { price: p.target, label: 'Target (moves)', tested: true, note: `Take profit at the first close back across the 5-bar average (about $${p.target.toFixed(2)} today; it moves each bar).` };
+    return { price: p.target, label: 'Target', tested: true, note: `Take profit at $${p.target.toFixed(2)} (${p.targetNote}).` };
+  }
+  const price = entry + (s.direction > 0 ? 1 : -1) * 2 * Math.abs(entry - p.stop);
+  return {
+    price,
+    label: '2R guide',
+    tested: false,
+    note: `No fixed target: this strategy is tested with a stop that trails the price, so winners can run. If you want a take-profit, $${price.toFixed(2)} is 2× your risk (a guide only, not part of the tested rule).`,
+  };
+}
+
 /** The record that applies to a setup: its own side's when the helper sends one. */
 export function sideRecord(st: StrategyInfo | undefined, direction: number): SideRecord | undefined {
   if (!st) return undefined;
