@@ -5,6 +5,8 @@ project ZIP again and restart it.
 
 ## Unreleased
 
+- v31: a read-only Futures page: the main US futures by sector (heat tiles, what's moving in % and in standard
+  deviations, specs and roll dates), term structure when Schwab prices single contracts, and COT positioning per market.
 - Charts show the TradingView attribution again (required by the Lightweight Charts licence).
 - The helper refuses article links that point to your own computer or home network.
 - The helper knows NYSE holidays and early-close days for 2026-2027 (no protocol change, but download the helper

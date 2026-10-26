@@ -22,6 +22,7 @@ export const PAGE_SUGGESTIONS: Record<string, string[]> = {
   chart: ['Explain what this chart and its indicators are showing', 'Where are the key support and resistance levels?', 'Is this trend getting stronger or weaker?'],
   setups: ['Why is the average loss bigger than the average win on swing trades?', 'Why are there no A-grade setups right now?', 'Walk me through the best setup on screen step by step', 'What do the rule tests in Research tell me?'],
   invest: ['Summarize this board: what’s leading and what’s lagging?', 'What stands out in these numbers?', 'Explain this fund’s NAV and fees in plain words'],
+  futures: ['Summarize the futures market today in 5 bullets', 'What do the biggest moves in σ tell me?', 'Explain contango and backwardation on this curve', 'Where are commercials at an extreme, and what does that mean?'],
   flow: ['What is options flow saying about this stock?', 'Are insiders buying or selling, and does it matter?', 'Summarize the positioning shown here'],
   research: ['Is this company cheap or expensive, and why?', 'Summarize the financials on screen', 'What are the biggest risks in these numbers?'],
   macro: ['Summarize the macro picture on this page in 5 bullets', 'What do these readings mean for stocks over the next 3 months?', 'Is recession risk rising or falling?', 'Explain the yield curve shown here in plain words'],

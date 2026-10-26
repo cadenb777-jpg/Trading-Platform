@@ -52,6 +52,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   holds hand-researched latest published figures (dated, sourced, verified flag; shown unless the SEC data is newer). Bond maths is
   src/invest/bonds.ts. The owner's own alternatives are store collection alt_holdings (iCapital has no public API:
   they import a CSV/Excel export, src/invest/holdings.ts).
+  Futures page (v31, read-only; src/pages/futuresPage.ts, #futures, engine/futures_market.py): futures.board = 39 markets in
+  8 sectors from the static SPECS table (CME/ICE/Cboe contract specs, cited there: multiplier, tick value, month cycle,
+  expiry rule, CFTC code; micros use the parent's COT), Schwab quotes for root symbols ("/ES"), 1w/1m/YTD and the σ move
+  (today / SD of 60 daily moves) from invest.closes, estimated expiry/first-notice/roll dates, sector averages, movers, and
+  the latest COT for all markets in one CFTC request. futures.curve quotes the next 6 contracts ("/ESZ26"); no prices =
+  no curve. futures.detail adds a year of closes and 156 weeks of COT indexes. Missing data shows "unavailable".
   Backtest (src/pages/backtestPage.ts, src/backtest/research.ts): "My chart's indicators" builds rules (operand
   operator operand, ALL/ANY) from state.indicators via suggestRules(); the chart's Backtest button fires
   `tp:backtest-chart`. Research tabs: Monte Carlo (trade bootstrap), random-walk test (shuffled daily moves, p-value),

@@ -7,7 +7,7 @@ import { continueInAssistant } from './hub';
 import { renderMarkdown } from './markdown';
 
 export interface InsightRequest {
-  topic: 'options' | 'insiders' | 'cot' | 'positioning' | 'research' | 'indicator' | 'chart' | 'scanner' | 'market' | 'macro' | 'bonds' | 'board' | 'fund' | 'backtest';
+  topic: 'options' | 'insiders' | 'cot' | 'positioning' | 'research' | 'indicator' | 'chart' | 'scanner' | 'market' | 'macro' | 'bonds' | 'board' | 'fund' | 'backtest' | 'futures';
   symbol: string;
   title: string;
   data: unknown;

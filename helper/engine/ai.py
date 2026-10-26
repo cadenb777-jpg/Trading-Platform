@@ -64,6 +64,7 @@ INSIGHT_PROMPTS = {
     'macro': 'Here are the latest US economic readings (rates, inflation, jobs, growth, markets) with 1-month and 1-year changes, and the Treasury yield curve. Summarise where the economy is in the cycle, what the Fed is likely to do, whether conditions are bullish or bearish for stocks and bonds, and the key risks. Use the numbers.',
     'bonds': 'Here is the bond market: Treasury yields, corporate yields and credit spreads, real yields, breakeven inflation, and recent Treasury auctions. Explain what bonds are signalling about growth, inflation and risk appetite, whether now favours short or long maturities and credit vs Treasuries, and what to watch.',
     'board': 'Here is a market board from the Investments page ({market}): each line with today\'s change and 1-month, year-to-date and 1-year returns. Explain what is leading and lagging, what that says about the market (rotation, risk appetite), and which areas look strongest or weakest right now.',
+    'futures': 'Here is the futures board: the main US futures by sector with today\'s change, the move in standard deviations of daily moves, 1-week, 1-month and year-to-date returns, the next roll date and COT positioning (commercials\' 3-year index). Give the whole-market picture: which sectors lead and lag, what the biggest moves say (risk appetite, inflation, rates, dollar), any curve or positioning extremes worth noting (commercials at extremes, Larry Williams style), and what to watch next. Plain words for a beginner; use the numbers.',
     'fund': 'Here is SEC data on the private/evergreen fund {symbol}: NAV per share history, returns, distributions, holdings and Form D details. Summarise how the fund is doing, the distribution yield and whether it is covered, risks (liquidity, concentration, NAV lag), and how it compares with what an investor would expect from its strategy.',
     'backtest': 'Here are backtest results for a trading strategy on {symbol} ({timeframe}): performance statistics, Monte Carlo ranges and the random-walk test where available. Judge whether the edge is real or likely luck/curve-fitting, the main weaknesses, how to improve the rules, and whether it is worth paper trading. Be honest and specific.',
 }
@@ -200,7 +201,7 @@ TOOLS = [
     },
     {
         'name': 'ui_action',
-        'description': 'Do something in the platform window: open_chart (symbol, optional timeframe like 5m/1h/1D), open_page (page: home, chart, multi, invest, flow, research, macro, portfolio, clients, backtest, calendar, scripts), add_indicator (indicator name, e.g. "RSI" or "VWAP bands"), or create_alert (symbol, price, direction above/below, optional note).',
+        'description': 'Do something in the platform window: open_chart (symbol, optional timeframe like 5m/1h/1D), open_page (page: home, chart, multi, invest, futures, flow, research, macro, portfolio, clients, backtest, calendar, scripts), add_indicator (indicator name, e.g. "RSI" or "VWAP bands"), or create_alert (symbol, price, direction above/below, optional note).',
         'input_schema': {'type': 'object', 'properties': {
             'action': {'type': 'string', 'enum': ['open_chart', 'open_page', 'add_indicator', 'create_alert']},
             'symbol': {'type': 'string'}, 'timeframe': {'type': 'string'}, 'page': {'type': 'string'},
