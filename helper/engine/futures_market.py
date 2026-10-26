@@ -12,7 +12,7 @@ import math
 import re
 import time
 
-from . import flow, invest, positioning
+from . import diagnostics, flow, invest, positioning
 from .core import NYSE_HOLIDAYS, EngineError, handler
 
 # ---------- Contract specs ----------
@@ -334,7 +334,11 @@ async def _quotes(ctx, symbols):
             _LAST_QUOTE_ERROR['text'] = f'Schwab answered HTTP {response.status_code} for futures quotes.'
             return {}
         _LAST_QUOTE_ERROR['text'] = ''
-        return match_quotes(symbols, response.json())
+        data = response.json()
+        matched = match_quotes(symbols, data)
+        diagnostics.note('futures quotes', asked=len(symbols), matched=len(matched), keysReturned=sorted(data or {})[:40],
+                         unmatched=sorted(set(symbols) - set(matched))[:40])
+        return matched
     try:
         return await ctx.cached(('fut-quotes', tuple(symbols)), 15, load)
     except EngineError:

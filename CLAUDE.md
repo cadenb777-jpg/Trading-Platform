@@ -38,6 +38,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (e.g. `series`, `docId`). Long requests stream `engine_event` messages before the reply (`onEvent`).
   Settings (Anthropic key, model, SEC email, FRED key) are set in the Settings window and saved by the helper in
   ~/.trading-platform/settings.json; keys are never stored in or sent back to the browser.
+  Send diagnostics (v34; Settings and the Data popover, src/ui/diagnostics.ts): `diagnostics.collect` (engine/diagnostics.py,
+  stdlib) returns ring buffers of the last 300 requests (type, ms, ok/error, reply size; never payloads) and outside calls
+  (httpx hooks: host, path, status, latency), feature notes (`diagnostics.note`: futures quotes keys/matched, Webull
+  endpoint/status), settings flags, feed health and the helper.log tail. Everything goes through one `redact` (saved
+  secrets by value, token/key patterns, accounts last 2 via `diagnostics.account`, emails, home paths, long hex/base64);
+  the browser adds page/console/engine errors (src/diagnostics.ts, same rules) and only saves a file, never uploads.
   AI screen context (v23): the browser sends the open page's visible text plus any open pop-up (src/ai/screen.ts,
   capped 8,000 chars) as context.screen; ai.py adds it in a <screen> block only when it changed since the last message;
   PAGE_SUGGESTIONS gives per-page example questions.

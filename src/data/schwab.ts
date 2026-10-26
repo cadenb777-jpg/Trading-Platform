@@ -7,13 +7,14 @@ import { cleanBars, regroupBars, type Bar, type Timeframe } from '../types';
 import type { ConnectionStatus, DataProvider, Trade } from './provider';
 import { feedOf, markFetched, recordError, recordOk, requestProblem } from './health';
 import type { Quote } from './quotes';
+import { recordEngineError } from '../diagnostics';
 
 const HELPER_URL = 'ws://127.0.0.1:8765';
 const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 33;
+export const LATEST_HELPER_VERSION = 34;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -523,6 +524,7 @@ export async function engineRequest<T>(type: string, params: Record<string, unkn
  * when the problem is one request's own input (an unknown symbol says nothing about the feed).
  */
 function noteFailure(type: string, err: Error) {
+  if (err?.name !== 'AbortError') recordEngineError(type, err?.message ?? String(err)); // for Send diagnostics
   const feed = feedOf(type);
   if (feed && err?.name !== 'AbortError' && helper.isConnected && !requestProblem(err.message)) recordError(feed, err.message);
 }

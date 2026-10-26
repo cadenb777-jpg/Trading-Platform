@@ -158,10 +158,10 @@ class DiskCache:
 
 class EngineContext:
     def __init__(self, schwab_client, sec_contact='', news=None, disk=None):
-        from . import settings
+        from . import diagnostics, settings
         self.schwab = schwab_client
         self.news = news
-        self.http = httpx.AsyncClient(timeout=httpx.Timeout(12, connect=6), follow_redirects=True, headers={'User-Agent': BROWSER_UA})
+        self.http = diagnostics.watch_http(httpx.AsyncClient(timeout=httpx.Timeout(12, connect=6), follow_redirects=True, headers={'User-Agent': BROWSER_UA}))
         # An email entered at the old terminal prompt moves into the Settings window's storage.
         if sec_contact and not settings.get('sec_contact'):
             settings.save({'sec_contact': sec_contact})
@@ -176,15 +176,15 @@ class EngineContext:
 
     def apply_settings(self):
         """(Re)reads settings that change how requests are made."""
-        from . import settings
+        from . import diagnostics, settings
         self.sec_contact = settings.get('sec_contact')
         # The SEC asks automated tools to identify themselves with a contact email.
         sec_ua = f'TradingPlatform personal research {self.sec_contact}'.strip()
         if self.sec_http is not None and sec_ua == self._sec_ua:
             return  # same identity: keep the open client (and its connections) instead of leaking a new one
         self._sec_ua = sec_ua
-        self.sec_http = httpx.AsyncClient(timeout=httpx.Timeout(20, connect=6), follow_redirects=True,
-                                          headers={'User-Agent': sec_ua, 'Accept-Encoding': 'gzip, deflate'})
+        self.sec_http = diagnostics.watch_http(httpx.AsyncClient(timeout=httpx.Timeout(20, connect=6), follow_redirects=True,
+                                          headers={'User-Agent': sec_ua, 'Accept-Encoding': 'gzip, deflate'}))
 
     async def cached(self, key, max_age, load, persist=False, stale_ok=False):
         """Returns a cached value younger than max_age seconds, otherwise awaits load() and caches it.
