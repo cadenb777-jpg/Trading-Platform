@@ -430,6 +430,8 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'alts.fund': 15 * 60_000,
   'alts.search_private': 15 * 60_000,
   'alts.latest_private': 10 * 60_000,
+  'risk.account': 5 * 60_000,
+  'tax.account': 60_000,
 };
 const engineCache = new Map<string, { at: number; value: Promise<unknown> }>();
 

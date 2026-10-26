@@ -80,9 +80,13 @@ export interface Portfolio {
   notes?: string;
   /** The owner's own account (shown on the Account page). Unset: true for portfolios synced from a live Webull account. */
   mine?: boolean;
+  /** How the account is taxed, chosen on the Account page's Taxes section; unset = read from the name ("Roth", "IRA"). */
+  taxType?: 'roth' | 'deferred' | 'taxable';
   /** Set by the helper's Webull sync. */
   webullAccount?: string;
   webullEnv?: 'test' | 'live';
+  /** Webull's account class at the last sync (e.g. ROTH_IRA), for the Taxes section. */
+  webullClass?: string;
   syncedAt?: string;
 }
 

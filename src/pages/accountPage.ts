@@ -4,10 +4,12 @@
  * dividends.portfolio request and are drawn by the Portfolios page's dividends view. Read-only: orders stay in the
  * Webull view's preview → confirm ticket.
  */
-import { listDocs } from '../data/store';
+import { listDocs, saveDoc } from '../data/store';
 import { ALL_ACCOUNTS, allocation, combineHoldings, combinedValue, dividendPayload, myPortfolios, pickAccounts, todayChange, type CombinedHolding } from '../portfolio/account';
 import { drawDividends, fetchDividends, totalReturnCell, type DividendReport } from '../portfolio/dividendsView';
 import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
+import { fetchRisk, fetchTax, type RiskInput, type RiskReport, type TaxReport, type TaxType } from '../portfolio/risk';
+import { holdingGroup, riskCard, taxSection } from '../portfolio/riskView';
 import { isMine, positions, type Portfolio } from '../portfolio/types';
 import { renderWebullCard } from '../portfolio/webullView';
 import { dataTable, money, pageFrame, pct, pctU, statCards } from '../ui/charts';
@@ -46,9 +48,14 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
   ]);
   let loading = 0;
   let view = readView();
+  /** The live risk card's refresh (new prices every 30 s while the page is open and visible). */
+  let live: (() => Promise<void>) | null = null;
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let taxOpen = false;
 
   async function load() {
     const run = ++loading;
+    live = null;
     frame.loading('Adding up your accounts…');
     let all: Saved[];
     try {
@@ -89,19 +96,108 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
     if (report) drawDividends(divBox, report, { hasCash: rows.some((r) => r.kind === 'cash'), stats: false });
     else divBox.replaceChildren(h('div', { class: 'ap-error' }, (dv as PromiseRejectedResult).reason?.message ?? 'Dividend data unavailable.'));
 
+    // Risk: the helper measures the year (once per load); live prices keep the weights and dollar figures current.
+    const riskRows = (v: typeof valued): RiskInput[] =>
+      v.filter((x) => x.value != null && x.value > 0).map((x) => ({ symbol: x.r.symbol, value: x.value!, kind: x.r.kind === 'cash' ? 'cash' : x.r.kind === 'alt' ? 'alt' : 'security' }));
+    const riskBox = h('div', {}, h('section', { class: 'panel' }, h('div', { class: 'muted pad' }, 'Measuring risk from a year of daily prices…')));
+    const taxBox = h('div', {}, h('section', { class: 'panel' }, h('div', { class: 'muted pad' }, 'Working out the tax view…')));
+    const holdingsBox = h('div', {});
+    let sectorOf: Record<string, RiskReport['sectors'][string]> = {};
+    let filter: string | null = null;
+    let card: ReturnType<typeof riskCard> | null = null;
+    const drawHoldings = () => {
+      const shown = filter ? valued.filter((x) => holdingGroup({ symbol: x.r.symbol, value: x.value ?? 0, kind: x.r.kind }, sectorOf) === filter) : valued;
+      holdingsBox.replaceChildren(
+        panel(
+          'Holdings',
+          filter
+            ? h('span', { class: 'acct-filter' }, `${shown.length} in ${filter} `, h('button', { class: 'btn small', onclick: () => ((filter = null), card?.clearSector(), drawHoldings()) }, 'Show all'))
+            : single
+              ? `${rows.length} holding${rows.length === 1 ? '' : 's'} in ${single.name}`
+              : `${rows.length} holding${rows.length === 1 ? '' : 's'} across ${chosen.length} account${chosen.length === 1 ? '' : 's'}`,
+          holdingsTable(shown, total, report),
+        ),
+      );
+    };
+    drawHoldings();
+
     frame.body.replaceChildren(
       mine.length > 1 ? switcher(mine, picked.choice) : '',
       overview(report, total, today, todayBase ? (today ?? 0) / todayBase : null, rows, single),
       unpriced.length ? h('p', { class: 'badge warn' }, `No live price for ${unpriced.join(', ')}: left out of the totals. Check the helper is logged in to Schwab, then Refresh.`) : '',
-      panel(
-        'Holdings',
-        single ? `${rows.length} holding${rows.length === 1 ? '' : 's'} in ${single.name}` : `${rows.length} holding${rows.length === 1 ? '' : 's'} across ${chosen.length} account${chosen.length === 1 ? '' : 's'}`,
-        holdingsTable(valued, total, report),
-      ),
+      riskBox,
+      holdingsBox,
       h('h2', { class: 'section-label acct-section' }, 'Dividends'),
       divBox,
       allocationPanel(valued),
+      taxBox,
       panel(single ? 'Account' : 'Accounts', 'Marked "This is my account" in Portfolios', h('div', { class: 'acct-cards' }, ...chosen.map((p) => accountCard(p, prices, report))), webull),
+    );
+
+    fetchRisk(riskRows(valued)).then(
+      (rr) => showRisk(rr, null),
+      (err) => showRisk(null, (err as Error).message),
+    );
+    function showRisk(rr: RiskReport | null, error: string | null) {
+      if (run !== loading) return;
+      sectorOf = rr?.sectors ?? {};
+      card = riskCard(rr, error, (label) => {
+        filter = label;
+        drawHoldings();
+        if (label) holdingsBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      card.update(riskRows(valued));
+      riskBox.replaceChildren(card.el);
+      // live: new prices move the weights, warnings and the dollar bad-day loss
+      live = async () => {
+        const fresh = await fetchPrices(symbols);
+        if (run !== loading || !card) return;
+        const now = valued.map((x) => ({ ...x, value: combinedValue(x.r, fresh[x.r.symbol]?.price ?? priceOf(x.r.symbol)) }));
+        card.update(riskRows(now));
+      };
+    }
+
+    // Taxes: each chosen account with its holdings' values (taxable ones get gains, harvest and wash-sale checks).
+    const valueOf = (x: Saved['holdings'][number], mode: string) =>
+      mode === 'shares' && x.kind !== 'cash' && x.kind !== 'alt' ? ((priceOf(x.symbol.trim().toUpperCase()) ?? NaN) * (x.shares ?? 0) || null) : (x.amount ?? 0);
+    const taxAccounts = chosen.map((p) => ({
+      name: p.name,
+      taxType: p.taxType,
+      webullAccount: p.webullAccount,
+      webullClass: p.webullClass,
+      holdings: p.holdings
+        .filter((x) => x.symbol.trim())
+        .map((x) => ({ symbol: x.kind === 'cash' ? 'CASH' : x.symbol.trim().toUpperCase(), shares: p.mode === 'shares' && x.kind !== 'cash' && x.kind !== 'alt' ? (x.shares ?? 0) : 0, value: valueOf(x, p.mode ?? 'weight'), cost: x.cost ?? null, kind: x.kind ?? 'security' })),
+    }));
+    // the helper decides each account's type (one rule, in tax.py); its reply comes back in the order sent
+    const taxableShares = (tr: TaxReport) => {
+      const out: Record<string, number> = {};
+      taxAccounts.forEach((a, i) => {
+        if (tr.accounts[i]?.type === 'taxable') for (const x of a.holdings) if (x.shares) out[x.symbol] = (out[x.symbol] ?? 0) + x.shares;
+      });
+      return out;
+    };
+    const accountsForTax = (tr: TaxReport | null) => chosen.map((p, i) => ({ id: p.id, name: p.name, auto: tr?.accounts[i]?.auto, chosen: p.taxType }));
+    const setType = async (id: string, type: TaxType | undefined) => {
+      const p = all.find((x) => x.id === id);
+      if (!p) return;
+      try {
+        await saveDoc('portfolios', { ...p, taxType: type });
+        toast('Saved. The Taxes section now treats it that way.');
+        load();
+      } catch (err) {
+        toast((err as Error).message);
+      }
+    };
+    // the fold stays as the owner left it across reloads (switching accounts, changing an account's tax type)
+    const showTax = (el: HTMLDetailsElement) => {
+      el.open = taxOpen;
+      el.addEventListener('toggle', () => (taxOpen = el.open));
+      taxBox.replaceChildren(el);
+    };
+    fetchTax(taxAccounts).then(
+      (tr) => run === loading && showTax(taxSection(tr, null, accountsForTax(tr), setType, report, taxableShares(tr))),
+      (err) => run === loading && showTax(taxSection(null, (err as Error).message, accountsForTax(null), setType, report, {})),
     );
     // the Webull balances card follows the choice too: all Webull accounts, the chosen one, or none
     if (!single) renderWebullCard(webull, synced, () => openPortfolio('webull'));
@@ -217,7 +313,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
       'Allocation',
       'Share of your total value',
       h('div', { class: 'acct-alloc' }, h('div', {}, h('h4', {}, 'By holding'), list(top)), h('div', {}, h('h4', {}, 'By asset class'), list(byClass))),
-      h('p', { class: 'ap-note' }, 'By sector isn’t shown: there’s no free sector data for every holding. Asset classes come from your portfolios (imports start as US stocks; change one in Portfolios).'),
+      h('p', { class: 'ap-note' }, 'Sectors are in the Risk card at the top. Asset classes come from your portfolios (imports start as US stocks; change one in Portfolios).'),
     );
   }
 
@@ -270,6 +366,14 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
     start() {
       started = true;
       load();
+      clearInterval(timer);
+      timer = setInterval(() => {
+        if (document.visibilityState === 'visible') live?.().catch(() => undefined); // a missed tick just waits for the next
+      }, 30000);
+    },
+    stop() {
+      started = false;
+      clearInterval(timer);
     },
   };
 }

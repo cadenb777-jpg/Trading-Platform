@@ -440,7 +440,7 @@ def account_info(row):
     number = str(row.get('account_number') or row['account_id'])
     shown = f"{name} ••{number[-4:]}" + ('' if stocks else f' ({NOT_SUPPORTED})')
     return {'id': str(row['account_id']), 'label': shown, 'name': name, 'stocks': stocks, 'retirement': 'IRA' in (cls or name.upper()),
-            'managed': cls.startswith('MANAGED_')}
+            'managed': cls.startswith('MANAGED_'), 'accountClass': cls}
 
 
 async def accounts(ctx, fresh=False):
@@ -557,6 +557,31 @@ async def orders(ctx, account_id):
         recent = []
     open_ids = {r['orderId'] for r in open_rows}
     return {'open': open_rows, 'recent': [r for r in recent if r['orderId'] not in open_ids][:50]}
+
+
+BUYS_DAYS = 31
+BUYS_PAGE = 100
+
+
+async def recent_buys(ctx):
+    """Filled buys in the last 31 days across every US stock account (for the Account page's wash-sale estimate):
+    {buys: [{symbol, qty, placedAt, account}], complete}. Read-only, through the gate, reused for 10 minutes.
+    complete=False when an account's history couldn't be read or hit the page limit."""
+    start = (dt.datetime.now(NEW_YORK).date() - dt.timedelta(days=BUYS_DAYS)).isoformat()
+    buys, complete = [], True
+    for a in [a for a in await accounts(ctx) if a['stocks']]:
+        async def fetch(account_id=a['id']):
+            return _order_rows(await _call(ctx, 'GET', '/trading/orders/historical-orders/list',
+                                           {'account_id': account_id, 'page_size': BUYS_PAGE, 'start_date': start}, version='v2'))
+        try:
+            rows = await _cached(('buys', a['id']), ACCOUNTS_TTL, fetch)
+        except EngineError:
+            complete = False
+            continue
+        complete = complete and len(rows) < BUYS_PAGE
+        buys += [{'symbol': r['symbol'], 'qty': r['filled'], 'placedAt': r['placedAt'], 'account': a['label'], 'accountId': a['id']}
+                 for r in rows if r['side'] == 'BUY' and r['filled'] > 0]
+    return {'buys': buys, 'complete': complete}
 
 
 # ---------- order log and limits ----------
@@ -869,7 +894,7 @@ async def _sync_one(ctx, chosen, keep_empty):
         return None, skipped
     name = f"Webull {chosen['label']}{' (Test)' if env() == 'test' else ''}"
     doc = {**(existing or {'benchmark': 'SPY', 'rebalance': 'none'}), 'name': name if _auto_name(existing) else existing['name'], 'webullAutoName': name,
-           'mode': 'shares', 'holdings': holdings, 'webullAccount': account_id, 'webullEnv': env(),
+           'mode': 'shares', 'holdings': holdings, 'webullAccount': account_id, 'webullEnv': env(), 'webullClass': chosen.get('accountClass') or '',
            'syncedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')}
     return store.save_doc('portfolios', doc), skipped
 

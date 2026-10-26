@@ -69,6 +69,15 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   random-walk check (100 block-shuffled histories). Only the owner's own symbols; cash shows as "Cash" (holdingLabel), not BIL.
   Account page (src/pages/accountPage.ts, #account): portfolios with Portfolio.mine (set by Import statement; unset = live
   Webull sync) merged by src/portfolio/account.ts, figures from dividends.portfolio + dividendsView; read-only (orders only in Webull view).
+  Account risk/sectors/taxes (v30, follow the account switcher): engine/risk.py `risk.account` {holdings: symbol, value, kind}
+  = 1y volatility, beta vs SPY, 1-day 95% historical VaR, max drawdown, per-holding vol/beta/riskShare from invest.closes
+  (cash = zero risk; alts, <1y and stale histories left out) + sectors (SEC SIC -> 11 sectors, cached 30 days; only
+  "not in the SEC list" (sec.NotListed) is cached as Other, other SEC errors go to sectorNote;
+  funds by name: Fund + broad market/sector/bond; unknown = Other). engine/tax.py `tax.account`: Roth / tax-deferred /
+  taxable (Portfolio.taxType, else Webull class saved at sync as webullClass, else whole words in the name; one rule
+  in tax.auto_type, returned per account), taxable gains, harvest (> $100 loss), wash-sale = a Webull fill of the
+  symbol in any account in 31 days (webull.recent_buys); no purchase lots, so holding periods are mostly "unknown".
+  Browser maths src/portfolio/risk.ts (live weights, warnings > 20% stock / > 35% sector, VaR dollars), UI riskView.ts.
   Portfolios: Holding.kind security/cash/alt, Portfolio.mode weight/shares/dollars; positions()/holdingsPayload()
   in src/portfolio/types.ts value holdings (live prices via src/portfolio/prices.ts) and map cash/alts to listed
   stand-ins (PROXIES) for the maths. holdingsPayload throws when a shares-mode holding has no price.

@@ -12,7 +12,7 @@ import threading
 
 from .core import HANDLERS, EngineContext, EngineError, background, handler
 
-MODULES = ('store', 'settings', 'alpaca', 'sec', 'flow', 'research', 'macro', 'quant', 'positioning', 'invest', 'alts', 'dividends', 'webull', 'scanner', 'ai')
+MODULES = ('store', 'settings', 'alpaca', 'sec', 'flow', 'research', 'macro', 'quant', 'positioning', 'invest', 'alts', 'dividends', 'webull', 'risk', 'tax', 'scanner', 'ai')
 #: module name -> why it couldn't load
 LOAD_ERRORS = {}
 #: set once every module has been imported (or failed to)
