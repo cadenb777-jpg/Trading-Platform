@@ -579,7 +579,7 @@ async def recent_buys(ctx):
             complete = False
             continue
         complete = complete and len(rows) < BUYS_PAGE
-        buys += [{'symbol': r['symbol'], 'qty': r['filled'], 'placedAt': r['placedAt'], 'account': a['label']}
+        buys += [{'symbol': r['symbol'], 'qty': r['filled'], 'placedAt': r['placedAt'], 'account': a['label'], 'accountId': a['id']}
                  for r in rows if r['side'] == 'BUY' and r['filled'] > 0]
     return {'buys': buys, 'complete': complete}
 

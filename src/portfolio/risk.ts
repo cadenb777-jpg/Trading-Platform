@@ -174,6 +174,8 @@ export interface TaxReport {
 export interface TaxAccountInput {
   name: string;
   taxType?: TaxType;
+  /** Webull account id: its recent fills date some of the shares (short-term). */
+  webullAccount?: string;
   holdings: { symbol: string; shares: number; value: number | null; cost: number | null; kind: string }[];
 }
 

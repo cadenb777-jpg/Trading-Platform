@@ -172,7 +172,7 @@ class TaxView(unittest.TestCase):
         {'name': 'Webull Roth IRA ••1234', 'holdings': [{'symbol': 'AAPL', 'shares': 10, 'value': 2300, 'cost': 1800}]},
         {'name': 'Webull Traditional IRA ••5678', 'holdings': [{'symbol': 'VTI', 'shares': 5, 'value': 1500, 'cost': 1200}]},
         {'name': 'Rollover IRA', 'holdings': [{'symbol': 'CASH', 'value': 300, 'kind': 'cash'}]},
-        {'name': 'Webull Margin ••3333', 'holdings': [
+        {'name': 'Webull Margin ••3333', 'webullAccount': 'M3333', 'holdings': [
             {'symbol': 'NVDA', 'shares': 8, 'value': 1028, 'cost': 1300},
             {'symbol': 'MSFT', 'shares': 5, 'value': 2076, 'cost': 2010},
             {'symbol': 'T', 'shares': 10, 'value': 225, 'cost': 260},
@@ -203,13 +203,17 @@ class TaxView(unittest.TestCase):
         self.assertEqual(v['taxable'][0]['symbol'], 'NVDA')  # biggest loss first
 
     def test_recent_buys_mark_short_term_and_wash_sales(self):
-        buys = [{'symbol': 'NVDA', 'qty': 2, 'account': 'Roth IRA ••1234'}, {'symbol': 'MSFT', 'qty': 9, 'account': 'Margin ••3333'}]
+        buys = [{'symbol': 'NVDA', 'qty': 2, 'account': 'Roth IRA ••1234', 'accountId': 'R1234'}, {'symbol': 'NVDA', 'qty': 3, 'account': 'Margin ••3333', 'accountId': 'M3333'},
+                {'symbol': 'MSFT', 'qty': 9, 'account': 'Margin ••3333', 'accountId': 'M3333'}]
         rows = {x['symbol']: x for x in tax.tax_view(self.ACCOUNTS, buys)['taxable']}
-        self.assertEqual((rows['NVDA']['term'], rows['NVDA']['recentShares']), ('mixed', 2))
-        self.assertEqual(rows['NVDA']['washSale'], ['Roth IRA ••1234'])  # a buy in an IRA counts too
+        self.assertEqual((rows['NVDA']['term'], rows['NVDA']['recentShares']), ('mixed', 3))  # the Roth's buy isn't these shares
+        self.assertEqual(rows['NVDA']['washSale'], ['Margin ••3333', 'Roth IRA ••1234'])  # a buy in an IRA counts too
         self.assertEqual((rows['MSFT']['term'], rows['MSFT']['recentShares']), ('short', 5))
         self.assertEqual(rows['MSFT']['washSale'], [])  # a gain can't be a wash sale
         self.assertEqual(rows['T']['term'], 'unknown')
+        statement = [{'name': 'Schwab brokerage', 'holdings': [{'symbol': 'NVDA', 'shares': 1, 'value': 120, 'cost': 300}]}]
+        row = tax.tax_view(statement, buys)['taxable'][0]
+        self.assertEqual((row['term'], row['recentShares'], row['washSale']), ('unknown', None, ['Margin ••3333', 'Roth IRA ••1234']))
 
     def test_handler_without_webull(self):
         with mock.patch('engine.webull.available', return_value=False):

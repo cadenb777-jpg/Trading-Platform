@@ -643,6 +643,15 @@ class Accounts(Base):
             'CASH0001': EMPTY, 'MRGN0001': EMPTY,
         }
 
+    def test_recent_buys_read_every_stock_account(self):
+        r = run(webull.recent_buys(self.ctx))
+        history = [c for c in self.fake.calls if c['path'] == '/trading/orders/historical-orders/list']
+        self.assertEqual([c['query']['account_id'] for c in history], ['TRAD0001', 'ROTH0001', 'CASH0001', 'MRGN0001'])  # never the futures account
+        self.assertTrue(all(c['method'] == 'GET' and c['query']['start_date'] for c in history))
+        self.assertEqual(r, {'buys': [], 'complete': True})  # the fake's history is one filled SELL: not a buy
+        run(webull.recent_buys(self.ctx))
+        self.assertEqual(len([c for c in self.fake.calls if c['path'] == '/trading/orders/historical-orders/list']), 4)  # reused, not re-read
+
     def test_labels_from_a_realistic_account_list(self):
         found = run(webull.accounts(self.ctx))
         self.assertEqual([a['label'] for a in found], ['Traditional IRA ••5678', 'Roth IRA ••1234', 'Cash ••4444', 'Margin ••3333', 'Futures ••2222 (view not supported yet)'])

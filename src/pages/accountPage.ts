@@ -162,6 +162,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
     const taxAccounts = chosen.map((p) => ({
       name: p.name,
       taxType: p.taxType,
+      webullAccount: p.webullAccount,
       holdings: p.holdings
         .filter((x) => x.symbol.trim())
         .map((x) => ({ symbol: x.kind === 'cash' ? 'CASH' : x.symbol.trim().toUpperCase(), shares: p.mode === 'shares' && x.kind !== 'cash' && x.kind !== 'alt' ? (x.shares ?? 0) : 0, value: valueOf(x, p.mode ?? 'weight'), cost: x.cost ?? null, kind: x.kind ?? 'security' })),

@@ -36,8 +36,9 @@ def _num(v):
 
 
 def tax_view(accounts, buys=None):
-    """accounts: [{name, taxType?, holdings: [{symbol, shares, value, cost, kind}]}]; buys: Webull fills in the last
-    31 days ([{symbol, qty, account}]) or None when unknown. Pure."""
+    """accounts: [{name, taxType?, webullAccount?, holdings: [{symbol, shares, value, cost, kind}]}]; buys: Webull fills
+    in the last 31 days ([{symbol, qty, account, accountId}]) or None when unknown. A holding's recent (short-term)
+    shares come from buys in its own Webull account; a wash sale can come from a buy in any account. Pure."""
     groups = {}
     taxable = []
     bought = {}
@@ -60,7 +61,8 @@ def tax_view(accounts, buys=None):
             if x.get('kind', 'security') != 'security' or not shares:
                 continue
             gain = val - cost if val is not None and cost is not None else None
-            recent = min(shares, sum(_num(b.get('qty')) or 0 for b in bought.get(symbol, []))) if buys is not None else None
+            own = a.get('webullAccount')
+            recent = min(shares, sum(_num(b.get('qty')) or 0 for b in bought.get(symbol, []) if b.get('accountId') == own)) if buys is not None and own else None
             if recent is None:
                 term = 'unknown'
             elif recent >= shares:
