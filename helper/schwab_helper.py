@@ -1130,6 +1130,7 @@ async def open_when_ready(market, enabled):
 
 
 async def run(client, sec_contact='', open_browser=True):
+    diagnostics.PERSIST = True  # remember account ids between runs so the diagnostics file masks them from the start
     market = Market(client, engine_ctx=engine.EngineContext(client, sec_contact))
     try:
         # Room for files attached to AI questions (spreadsheets, PDFs, images).

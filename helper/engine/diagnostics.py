@@ -30,8 +30,12 @@ CALLS = collections.deque(maxlen=300)
 NOTES = {}  # feature -> deque of recent notes
 #: name -> function() returning a dict for the file (the live helper registers its status here)
 SECTIONS = {}
-#: account ids/numbers seen (Webull, Schwab): always masked to their last 2 characters
+#: account ids/numbers seen (Webull, Schwab): always masked to their last 2 characters. Kept in
+#: ~/.trading-platform/diagnostics_accounts.json (beside the keys) so they are masked from the start of the next run too.
 ACCOUNTS = set()
+#: set by the running helper (schwab_helper.run); tests leave it off so they never write to the real home folder
+PERSIST = False
+_loaded = False
 
 MASK = '[redacted]'
 
@@ -43,6 +47,8 @@ def record_request(kind, started, ok, error='', size=0):
 
 
 def record_call(host, path, status, ms):
+    if host and host == _custom_ntfy_host():
+        host, path = 'custom ntfy server', ''  # the owner's own server address stays out of the file
     CALLS.append({'host': host, 'path': (path or '')[:120], 'status': status, 'ms': round(ms), 'at': round(time.time())})
 
 
@@ -54,8 +60,44 @@ def note(feature, **info):
 def account(value):
     """Remembers an account id/number so it is masked everywhere it shows up (logs and errors included)."""
     s = str(value or '').strip()
-    if len(s) >= 4:
-        ACCOUNTS.add(s)
+    if len(s) < 4 or s in ACCOUNTS:
+        return
+    known_accounts()
+    ACCOUNTS.add(s)
+    if PERSIST:
+        try:
+            path = _accounts_path()
+            path.parent.mkdir(exist_ok=True)
+            path.write_text(json.dumps(sorted(ACCOUNTS)))
+            path.chmod(0o600)
+        except OSError:
+            pass
+
+
+def _accounts_path():
+    return DATA_DIR / 'diagnostics_accounts.json'
+
+
+def known_accounts():
+    """Account ids/numbers seen this run plus those saved by earlier runs."""
+    global _loaded
+    if not _loaded:
+        _loaded = True
+        try:
+            ACCOUNTS.update(str(a) for a in json.loads(_accounts_path().read_text()) if isinstance(a, str))
+        except (OSError, ValueError, TypeError):
+            pass
+    return set(ACCOUNTS)
+
+
+def _custom_ntfy_host():
+    try:
+        from . import settings
+        server = settings.load().get('ntfy_server') or ''
+    except Exception:
+        return ''
+    m = re.match(r'https?://([^/:?#]+)', server)
+    return m.group(1).lower() if m else ''
 
 
 def watch_http(client):
@@ -84,16 +126,20 @@ _TEXT_RULES = [
     (re.compile(r'(?i)\bbearer\s+[\w.~+/=-]+'), 'Bearer ' + MASK),
     (re.compile(r'[\w.+-]+@[\w-]+(\.[\w-]+)+'), '[email]'),
     (re.compile(r'(https?://[^\s?#"\'<>]+)\?[^\s"\'<>]*'), r'\1?[query removed]'),
-    (re.compile(r'(?i)\b([\w-]*(?:token|secret|password|passwd|api[_-]?key|app[_-]?key|authorization|signature|client[_-]?id)[\w-]*)'
-                r'(["\']?\s*[:=]\s*["\']?)(?!\[)([^\s"\',;&}\]]+)'), r'\1\2' + MASK),
-    (re.compile(r'\b\d{5,15}:[A-Za-z0-9_-]{30,}'), MASK),  # Telegram bot token
+    (re.compile(r'(?i)\b([\w-]*(?:token|secret|password|passwd|key|authorization|signature|client[_-]?id|chat[_-]?id|topic)[\w-]*)'
+                r'(\\?["\']?\s*[:=]\s*\\?["\']?)(?!\[)([^\s"\'\\,;&}\]]+)'), r'\1\2' + MASK),
+    (re.compile(r'(?<!\d)\d{5,15}:[A-Za-z0-9_-]{30,}'), MASK),  # Telegram bot token (also inside /bot<token>/ paths)
     (re.compile(r'(?i)\b(account|acct)(s?(?:[ _-]?(?:id|number|no\.?|hash))?\s*[:=#]?\s*["\']?)([A-Za-z0-9-]*\d[A-Za-z0-9-]{2,})'),
      lambda m: m.group(1) + m.group(2) + _last2(m.group(3))),
     (re.compile(r'\b[0-9a-fA-F]{24,}\b'), '[hex]'),
     (re.compile(r'(?=[A-Za-z0-9+_-]*\d)[A-Za-z0-9+_-]{32,}={0,2}'), '[long string]'),  # base64-like (has a digit)
     (re.compile(r'\b\d{7,}\b'), lambda m: _last2(m.group(0))),  # long numbers: account numbers, phone numbers
 ]
-_HOME_PATTERN = re.compile(r'(?i)(/Users/|/home/|[A-Z]:\\Users\\|[A-Z]:/Users/)[^/\\\s"\'<>]+')
+# A user folder up to the next path separator (user names can have spaces); Windows paths may show doubled backslashes.
+_HOME_PATTERN = re.compile(r'(?i)(/Users/|/home/|[A-Z]:(?:\\+|/)Users(?:\\+|/))[^/\\"\'<>\r\n]+')
+#: Webull account-number shape (8-16 capitals and digits, both present), masked in any text that mentions Webull
+_WEBULL_LINE = re.compile(r'(?i)webull')
+_WEBULL_NUMBER = re.compile(r'\b(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{8,16}\b')
 
 
 def _last2(s):
@@ -123,14 +169,34 @@ def known_secrets():
         for k in (*settings.SECRET_KEYS, 'sec_contact'):
             if isinstance(data.get(k), str):
                 values.add(data[k])
+        short = {data.get('ntfy_topic'), data.get('telegram_chat'), _custom_ntfy_host()}  # masked even when short
     except Exception:
-        pass
+        short = set()
+    values |= _private_names()
     for name in ('schwab_config.json', 'schwab_token.json'):
         try:
             _strings(json.loads((DATA_DIR / name).read_text()), values)
         except (OSError, ValueError):
             pass
-    return sorted((v for v in values if len(v.strip()) >= 8 and not v.startswith('http')), key=len, reverse=True)
+    keep = {v for v in values if isinstance(v, str) and len(v.strip()) >= 8 and not v.startswith('http')}
+    keep |= {v for v in short if isinstance(v, str) and len(v.strip()) >= 3}
+    return sorted(keep, key=len, reverse=True)
+
+
+def _private_names():
+    """Client, household, account and portfolio names from the owner's store: masked wherever they appear."""
+    names = set()
+    try:
+        from . import store
+        if not store.DB_PATH.exists():
+            return names
+        for doc in store.list_docs('clients'):
+            names |= {doc.get('name'), doc.get('household'), doc.get('accountName')}
+        for doc in store.list_docs('portfolios'):
+            names.add(doc.get('name'))
+    except Exception:
+        pass
+    return {n for n in names if isinstance(n, str) and len(n.strip()) >= 3}
 
 
 def redact_text(text, secrets=(), accounts=()):
@@ -141,9 +207,12 @@ def redact_text(text, secrets=(), accounts=()):
         s = s.replace(value, _last2(value))
     home = str(Path.home())
     if len(home) > 3:
-        for form in {home, home.replace('\\', '/'), home.replace('/', '\\')}:
+        back = home.replace('/', '\\')
+        for form in sorted({home, home.replace('\\', '/'), back, back.replace('\\', '\\\\')}, key=len, reverse=True):
             s = s.replace(form, '~')
     s = _HOME_PATTERN.sub('~', s)
+    if _WEBULL_LINE.search(s):
+        s = _WEBULL_NUMBER.sub(lambda m: _last2(m.group(0)), s)
     for pattern, repl in _TEXT_RULES:
         s = pattern.sub(repl, s)
     return s
@@ -154,7 +223,7 @@ def redact(value, secrets=None, accounts=None, _depth=0):
     if secrets is None:
         secrets = known_secrets()
     if accounts is None:
-        accounts = set(ACCOUNTS)
+        accounts = known_accounts()
     if _depth > 12:
         return '[too deep]'
     if isinstance(value, dict):

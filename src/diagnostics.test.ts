@@ -51,11 +51,32 @@ describe('diagnostics redaction', () => {
     expect(redact({ aiKeySet: true, count: 3 })).toEqual({ aiKeySet: true, count: 3 });
   });
 
+  it('masks Windows paths with doubled backslashes and user names with spaces', () => {
+    const t = redactText(String.raw`'C:\\Users\\Caden Fake\\Documents\\x.csv' C:\Users\Caden Fake\a /Users/Caden Fake/b /home/caden fake/c`);
+    expect(t).not.toMatch(/caden/i);
+    expect(t).toContain('Documents');
+  });
+
+  it('masks the Webull account-number shape in Webull lines only', () => {
+    expect(redactText('Webull positions for 5LT90417 failed')).not.toContain('5LT90417');
+    expect(redactText('Webull order AAPL ok')).toContain('AAPL');
+  });
+
+  it('masks /bot<token>/ paths and escaped name/value pairs', () => {
+    const tok = '123456789:AAFakeTelegramBotTokenValue_abcdefghij';
+    const t = redactText(`POST https://api.telegram.org/bot${tok}/sendMessage {\\"chat_id\\": \\"77665544\\", \\"topic\\": \\"zz\\"} key=abc12`);
+    expect(t).not.toContain('AAFakeTelegram');
+    expect(t).not.toContain('77665544');
+    expect(t).not.toContain('"zz');
+    expect(t).not.toContain('abc12');
+  });
+
   it('records engine errors and summarises the file', () => {
     recordEngineError('futures.board', 'Schwab answered HTTP 500');
     expect(engineErrors.at(-1)?.type).toBe('futures.board');
     const lines = summarise(assembleDiagnostics(browser(), { unavailable: 'the helper isn’t running' }));
     expect(lines[0]).toContain('isn’t running');
-    expect(lines.at(-1)).toContain('#trade');
+    expect(lines.at(-2)).toContain('#trade');
+    expect(lines.at(-1)).toContain('Not included: client or portfolio names');
   });
 });

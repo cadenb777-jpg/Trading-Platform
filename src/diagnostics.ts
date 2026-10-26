@@ -60,17 +60,21 @@ const RULES: [RegExp, string | ((...m: string[]) => string)][] = [
   [/\bbearer\s+[\w.~+/=-]+/gi, 'Bearer ' + MASK],
   [/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, '[email]'],
   [/(https?:\/\/[^\s?#"'<>]+)\?[^\s"'<>]*/g, '$1?[query removed]'],
-  [/\b([\w-]*(?:token|secret|password|passwd|api[_-]?key|app[_-]?key|authorization|signature|client[_-]?id)[\w-]*)(["']?\s*[:=]\s*["']?)(?!\[)([^\s"',;&}\]]+)/gi, `$1$2${MASK}`],
-  [/\b\d{5,15}:[A-Za-z0-9_-]{30,}/g, MASK],
+  [/\b([\w-]*(?:token|secret|password|passwd|key|authorization|signature|client[_-]?id|chat[_-]?id|topic)[\w-]*)(\\?["']?\s*[:=]\s*\\?["']?)(?!\[)([^\s"'\\,;&}\]]+)/gi, `$1$2${MASK}`],
+  [/(?<!\d)\d{5,15}:[A-Za-z0-9_-]{30,}/g, MASK], // Telegram bot token (also inside /bot<token>/ paths)
   [/\b(account|acct)(s?(?:[ _-]?(?:id|number|no\.?|hash))?\s*[:=#]?\s*["']?)([A-Za-z0-9-]*\d[A-Za-z0-9-]{2,})/gi, (_m, a, b, c) => a + b + last2(c)],
   [/\b[0-9a-fA-F]{24,}\b/g, '[hex]'],
   [/(?=[A-Za-z0-9+_-]*\d)[A-Za-z0-9+_-]{32,}={0,2}/g, '[long string]'],
   [/\b\d{7,}\b/g, (m) => last2(m)],
 ];
-const HOME = /(\/Users\/|\/home\/|[A-Z]:\\Users\\|[A-Z]:\/Users\/)[^/\\\s"'<>]+/gi;
+/** A user folder up to the next path separator (names can have spaces); Windows paths may show doubled backslashes. */
+const HOME = /(\/Users\/|\/home\/|[A-Z]:(?:\\+|\/)Users(?:\\+|\/))[^/\\"'<>\r\n]+/gi;
+/** Webull account-number shape (8-16 capitals and digits, both present), masked in text that mentions Webull. */
+const WEBULL_NUMBER = /\b(?=[A-Z0-9]*\d)(?=[A-Z0-9]*[A-Z])[A-Z0-9]{8,16}\b/g;
 
 export function redactText(text: string): string {
   let s = String(text).replace(HOME, '~');
+  if (/webull/i.test(s)) s = s.replace(WEBULL_NUMBER, (m) => last2(m));
   for (const [re, repl] of RULES) s = s.replace(re, repl as string);
   return s;
 }
@@ -130,5 +134,6 @@ export function summarise(file: Record<string, unknown>): string[] {
     lines.push(`The last ${((hp.logTail ?? []) as unknown[]).length} lines of the helper log`);
   }
   lines.push(`This page (${b.page || 'home'}), browser, ${b.engineErrors?.length ?? 0} failed requests and ${b.consoleErrors?.length ?? 0} page errors since it opened`);
+  lines.push('Not included: client or portfolio names, holdings or dollar amounts (names are masked if they show up in an error)');
   return lines;
 }
