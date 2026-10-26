@@ -479,7 +479,7 @@ export async function openSettings(focus?: 'ai') {
               'div',
               { class: 'settings-row' },
               h('label', { class: 'check-item' }, box, h('b', {}, 'Install updates automatically')),
-              h('p', { class: 'muted small' }, 'Off: you get an "Update now" button when a new version is out. On: the helper installs it by itself (it checks every 6 hours) and restarts. Your settings and data are kept either way.'),
+              h('p', { class: 'muted small' }, 'Off: you get an "Update now" button when a new version is out. On: the helper installs it by itself (it checks every 10 minutes) and restarts. Your settings and data are kept either way.'),
             );
           })()]
         : []),

@@ -39,7 +39,7 @@ MAX_ZIP_BYTES = 150_000_000
 MAX_HELPER_BYTES = 60_000_000  # unpacked size of the helper folder (guards against zip bombs)
 REQUIRED_FILES = ('schwab_helper.py', 'splash.py', 'requirements.txt')
 KEEP_BACKUPS = 1
-CHECK_EVERY_SECONDS = 6 * 3600
+CHECK_EVERY_SECONDS = 10 * 60
 BACKUP_PATTERN = re.compile(r'^helper_backup_v(\d+)$')
 
 log = logging.getLogger('helper.update')

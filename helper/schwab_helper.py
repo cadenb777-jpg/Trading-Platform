@@ -794,7 +794,7 @@ class Market:
             SCREEN.message(up.message, tone='ok')
 
     async def update_loop(self):
-        """Checks GitHub for a newer helper at start and every 6 hours. Installs it by itself only if Settings allows
+        """Checks GitHub for a newer helper at start and every 10 minutes. Installs it by itself only if Settings allows
         and no platform tab is open (with a tab open, the page offers the Update now button instead)."""
         await asyncio.sleep(5)
         while True:

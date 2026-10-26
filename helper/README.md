@@ -77,7 +77,7 @@ again (step 2), copy the new files into your helper folder (or replace it) and s
 Your keys and login are kept.
 
 **After that, updating is one click.** The helper checks GitHub for a newer version when it starts and
-every 6 hours. When there is one, the platform shows **"Update available (v X → v Y)"** with an
+every 10 minutes. When there is one, the platform shows **"Update available (v X → v Y)"** with an
 **Update now** button (the helper window points you to it). Clicking it:
 
 1. downloads the newest ZIP straight from GitHub (only from GitHub's own download servers, over HTTPS),

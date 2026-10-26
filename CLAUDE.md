@@ -94,7 +94,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (splash.HelperScreen), logs only to the file and shows one live status line. Interactive steps (Schwab keys,
   login) pause the screen. Keep splash.py standard-library only.
   Self-update (helper/updater.py, standard library; downloads via the helper's httpx): reads HELPER_VERSION from raw
-  GitHub main at start and every 6 h (status.update); request `update` (Update now) downloads the codeload main ZIP
+  GitHub main at start and every 10 min (status.update); request `update` (Update now) downloads the codeload main ZIP
   (only raw.githubusercontent.com/codeload.github.com, https, redirects checked), verifies it, unpacks only helper/,
   backs up to ../helper_backup_v<old> (keeps 1), copies changed files in (splash.copy_files; dot files untouched),
   writes update-pending.json and exits 75. splash.py then pips changed requirements and starts the new copy; a pip
