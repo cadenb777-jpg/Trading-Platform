@@ -43,22 +43,42 @@ async def price_matrix(ctx, symbols, years=20, with_dividends=True):
     if len(common) < 60:
         raise EngineError('Not enough shared price history for these symbols (need at least 3 months).')
     closes = np.array([[s[d] for s in series] for d in common], dtype=float)
-    values = closes.copy()
-    for j, divs in enumerate(divs_list):
-        if not divs:
-            continue
-        # Dividends paid between two trading days count on the first day on or after their ex-date.
-        div_on = np.zeros(len(common))
-        k = 0
-        for day in sorted(divs):
-            while k < len(common) and common[k] < day:
-                k += 1
-            if 0 < k < len(common):
-                div_on[k] += divs[day]
-        growth = (closes[1:, j] + div_on[1:]) / closes[:-1, j]
-        values[:, j] = closes[0, j] * np.concatenate([[1.0], np.cumprod(growth)])
+    values = np.column_stack([_with_dividends(common, closes[:, j], divs) for j, divs in enumerate(divs_list)])
     info = {'last': closes[-1].tolist(), 'dividends': [d is not None for d in divs_list]}
     return common, values, info
+
+
+def _with_dividends(dates, closes, divs):
+    """Total-return index from closes: dividends paid between two trading days count on the first day on or after
+    their ex-date (reinvested). Plain closes when there are no dividends."""
+    if not divs:
+        return closes.copy()
+    div_on = np.zeros(len(dates))
+    k = 0
+    for day in sorted(divs):
+        while k < len(dates) and dates[k] < day:
+            k += 1
+        if 0 < k < len(dates):
+            div_on[k] += divs[day]
+    growth = (closes[1:] + div_on[1:]) / closes[:-1]
+    return closes[0] * np.concatenate([[1.0], np.cumprod(growth)])
+
+
+async def total_return_series(ctx, symbols, years, with_dividends=True):
+    """Each symbol's own daily total-return index {date: value} over all the days it traded (not aligned).
+    A symbol whose history can't be loaded comes back as None."""
+    bars_list = await asyncio.gather(*(ctx.daily_bars(s, years) for s in symbols), return_exceptions=True)
+    divs_list = await asyncio.gather(*(ctx.dividends(s) for s in symbols), return_exceptions=True) if with_dividends else [None] * len(symbols)
+    out = []
+    for bars, divs in zip(bars_list, divs_list):
+        if isinstance(bars, Exception) or not bars:
+            out.append(None)
+            continue
+        closes = {_date(b['time']): b['close'] for b in bars}
+        dates = sorted(closes)
+        values = _with_dividends(dates, np.array([closes[d] for d in dates], dtype=float), None if isinstance(divs, Exception) else divs)
+        out.append(dict(zip(dates, values.tolist())))
+    return out
 
 
 async def risk_free(ctx):
@@ -586,32 +606,123 @@ def oos_stats(port, rf):
     return {'return': float(cagr), 'volatility': vol, 'maxDrawdown': float((growth / np.maximum.accumulate(growth) - 1).min()), 'sharpe': (cagr - rf) / vol if vol else None}
 
 
-def _window(t):
+# Short histories. Methods that need little data (equal weight; risk parity, which uses only volatility; minimum
+# variance on a shrunk covariance) hold up far better than return-seeking ones when history is short: DeMiguel,
+# Garlappi & Uppal (2009), "Optimal versus naive diversification", Review of Financial Studies 22(5).
+
+STAND_INS = ('SPY', 'QQQ', 'IWM', 'MDY', 'EFA', 'EEM', 'VTI', 'AGG', 'BND', 'TLT', 'IEF', 'SHY', 'LQD', 'HYG', 'TIP', 'GLD', 'SLV',
+             'DBC', 'VNQ', 'XLK', 'XLF', 'XLV', 'XLE', 'XLI', 'XLY', 'XLP', 'XLU', 'XLB', 'XLRE', 'XLC', 'SCHD', 'VIG', 'DVY', 'MTUM',
+             'QUAL', 'USMV')
+MIN_OVERLAP, MIN_CORRELATION, YOUNG_DAYS = TRADING_DAYS, 0.7, 90  # 1 year of overlap; "young" = starts 90+ days after the oldest
+SHORT_TEST_DAYS = int(2.5 * TRADING_DAYS)  # below this even the short walk-forward isn't run
+STABILITY_RUNS, STABILITY_INNER = 200, 10
+
+
+def _daily_returns(series, dates):
+    v = np.array([series[d] for d in dates], dtype=float)
+    return v[1:] / v[:-1] - 1
+
+
+def pick_stand_in(own, candidates):
+    """The long-history ETF whose daily returns move most like `own` over their real overlap, as
+    (symbol, correlation, beta), or None without 1+ year of overlap and a correlation of at least 0.7."""
+    best = None
+    for symbol, other in candidates.items():
+        if not other:
+            continue
+        common = sorted(own.keys() & other.keys())
+        if len(common) - 1 < MIN_OVERLAP:
+            continue
+        a, b = _daily_returns(own, common), _daily_returns(other, common)
+        if a.std() == 0 or b.std() == 0:
+            continue
+        corr = float(np.corrcoef(a, b)[0, 1])
+        if corr >= MIN_CORRELATION and (best is None or corr > best[1]):
+            best = (symbol, corr, float(np.cov(a, b)[0, 1] / b.var(ddof=1)))
+    return best
+
+
+def backfill(own, proxy, beta, floor):
+    """`own` extended back to `floor`: before its first real day each day's return is beta x the stand-in's return
+    (no alpha). Real days are never changed."""
+    first = min(own)
+    days = sorted(d for d in proxy if floor <= d <= first)
+    out = dict(own)
+    if not days:
+        return out
+    v = own[first]
+    if days[-1] != first:
+        out[days[-1]] = v  # the stand-in has no bar on the real start: treat that one gap as flat
+    for i in range(len(days) - 2, -1, -1):
+        r = proxy[days[i + 1]] / proxy[days[i]] - 1
+        v = v / max(1 + beta * r, 1e-6)
+        out[days[i]] = v
+    return out
+
+
+def extend_history(series, symbols, candidates):
+    """Proxy-extended history (as in Morningstar's extended performance) for holdings younger than the rest.
+
+    series/candidates: {symbol: {date: total-return value}}. Returns (extended {symbol: {date: value}}, stand-ins used,
+    young holdings with no good stand-in)."""
+    starts = {s: min(series[s]) for s in symbols}
+    ref = min(starts.values())
+    young = [s for s in symbols if (starts[s] - ref).days > YOUNG_DAYS]
+    out, used, left_out = {s: series[s] for s in symbols}, [], []
+    for s in young:
+        pick = pick_stand_in(series[s], {c: v for c, v in candidates.items() if c != s and c not in young})
+        if pick is None:
+            left_out.append({'symbol': s, 'realStart': starts[s].isoformat()})
+            continue
+        proxy, corr, beta = pick
+        out[s] = backfill(series[s], candidates[proxy], beta, ref)
+        used.append({'symbol': s, 'standIn': proxy, 'correlation': round(corr, 3), 'beta': round(beta, 3), 'realStart': starts[s].isoformat()})
+    return out, used, left_out
+
+
+def test_window(t):
+    """(fit window, holding step, short) for t days of history: 3-year fit / quarterly hold with 4+ years; a short
+    1-year fit / monthly hold (low confidence) with 2.5+ years; otherwise None (no walk-forward)."""
     if t >= WINDOW + 4 * STEP:
-        return WINDOW
-    return TRADING_DAYS if t >= TRADING_DAYS + 2 * STEP else None
+        return WINDOW, STEP, False
+    if t >= SHORT_TEST_DAYS:
+        return TRADING_DAYS, BLOCK, True
+    return None
 
 
-def run_optimizer(returns, current, method, o, seed=7):
-    """Suggested weights, the walk-forward table and the random-walk check. Pure: arrays in, plain dict out."""
+def weight_stability(returns, method, o, seed=11, runs=None):
+    """Refit `method` on `runs` block-bootstrap resamples (1-month blocks) of the real history: each weight's
+    10th-90th percentile. A robustness check (can the data pin the weights down?), not evidence of better returns."""
+    rng, runs = np.random.default_rng(seed), runs or STABILITY_RUNS
+    inner = {**o, 'runs': STABILITY_INNER}
+    ws = np.array([fit(returns[_block_sample(len(returns), rng)], method, inner, rng) for _ in range(runs)])
+    return {'runs': runs, 'low': np.percentile(ws, 10, axis=0).round(4).tolist(), 'high': np.percentile(ws, 90, axis=0).round(4).tolist()}
+
+
+def run_optimizer(returns, current, method, o, seed=7, test=None, stability_runs=None):
+    """Suggested weights (fit on the real shared history), the weight-stability ranges, the walk-forward table and the
+    random-walk check. test = (returns, current, options) of the history to test on (stand-in extended); default the
+    real one. Pure: arrays in, plain dict out."""
     rng = np.random.default_rng(seed)
     test_method = 'growth' if method == 'black_litterman' else method
     weights = fit(returns, method, {**o, 'cur': current}, rng)
     cov = ledoit_wolf(returns)[0] * TRADING_DAYS
-    out = {'weights': weights, 'volatility': {'current': float(np.sqrt(current @ cov @ current)), 'suggested': float(np.sqrt(weights @ cov @ weights))}, 'walkForward': None, 'randomWalk': None}
-    window = _window(len(returns))
-    if not window:
+    out = {'weights': weights, 'volatility': {'current': float(np.sqrt(current @ cov @ current)), 'suggested': float(np.sqrt(weights @ cov @ weights))},
+           'stability': weight_stability(returns, method, {**o, 'cur': current}, seed + 4, stability_runs), 'walkForward': None, 'randomWalk': None}
+    t_returns, t_current, t_o = test or (returns, current, o)
+    plan = test_window(len(t_returns)) if t_returns.shape[1] >= 2 else None
+    if not plan:
         return out
-    wf = {**o, 'runs': WF_RESAMPLES, 'views': []}
+    window, step, short = plan
+    wf = {**t_o, 'runs': WF_RESAMPLES, 'views': []}
     keys = ['current', 'equal', 'min_var', 'risk_parity', 'growth']
-    weighers = {k: (lambda past: current) if k == 'current' else (lambda past, k=k: fit(past, k, wf, rng)) for k in keys}
+    weighers = {k: (lambda past: t_current) if k == 'current' else (lambda past, k=k: fit(past, k, wf, rng)) for k in keys}
     rows, ports = [], {}
     for k in keys:
-        port, _, turnover = walk_forward(returns, weighers[k], window)
+        port, _, turnover = walk_forward(t_returns, weighers[k], window, step)
         ports[k] = port
         rows.append({'key': k, **oos_stats(port, o['rf']), 'turnover': turnover})
-    n_days = len(ports['current'])
-    out['walkForward'] = {'windowYears': window / TRADING_DAYS, 'days': n_days, 'rows': rows}
+    out['walkForward'] = {'windowYears': window / TRADING_DAYS, 'stepDays': step, 'short': short, 'days': len(ports['current']), 'rows': rows}
     by = {r['key']: r for r in rows}
     edge = (by[test_method]['sharpe'] or 0) - (by['current']['sharpe'] or 0)
     if edge <= 0:  # no edge to explain: skip the shuffles
@@ -620,12 +731,18 @@ def run_optimizer(returns, current, method, o, seed=7):
     rw = {**wf, 'runs': RW_RESAMPLES}
     beats = 0
     for _ in range(RW_RUNS):
-        shuffled = returns[_block_shuffle(len(returns), rng)]
-        a = oos_stats(walk_forward(shuffled, lambda past: fit(past, test_method, rw, rng), window)[0], o['rf'])['sharpe'] or 0
-        b = oos_stats(walk_forward(shuffled, lambda past: current, window)[0], o['rf'])['sharpe'] or 0
+        shuffled = t_returns[_block_shuffle(len(t_returns), rng)]
+        a = oos_stats(walk_forward(shuffled, lambda past: fit(past, test_method, rw, rng), window, step)[0], o['rf'])['sharpe'] or 0
+        b = oos_stats(walk_forward(shuffled, lambda past: t_current, window, step)[0], o['rf'])['sharpe'] or 0
         beats += (a - b) >= edge
     out['randomWalk'] = {'method': test_method, 'runs': RW_RUNS, 'edge': float(edge), 'p': float((beats + 1) / (RW_RUNS + 1))}
     return out
+
+
+def _aligned(series, symbols):
+    """(dates, values[days, assets]) over the days every symbol has."""
+    common = sorted(set.intersection(*(set(series[s]) for s in symbols)))
+    return common, np.array([[series[s][d] for s in symbols] for d in common], dtype=float).reshape(len(common), len(symbols))
 
 
 @handler('portfolio.optimize')
@@ -634,20 +751,43 @@ async def optimize(ctx, msg):
     if len(symbols) < 2:
         raise EngineError('Optimisation needs at least two holdings.')
     method = msg.get('method') if msg.get('method') in METHODS else 'risk_parity'
-    years = int(msg.get('years') or 10)
+    years = min(int(msg.get('years') or 10), 10)  # stand-in history goes back at most 10 years
     cash = {str(h['symbol']).upper().strip() for h in msg.get('holdings') or [] if h.get('cash')}
     keep_cash = msg.get('keepCash', True)
     fixed = {j: float(current[j]) for j, s in enumerate(symbols) if s in cash} if keep_cash else {}
-    (dates, prices, _), rf = await asyncio.gather(price_matrix(ctx, symbols, years), risk_free(ctx))
+    loaded, rf = await asyncio.gather(total_return_series(ctx, symbols, years), risk_free(ctx))
+    for s, v in zip(symbols, loaded):
+        if v is None:
+            raise EngineError(f'{s}: no price history. Check the ticker.')
+    series = dict(zip(symbols, loaded))
+    dates, prices = _aligned(series, symbols)
+    if len(dates) < 60:
+        raise EngineError('Not enough shared price history for these symbols (need at least 3 months).')
     returns = prices[1:] / prices[:-1] - 1
     views = [{**v, 'return': float(v['return']) - rf} for v in msg.get('views') or [] if 'return' in v]
     o = {'rf': rf, 'lo': 0.01 if msg.get('keepAll') else 0.0, 'hi': float(msg.get('maxWeight') or 0.25), 'fixed': fixed,
          'maxChange': float(msg['maxChange']) if msg.get('maxChange') else None, 'views': views if method == 'black_litterman' else [], 'symbols': symbols}
-    r = await asyncio.to_thread(run_optimizer, returns, current, method, o)
+
+    used, left_out, test, test_dates = [], [], None, dates
+    starts = [min(v) for v in loaded]
+    if msg.get('standIns', True) is not False and any((d - min(starts)).days > YOUNG_DAYS for d in starts):
+        names = [c for c in STAND_INS if c not in symbols]
+        candidates = dict(zip(names, await total_return_series(ctx, names, years)))
+        candidates.update(series)  # a long-history holding can stand in too (already loaded)
+        extended, used, left_out = extend_history(series, symbols, candidates)
+        dropped = {x['symbol'] for x in left_out}
+        keep = [j for j, s in enumerate(symbols) if s not in dropped]
+        test_dates, values = _aligned(extended, [symbols[j] for j in keep])
+        t_cur = current[keep] / current[keep].sum()
+        index = {j: k for k, j in enumerate(keep)}
+        t_fixed = {index[j]: float(t_cur[index[j]]) for j in fixed if j in index}
+        test = (values[1:] / values[:-1] - 1, t_cur, {**o, 'fixed': t_fixed, 'symbols': [symbols[j] for j in keep]})
+    r = await asyncio.to_thread(run_optimizer, returns, current, method, o, 7, test)
     return {
         'method': method,
         'start': dates[0].isoformat(),
         'end': dates[-1].isoformat(),
+        'testStart': test_dates[0].isoformat(),
         'riskFree': rf,
         'symbols': symbols,  # only what was sent: never a symbol the owner didn't add
         'cash': [s for s in symbols if s in cash],
@@ -655,6 +795,9 @@ async def optimize(ctx, msg):
         'weights': r['weights'].round(4).tolist(),
         'current': current.round(4).tolist(),
         'volatility': r['volatility'],
+        'stability': r['stability'],
+        'standIns': used,
+        'leftOut': left_out,
         'walkForward': r['walkForward'],
         'randomWalk': r['randomWalk'],
     }

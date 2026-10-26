@@ -73,6 +73,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (min variance), Growth (resampled max-Sharpe, returns 70% equal-weight equilibrium + 30% history), My views (BL);
   max per holding, max change, keep cash (payload `cash: true`, held fixed); walk-forward (3y fit, quarterly hold) table and
   random-walk check (100 block-shuffled histories). Only the owner's own symbols; cash shows as "Cash" (holdingLabel), not BIL.
+  Short history (v33): weights are fit on real shared history only. For the tests, a young holding (starts 90+ days after
+  the oldest) gets stand-in history (extend_history: best-correlated ETF from STAND_INS, >= 1y overlap and corr >= 0.7,
+  beta x stand-in before its real start, real data untouched, <= 10 years; none = left out of the test, reply leftOut);
+  toggle payload `standIns`. test_window: 4y+ full test, 2.5-4y short 1y fit/monthly hold ("low confidence"), less none.
+  weight_stability: 200 block-bootstrap refits -> 10th-90th percentile bars. Texts in src/portfolio/optimiserText.ts.
   Account page (src/pages/accountPage.ts, #account): portfolios with Portfolio.mine (set by Import statement; unset = live
   Webull sync) merged by src/portfolio/account.ts, figures from dividends.portfolio + dividendsView; read-only (orders only in Webull view).
   Account risk/sectors/taxes (v30, follow the account switcher): engine/risk.py `risk.account` {holdings: symbol, value, kind}

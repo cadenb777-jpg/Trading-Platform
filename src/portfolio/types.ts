@@ -203,7 +203,16 @@ export interface Optimisation {
   weights: number[];
   current: number[];
   volatility: { current: number; suggested: number };
-  walkForward: { windowYears: number; days: number; rows: WalkForwardRow[] } | null;
+  /** First day of the history the walk-forward used (earlier than `start` when stand-ins extend it). Helper v33+. */
+  testStart?: string;
+  /** Each weight's 10th-90th percentile when the method is refit on resampled history (v33+). */
+  stability?: { runs: number; low: number[]; high: number[] };
+  /** Young holdings whose earlier history is estimated from a long-running ETF (v33+). */
+  standIns?: { symbol: string; standIn: string; correlation: number; beta: number; realStart: string }[];
+  /** Young holdings with no good stand-in: left out of the walk-forward (v33+). */
+  leftOut?: { symbol: string; realStart: string }[];
+  /** short = the 1-year fit / monthly hold test (2.5-4 years of history): low confidence. */
+  walkForward: { windowYears: number; days: number; rows: WalkForwardRow[]; stepDays?: number; short?: boolean } | null;
   /** How often shuffled histories gave the method at least its real out-of-sample Sharpe edge over the current portfolio. */
   randomWalk: { method: string; runs: number; edge: number; p: number } | null;
 }

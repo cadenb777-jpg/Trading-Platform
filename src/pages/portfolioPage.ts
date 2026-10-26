@@ -4,6 +4,7 @@ import { deleteDoc, listDocs, saveDoc } from '../data/store';
 import { PRIVATE_FUNDS, STRATEGIES, type Strategy } from '../invest/catalog';
 import { openStatementImport, renderDividends } from '../portfolio/dividendsView';
 import { renderWebull } from '../portfolio/webullView';
+import { leftOutLine, shortHistoryAdvice, standInLine, yearsBetween } from '../portfolio/optimiserText';
 import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
 import {
   ALT_CLASSES,
@@ -592,6 +593,7 @@ export function createPortfolioPage() {
     const maxChange = h('input', { class: 'input', type: 'number', value: 20, min: 1, max: 100, step: 1, 'aria-label': 'Max change per holding %' }) as HTMLInputElement;
     const keepCash = h('input', { type: 'checkbox', checked: true }) as HTMLInputElement;
     const keepAll = h('input', { type: 'checkbox' }) as HTMLInputElement;
+    const standIns = h('input', { type: 'checkbox', checked: true }) as HTMLInputElement;
     const hasCash = current.holdings.some((x) => x.kind === 'cash');
     const years = h('select', { class: 'input', 'aria-label': 'History' }, ...[5, 10].map((y) => h('option', { value: y, selected: y === 10 }, `${y} years of history`))) as HTMLSelectElement;
     const views = h('input', { class: 'input', placeholder: 'e.g. GLD 8% 60%, VTI 6% 50%', 'aria-label': 'Views', hidden: true }) as HTMLInputElement;
@@ -617,6 +619,7 @@ export function createPortfolioPage() {
             keepCash: keepCash.checked,
             keepAll: keepAll.checked,
             years: Number(years.value),
+            standIns: standIns.checked,
             views: parsedViews,
           },
           180000,
@@ -643,9 +646,21 @@ export function createPortfolioPage() {
         { class: 'ap-controls' },
         hasCash ? h('label', { class: 'opt-check', title: 'Only the invested part is reallocated' }, keepCash, ' Keep cash as is') : null,
         h('label', { class: 'opt-check' }, keepAll, ' Keep every holding (at least 1%)'),
+        h('label', { class: 'opt-check', title: 'For the test only: before a young holding existed, its returns are estimated from the long-running fund it moves most like' }, standIns, ' Use stand-in history for young holdings ', infoTip('standIn')),
         views,
       ),
       h('p', { class: 'ap-note' }, 'Only your own holdings are used. Max change limits how far each weight moves from today, so suggestions don’t churn. Views format: symbol, expected yearly return, confidence.'),
+    );
+  }
+
+  /** The 10th-90th percentile of a weight across bootstrap refits as a small bar, with a tick at the suggestion. */
+  function rangeCell(lo: number, hi: number, w: number, scale: number) {
+    const at = (x: number) => `${Math.min(100, (100 * x) / scale).toFixed(1)}%`;
+    return h(
+      'span',
+      { class: 'opt-range-cell', title: `80% of refits put this weight between ${pctU(lo, 1)} and ${pctU(hi, 1)}` },
+      h('span', { class: 'opt-range', 'aria-hidden': 'true' }, h('span', { class: 'opt-range-fill', style: `left:${at(lo)};width:max(2px, ${at(hi - lo)})` }), h('span', { class: 'opt-range-mark', style: `left:${at(w)}` })),
+      h('span', { class: 'muted small' }, `${pctU(lo, 0)}–${pctU(hi, 0)}`),
     );
   }
 
@@ -653,7 +668,7 @@ export function createPortfolioPage() {
     const wf = r.walkForward;
     const key = r.method === 'black_litterman' ? 'growth' : r.method;
     const name = METHOD_NAMES[key];
-    if (!wf) return 'There isn’t enough shared history (about 1.5 years) for the walk-forward test, so there is no proof these weights would have done better. Treat them as a starting point.';
+    if (!wf) return shortHistoryAdvice(yearsBetween(r.testStart ?? r.start, r.end), 'none');
     const m = wf.rows.find((x) => x.key === key)!;
     const c = wf.rows.find((x) => x.key === 'current')!;
     const edge = (m.sharpe ?? 0) - (c.sharpe ?? 0);
@@ -669,8 +684,14 @@ export function createPortfolioPage() {
   function renderOptimisation(out: HTMLElement, r: Optimisation) {
     const wf = r.walkForward;
     const key = r.method === 'black_litterman' ? 'growth' : r.method;
+    const label = (s: string) => holdingLabel(current, s).label;
+    const st = r.stability;
+    const scale = st ? Math.max(0.05, ...st.high, ...r.weights) : 1;
+    const history = [...(r.standIns ?? []).map((s) => standInLine(s, label(s.symbol))), ...(r.leftOut ?? []).map((s) => leftOutLine(s, label(s.symbol)))];
     out.replaceChildren(
       h('p', { class: 'opt-verdict' }, verdict(r)),
+      ...(wf?.short ? [h('p', { class: 'opt-guide' }, shortHistoryAdvice(yearsBetween(r.testStart ?? r.start, r.end), 'short'))] : []),
+      ...(history.length ? [h('div', { class: 'opt-standins' }, ...history.map((x) => h('p', { class: 'ap-note' }, x)))] : []),
       h(
         'div',
         { class: 'opt-results' },
@@ -679,11 +700,26 @@ export function createPortfolioPage() {
           {},
           h('h4', {}, 'Suggested weights'),
           dataTable(
-            ['Holding', 'Current', 'Suggested', 'Change'],
-            r.symbols.map((s, i) => [holdingCell(s), pctU(r.current[i], 1), pctU(r.weights[i], 1), { v: pct(r.weights[i] - r.current[i], 1), cls: tone(r.weights[i] - r.current[i]) }]),
+            ['Holding', 'Current', 'Suggested', 'Change', ...(st ? ['Likely range'] : [])],
+            r.symbols.map((s, i) => [
+              holdingCell(s),
+              pctU(r.current[i], 1),
+              pctU(r.weights[i], 1),
+              { v: pct(r.weights[i] - r.current[i], 1), cls: tone(r.weights[i] - r.current[i]) },
+              ...(st ? [rangeCell(st.low[i], st.high[i], r.weights[i], scale)] : []),
+            ]),
             undefined,
             false,
           ),
+          st
+            ? h(
+                'p',
+                { class: 'ap-note' },
+                h('b', {}, 'How firm are these weights? '),
+                infoTip('weightRange'),
+                ` The method was refit on ${st.runs} reshuffled versions of your real history (1-month blocks); each bar shows where that weight landed 80% of the time. Narrow = the data pins the weight down; wide = it can’t, so don’t read much into the exact number. This checks robustness, not whether returns will be better.`,
+              )
+            : null,
           h('p', { class: 'ap-note' }, `Expected volatility ${pctU(r.volatility.suggested, 1)} (now ${pctU(r.volatility.current, 1)}).${r.keepCash ? ' Cash is kept as is; only the invested part moves.' : ''} History ${r.start} to ${r.end}.`),
           h(
             'div',
@@ -719,7 +755,15 @@ export function createPortfolioPage() {
                 false,
               )
             : h('p', { class: 'muted small' }, 'Not enough history for this test.'),
-          wf ? h('p', { class: 'ap-note' }, `Refit on the previous ${wf.windowYears.toFixed(0)} year${wf.windowYears >= 2 ? 's' : ''}, held each quarter, over ${(wf.days / 252).toFixed(1)} years. Dividends included.`) : null,
+          wf
+            ? h(
+                'p',
+                { class: 'ap-note' },
+                wf.short ? h('b', {}, 'Short test: low confidence. ') : null,
+                `Refit on the previous ${wf.windowYears.toFixed(0)} year${wf.windowYears >= 2 ? 's' : ''}, held each ${wf.short ? 'month' : 'quarter'}, over ${(wf.days / 252).toFixed(1)} years. Dividends included.`,
+                r.testStart && r.testStart < r.start ? ` Tested from ${r.testStart}, before the ${r.start} start of your real shared history: see the notes on young holdings above.` : '',
+              )
+            : null,
           r.randomWalk
             ? h(
                 'p',

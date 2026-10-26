@@ -6274,7 +6274,17 @@ a.btn {
 .opt-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
 .opt-verdict { margin: 0 0 12px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--panel-2); border-radius: 4px; line-height: 1.45; }
 .data-table tr.opt-chosen td { background: var(--accent-soft); }
-.opt-results { display: grid; gap: 16px; }
+.opt-results { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.opt-guide { margin: 0 0 12px; line-height: 1.45; }
+.opt-standins { margin: 0 0 12px; }
+.opt-standins .ap-note { margin: 2px 0; }
+.opt-range-cell { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.opt-range { position: relative; display: inline-block; flex: none; width: 72px; height: 8px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--border); }
+.opt-range-fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: var(--accent); opacity: 0.55; }
+.opt-range-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--text); }
+@media (max-width: 600px) {
+  .opt-range { width: 44px; }
+}
 
 /* ---------- Futures page ---------- */
 .fut-tiles {
