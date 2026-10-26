@@ -18,6 +18,7 @@ import { formatPrice, h, timeAgo, toast } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
 import { withTableTools } from '../ui/tableTools';
 import { THEME, followTheme } from '../ui/theme';
+import { tickerAttr } from '../ui/tickerCard';
 
 type Horizon = 'short' | 'swing' | 'position';
 type StrategyKey = 'weekly_swing' | 'mean_reversion' | 'breakout';
@@ -350,7 +351,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       h('div', { class: 'sp-today-head' }, h('b', {}, live.length ? `${live.length} trade${live.length === 1 ? '' : 's'} worth a look on the ${info.label.toLowerCase()} time frame` : `Nothing to act on in ${info.label.toLowerCase()} right now`)),
       live.length
         ? h('ul', { class: 'sp-today-list small' }, ...live.slice(0, 5).map(({ s, z }) => h('li', {}, h('a', { href: '#setups', onclick: (e: Event) => (e.preventDefault(), (selected = idOf(s)), render()) },
-            h('b', {}, s.symbol), ' ', h('span', { class: s.direction > 0 ? 'up' : 'down' }, s.direction > 0 ? 'BUY' : 'SELL'), ' ', h('i', { class: `tier tier-${s.tier}` }, s.tier!), h('span', { class: z.tone }, ` ${z.label}`),
+            h('b', tickerAttr(s.symbol), s.symbol), ' ', h('span', { class: s.direction > 0 ? 'up' : 'down' }, s.direction > 0 ? 'BUY' : 'SELL'), ' ', h('i', { class: `tier tier-${s.tier}` }, s.tier!), h('span', { class: z.tone }, ` ${z.label}`),
             h('span', { class: 'muted' }, s.trade ? ` · in since ${s.trade.filled}` : ` · ${s.direction > 0 ? 'above' : 'below'} ${usd(s.plan.trigger)}, stop ${usd(s.plan.stop)}`)))))
         : h('p', { class: 'small muted' }, hr.setups.length ? 'No A or B setup is waiting for an entry. That\'s normal: good setups don\'t appear every day. Check the other time frames, or come back after the next close.' : 'No stock has every condition lined up. Sitting out is a position.'),
       h('p', { class: 'small' }, lean),
@@ -490,7 +491,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       'tr',
       { class: `${id === selected ? 'sel' : ''}`, onclick: () => ((selected = id), render()) },
       h('td', {}, h('button', { class: `sp-star${watched.has(id) ? ' on' : ''}`, title: watched.has(id) ? 'Stop watching' : 'Watch: alert me when it\'s time to enter', onclick: (e: Event) => (e.stopPropagation(), toggleWatch(s)) }, watched.has(id) ? '★' : '☆')),
-      h('td', {}, h('b', {}, s.symbol), ' ', h('span', { class: `sp-side ${long ? 'up' : 'down'}` }, long ? 'BUY' : 'SELL'), s.new ? h('span', { class: 'new-chip' }, 'New') : '', s.conflict ? h('span', { class: 'sp-warn', title: `${s.conflict.strategy} says the opposite` }, ' ⚠') : '', h('div', { class: 'muted tiny' }, s.strategyName.split(' (')[0])),
+      h('td', {}, h('b', tickerAttr(s.symbol), s.symbol), ' ', h('span', { class: `sp-side ${long ? 'up' : 'down'}` }, long ? 'BUY' : 'SELL'), s.new ? h('span', { class: 'new-chip' }, 'New') : '', s.conflict ? h('span', { class: 'sp-warn', title: `${s.conflict.strategy} says the opposite` }, ' ⚠') : '', h('div', { class: 'muted tiny' }, s.strategyName.split(' (')[0])),
       h('td', {}, s.tier ? h('i', { class: `tier tier-${s.tier}` }, s.tier) : ''),
       h('td', { class: z.tone }, z.label),
       h('td', { class: 'num' }, usd(s.trade?.entry ?? s.plan.trigger)),
@@ -522,7 +523,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     const watchBtn = h('button', { class: 'btn small', onclick: () => (toggleWatch(s), render()) });
     const strat = hr!.strategies[s.strategy as StrategyKey];
     detail.replaceChildren(
-      h('div', { class: 'sp-detail-head' }, h('h2', {}, s.symbol), h('span', { class: 'muted' }, `${s.strategyName} · ${HORIZONS.find((x) => x.key === prefs.horizon)!.label} · ${s.plan.holdText ?? s.plan.horizon}`), h('span', { class: 'spacer' }), watchBtn, h('button', { class: 'btn small', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, 'Open chart')),
+      h('div', { class: 'sp-detail-head' }, h('h2', tickerAttr(s.symbol), s.symbol), h('span', { class: 'muted' }, `${s.strategyName} · ${HORIZONS.find((x) => x.key === prefs.horizon)!.label} · ${s.plan.holdText ?? s.plan.horizon}`), h('span', { class: 'spacer' }), watchBtn, h('button', { class: 'btn small', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, 'Open chart')),
       live,
       chartBox,
       tradeGuideBody(s, strat, onOpenChart, data?.regime.qqqAbove200 ?? null),

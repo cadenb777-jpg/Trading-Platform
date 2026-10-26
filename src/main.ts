@@ -14,6 +14,8 @@ import { icon, type IconName } from './ui/icons';
 import { openSettings } from './ui/settings';
 import { currentTheme, initTheme, onThemeChange, setTheme } from './ui/theme';
 import { PAGE_SUGGESTIONS, screenText } from './ai/screen';
+import { followHealth, openDataHealth } from './ui/dataHealth';
+import { initTickerCards } from './ui/tickerCard';
 
 initTheme();
 
@@ -192,7 +194,7 @@ if (isAiWindow) {
   let updateError = '';
   /** What the new helper adds, by the version you have. */
   const updateReason = (v: number) =>
-    v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : v < 12 ? 'It adds the Nasdaq-100 swing scanner (weekly swing with COT, z-score and Williams; mean reversion; breakouts) every 5 minutes, RIA fee schedules in client reports and fresher fund data. ' : v < 21 ? 'It adds the free Alpaca history option (Settings), a faster and steadier helper and fixes. ' : v < 22 ? 'It reworks the Setups scanner: honest tests (trades from the same week count as one bet, results after costs, corrected for many tests), 15 years of daily history, hourly history kept for good, simpler rules and weekly rule tests on your own data. ' : v < 23 ? 'The AI assistant can now see the page you’re on, so you can ask about anything on screen. ' : v < 24 ? 'It adds dividend tracking (import a statement, yields, income calendar). ' : v < 25 ? 'It fixes dividend estimates after raises and for twice-a-year payers. ' : v < 26 ? 'It adds Webull: view and sync your account, and place orders (Test first). ' : v < 27 ? 'It fixes Webull "too many requests" and adds the Trade page. ' : v < 28 ? 'It adds total return (with dividends) to Account, Investments and Research. ' : v < 29 ? 'It rebuilds the portfolio optimizer (shrinkage, risk parity, resampling, walk-forward test) and shows cash as Cash. ' : v < 30 ? 'It adds one-click helper updates and shows each Webull account (Roth IRA, Traditional IRA, Cash, Margin) separately, with a combined view, plus account risk, sectors and a tax view. ' : v < 31 ? 'It adds the Futures page: the whole futures market by sector, what’s moving, term structure and who is positioned how (COT), and futures trading in your Webull futures account (Trade page, Futures switch; off until you type FUTURES in Settings). Updates are checked every 10 minutes. ' : 'It includes bug fixes. ';
+    v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : v < 12 ? 'It adds the Nasdaq-100 swing scanner (weekly swing with COT, z-score and Williams; mean reversion; breakouts) every 5 minutes, RIA fee schedules in client reports and fresher fund data. ' : v < 21 ? 'It adds the free Alpaca history option (Settings), a faster and steadier helper and fixes. ' : v < 22 ? 'It reworks the Setups scanner: honest tests (trades from the same week count as one bet, results after costs, corrected for many tests), 15 years of daily history, hourly history kept for good, simpler rules and weekly rule tests on your own data. ' : v < 23 ? 'The AI assistant can now see the page you’re on, so you can ask about anything on screen. ' : v < 24 ? 'It adds dividend tracking (import a statement, yields, income calendar). ' : v < 25 ? 'It fixes dividend estimates after raises and for twice-a-year payers. ' : v < 26 ? 'It adds Webull: view and sync your account, and place orders (Test first). ' : v < 27 ? 'It fixes Webull "too many requests" and adds the Trade page. ' : v < 28 ? 'It adds total return (with dividends) to Account, Investments and Research. ' : v < 29 ? 'It rebuilds the portfolio optimizer (shrinkage, risk parity, resampling, walk-forward test) and shows cash as Cash. ' : v < 30 ? 'It adds one-click helper updates and shows each Webull account (Roth IRA, Traditional IRA, Cash, Margin) separately, with a combined view, plus account risk, sectors and a tax view. ' : v < 31 ? 'It adds the Futures page: the whole futures market by sector, what’s moving, term structure and who is positioned how (COT), and futures trading in your Webull futures account (Trade page, Futures switch; off until you type FUTURES in Settings). Updates are checked every 10 minutes. ' : v < 32 ? 'The Account risk card opens charts of the daily swings behind its numbers (bad days, beta, drawdown). ' : 'It includes bug fixes. ';
   async function updateNow() {
     updateError = '';
     try {
@@ -246,6 +248,16 @@ if (isAiWindow) {
   drawer.append(assistant.el);
   channel?.addEventListener('message', (e) => runAction(e.data as AssistantAction));
 
+  const healthDot = h('span', { class: 'health-badge', 'aria-hidden': 'true' });
+  const healthBtn = h(
+    'button',
+    { class: 'nav-btn health-nav', title: 'Data health: when each feed last updated', 'aria-label': 'Data health', onclick: () => openDataHealth(healthBtn) },
+    icon('pulse', 22),
+    healthDot,
+    h('span', { class: 'nav-label' }, 'Data'),
+  );
+  followHealth(healthDot);
+  initTickerCards({ openChart, openResearch });
   const aiBtn = h('button', { class: 'nav-btn ai-nav', title: 'AI assistant (Ctrl+K)', 'aria-label': 'AI assistant', onclick: () => toggleAssistant() }, icon('spark', 24), h('span', { class: 'nav-label' }, 'AI'));
   function toggleAssistant(show: boolean = drawer.hidden === true) {
     drawer.hidden = !show;
@@ -287,6 +299,7 @@ if (isAiWindow) {
         'div',
         { class: 'rail-bottom' },
         aiBtn,
+        healthBtn,
         h('button', { class: 'nav-btn', title: 'Settings', 'aria-label': 'Settings', onclick: () => openSettings() }, icon('gear', 22), h('span', { class: 'nav-label' }, 'Settings')),
       ),
     ),

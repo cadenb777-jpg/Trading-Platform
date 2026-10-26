@@ -5,6 +5,7 @@
  */
 import { cleanBars, regroupBars, type Bar, type Timeframe } from '../types';
 import type { ConnectionStatus, DataProvider, Trade } from './provider';
+import { feedOf, markFetched, recordError, recordOk } from './health';
 import type { Quote } from './quotes';
 
 const HELPER_URL = 'ws://127.0.0.1:8765';
@@ -12,7 +13,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 31;
+export const LATEST_HELPER_VERSION = 32;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -106,6 +107,9 @@ const ALPACA_HISTORY_PLAN: Partial<Record<Timeframe, { resolution: string; days:
 };
 let alpacaSet = false;
 let alpacaAsked = false;
+
+/** Whether Alpaca keys are saved (null until the helper has been asked). */
+export const alpacaKeysSaved = (): boolean | null => (alpacaAsked ? alpacaSet : null);
 
 /** Settings calls this when it learns whether Alpaca keys are saved. */
 export function setAlpacaConnected(value: boolean) {
@@ -349,9 +353,11 @@ class HelperConnection {
         if (msg.id !== null) this.pending.get(msg.id)?.reject(new Error(msg.message));
         break;
       case 'trade':
+        recordOk('stream');
         for (const l of this.listeners.get(msg.symbol) ?? []) l.onTrade?.(msg);
         break;
       case 'quote':
+        recordOk('quotes');
         for (const l of this.listeners.get(msg.symbol) ?? []) l.onQuote?.(msg);
         break;
     }
@@ -471,10 +477,17 @@ export async function engineRequest<T>(type: string, params: Record<string, unkn
   const hit = ttl ? engineCache.get(key) : undefined;
   // Reuse a recent reply, or join the same request already on its way (two panels asking for one board).
   if (hit && Date.now() - hit.at < ttl) return hit.value as Promise<T>;
-  const value = helper.request({ ...params, type }, signal, timeoutMs, onEvent).then((reply) => {
-    if (reply.type !== 'engine') throw new Error('Unexpected reply from the helper');
-    return reply.data as T;
-  });
+  const value = helper.request({ ...params, type }, signal, timeoutMs, onEvent).then(
+    (reply) => {
+      if (reply.type !== 'engine') throw new Error('Unexpected reply from the helper');
+      markFetched(type);
+      return reply.data as T;
+    },
+    (err: Error) => {
+      noteFailure(type, err);
+      throw err;
+    },
+  );
   if (ttl) {
     const entry = { at: Date.now(), value };
     engineCache.set(key, entry);
@@ -483,6 +496,12 @@ export async function engineRequest<T>(type: string, params: Record<string, unkn
     if (engineCache.size > 300) engineCache.delete(engineCache.keys().next().value!);
   }
   return value;
+}
+
+/** A failed request marks its feed as failing on the Data panel (not when the helper simply isn't running). */
+function noteFailure(type: string, err: Error) {
+  const feed = feedOf(type);
+  if (feed && err?.name !== 'AbortError' && helper.isConnected) recordError(feed, err.message);
 }
 
 export async function loadCalendar(): Promise<{ events: CalendarEvent[]; failed: string[] }> {
@@ -507,8 +526,12 @@ export const schwab: DataProvider = {
       await helper.connect();
       return [];
     }
-    const reply = await helper.request({ type: 'history', symbol, resolution: plan.resolution, days: plan.days }, signal);
+    const reply = await helper.request({ type: 'history', symbol, resolution: plan.resolution, days: plan.days }, signal).catch((err: Error) => {
+      noteFailure('history', err);
+      throw err;
+    });
     if (reply.type !== 'history') throw new Error('Unexpected reply from the helper');
+    markFetched('history');
     const bars = cleanBars(reply.bars);
     if (!bars.length) throw new Error(`Schwab sent no usable price data for ${symbol}.`);
     return plan.resolution === timeframe ? bars : regroupBars(bars, timeframe);

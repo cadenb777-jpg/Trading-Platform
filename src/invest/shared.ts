@@ -10,6 +10,8 @@ import { openSettings } from '../ui/settings';
 import { sparkline } from '../ui/sparkline';
 import { withTableTools } from '../ui/tableTools';
 import type { BoardGroup } from './catalog';
+import { tickerAttr } from '../ui/tickerCard';
+import { asOfStamp } from '../ui/dataHealth';
 
 export interface BoardRow {
   symbol: string;
@@ -78,7 +80,7 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
   return h(
     'section',
     { class: 'panel inv-board' },
-    h('div', { class: 'panel-head' }, h('h3', {}, group.title), group.note ? h('span', { class: 'muted small' }, group.note) : null),
+    h('div', { class: 'panel-head' }, h('h3', {}, group.title), group.note ? h('span', { class: 'muted small' }, group.note) : null, boardStamp(items.map(([s]) => rows.get(s)))),
     h(
       'div',
       { class: 'table-wrap' },
@@ -95,7 +97,7 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
             return h(
               'tr',
               { class: 'clickable', tabindex: 0, onclick: () => onPick(symbol, label), onkeydown: (e: Event) => (e as KeyboardEvent).key === 'Enter' && onPick(symbol, label) },
-              h('td', { class: 'label', 'data-value': `${label} ${showSymbol(symbol)}` }, h('div', { class: 'inv-name' }, h('b', {}, label), h('span', { class: 'muted small' }, showSymbol(symbol)))),
+              h('td', { class: 'label', 'data-value': `${label} ${showSymbol(symbol)}` }, h('div', { class: 'inv-name' }, h('b', {}, label), h('span', { class: 'muted small', ...(symbol.startsWith('/') ? {} : tickerAttr(symbol)) }, showSymbol(symbol)))),
               h('td', { 'data-value': r?.price != null ? String(r.price) : '' }, r?.price != null ? formatPrice(r.price) : h('span', { class: 'muted small', title: 'Schwab has no price for this right now' }, 'No quote'), r?.atClose ? h('div', { class: 'muted tiny' }, `At close ${closeDate(r.atClose)}`) : ''),
               pctCell(r?.change),
               pctCell(r?.m1),
@@ -109,6 +111,14 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
       ), { id: `board:${group.title}`, columns: { '3 months': 'none' } }),
     ),
   );
+}
+
+/** "as of 10:42 · Schwab", or the session's close when the market is shut. */
+function boardStamp(rows: (BoardRow | undefined)[]) {
+  const closed = rows.find((r) => r?.atClose)?.atClose;
+  const stamp = asOfStamp('quotes', { requestType: 'invest.board' });
+  if (closed) stamp.set(closed, { prefix: 'close', refreshMs: 0 });
+  return stamp.el;
 }
 
 export function skeletonBoard(group: BoardGroup) {

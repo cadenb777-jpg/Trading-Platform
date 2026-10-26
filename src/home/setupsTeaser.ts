@@ -6,6 +6,7 @@ import { engineRequest, helper } from '../data/schwab';
 import { formatPrice, h, timeAgo } from '../ui/dom';
 import { icon } from '../ui/icons';
 import type { Setup } from './setupsPanel';
+import { tickerAttr } from '../ui/tickerCard';
 
 type Horizon = 'short' | 'swing' | 'position';
 const LABEL: Record<Horizon, string> = { short: 'Short swing', swing: 'Swing', position: 'Position' };
@@ -46,7 +47,7 @@ export function createSetupsTeaser() {
         }), h('span', { class: 'muted' }, `A/B setups · scanned ${timeAgo(r.updated)}`)),
         good.length
           ? h('ul', { class: 'teaser-list' }, ...good.slice(0, 3).map((s) => h('li', {}, h('a', { href: '#setups' },
-              h('b', {}, s.symbol), ' ', h('span', { class: s.direction > 0 ? 'up' : 'down' }, s.direction > 0 ? 'BUY' : 'SELL'), ' ', h('i', { class: `tier tier-${s.tier}` }, `${s.tier}`),
+              h('b', tickerAttr(s.symbol), s.symbol), ' ', h('span', { class: s.direction > 0 ? 'up' : 'down' }, s.direction > 0 ? 'BUY' : 'SELL'), ' ', h('i', { class: `tier tier-${s.tier}` }, `${s.tier}`),
               h('span', { class: 'muted small' }, ` ${LABEL[s.horizon as Horizon]} · ${s.direction > 0 ? 'above' : 'below'} $${formatPrice(s.plan.trigger)} · stop $${formatPrice(s.plan.stop)}`)))))
           : h('p', { class: 'muted small' }, 'No A or B setups right now on any time frame. The Setups page shows the closest candidates and why they fall short.'),
       );

@@ -21,6 +21,7 @@ import { cancelOrder, envBadge, friendly, futuresAccount, IRA_NOTE, loadSnapshot
 import { dataTable } from '../ui/charts';
 import { formatPrice, h, timeAgo, toast } from '../ui/dom';
 import { THEME, followTheme } from '../ui/theme';
+import { tickerAttr } from '../ui/tickerCard';
 
 const WATCH_KEY = 'tp-trade-watch';
 const SYMBOL_KEY = 'tp-trade-symbol';
@@ -650,7 +651,7 @@ export function createTradePage() {
         rows.map((p) => {
           const pnl = p.gain ?? positionPnl(p.qty, p.avgCost, p.price, p.multiplier ?? null);
           return [
-            { v: h('button', { type: 'button', class: 'link-btn', title: `Trade ${p.symbol}` }, p.symbol), cls: 'label' },
+            { v: h('button', { type: 'button', class: 'link-btn', title: `Trade ${p.symbol}`, ...tickerAttr(p.symbol) }, p.symbol), cls: 'label' },
             { v: `${p.qty < 0 ? 'Short' : 'Long'} ${Math.abs(p.qty)}`, cls: `num ${p.qty < 0 ? 'down' : 'up'}` },
             { v: pnl == null ? '—' : `${pnl >= 0 ? '+' : ''}${usd(pnl)}`, cls: `num ${tone(pnl)}` },
             { v: p.price == null ? '—' : String(p.price), cls: 'num' },
@@ -678,7 +679,7 @@ export function createTradePage() {
         rows.map((p) => {
           const totalPct = p.gain != null && p.cost ? (p.gain / p.cost) * 100 : null;
           return [
-            { v: h('button', { type: 'button', class: 'link-btn', title: `Load ${p.symbol}` }, p.symbol), cls: 'label' },
+            { v: h('button', { type: 'button', class: 'link-btn', title: `Load ${p.symbol}`, ...tickerAttr(p.symbol) }, p.symbol), cls: 'label' },
             { v: p.qty.toLocaleString('en-US'), cls: 'num' },
             { v: usd(p.avgCost), cls: 'num' },
             { v: usd(p.price), cls: 'num' },

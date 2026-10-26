@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { concentration, dividendsThisYear, sectorBreakdown, varDollars, warnings, type RiskInput, type RiskReport, type SectorInfo } from './risk';
+import { concentration, dividendsThisYear, drawdownCurve, fitLine, histogram, sectorBreakdown, varDollars, warnings, type RiskInput, type RiskReport, type SectorInfo } from './risk';
 
 const rows: RiskInput[] = [
   { symbol: 'AAPL', value: 3000, kind: 'security' },
@@ -67,5 +67,36 @@ describe('taxes', () => {
     ];
     expect(dividendsThisYear(holdings, { KO: 10 }, new Date('2026-10-26T12:00:00Z'))).toBeCloseTo(0.51 * 4 * 10);
     expect(dividendsThisYear(holdings, {}, new Date('2026-10-26T12:00:00Z'))).toBe(0);
+  });
+});
+
+describe('risk drill-downs', () => {
+  it('bins daily returns on round steps and counts every day once', () => {
+    const r = [-0.031, -0.012, -0.004, 0, 0.002, 0.003, 0.011, 0.019];
+    const bins = histogram(r, 8);
+    expect(bins.reduce((a, b) => a + b.count, 0)).toBe(r.length);
+    const step = bins[0].x1 - bins[0].x0;
+    expect(step).toBeCloseTo(0.01, 10);
+    expect(bins[0].x0).toBeCloseTo(-0.04, 10);
+    for (const x of r) expect(bins.some((b) => x >= b.x0 - 1e-12 && x < b.x1 + 1e-12 && b.count > 0)).toBe(true);
+    expect(histogram([])).toEqual([]);
+  });
+
+  it('fits the beta line', () => {
+    const spy = [0.01, -0.02, 0.005, 0.015, -0.01];
+    const acct = spy.map((x) => 0.0002 + 1.4 * x);
+    const f = fitLine(spy, acct)!;
+    expect(f.slope).toBeCloseTo(1.4, 10);
+    expect(f.intercept).toBeCloseTo(0.0002, 10);
+    expect(f.r2).toBeCloseTo(1, 10);
+    expect(fitLine([1, 1, 1], [1, 2, 3])).toBeNull();
+  });
+
+  it('draws the drawdown from the running high', () => {
+    const dd = drawdownCurve([0.1, -0.5, 0.2, 1]);
+    expect(dd[0]).toBe(0);
+    expect(dd[1]).toBeCloseTo(-0.5, 10);
+    expect(dd[2]).toBeCloseTo(-0.4, 10);
+    expect(dd[3]).toBe(0);
   });
 });

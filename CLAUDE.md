@@ -165,6 +165,14 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Browser reply cache: engineRequest reuses read-only replies for ENGINE_CACHE_MS (20 s quotes .. 60 min catalogs),
   joins identical in-flight requests, never caches store/settings/ai/scanner or failures; Refresh buttons call
   clearEngineCache. Investments prefetches sections on hover and in the background; fund cards prefetch alts.fund.
+  Ticker card (v32, src/ui/tickerCard.ts): any element with `data-ticker` (spread `tickerAttr(symbol)` into h()) shows a
+  card on hover (300 ms), tap or keyboard focus: invest.board quote + 3-month line, your position across your own
+  portfolios, Open chart / Trade (pre-fills #trade only) / Research / Ask AI. One delegated listener set (main.ts);
+  a click pins it unless the ticker sits in a button, link or clickable row; Esc closes; Tab steps into it.
+  As-of stamps: `asOfStamp(feed, {requestType})` (src/ui/dataHealth.ts) in panel heads, amber after 2x the feed's
+  refresh (src/data/health.ts FEEDS); engineRequest/history/quote/trade record each feed's last success, listed by
+  the rail's Data button. Risk drill-downs: risk.account replies `series` {dates, account, spy} (daily returns);
+  src/portfolio/riskCharts.ts opens the P/L histogram, beta scatter and drawdown curve from the risk card.
   Line-chart indicators: chart windows have an Indicators menu (src/ui/windowIndicators.ts, LINE_INDICATORS run on
   the first line as flat bars); page charts have an fx button that opens it.
   Pop-out charts: `openChartWindow` (src/ui/chartWindow.ts); `createLineChart` adds hover values and an expand button;

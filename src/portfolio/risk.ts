@@ -38,6 +38,8 @@ export interface RiskReport {
     measured: number;
   } | null;
   assets: Record<string, AssetRisk>;
+  /** The daily returns behind the figures (helper v32+): the account's measured part and SPY, one per date. */
+  series?: { dates: string[]; account: number[]; spy: number[] } | null;
   /** Holdings without a year of daily prices (left out of the risk figures). */
   missing: string[];
   alts: string[];
@@ -207,4 +209,60 @@ export function dividendsThisYear(holdings: DividendLike[], taxableShares: Recor
     total += (past + coming) * shares;
   }
   return total;
+}
+
+// ---------- drill-down charts (pure) ----------
+
+export interface Bin {
+  x0: number;
+  x1: number;
+  count: number;
+}
+
+/** Equal-width bins over `values` (about `target` of them, edges on round steps of 0.25% / 0.5% / 1% ...). */
+export function histogram(values: number[], target = 24): Bin[] {
+  const v = values.filter(Number.isFinite);
+  if (!v.length) return [];
+  const lo = Math.min(...v);
+  const hi = Math.max(...v);
+  const raw = (hi - lo || Math.abs(hi) || 0.01) / target;
+  const step = [0.0005, 0.001, 0.0025, 0.005, 0.01, 0.02, 0.025, 0.05, 0.1].find((s) => s >= raw) ?? raw;
+  const start = Math.floor(lo / step) * step;
+  const n = Math.max(1, Math.floor((hi - start) / step) + 1);
+  const bins: Bin[] = Array.from({ length: n }, (_, i) => ({ x0: start + i * step, x1: start + (i + 1) * step, count: 0 }));
+  for (const x of v) bins[Math.min(n - 1, Math.max(0, Math.floor((x - start) / step + 1e-9)))].count++;
+  return bins;
+}
+
+/** Least-squares line y = intercept + slope x, with r² (slope is the beta when x is SPY's daily return). */
+export function fitLine(x: number[], y: number[]): { slope: number; intercept: number; r2: number } | null {
+  const n = Math.min(x.length, y.length);
+  if (n < 3) return null;
+  let mx = 0;
+  let my = 0;
+  for (let i = 0; i < n; i++) (mx += x[i]), (my += y[i]);
+  mx /= n;
+  my /= n;
+  let sxx = 0;
+  let sxy = 0;
+  let syy = 0;
+  for (let i = 0; i < n; i++) {
+    sxx += (x[i] - mx) ** 2;
+    sxy += (x[i] - mx) * (y[i] - my);
+    syy += (y[i] - my) ** 2;
+  }
+  if (!sxx) return null;
+  const slope = sxy / sxx;
+  return { slope, intercept: my - slope * mx, r2: syy ? (sxy * sxy) / (sxx * syy) : 0 };
+}
+
+/** How far below its running high the account was each day (0 at a new high, -0.12 = 12% down), from daily returns. */
+export function drawdownCurve(returns: number[]): number[] {
+  let value = 1;
+  let peak = 1;
+  return returns.map((r) => {
+    value *= 1 + r;
+    peak = Math.max(peak, value);
+    return value / peak - 1;
+  });
 }

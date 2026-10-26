@@ -15,6 +15,7 @@ import { renderWebullCard } from '../portfolio/webullView';
 import { dataTable, money, pageFrame, pct, pctU, statCards } from '../ui/charts';
 import { h, toast } from '../ui/dom';
 import { termLabel } from '../ui/glossary';
+import { tickerAttr } from '../ui/tickerCard';
 
 type Saved = Portfolio & { id: string };
 
@@ -271,7 +272,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
       sorted.map(({ r, value, today }) => {
         const gain = r.cost != null && value != null ? value - r.cost : null;
         return [
-          { v: h('span', { title: r.name }, h('b', {}, r.symbol), r.kind !== 'security' ? h('span', { class: `holding-tag ${r.kind}` }, r.kind === 'cash' ? 'Cash' : 'Alt') : ''), cls: 'label' },
+          { v: h('span', { title: r.name }, h('b', r.kind === 'security' ? tickerAttr(r.symbol) : {}, r.symbol), r.kind !== 'security' ? h('span', { class: `holding-tag ${r.kind}` }, r.kind === 'cash' ? 'Cash' : 'Alt') : ''), cls: 'label' },
           { v: r.shares ? String(+r.shares.toFixed(4)) : '—', cls: 'num' },
           { v: r.shares && value != null ? usd((value - r.amount) / r.shares) : '—', cls: 'num' },
           { v: usd(value), cls: 'num' },
