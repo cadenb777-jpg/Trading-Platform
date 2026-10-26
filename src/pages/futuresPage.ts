@@ -438,6 +438,10 @@ export function createFuturesPage() {
   let timer: ReturnType<typeof setInterval> | undefined;
   return {
     el: frame.el,
+    /** Opens one market's detail window (the command bar, e.g. "/ES"). */
+    open(root: string) {
+      void openDetail(root.toUpperCase());
+    },
     start() {
       if (!started) {
         started = true;

@@ -191,6 +191,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   src/portfolio/riskCharts.ts opens the P/L histogram, beta scatter and drawdown curve from the risk card.
   Line-chart indicators: chart windows have an Indicators menu (src/ui/windowIndicators.ts, LINE_INDICATORS run on
   the first line as flat bars); page charts have an fx button that opens it.
+  Command bar (src/ui/command.ts, browser only): / or Ctrl/Cmd+K opens a palette over symbols (watchlist, holdings,
+  NASDAQ_100 copy checked against the scanner's by a test, futures roots, invest.search), pages, accounts, clients,
+  portfolios and actions; Bloomberg codes (CODES: "AAPL GP/DES/FA/CN/OMON/TRADE/ALRT/WL", WEI, ECO, FUT/CTM, PORT, ACCT,
+  BTST, SET, MACRO, BONDS/WB, INV, HELP) call pages' open() methods. Ranking: exact ticker > exact code > prefixes >
+  fuzzy name. Global chords (CHORDS: g h/c/s/a/t/f/p, n a), ? sheet (SHORTCUT_SHEET lists every page's keys; keep it
+  in step), Ctrl/Cmd+I = AI assistant; never inside fields or dialogs. TRADE only pre-fills. Recents in localStorage.
   Pop-out charts: `openChartWindow` (src/ui/chartWindow.ts); `createLineChart` adds hover values and an expand button;
   `openFredWindow` opens a FRED series' full history.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).

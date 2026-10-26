@@ -534,7 +534,7 @@ function connectionCheck(): HTMLElement {
   }
   return h(
     'div',
-    { class: 'settings-row' },
+    { class: 'settings-row', id: 'settings-connection' },
     h('div', { class: 'settings-label' }, h('b', {}, 'Connection check')),
     ...rows.map(([label, text, tone]) => h('div', { class: `check-row ${tone}` }, h('span', { class: 'check-dot' }), h('b', {}, label), h('span', {}, text))),
     helper.problems.length ? h('p', { class: 'muted small' }, 'If something says unavailable, close the helper window and start it again. If that doesn’t help, send me the log file above.') : null,
@@ -573,7 +573,8 @@ function appearanceRow(): HTMLElement[] {
   return [h('h3', { class: 'settings-section' }, 'Appearance'), h('div', { class: 'settings-row' }, h('div', { class: 'settings-label' }, h('b', {}, 'Theme')), seg)];
 }
 
-export async function openSettings(focus?: 'ai' | 'alerts') {
+/** `focus`: 'ai' (the key box), 'alerts', 'connection' (the check at the top) or a section heading such as 'Trading'. */
+export async function openSettings(focus?: string) {
   const body = h('div', { class: 'settings' }, h('div', { class: 'muted pad' }, 'Loading…'));
   const close = openModal('Settings', body, { wide: true });
   async function render() {
@@ -689,6 +690,8 @@ export async function openSettings(focus?: 'ai' | 'alerts') {
     );
     if (focus === 'ai' && !s.aiKeySet) body.querySelector<HTMLInputElement>('input[type=password]')?.focus();
     if (focus === 'alerts') body.querySelector('#settings-alerts')?.scrollIntoView({ block: 'start' });
+    else if (focus === 'connection') body.querySelector('#settings-connection')?.scrollIntoView({ block: 'start' });
+    else if (focus && focus !== 'ai') [...body.querySelectorAll<HTMLElement>('h3.settings-section')].find((el) => el.textContent?.trim().toLowerCase() === focus.toLowerCase())?.scrollIntoView({ block: 'start' });
   }
   render();
   return close;

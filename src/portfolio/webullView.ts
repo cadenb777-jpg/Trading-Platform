@@ -131,21 +131,26 @@ function syncButton(label: string, accountId: () => string, onSynced: (p: Synced
   const btn = h('button', { class: 'btn', title: 'Save the holdings as a portfolio per account so analysis and Dividends work on them' }, label) as HTMLButtonElement;
   btn.addEventListener('click', async () => {
     btn.disabled = true;
-    try {
-      const id = accountId();
-      const r = await engineRequest<{ portfolio?: Synced; portfolios?: Synced[]; empty?: string[]; skipped: number }>('webull.sync', id ? { accountId: id } : {}, 120000);
-      const saved = r.portfolios ?? (r.portfolio ? [r.portfolio] : []); // helpers before the account names send only portfolio
-      const names = saved.map((p) => `"${p.name}"`).join(', ');
-      const empty = r.empty?.length ? ` Not saved (empty): ${r.empty.join(', ')}.` : '';
-      toast(`${saved.length ? `Saved ${names}` : 'Nothing saved'}${r.skipped ? ` (${r.skipped} non-stock position${r.skipped === 1 ? '' : 's'} left out)` : ''}.${empty}`);
-      if (saved[0]) onSynced(saved[0]);
-    } catch (err) {
-      toast(friendly(err));
-    } finally {
-      btn.disabled = false;
-    }
+    const saved = await syncAccounts(accountId());
+    if (saved[0]) onSynced(saved[0]);
+    btn.disabled = false;
   });
   return btn;
+}
+
+/** Runs webull.sync for one account ('' = all) and says what was saved. Also used by the command bar. */
+export async function syncAccounts(id: string): Promise<Synced[]> {
+  try {
+    const r = await engineRequest<{ portfolio?: Synced; portfolios?: Synced[]; empty?: string[]; skipped: number }>('webull.sync', id ? { accountId: id } : {}, 120000);
+    const saved = r.portfolios ?? (r.portfolio ? [r.portfolio] : []); // helpers before the account names send only portfolio
+    const names = saved.map((p) => `"${p.name}"`).join(', ');
+    const empty = r.empty?.length ? ` Not saved (empty): ${r.empty.join(', ')}.` : '';
+    toast(`${saved.length ? `Saved ${names}` : 'Nothing saved'}${r.skipped ? ` (${r.skipped} non-stock position${r.skipped === 1 ? '' : 's'} left out)` : ''}.${empty}`);
+    return saved;
+  } catch (err) {
+    toast(friendly(err));
+    return [];
+  }
 }
 
 /**

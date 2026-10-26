@@ -203,7 +203,10 @@ function show(symbol: string, anchor: HTMLElement, opts: { pinned: boolean; byFo
   if (opts.pinned) (card.querySelector('.tc-actions button') as HTMLElement | null)?.focus({ preventScroll: true });
 }
 
-function buildCard(symbol: string, pinned: boolean) {
+/** The card's quote, line and position without its actions, for the command bar's preview. */
+export const tickerPreview = (symbol: string) => buildCard(symbol, false, true);
+
+function buildCard(symbol: string, pinned: boolean, embedded = false) {
   const id = `ticker-card-${++cardSeq}`;
   const ref = guessMarket(symbol);
   const crypto = ref?.provider === 'coinbase';
@@ -220,13 +223,13 @@ function buildCard(symbol: string, pinned: boolean) {
     h('button', { type: 'button', class: 'btn small', title, onclick: () => (close(), run()) }, label);
   const card = h(
     'div',
-    { id, class: `ticker-card${pinned ? ' pinned' : ''}`, role: pinned ? 'dialog' : 'tooltip', 'aria-label': `${symbol} quick look` },
+    { id, class: `ticker-card${pinned ? ' pinned' : ''}${embedded ? ' embedded' : ''}`, role: pinned ? 'dialog' : embedded ? 'region' : 'tooltip', 'aria-label': `${symbol} quick look` },
     h(
       'div',
       { class: 'tc-head' },
       h('b', { class: 'tc-sym' }, symbol.replace(/^\$/, '')),
       stamp.el,
-      h('button', { type: 'button', class: 'icon-btn tc-close', 'aria-label': 'Close', title: 'Close (Esc)', onclick: () => close(true) }, '✕'),
+      embedded ? '' : h('button', { type: 'button', class: 'icon-btn tc-close', 'aria-label': 'Close', title: 'Close (Esc)', onclick: () => close(true) }, '✕'),
     ),
     name,
     price,
@@ -234,7 +237,9 @@ function buildCard(symbol: string, pinned: boolean) {
     sparkLabel,
     pos,
     facts,
-    h(
+    embedded
+      ? ''
+      : h(
       'div',
       { class: 'tc-actions' },
       ref ? btn('Open chart', `Open ${symbol} on the Chart page`, () => actions.openChart(ref)) : '',
