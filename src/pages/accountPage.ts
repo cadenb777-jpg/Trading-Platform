@@ -51,6 +51,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
   /** The live risk card's refresh (new prices every 30 s while the page is open and visible). */
   let live: (() => Promise<void>) | null = null;
   let timer: ReturnType<typeof setInterval> | undefined;
+  let taxOpen = false;
 
   async function load() {
     const run = ++loading;
@@ -181,9 +182,15 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
         toast((err as Error).message);
       }
     };
+    // the fold stays as the owner left it across reloads (switching accounts, changing an account's tax type)
+    const showTax = (el: HTMLDetailsElement) => {
+      el.open = taxOpen;
+      el.addEventListener('toggle', () => (taxOpen = el.open));
+      taxBox.replaceChildren(el);
+    };
     fetchTax(taxAccounts).then(
-      (tr) => run === loading && taxBox.replaceChildren(taxSection(tr, null, accountsForTax, setType, report, taxableShares)),
-      (err) => run === loading && taxBox.replaceChildren(taxSection(null, (err as Error).message, accountsForTax, setType, report, taxableShares)),
+      (tr) => run === loading && showTax(taxSection(tr, null, accountsForTax, setType, report, taxableShares)),
+      (err) => run === loading && showTax(taxSection(null, (err as Error).message, accountsForTax, setType, report, taxableShares)),
     );
     // the Webull balances card follows the choice too: all Webull accounts, the chosen one, or none
     if (!single) renderWebullCard(webull, synced, () => openPortfolio('webull'));
