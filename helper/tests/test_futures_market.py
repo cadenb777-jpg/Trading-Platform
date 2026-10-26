@@ -306,5 +306,27 @@ class Handlers(unittest.TestCase):
         self.assertEqual(flow.COT_URL.split('/')[2], 'publicreporting.cftc.gov')
 
 
+class QuoteMatching(unittest.TestCase):
+    def item(self, **quote):
+        return {'assetMainType': 'FUTURE', 'quote': {'lastPrice': 100.0, **quote}}
+
+    def test_matches_root_key(self):
+        self.assertIn('/ES', fm.match_quotes(['/ES'], {'/ES': self.item()}))
+
+    def test_matches_active_contract_key(self):
+        got = fm.match_quotes(['/ES', '/NQ'], {'/ESZ26': self.item(), '/NQZ26': self.item(lastPrice=200.0)})
+        self.assertEqual(got['/NQ']['quote']['lastPrice'], 200.0)
+
+    def test_matches_symbol_field_and_not_other_roots(self):
+        got = fm.match_quotes(['/ES', '/E'], {'x': {**self.item(), 'symbol': '/ESZ6'}})
+        self.assertIn('/ES', got)
+        self.assertNotIn('/E', got)  # "/ESZ6" is not root /E + month code
+
+    def test_change_from_future_percent_or_net_change(self):
+        self.assertAlmostEqual(fm._quote_fields(self.item(futurePercentChange=1.5))['change'], 0.015)
+        self.assertAlmostEqual(fm._quote_fields(self.item(netChange=2.0))['change'], 2.0 / 98.0)
+        self.assertAlmostEqual(fm._quote_fields(self.item(netPercentChange=-1.0, futurePercentChange=5.0))['change'], -0.01)
+
+
 if __name__ == '__main__':
     unittest.main()

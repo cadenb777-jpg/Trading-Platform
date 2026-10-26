@@ -7,7 +7,9 @@ Nothing here trades. Schwab is market data only; anything Schwab doesn't supply 
 """
 import asyncio
 import datetime as dt
+import logging
 import math
+import re
 import time
 
 from . import flow, invest, positioning
@@ -285,6 +287,8 @@ def williams_note(comm_index):
 #: Symbols with no daily history: symbol -> time to ask Schwab again. An empty reply (Schwab has none) is
 #: remembered for 6 hours, an error (maybe a hiccup) for 5 minutes.
 _NO_HISTORY = {}
+_LAST_QUOTE_ERROR = {'text': ''}
+log = logging.getLogger(__name__)
 EMPTY_RETRY, ERROR_RETRY = 6 * 3600, 300
 
 
@@ -326,9 +330,11 @@ async def _quotes(ctx, symbols):
         if response.status_code == 401:
             raise EngineError('Schwab login expired. Close the helper and start it again to log in.')
         if response.status_code != 200:
+            log.warning('Futures quotes: Schwab answered HTTP %s', response.status_code)
+            _LAST_QUOTE_ERROR['text'] = f'Schwab answered HTTP {response.status_code} for futures quotes.'
             return {}
-        data = response.json()
-        return {s: data[s] for s in symbols if isinstance(data.get(s), dict) and (data[s].get('quote') or data[s].get('reference'))}
+        _LAST_QUOTE_ERROR['text'] = ''
+        return match_quotes(symbols, response.json())
     try:
         return await ctx.cached(('fut-quotes', tuple(symbols)), 15, load)
     except EngineError:
@@ -337,12 +343,37 @@ async def _quotes(ctx, symbols):
         return {}
 
 
+def match_quotes(symbols, data):
+    """Schwab's reply items for each root ("/ES"). Schwab may key a futures quote by the root or by the active contract
+    ("/ESZ26"), or carry the root only in `symbol`, so all three are matched. Unmatched replies are logged (keys only)."""
+    items = {k: v for k, v in (data or {}).items() if isinstance(v, dict) and (v.get('quote') or v.get('reference'))}
+    out = {}
+    for s in symbols:
+        if s in items:
+            out[s] = items[s]
+            continue
+        for k, v in items.items():
+            names = {k, str(v.get('symbol') or ''), str((v.get('reference') or {}).get('futureActiveSymbol') or '')}
+            if any(n == s or (n.startswith(s) and re.fullmatch(r'[FGHJKMNQUVXZ]\d{1,2}', n[len(s):])) for n in names):
+                out[s] = v
+                break
+    if items and not out:
+        log.warning('Futures quotes: none matched. Schwab sent keys %s', sorted(items)[:20])
+    return out
+
+
 def _quote_fields(item):
     """Price, change and the futures-only fields Schwab adds (active contract, its expiry, multiplier, tick)."""
     if not item:
         return {'price': None, 'change': None}
     row = invest.quote_row('', item)
     q, ref = item.get('quote') or {}, item.get('reference') or {}
+    if row['change'] is None:  # futures quotes carry futurePercentChange (percent) or netChange instead
+        pct, net = _num(q.get('futurePercentChange')), _num(q.get('netChange'))
+        if pct is not None:
+            row['change'] = pct / 100
+        elif net is not None and row['price'] and row['price'] - net:
+            row['change'] = net / (row['price'] - net)
     exp = _num(ref.get('futureExpirationDate'))
     return {'price': row['price'], 'change': row['change'], 'netChange': row['netChange'], 'volume': row['volume'],
             'openInterest': _num(q.get('openInterest')), 'activeSymbol': ref.get('futureActiveSymbol') or None,
@@ -413,7 +444,10 @@ async def board(ctx, msg):
         c = cot.get(r['cot'])
         r['positioning'] = {**c, 'note': williams_note(c.get('commIndex'))} if c else None
     if not any(r['quoted'] for r in rows):
-        errors['quotes'] = 'Schwab returned no futures quotes. Prices show as unavailable.'
+        errors['quotes'] = (f"Schwab returned no futures quotes. {_LAST_QUOTE_ERROR['text']} Prices show as unavailable. "
+                            'If this lasts during market hours, check that your Schwab account can see futures quotes.').replace('  ', ' ')
+    elif not any(r['change'] is not None for r in rows):
+        errors['quotes'] = "Schwab sent futures prices but no day change, so the sector tiles can't show a move."
     return {'rows': rows, 'sectors': sector_summary(rows), 'movers': movers(rows), 'asOf': time.time(), 'errors': errors}
 
 
