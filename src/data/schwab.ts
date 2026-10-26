@@ -465,6 +465,7 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'alts.latest_private': 10 * 60_000,
   'risk.account': 5 * 60_000,
   'tax.account': 60_000,
+  'dividends.history': 30 * 60_000,
   'futures.board': 20_000,
   'futures.curve': 60_000,
   'futures.detail': 5 * 60_000,

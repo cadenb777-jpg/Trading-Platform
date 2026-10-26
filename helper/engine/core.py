@@ -249,6 +249,26 @@ class EngineContext:
         except Exception:
             return None
 
+    async def splits(self, symbol):
+        """Stock splits by date ({date: new shares per old share, e.g. 4.0 for 4-for-1}) from Yahoo's chart data;
+        None if unavailable."""
+        async def load():
+            yahoo = symbol.replace('.', '-').replace('/', '-')
+            response = await self.http.get(f'https://query1.finance.yahoo.com/v8/finance/chart/{yahoo}',
+                                           params={'range': 'max', 'interval': '1mo', 'events': 'split'})
+            response.raise_for_status()
+            result = (response.json().get('chart', {}).get('result') or [{}])[0]
+            out = {}
+            for x in ((result.get('events') or {}).get('splits') or {}).values():
+                num, den = float(x.get('numerator') or 0), float(x.get('denominator') or 0)
+                if num > 0 and den > 0:
+                    out[dt.datetime.fromtimestamp(x['date'], dt.timezone.utc).date()] = num / den
+            return out
+        try:
+            return await self.cached(('splits', symbol), 86400, load)
+        except Exception:
+            return None
+
     async def daily_bars(self, symbol, years=20):
         """Daily bars (split-adjusted) for up to `years` years: list of dicts with time (unix s) and OHLCV."""
         async def load():

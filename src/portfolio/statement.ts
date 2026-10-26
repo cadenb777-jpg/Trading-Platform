@@ -4,7 +4,7 @@
  */
 import { parseMoney } from '../invest/holdings';
 
-export type StatementField = 'symbol' | 'name' | 'shares' | 'cost' | 'costPerShare' | 'value' | 'account';
+export type StatementField = 'symbol' | 'name' | 'shares' | 'cost' | 'costPerShare' | 'value' | 'dividends' | 'account';
 
 export const FIELD_LABELS: Record<StatementField, string> = {
   symbol: 'Symbol',
@@ -13,6 +13,7 @@ export const FIELD_LABELS: Record<StatementField, string> = {
   cost: 'Cost basis (total)',
   costPerShare: 'Cost per share',
   value: 'Market value',
+  dividends: 'Dividends received',
   account: 'Account',
 };
 
@@ -25,12 +26,15 @@ export interface Position {
   /** Total cost basis in dollars. */
   cost?: number;
   value?: number;
+  /** Dividends received so far (when the export has such a column). */
+  dividends?: number;
   /** Cash or a money-market fund (kept as a cash amount, not shares). */
   cash?: boolean;
 }
 
 /** Heading patterns, most specific first; headings about changes, gains or percentages never match. */
 const HEADINGS: [StatementField, RegExp][] = [
+  ['dividends', /^(total )?dividends?( income)?( received| paid| earned)?( \(\$\))?$|^income earned$/i],
   ['costPerShare', /(avg|average|unit|per[- ]share|\/ ?share).*cost|cost.*(per[- ]share|\/ ?share)|(avg|average).*price/i],
   ['cost', /(cost basis|total cost|book value|^cost$|\bcost\b)/i],
   ['value', /(market value|mkt val|current value|total value|^value$|^equity$|ending value|\bvalue\b)/i],
@@ -92,12 +96,15 @@ export function rowsToPositions(rows: string[][], headerAt: number, columns: Col
     let cost = total != null && total > 0 ? total : undefined; // "0" or negative cost is a blank, not free shares
     const perShare = parseMoney(get(r, 'costPerShare'));
     if (cost == null && perShare != null && perShare > 0) cost = perShare * shares;
+    const divs = parseMoney(get(r, 'dividends'));
+    const dividends = divs != null && divs >= 0 ? divs : undefined;
     const prev = bySymbol.get(symbol);
     if (prev) {
       prev.shares += shares;
+      prev.dividends = prev.dividends != null || dividends != null ? (prev.dividends ?? 0) + (dividends ?? 0) : undefined;
       prev.cost = prev.cost != null || cost != null ? (prev.cost ?? 0) + (cost ?? 0) : undefined;
       prev.value = prev.value != null || value != null ? (prev.value ?? 0) + (value ?? 0) : undefined;
-    } else bySymbol.set(symbol, { symbol, name: name && name !== '--' ? name : undefined, shares, cost, value: value ?? undefined });
+    } else bySymbol.set(symbol, { symbol, name: name && name !== '--' ? name : undefined, shares, cost, value: value ?? undefined, ...(dividends != null ? { dividends } : {}) });
   }
   const out: Position[] = [...bySymbol.values()].map((p) => ({ ...p, shares: +p.shares.toFixed(6), cost: p.cost != null ? +p.cost.toFixed(2) : undefined }));
   if (cash > 0) out.push({ symbol: 'CASH', name: 'Cash & money market', shares: 0, value: +cash.toFixed(2), cash: true });
