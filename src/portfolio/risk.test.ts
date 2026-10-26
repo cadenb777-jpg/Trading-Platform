@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { concentration, dividendsThisYear, sectorBreakdown, taxTypeOf, varDollars, warnings, type RiskInput, type RiskReport, type SectorInfo } from './risk';
+import { concentration, dividendsThisYear, sectorBreakdown, varDollars, warnings, type RiskInput, type RiskReport, type SectorInfo } from './risk';
 
 const rows: RiskInput[] = [
   { symbol: 'AAPL', value: 3000, kind: 'security' },
@@ -52,13 +52,6 @@ describe('account risk', () => {
 });
 
 describe('taxes', () => {
-  it('reads the account type like the helper does', () => {
-    expect(taxTypeOf('Webull Roth IRA ••1234')).toBe('roth');
-    expect(taxTypeOf('Webull Traditional IRA ••5678')).toBe('deferred');
-    expect(taxTypeOf('Webull Margin ••3333')).toBe('taxable');
-    expect(taxTypeOf('Webull Margin ••3333', 'roth')).toBe('roth');
-  });
-
   it('estimates this year’s dividends on taxable shares', () => {
     const holdings = [
       {

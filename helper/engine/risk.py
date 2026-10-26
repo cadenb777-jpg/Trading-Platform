@@ -13,6 +13,7 @@ from . import invest, quant, sec
 from .core import EngineError, handler
 
 SECTOR_DAYS = 30
+STALE_SESSIONS = 5
 #: SIC code ranges -> 11 GICS-like sectors. The first matching row wins, so the narrow rows come first.
 #: SIC codes: https://www.sec.gov/search-filings/standard-industrial-classification-sic-code-list
 SIC_SECTORS = [
@@ -65,7 +66,8 @@ def is_fund(name, asset_type=''):
 async def sector(ctx, symbol, quote):
     """{sector, fundType?, sic?, source} for one symbol. Funds are labelled from the name (no look-through); stocks
     use the SIC code in their SEC submissions, kept 30 days in cache.db. Raises EngineError only when the SEC can't
-    be asked right now (no contact email), so that isn't remembered as "Other"."""
+    be asked right now. Only "not in the SEC's list" is remembered as "Other"; any other failure (no contact email,
+    403, network, the ticker list not loading) is raised and not cached, so the next visit tries again."""
     name, kind = quote.get('name') or '', quote.get('assetType') or ''
     if is_fund(name, kind):
         return {'sector': FUND, 'fundType': fund_type(name), 'source': 'name'}
@@ -75,7 +77,7 @@ async def sector(ctx, symbol, quote):
     async def load():
         try:
             info = await sec.company(ctx, symbol)
-        except EngineError:
+        except sec.NotListed:
             return {'sector': OTHER, 'source': 'not in the SEC company list'}
         subs = await sec.submissions(ctx, info['cik'])
         sic = str(subs.get('sic') or '').strip()
@@ -83,20 +85,6 @@ async def sector(ctx, symbol, quote):
             return {'sector': OTHER, 'source': 'no SIC code at the SEC'}
         return {'sector': sector_of(sic), 'sic': sic, 'industry': subs.get('sicDescription') or '', 'source': 'SEC'}
     return await ctx.cached(('sector', symbol), SECTOR_DAYS * 86400, load, persist=True)
-
-
-def concentration(values, cash=0.0):
-    """{symbol: dollars} of the positions (not cash) -> each one's weight in the whole account (cash included in the
-    total), the largest, the top-5 share and the effective number of holdings (1 / sum of squared position shares)."""
-    positions = {s: v for s, v in values.items() if v and v > 0}
-    invested = sum(positions.values())
-    if not invested:
-        return {'weights': {}, 'largest': None, 'top5': None, 'effective': None}
-    total = invested + max(cash or 0, 0)
-    weights = {s: v / total for s, v in positions.items()}
-    ranked = sorted(weights.items(), key=lambda x: -x[1])
-    return {'weights': weights, 'largest': {'symbol': ranked[0][0], 'weight': ranked[0][1]},
-            'top5': sum(w for _, w in ranked[:5]), 'effective': 1 / sum((v / invested) ** 2 for v in positions.values())}
 
 
 def value_at_risk(returns, level=0.95):
@@ -129,10 +117,13 @@ def risk_stats(asset_returns, bench, weights, dates):
 
 def _aligned(series, bench_rows, start):
     """Closes on the benchmark's days since `start` (carrying a missing day's close forward); None when the symbol's
-    history starts more than a month after `start` (too short to judge a year)."""
+    history starts more than a month after `start` (too short to judge a year) or ends more than STALE_SESSIONS
+    sessions before the benchmark's last day (stale or delisted: not forward-filled into a flat line)."""
     days = [(d, c) for d, c in bench_rows if d >= start]
     known = dict(series)
     if not series or min(known) > start + dt.timedelta(days=31):
+        return None
+    if sum(1 for d, _ in days if d > max(known)) > STALE_SESSIONS:
         return None
     out, last = [], next((c for d, c in reversed(series) if d <= days[0][0]), series[0][1])
     for d, _ in days:
@@ -170,11 +161,14 @@ async def account(ctx, msg):
             key = 'CASH' if r['kind'] == 'cash' else r['symbol']
             values[key] = values.get(key, 0) + r['value']
     total = sum(values.values())
-    quotes = await invest.quotes(ctx, stocks) if stocks else {}
+    try:
+        quotes = await invest.quotes(ctx, stocks) if stocks else {}
+    except Exception:  # names only help spot funds; without them the SEC lookup still runs
+        quotes = {}
     closes = await asyncio.gather(*(invest.closes(ctx, s) for s in [*stocks, 'SPY']), return_exceptions=True)
     day = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).date()  # noqa: E731
     series = {s: ([] if isinstance(c, Exception) else [(day(t), float(v)) for t, v in c]) for s, c in zip([*stocks, 'SPY'], closes)}
-    out = {'total': total, 'concentration': concentration({k: v for k, v in values.items() if k != 'CASH'}, values.get('CASH', 0)), 'alts': sorted({r['symbol'] for r in rows if r['kind'] == 'alt'}),
+    out = {'total': total, 'alts': sorted({r['symbol'] for r in rows if r['kind'] == 'alt'}),
            'sectors': {}, 'sectorNote': None, 'stats': None, 'assets': {}, 'missing': [], 'note': None}
 
     # sectors, one SEC lookup per stock (cached 30 days); a missing SEC email is said once, never guessed
@@ -183,9 +177,9 @@ async def account(ctx, msg):
             return await sector(ctx, s, quotes.get(s) or {})
         except EngineError as err:
             out['sectorNote'] = str(err)
-            return {'sector': OTHER, 'source': 'unavailable'}
-        except Exception:
-            return {'sector': OTHER, 'source': 'unavailable'}
+        except Exception as err:
+            out['sectorNote'] = f'The SEC couldn’t be reached for sectors ({type(err).__name__}); they show as Other for now. Refresh later.'
+        return {'sector': OTHER, 'source': 'unavailable'}
     out['sectors'] = dict(zip(stocks, await asyncio.gather(*(one(s) for s in stocks))))
 
     bench = series['SPY']

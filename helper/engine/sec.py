@@ -17,6 +17,10 @@ ARCHIVE_URL = 'https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{docume
 _sec_slots = asyncio.Semaphore(5)
 
 
+class NotListed(EngineError):
+    """The ticker isn't in the SEC's company list (a definite answer, unlike a failed request)."""
+
+
 async def sec_get(ctx, url):
     if not ctx.sec_contact:
         raise EngineError('SEC data needs a contact email: open Settings (the gear at the bottom of the left menu) and add your email under "SEC email".')
@@ -38,7 +42,7 @@ async def company(ctx, symbol):
     tickers = await ctx.cached('sec-tickers', 86400, load, persist=True, stale_ok=True)
     found = tickers.get(symbol.upper().replace('.', '-')) or tickers.get(symbol.upper())
     if not found:
-        raise EngineError(f'"{symbol}" isn\'t in the SEC\'s company list (ETFs, indexes and foreign companies often aren\'t).')
+        raise NotListed(f'"{symbol}" isn\'t in the SEC\'s company list (ETFs, indexes and foreign companies often aren\'t).')
     return found
 
 

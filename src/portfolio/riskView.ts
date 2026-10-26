@@ -190,7 +190,7 @@ const TERM_TEXT: Record<TaxRow['term'], (r: TaxRow) => string> = {
 export function taxSection(
   report: TaxReport | null,
   error: string | null,
-  accounts: { id: string; name: string; auto: TaxType; chosen: TaxType | undefined }[],
+  accounts: { id: string; name: string; auto?: TaxType; chosen: TaxType | undefined }[],
   setType: (id: string, type: TaxType | undefined) => void,
   divs: { holdings: Parameters<typeof dividendsThisYear>[0] } | null,
   taxableShares: Record<string, number>,
@@ -201,7 +201,7 @@ export function taxSection(
       'select',
       { class: 'input small', 'aria-label': `Tax type of ${a.name}` },
       ...[
-        ['', `Auto (${TYPE_SHORT[a.auto]})`],
+        ['', a.auto ? `Auto (${TYPE_SHORT[a.auto]})` : 'Auto'],
         ['roth', 'Roth (tax-free)'],
         ['deferred', 'Traditional IRA (tax-deferred)'],
         ['taxable', 'Taxable (cash / margin)'],

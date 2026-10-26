@@ -8,7 +8,7 @@ import { listDocs, saveDoc } from '../data/store';
 import { ALL_ACCOUNTS, allocation, combineHoldings, combinedValue, dividendPayload, myPortfolios, pickAccounts, todayChange, type CombinedHolding } from '../portfolio/account';
 import { drawDividends, fetchDividends, totalReturnCell, type DividendReport } from '../portfolio/dividendsView';
 import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
-import { fetchRisk, fetchTax, taxTypeOf, type RiskInput, type RiskReport, type TaxType } from '../portfolio/risk';
+import { fetchRisk, fetchTax, type RiskInput, type RiskReport, type TaxReport, type TaxType } from '../portfolio/risk';
 import { holdingGroup, riskCard, taxSection } from '../portfolio/riskView';
 import { isMine, positions, type Portfolio } from '../portfolio/types';
 import { renderWebullCard } from '../portfolio/webullView';
@@ -164,13 +164,20 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
       name: p.name,
       taxType: p.taxType,
       webullAccount: p.webullAccount,
+      webullClass: p.webullClass,
       holdings: p.holdings
         .filter((x) => x.symbol.trim())
         .map((x) => ({ symbol: x.kind === 'cash' ? 'CASH' : x.symbol.trim().toUpperCase(), shares: p.mode === 'shares' && x.kind !== 'cash' && x.kind !== 'alt' ? (x.shares ?? 0) : 0, value: valueOf(x, p.mode ?? 'weight'), cost: x.cost ?? null, kind: x.kind ?? 'security' })),
     }));
-    const taxableShares: Record<string, number> = {};
-    for (const a of taxAccounts) if (taxTypeOf(a.name, a.taxType) === 'taxable') for (const x of a.holdings) if (x.shares) taxableShares[x.symbol] = (taxableShares[x.symbol] ?? 0) + x.shares;
-    const accountsForTax = chosen.map((p) => ({ id: p.id, name: p.name, auto: taxTypeOf(p.name), chosen: p.taxType }));
+    // the helper decides each account's type (one rule, in tax.py); its reply comes back in the order sent
+    const taxableShares = (tr: TaxReport) => {
+      const out: Record<string, number> = {};
+      taxAccounts.forEach((a, i) => {
+        if (tr.accounts[i]?.type === 'taxable') for (const x of a.holdings) if (x.shares) out[x.symbol] = (out[x.symbol] ?? 0) + x.shares;
+      });
+      return out;
+    };
+    const accountsForTax = (tr: TaxReport | null) => chosen.map((p, i) => ({ id: p.id, name: p.name, auto: tr?.accounts[i]?.auto, chosen: p.taxType }));
     const setType = async (id: string, type: TaxType | undefined) => {
       const p = all.find((x) => x.id === id);
       if (!p) return;
@@ -189,8 +196,8 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
       taxBox.replaceChildren(el);
     };
     fetchTax(taxAccounts).then(
-      (tr) => run === loading && showTax(taxSection(tr, null, accountsForTax, setType, report, taxableShares)),
-      (err) => run === loading && showTax(taxSection(null, (err as Error).message, accountsForTax, setType, report, taxableShares)),
+      (tr) => run === loading && showTax(taxSection(tr, null, accountsForTax(tr), setType, report, taxableShares(tr))),
+      (err) => run === loading && showTax(taxSection(null, (err as Error).message, accountsForTax(null), setType, report, {})),
     );
     // the Webull balances card follows the choice too: all Webull accounts, the chosen one, or none
     if (!single) renderWebullCard(webull, synced, () => openPortfolio('webull'));
