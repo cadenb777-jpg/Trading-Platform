@@ -5,7 +5,7 @@
  */
 import { cleanBars, regroupBars, type Bar, type Timeframe } from '../types';
 import type { ConnectionStatus, DataProvider, Trade } from './provider';
-import { feedOf, markFetched, recordError, recordOk } from './health';
+import { feedOf, markFetched, recordError, recordOk, requestProblem } from './health';
 import type { Quote } from './quotes';
 
 const HELPER_URL = 'ws://127.0.0.1:8765';
@@ -480,7 +480,7 @@ export async function engineRequest<T>(type: string, params: Record<string, unkn
   const value = helper.request({ ...params, type }, signal, timeoutMs, onEvent).then(
     (reply) => {
       if (reply.type !== 'engine') throw new Error('Unexpected reply from the helper');
-      markFetched(type);
+      markFetched(type, reply.data);
       return reply.data as T;
     },
     (err: Error) => {
@@ -498,10 +498,13 @@ export async function engineRequest<T>(type: string, params: Record<string, unkn
   return value;
 }
 
-/** A failed request marks its feed as failing on the Data panel (not when the helper simply isn't running). */
+/**
+ * A failed request marks its feed as failing on the Data panel: not when the helper simply isn't running, and not
+ * when the problem is one request's own input (an unknown symbol says nothing about the feed).
+ */
 function noteFailure(type: string, err: Error) {
   const feed = feedOf(type);
-  if (feed && err?.name !== 'AbortError' && helper.isConnected) recordError(feed, err.message);
+  if (feed && err?.name !== 'AbortError' && helper.isConnected && !requestProblem(err.message)) recordError(feed, err.message);
 }
 
 export async function loadCalendar(): Promise<{ events: CalendarEvent[]; failed: string[] }> {

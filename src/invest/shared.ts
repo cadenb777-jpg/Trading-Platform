@@ -31,6 +31,8 @@ export interface BoardRow {
   low52?: number | null;
   divYield?: number | null;
   peRatio?: number | null;
+  /** When the helper made this board reply (unix seconds). */
+  asOf?: number;
   /** Set (unix seconds) when price/change are the latest session's close because the market is closed. */
   atClose?: number | null;
 }
@@ -65,8 +67,8 @@ export const factSheetLink = (query: string) => `https://www.google.com/search?q
 /** Loads one board request for several groups at once; returns rows by symbol. */
 export async function loadBoard(groups: BoardGroup[]): Promise<Map<string, BoardRow>> {
   const symbols = [...new Set(groups.flatMap((g) => g.symbols.map(([s]) => s)))];
-  const { rows } = await engineRequest<{ rows: BoardRow[] }>('invest.board', { symbols }, 90000);
-  return new Map(rows.map((r) => [r.symbol, r]));
+  const { rows, asOf } = await engineRequest<{ rows: BoardRow[]; asOf?: number }>('invest.board', { symbols }, 90000);
+  return new Map(rows.map((r) => [r.symbol, { ...r, asOf }]));
 }
 
 function pctCell(v: number | null | undefined) {
@@ -116,7 +118,7 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
 /** "as of 10:42 · Schwab", or the session's close when the market is shut. */
 function boardStamp(rows: (BoardRow | undefined)[]) {
   const closed = rows.find((r) => r?.atClose)?.atClose;
-  const stamp = asOfStamp('quotes', { requestType: 'invest.board' });
+  const stamp = asOfStamp('quotes').set(rows.find((r) => r?.asOf)?.asOf);
   if (closed) stamp.set(closed, { prefix: 'close', refreshMs: 0 });
   return stamp.el;
 }

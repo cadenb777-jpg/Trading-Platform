@@ -54,7 +54,7 @@ function tipBox(wrap: HTMLElement) {
 
 /** Daily P/L histogram: one bar per return band, bands at or beyond the 1-in-20 bad day in the loss colour. */
 export function pnlHistogram(returns: number[], var95: number, measured: number) {
-  const bins = histogram(returns);
+  const bins = histogram(returns, 24, -var95);
   const W = 640;
   const H = 260;
   const pad = { l: 44, r: 12, t: 26, b: 34 };
@@ -84,7 +84,7 @@ export function pnlHistogram(returns: number[], var95: number, measured: number)
     const d = b.count
       ? `M${x},${bottom}V${top + r}Q${x},${top} ${x + r},${top}H${x + w - r}Q${x + w},${top} ${x + w},${top + r}V${bottom}Z`
       : '';
-    const el = add('path', { d, class: `rc-bar${b.x1 <= cut + 1e-12 ? ' tail' : ''}` });
+    const el = add('path', { d, class: `rc-bar${b.x1 <= cut + 1e-12 ? ' tail' : ''}` }); // bins split at the cut
     return { b, el };
   });
   add('line', { x1: pad.l, x2: W - pad.r, y1: Y(0), y2: Y(0), class: 'rc-axis' });
@@ -193,9 +193,9 @@ export function openRiskDrill(kind: 'var' | 'beta' | 'drawdown', report: RiskRep
     if (!sr?.account.length) body.append(needsUpdate());
     else {
       const chart = pnlHistogram(sr.account, s.var95, s.measured);
-      const worse = sr.account.filter((r) => r <= -s.var95).length;
+      const worse = sr.account.filter((r) => r < -s.var95).length; // exactly the days in the red bars
       body.append(
-        h('p', {}, `Each bar counts the days the account moved by that much, ${period}, as if today’s holdings were held all year. Days at or past the line (${worse} of ${sr.account.length}) are the worst 1 in 20: on such a day you could lose about ${pctS(-s.var95)} (${usd(-s.var95 * s.measured)}).`),
+        h('p', {}, `Each bar counts the days the account moved by that much, ${period}, as if today’s holdings were held all year. The red bars, past the line (${worse} of ${sr.account.length} days), are the worst 1 in 20: on such a day you could lose about ${pctS(-s.var95)} (${usd(-s.var95 * s.measured)}).`),
         chart.el,
         numbersTable(['Daily change', 'Days', 'In dollars today'], chart.bins.filter((b) => b.count).map((b) => [`${pctS(b.x0, 2)} to ${pctS(b.x1, 2)}`, String(b.count), `${usd(b.x0 * s.measured)} to ${usd(b.x1 * s.measured)}`])),
       );
@@ -221,10 +221,15 @@ export function openRiskDrill(kind: 'var' | 'beta' | 'drawdown', report: RiskRep
       const dd = drawdownCurve(sr.account);
       const holder = h('div', { class: 'rc-line' });
       body.append(h('p', {}, `How far the account was below its highest point so far, each day, ${period}. The deepest point was ${pctS(s.maxDrawdown)} (high ${s.peak}, low ${s.trough}).`), holder);
+      let chart: ReturnType<typeof createLineChart> | null = null;
+      let closed = false;
       requestAnimationFrame(() => {
-        const c = createLineChart(holder, { height: 280, format: (v) => `${v.toFixed(1)}%`, title: 'Drawdown', expand: false });
-        c.set([{ name: 'Below the high', color: THEME.down, data: sr.dates.map((d, i) => ({ time: d, value: dd[i] * 100 })) }]);
+        if (closed) return;
+        chart = createLineChart(holder, { height: 280, format: (v) => `${v.toFixed(1)}%`, title: 'Drawdown', expand: false });
+        chart.set([{ name: 'Below the high', color: THEME.down, data: sr.dates.map((d, i) => ({ time: d, value: dd[i] * 100 })) }]);
       });
+      openModal('Drawdown: distance below the high', body, { wide: true, noAutofocus: true, onClose: () => ((closed = true), chart?.remove()) });
+      return;
     }
     openModal('Drawdown: distance below the high', body, { wide: true, noAutofocus: true });
   }

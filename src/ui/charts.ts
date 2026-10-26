@@ -35,7 +35,7 @@ export function createLineChart(container: HTMLElement, opts: { percent?: boolea
   let current: LineSpec[] = [];
   const legend = h('div', { class: 'line-legend' });
   container.append(legend);
-  followTheme(chart, { transparent: true, hideVertGrid: true });
+  const stopTheme = followTheme(chart, { transparent: true, hideVertGrid: true });
   attachTooltip(chart, container, () => series, format, () => isDailySeries((current[0]?.data ?? []).map((p) => toUnix(p.time as never))));
   if (opts.expand !== false) {
     const open = (openIndicators: boolean) => openChartWindow({ title: opts.title || current.map((l) => l.name).filter(Boolean).join(' vs ') || 'Chart', lines: current, format, openIndicators });
@@ -64,6 +64,11 @@ export function createLineChart(container: HTMLElement, opts: { percent?: boolea
   }
   return {
     chart,
+    /** Frees the chart and its theme listener (e.g. when its window closes). */
+    remove() {
+      stopTheme();
+      chart.remove();
+    },
     set(lines: LineSpec[]) {
       current = lines;
       for (const s of series) chart.removeSeries(s.series);

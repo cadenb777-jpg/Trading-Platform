@@ -168,8 +168,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Ticker card (v32, src/ui/tickerCard.ts): any element with `data-ticker` (spread `tickerAttr(symbol)` into h()) shows a
   card on hover (300 ms), tap or keyboard focus: invest.board quote + 3-month line, your position across your own
   portfolios, Open chart / Trade (pre-fills #trade only) / Research / Ask AI. One delegated listener set (main.ts);
-  a click pins it unless the ticker sits in a button, link or clickable row; Esc closes; Tab steps into it.
-  As-of stamps: `asOfStamp(feed, {requestType})` (src/ui/dataHealth.ts) in panel heads, amber after 2x the feed's
+  a click pins it unless the ticker sits in a button, link, focusable row or anything given an onclick by h()
+  (`clickTargets`); touch: long press. Esc closes; Tab steps into it; Ask AI only pre-fills the assistant.
+  As-of stamps: `asOfStamp(feed, {reply})` (src/ui/dataHealth.ts; that reply's own fetch time) in panel heads, amber after 2x the feed's
   refresh (src/data/health.ts FEEDS); engineRequest/history/quote/trade record each feed's last success, listed by
   the rail's Data button. Risk drill-downs: risk.account replies `series` {dates, account, spy} (daily returns);
   src/portfolio/riskCharts.ts opens the P/L histogram, beta scatter and drawdown curve from the risk card.

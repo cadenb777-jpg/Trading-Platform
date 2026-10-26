@@ -219,15 +219,19 @@ export interface Bin {
   count: number;
 }
 
-/** Equal-width bins over `values` (about `target` of them, edges on round steps of 0.25% / 0.5% / 1% ...). */
-export function histogram(values: number[], target = 24): Bin[] {
+/**
+ * Equal-width bins over `values` (about `target` of them, round widths of 0.25% / 0.5% / 1% ...). With `edge`, one
+ * bin boundary sits exactly there, so no bar straddles it (the bad-day line): bars left of it hold exactly the
+ * values below it.
+ */
+export function histogram(values: number[], target = 24, edge?: number): Bin[] {
   const v = values.filter(Number.isFinite);
   if (!v.length) return [];
   const lo = Math.min(...v);
   const hi = Math.max(...v);
   const raw = (hi - lo || Math.abs(hi) || 0.01) / target;
   const step = [0.0005, 0.001, 0.0025, 0.005, 0.01, 0.02, 0.025, 0.05, 0.1].find((s) => s >= raw) ?? raw;
-  const start = Math.floor(lo / step) * step;
+  const start = edge != null && Number.isFinite(edge) ? edge - Math.ceil((edge - lo) / step - 1e-9) * step : Math.floor(lo / step) * step;
   const n = Math.max(1, Math.floor((hi - start) / step) + 1);
   const bins: Bin[] = Array.from({ length: n }, (_, i) => ({ x0: start + i * step, x1: start + (i + 1) * step, count: 0 }));
   for (const x of v) bins[Math.min(n - 1, Math.max(0, Math.floor((x - start) / step + 1e-9)))].count++;

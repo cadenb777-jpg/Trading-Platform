@@ -31,19 +31,33 @@ describe('ticker attribute', () => {
 
   it('pins on click unless the ticker sits in something with its own click', () => {
     const plain = node('B', { 'data-ticker': 'AAPL' }, node('TD', {}, node('TR')));
-    expect(clickMode(plain, 'mouse')).toBe('pin');
+    expect(clickMode(plain)).toBe('pin');
     const inRow = node('B', { 'data-ticker': 'AAPL' }, node('TD', {}, node('TR', {}, null, ['clickable'])));
-    expect(clickMode(inRow, 'mouse')).toBe('pass'); // the row still opens its detail
-    const inButton = node('SPAN', { 'data-ticker': 'AAPL' }, node('BUTTON'));
-    expect(clickMode(inButton, 'mouse')).toBe('pass');
-    expect(clickMode(node('BUTTON', { 'data-ticker': 'AAPL' }), 'mouse')).toBe('pass');
-    expect(clickMode(node('SPAN', { 'data-ticker': 'AAPL' }, node('DIV', { role: 'button' })), 'pen')).toBe('pass');
+    expect(clickMode(inRow)).toBe('pass'); // the row still opens its detail
+    expect(clickMode(node('SPAN', { 'data-ticker': 'AAPL' }, node('BUTTON')))).toBe('pass');
+    expect(clickMode(node('BUTTON', { 'data-ticker': 'AAPL' }))).toBe('pass');
+    expect(clickMode(node('SPAN', { 'data-ticker': 'AAPL' }, node('DIV', { role: 'button' })))).toBe('pass');
   });
 
-  it('always pins on touch (no hover there), and data-ticker-click overrides', () => {
-    expect(clickMode(node('SPAN', { 'data-ticker': 'AAPL' }, node('BUTTON')), 'touch')).toBe('pin');
-    expect(clickMode(node('SPAN', { 'data-ticker': 'AAPL', 'data-ticker-click': 'pin' }, node('BUTTON')), 'mouse')).toBe('pin');
-    expect(clickMode(node('SPAN', { 'data-ticker': 'AAPL', 'data-ticker-click': 'pass' }), 'touch')).toBe('pass');
+  it('leaves a watchlist row its click (focusable list item opens the chart)', () => {
+    const row = node('DIV', { class: 'wl-row', role: 'listitem', tabindex: '0' });
+    const sym = node('B', { 'data-ticker': 'SPY' }, node('SPAN', { class: 'wl-sym' }, row));
+    expect(clickMode(sym)).toBe('pass');
+    // a focusable row without a role still counts; tabindex -1 doesn't
+    expect(clickMode(node('B', { 'data-ticker': 'SPY' }, node('DIV', { tabindex: '0' })))).toBe('pass');
+    expect(clickMode(node('B', { 'data-ticker': 'SPY' }, node('DIV', { tabindex: '-1' })))).toBe('pin');
+  });
+
+  it('leaves a Setups table row its click (a row with a click handler selects it)', () => {
+    const tr = node('TR');
+    const sym = node('B', { 'data-ticker': 'NVDA' }, node('TD', {}, tr));
+    expect(clickMode(sym, (el) => el === tr)).toBe('pass');
+    expect(clickMode(sym)).toBe('pin');
+  });
+
+  it('data-ticker-click overrides', () => {
+    expect(clickMode(node('SPAN', { 'data-ticker': 'AAPL', 'data-ticker-click': 'pin' }, node('BUTTON')))).toBe('pin');
+    expect(clickMode(node('SPAN', { 'data-ticker': 'AAPL', 'data-ticker-click': 'pass' }))).toBe('pass');
   });
 });
 

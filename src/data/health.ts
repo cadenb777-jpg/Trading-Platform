@@ -27,6 +27,10 @@ export function feedOf(type: string): FeedId | null {
   return null;
 }
 
+/** An error about one request's own input (an unknown or invalid symbol, no data for it), not the feed itself. */
+export const requestProblem = (message: string) =>
+  /\b(invalid|unknown|no such|not found|no usable|no (price )?data|no symbols?|no quote|delisted)\b|symbol/i.test(message ?? '');
+
 export interface FeedState {
   lastOk: number | null;
   lastError: string | null;
@@ -34,7 +38,8 @@ export interface FeedState {
 }
 
 const states = new Map<FeedId, FeedState>();
-const fetched = new Map<string, number>();
+/** When each reply object arrived; a cached reply is the same object, so it keeps its own fetch time. */
+let replies = new WeakMap<object, number>();
 const listeners = new Set<() => void>();
 
 const blank = (): FeedState => ({ lastOk: null, lastError: null, lastErrorAt: null });
@@ -66,15 +71,15 @@ export function recordError(id: FeedId, message: string, at = Date.now()) {
   for (const fn of listeners) fn();
 }
 
-/** A successful network reply for an engine request type (a cache hit doesn't count). */
-export function markFetched(type: string, at = Date.now()) {
-  fetched.set(type, at);
+/** A successful network reply (a cache hit doesn't count): marks its feed working and remembers the reply's time. */
+export function markFetched(type: string, data?: unknown, at = Date.now()) {
+  if (data && typeof data === 'object') replies.set(data, at);
   const feed = feedOf(type);
   if (feed) recordOk(feed, at);
 }
 
-/** When the newest reply of this request type arrived (ms), or null. Cached replies keep their first time. */
-export const fetchedAt = (type: string): number | null => fetched.get(type) ?? null;
+/** When this exact reply arrived from the helper (ms), or null. */
+export const replyTime = (data: unknown): number | null => (data && typeof data === 'object' ? (replies.get(data) ?? null) : null);
 
 /** Stale = older than twice the feed's refresh interval (feeds refreshed only on request never go stale). */
 export function isStale(at: number | null, refreshMs: number, now = Date.now()): boolean {
@@ -100,5 +105,5 @@ export function stampTime(at: number, now = Date.now()): string {
 /** Test hook. */
 export function resetHealth() {
   states.clear();
-  fetched.clear();
+  replies = new WeakMap();
 }

@@ -192,7 +192,8 @@ export function createMacroPage() {
 
   async function loadCurve() {
     try {
-      ({ curve } = await engineRequest<{ curve: CurvePoint[] }>('macro.curve', {}, 45000));
+      const reply = await engineRequest<{ curve: CurvePoint[] }>('macro.curve', {}, 45000);
+      ({ curve } = reply);
       const ten = curve.find((p) => p.label === '10Y')?.now;
       const two = curve.find((p) => p.label === '2Y')?.now;
       const spread = ten != null && two != null ? ten - two : 0;
@@ -201,7 +202,7 @@ export function createMacroPage() {
           'div',
           { class: 'panel-head' },
           h('h3', {}, 'Treasury yield curve'),
-          asOfStamp('fred', { requestType: 'macro.curve', source: 'FRED / treasury.gov' }).el,
+          asOfStamp('fred', { reply, source: 'FRED / treasury.gov' }).el,
           h('span', { class: 'muted small' }, spread < 0 ? 'Inverted: short-term rates are above long-term ones, which has often come before recessions.' : 'Normal shape: longer loans pay more than short ones.'),
         ),
         yieldCurve(curve),

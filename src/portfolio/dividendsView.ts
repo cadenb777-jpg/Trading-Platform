@@ -210,7 +210,7 @@ export function drawDividends(out: HTMLElement, r: DividendReport, { hasCash = f
     h(
       'section',
       { class: 'panel' },
-      h('div', { class: 'panel-head' }, h('h3', {}, stats ? 'Holdings' : 'Dividends by holding'), asOfStamp(null, { requestType: 'dividends.portfolio', source: 'Schwab prices, Yahoo dividends' }).el),
+      h('div', { class: 'panel-head' }, h('h3', {}, stats ? 'Holdings' : 'Dividends by holding'), asOfStamp(null, { reply: r, source: 'Schwab prices, Yahoo dividends' }).el),
       r.missing ? h('p', { class: 'badge warn' }, `${r.missing} holding${r.missing === 1 ? '' : 's'} had no dividend data (shown as —). Try again later.`) : null,
       dataTable(
         ['Symbol', 'Shares', 'Gain', '1Y total return', 'Yield · on cost', 'Yearly income', 'Pays', '5y growth'],

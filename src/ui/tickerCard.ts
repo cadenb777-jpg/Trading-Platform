@@ -5,8 +5,7 @@
  * One delegated set of listeners on document (initTickerCards in main.ts), so a page only adds the attribute.
  * Trade only pre-fills the Trade page's ticket; nothing is ever placed from here.
  */
-import { openAssistant } from '../ai/hub';
-import { fetchedAt } from '../data/health';
+import { prefillAssistant } from '../ai/hub';
 import { guessMarket, type MarketRef } from '../data/quotes';
 import { engineRequest, helper } from '../data/schwab';
 import { listDocs } from '../data/store';
@@ -14,7 +13,7 @@ import type { BoardRow } from '../invest/shared';
 import { combineHoldings, myPortfolios } from '../portfolio/account';
 import type { Portfolio } from '../portfolio/types';
 import { asOfStamp } from './dataHealth';
-import { formatPrice, h } from './dom';
+import { clickTargets, formatPrice, h } from './dom';
 import { sparkline } from './sparkline';
 import { THEME } from './theme';
 
@@ -39,7 +38,7 @@ export interface TickerNode {
   classList?: { contains(c: string): boolean };
 }
 
-/** The nearest element (itself or an ancestor, up to 6 levels) carrying a valid data-ticker. */
+/** The nearest element (itself or up to 6 ancestors) carrying data-ticker; null when there is none or it isn't a valid symbol. */
 export function findTicker<T extends TickerNode>(start: T | null): { el: T; symbol: string } | null {
   let el: TickerNode | null = start;
   for (let i = 0; el && i < 7; i++, el = el.parentElement) {
@@ -53,20 +52,22 @@ export function findTicker<T extends TickerNode>(start: T | null): { el: T; symb
 }
 
 const INTERACTIVE = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'LABEL', 'SUMMARY']);
-const ROLES = new Set(['button', 'link', 'tab', 'menuitem', 'option']);
-/** A button, link or clickable row: something with its own click action. */
-const isInteractive = (el: TickerNode) => INTERACTIVE.has(el.tagName) || ROLES.has(el.getAttribute('role') ?? '') || !!el.classList?.contains('clickable');
+const ROLES = new Set(['button', 'link', 'tab', 'menuitem', 'option', 'row', 'listitem']);
+/** A button, link, focusable row or anything with a click handler: something with its own click action. */
+const isInteractive = (el: TickerNode, hasClick: (el: TickerNode) => boolean) => {
+  const tab = el.getAttribute('tabindex');
+  return INTERACTIVE.has(el.tagName) || ROLES.has(el.getAttribute('role') ?? '') || !!el.classList?.contains('clickable') || (tab != null && Number(tab) >= 0) || hasClick(el);
+};
 
 /**
- * What a click on a ticker does: 'pin' opens the pinned card (and stops the click), 'pass' leaves the page's own
- * click alone (a watchlist row still opens its chart). A tap always pins on touch screens, which have no hover.
- * `data-ticker-click="pin|pass"` overrides.
+ * What a click or tap on a ticker does: 'pin' opens the pinned card (and stops the click), 'pass' leaves the page's
+ * own click alone (a watchlist row still opens its chart, a Setups row still selects). On touch screens a long press
+ * opens the card there instead. `data-ticker-click="pin|pass"` overrides.
  */
-export function clickMode(ticker: TickerNode, pointerType: string): 'pin' | 'pass' {
+export function clickMode(ticker: TickerNode, hasClick: (el: TickerNode) => boolean = () => false): 'pin' | 'pass' {
   const forced = ticker.getAttribute('data-ticker-click');
   if (forced === 'pin' || forced === 'pass') return forced;
-  if (pointerType === 'touch') return 'pin';
-  for (let el: TickerNode | null = ticker, i = 0; el && i < 8; el = el.parentElement, i++) if (isInteractive(el)) return 'pass';
+  for (let el: TickerNode | null = ticker, i = 0; el && i < 8; el = el.parentElement, i++) if (isInteractive(el, hasClick)) return 'pass';
   return 'pin';
 }
 
@@ -160,7 +161,7 @@ function place(card: HTMLElement, anchor: HTMLElement) {
   const below = r.bottom + 6;
   const top = below + hgt > window.innerHeight - 8 && r.top - hgt - 6 > 8 ? r.top - hgt - 6 : below;
   card.style.left = `${left}px`;
-  card.style.top = `${Math.max(8, top)}px`;
+  card.style.top = `${Math.max(8, Math.min(top, window.innerHeight - hgt - 8))}px`; // never off screen
 }
 
 /** Closes the card. A pending hover elsewhere still opens (a late scroll event must not cancel it). */
@@ -244,7 +245,7 @@ function buildCard(symbol: string, pinned: boolean) {
         : '',
       !crypto && !index && !future ? btn('Research', `Company research for ${symbol}`, () => actions.openResearch(symbol)) : '',
       btn('Ask AI', `Ask the assistant about ${symbol}`, () =>
-        openAssistant(`Give me a quick read on ${symbol}: what it is, how it has been trading lately, and anything I should know before buying or selling.`),
+        prefillAssistant(`Give me a quick read on ${symbol}: what it is, how it has been trading lately, and anything I should know before buying or selling.`),
       ),
     ),
   );
@@ -261,10 +262,11 @@ function buildCard(symbol: string, pinned: boolean) {
       price.replaceChildren(h('span', { class: 'muted small' }, 'Prices appear when the helper is running.'));
     } else {
       try {
-        const { rows } = await engineRequest<{ rows: BoardRow[] }>('invest.board', { symbols: [symbol] }, 30000);
+        const reply = await engineRequest<{ rows: BoardRow[]; asOf?: number }>('invest.board', { symbols: [symbol] }, 30000);
+        const rows = reply.rows;
         if (!still()) return;
         const r = rows[0];
-        stamp.set(fetchedAt('invest.board'), r?.atClose ? { prefix: 'close', refreshMs: 0 } : {});
+        stamp.set(reply.asOf, r?.atClose ? { prefix: 'close', refreshMs: 0 } : {});
         if (r?.name) name.textContent = r.name;
         price.replaceChildren(
           r?.price != null ? h('span', { class: 'tc-last' }, formatPrice(r.price)) : h('span', { class: 'muted small' }, 'No quote right now'),
@@ -285,6 +287,7 @@ function buildCard(symbol: string, pinned: boolean) {
         if (still()) price.replaceChildren(h('span', { class: 'muted small' }, (err as Error).message || 'No quote right now'));
       }
     }
+    if (open?.card === card) place(card, open.anchor); // it grew: keep it on screen
     const held = heldPosition(symbol, await myAccounts());
     if (!still() || !held) return;
     const last = Number((price.querySelector('.tc-last')?.textContent ?? '').replace(/[^0-9.]/g, '')) || null;
@@ -335,12 +338,20 @@ export function initTickerCards(a: TickerActions) {
   document.addEventListener('click', (e) => {
     if (inCard(e.target)) return;
     const t = findTicker(asEl(e.target));
-    if (!t || clickMode(t.el, lastPointer) === 'pass') return;
+    if (!t || clickMode(t.el, (el) => clickTargets.has(el as unknown as Element)) === 'pass') return;
     e.preventDefault();
     e.stopPropagation();
     if (open?.anchor === t.el && open.pinned) return close();
     show(t.symbol, t.el, { pinned: true, byFocus: false });
   }, true);
+  // touch screens: a long press opens the card where a tap does the row's own action
+  document.addEventListener('contextmenu', (e) => {
+    if (lastPointer !== 'touch' || inCard(e.target)) return;
+    const t = findTicker(asEl(e.target));
+    if (!t) return;
+    e.preventDefault();
+    show(t.symbol, t.el, { pinned: true, byFocus: false });
+  });
   document.addEventListener('focusin', (e) => {
     const target = asEl(e.target);
     if (!target || inCard(target)) return;

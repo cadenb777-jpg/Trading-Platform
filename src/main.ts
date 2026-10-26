@@ -274,6 +274,10 @@ if (isAiWindow) {
       toggleAssistant(true);
       if (question) assistant.ask(question);
     },
+    prefill: (text) => {
+      toggleAssistant(true);
+      assistant.prefill(text);
+    },
     continueConversation: (conversation, title, answer) => {
       assistant.continueConversation(conversation, title, answer);
       toggleAssistant(true);

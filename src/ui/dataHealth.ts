@@ -2,7 +2,7 @@
  * "As of / source" stamps for data panels, and the Data button's health list (each feed's last success and state).
  * A stamp turns amber when its data is older than twice its feed's refresh interval. Bookkeeping in ../data/health.
  */
-import { FEEDS, fetchedAt, feedState, health, isStale, onHealthChange, stampTime, type FeedId, type Health } from '../data/health';
+import { FEEDS, feedState, health, replyTime, isStale, onHealthChange, stampTime, type FeedId, type Health } from '../data/health';
 import { alpacaKeysSaved, helper } from '../data/schwab';
 import { h, openPopover } from './dom';
 
@@ -11,7 +11,6 @@ interface Stamp {
   at: number | null;
   refreshMs: number;
   text: string;
-  seen: boolean;
 }
 const live = new Set<Stamp>();
 let timer: ReturnType<typeof setInterval> | undefined;
@@ -26,9 +25,8 @@ function watch(s: Stamp) {
   live.add(s);
   timer ??= setInterval(() => {
     for (const x of live) {
-      if (x.el.isConnected) x.seen = true;
-      else if (x.seen) live.delete(x); // removed from the page
-      paint(x);
+      if (x.el.isConnected) paint(x);
+      else live.delete(x); // removed from the page (or never shown): forget it
     }
   }, 30_000);
 }
@@ -44,11 +42,11 @@ export interface AsOfOptions {
 
 /**
  * A small muted "as of 10:42 · Schwab" for a panel header. `set(at)` updates it (ms or unix seconds; a date-only
- * string like "2026-09-30" is shown as is). Without a time it reads the newest reply of `requestType`.
+ * string like "2026-09-30" is shown as is). `reply` = the engine reply shown: its own fetch time (replyTime).
  */
-export function asOfStamp(feed: FeedId | null, opts: AsOfOptions & { requestType?: string } = {}) {
+export function asOfStamp(feed: FeedId | null, opts: AsOfOptions & { reply?: unknown } = {}) {
   const el = h('span', { class: 'asof muted small', title: feed ? `${FEEDS[feed].label}: ${FEEDS[feed].about}` : '' });
-  const s: Stamp = { el, at: null, refreshMs: opts.refreshMs ?? (feed ? FEEDS[feed].refreshMs : 0), text: '', seen: false };
+  const s: Stamp = { el, at: null, refreshMs: opts.refreshMs ?? (feed ? FEEDS[feed].refreshMs : 0), text: '' };
   const source = opts.source ?? (feed ? FEEDS[feed].source : '');
   const api = {
     el,
@@ -70,7 +68,7 @@ export function asOfStamp(feed: FeedId | null, opts: AsOfOptions & { requestType
       return api;
     },
   };
-  api.set(opts.requestType ? fetchedAt(opts.requestType) : null);
+  api.set(replyTime(opts.reply));
   watch(s);
   return api;
 }

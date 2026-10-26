@@ -82,6 +82,17 @@ describe('risk drill-downs', () => {
     expect(histogram([])).toEqual([]);
   });
 
+  it('splits the bins at the bad-day line, so the red bars hold exactly the days past it', () => {
+    const r = Array.from({ length: 260 }, (_, i) => Math.sin(i * 1.7) * 0.02 + ((i * 7919) % 13) / 2000 - 0.003);
+    const cut = -0.0137;
+    const bins = histogram(r, 24, cut);
+    expect(bins.some((b) => Math.abs(b.x0 - cut) < 1e-12 || Math.abs(b.x1 - cut) < 1e-12)).toBe(true);
+    expect(bins.some((b) => b.x0 < cut - 1e-12 && b.x1 > cut + 1e-12)).toBe(false);
+    const red = bins.filter((b) => b.x1 <= cut + 1e-12).reduce((a, b) => a + b.count, 0);
+    expect(red).toBe(r.filter((x) => x < cut).length);
+    expect(bins.reduce((a, b) => a + b.count, 0)).toBe(r.length);
+  });
+
   it('fits the beta line', () => {
     const spy = [0.01, -0.02, 0.005, 0.015, -0.01];
     const acct = spy.map((x) => 0.0002 + 1.4 * x);

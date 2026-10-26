@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { feedOf, fetchedAt, health, isStale, markFetched, recordError, recordOk, resetHealth } from './health';
+import { feedOf, health, requestProblem, replyTime, isStale, markFetched, recordError, recordOk, resetHealth } from './health';
 
 describe('data health', () => {
   beforeEach(resetHealth);
@@ -26,8 +26,10 @@ describe('data health', () => {
 
   it('tracks each feed: idle, ok, stale, error, recovered', () => {
     expect(health('quotes', 1000)).toBe('idle');
-    markFetched('invest.board', 1000);
-    expect(fetchedAt('invest.board')).toBe(1000);
+    const reply = { rows: [] };
+    markFetched('invest.board', reply, 1000);
+    expect(replyTime(reply)).toBe(1000);
+    expect(replyTime({ rows: [] })).toBeNull(); // another request's reply has its own time
     expect(health('quotes', 2000)).toBe('ok');
     expect(health('quotes', 1000 + 61_000)).toBe('stale');
     recordError('quotes', 'Schwab login expired', 3000);
@@ -35,5 +37,12 @@ describe('data health', () => {
     recordOk('quotes', 4000);
     expect(health('quotes', 4500)).toBe('ok');
     expect(health('alpaca', 1e12)).toBe('idle');
+  });
+
+  it('an unknown symbol is a problem with the request, not the feed', () => {
+    expect(requestProblem('Invalid symbol "ZZZZ"')).toBe(true);
+    expect(requestProblem('Schwab sent no usable price data for XYZ.')).toBe(true);
+    expect(requestProblem('Schwab login expired: run the helper again to log in.')).toBe(false);
+    expect(requestProblem('The helper took too long to answer. Try again.')).toBe(false);
   });
 });
