@@ -116,6 +116,8 @@ interface FuturesPreview {
   expiry: string;
   cutoff: string;
   daysLeft: number;
+  /** Trading days before the cutoff when opening/adding stops (the helper's EXPIRY_DAYS). */
+  expiryDays?: number;
   notional: number;
   tickValue: number;
   tickSize: number;
@@ -266,7 +268,7 @@ export function confirmOrder(order: PlacedOrder, accountId: string, onPlaced: (o
         f
           ? statCards([
               { label: 'Contract', value: f.contract, hint: f.name },
-              { label: 'Expiry', value: f.expiry, hint: `Last trading day. New positions stop 2 trading days before ${f.cutoff} (${f.daysLeft} trading days left); closing is allowed to the last day.` },
+              { label: 'Expiry', value: f.expiry, hint: `Last trading day. New positions stop ${f.expiryDays ?? 2} trading days before ${f.cutoff} (${f.daysLeft} trading days left); closing is allowed to the last day.` },
               { label: 'Contracts', value: String(order.qty), hint: f.closing ? 'Closing order (reduce only)' : 'Opening order (long only)' },
               { label: 'Notional', value: usd(f.notional), hint: 'Price × multiplier × contracts: what the contracts control' },
               { label: 'Tick value', value: usd(f.tickValue), hint: `One tick (${f.tickSize}) on one contract; multiplier ${f.multiplier}` },

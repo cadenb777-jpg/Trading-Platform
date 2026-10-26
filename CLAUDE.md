@@ -188,8 +188,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   contracts per order (1, cap 20) / per day (3, cap 50, counted from orders.log `contracts`; closing orders exempt),
   switching Test/Live turns futures off, contracts read with status OC and CO. Opening/adding: longs only (no shorts),
   not within 2 trading days of the cutoff ("roll"), OC only, buying power > 0 (Webull's preview judges margin).
-  Closing (reduce-only, <= position minus open orders) is allowed for CO and up to the last trading day; the position
-  is re-read at place; a side-like position field that disagrees with the quantity sign refuses. Prices on the tick
+  Closing (reduce-only, <= position minus open orders and closing attempts logged in the last 2 minutes that Webull
+  doesn't show yet) is allowed for CO and up to the last trading day, and isn't held back by the daily order/contract
+  counts; one futures place per account at a time (lock from the position re-read to Webull's answer); a side-like position field that disagrees with the quantity sign refuses. Prices on the tick
   and within 25% of Schwab's; margin is never guessed; no stop order is placed. Sources are cited in webull.py.
   Rate limits (v27): every Webull call goes one at a time through `_call`'s gate, spaced per endpoint from Webull's
   documented limits (SPACING); reads are cached (account list 10 min, balances/positions/orders 20 s; place/cancel

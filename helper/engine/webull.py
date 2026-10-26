@@ -1023,12 +1023,55 @@ async def futures_positions(ctx, account_id):
     return out
 
 
+#: Closing attempts sent in the last this many seconds count as pending until Webull shows them (as an open order or
+#: in the order history), so two quick closes can't both pass on the same position.
+RECENT_CLOSE_SECONDS = 120
+
+
+def recent_closing_attempts(account_id, symbol, side, environment=None):
+    """{client order id: contracts} of closing futures orders for this account/contract/side attempted in the last
+    RECENT_CLOSE_SECONDS (from orders.log), minus those logged as failed (definitely not placed). An unreadable log
+    refuses, like the daily counts."""
+    environment = environment or env()
+    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=RECENT_CLOSE_SECONDS)
+    try:
+        lines = ORDERS_LOG.read_text(encoding='utf-8').splitlines()
+    except FileNotFoundError:
+        return {}
+    except (OSError, UnicodeDecodeError) as err:
+        raise EngineError(LOG_UNREADABLE) from err
+    found, failed = {}, set()
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            e = json.loads(line)
+            when = dt.datetime.fromisoformat(e['time'])
+        except (ValueError, KeyError, TypeError) as err:
+            raise EngineError(LOG_UNREADABLE) from err
+        if (e.get('asset') != 'futures' or e.get('action') != 'place' or not e.get('closing') or e.get('env') != environment
+                or e.get('account') != _mask(account_id) or e.get('symbol') != symbol or e.get('side') != side or when < since):
+            continue
+        if e.get('result') == 'attempt':
+            n = e.get('contracts')
+            if not isinstance(e.get('orderId'), str) or isinstance(n, bool) or not isinstance(n, int) or n < 0:
+                raise EngineError(LOG_UNREADABLE)
+            found[e['orderId']] = n
+        elif e.get('result') == 'failed' and isinstance(e.get('orderId'), str):
+            failed.add(e['orderId'])
+    return {k: v for k, v in found.items() if k not in failed}
+
+
 async def futures_holding(ctx, account_id, symbol, side):
-    """Fresh reads for a decision: (signed position in the contract, contracts in open orders on this side, whether
-    every position row for it has a confirmed direction)."""
+    """Fresh reads for a decision: (signed position in the contract, contracts already on their way on this side,
+    whether every position row for it has a confirmed direction). On their way = open orders, plus recent closing
+    attempts from orders.log that Webull doesn't show yet (neither open nor in the order history)."""
     rows = [p for p in await futures_positions(ctx, account_id) if p['symbol'] == symbol]
     held = sum(p['qty'] for p in rows)
-    pending = sum(max(o['qty'] - o['filled'], 0) for o in await open_orders(ctx, account_id) if o['symbol'] == symbol and o['side'] == side)
+    book = await orders(ctx, account_id)
+    pending = sum(max(o['qty'] - o['filled'], 0) for o in book['open'] if o['symbol'] == symbol and o['side'] == side)
+    seen = {o['orderId'] for o in book['open'] + book['recent']}
+    pending += sum(n for cid, n in recent_closing_attempts(account_id, symbol, side).items() if cid not in seen)
     return held, pending, all(p['directionOk'] for p in rows)
 
 
@@ -1161,7 +1204,7 @@ def check_futures(order, contract, last, held, pending, direction_confirmed, tod
     if not futures_enabled():
         raise EngineError(FUTURES_OFF)
     closing, effect = futures_gate(order, contract, held, pending, direction_confirmed, today_contracts, flim)
-    if today_orders >= lim['maxPerDay']:
+    if not closing and today_orders >= lim['maxPerDay']:  # an exit is never held back by the daily count
         raise EngineError(f"You've placed {today_orders} orders today, your daily maximum (change it in Settings).")
     # Opening needs buying power above 0 (a sanity check only: Webull's preview judges the margin itself).
     if not closing and (buying_power is None or buying_power <= 0):
@@ -1409,7 +1452,7 @@ async def preview_futures(ctx, msg):
     return {'asset': 'futures', 'token': token, 'expiresIn': TOKEN_SECONDS, 'order': order, 'summary': summary,
             'estimate': {'value': risk['notional'], 'last': last},
             'futures': {**risk, 'contract': contract['symbol'], 'name': contract['name'], 'expiry': contract['lastTrade'], 'cutoff': contract['cutoff'],
-                        'daysLeft': contract['daysLeft'], 'margin': None, 'marginNote': MARGIN_NOTE, 'buyingPowerNote': BP_NOTE, 'stopNote': STOP_NOTE,
+                        'daysLeft': contract['daysLeft'], 'expiryDays': EXPIRY_DAYS, 'margin': None, 'marginNote': MARGIN_NOTE, 'buyingPowerNote': BP_NOTE, 'stopNote': STOP_NOTE,
                         'closing': closing, 'effect': effect, 'position': held, 'contractsToday': placed_contracts_today(), 'limits': flim},
             'env': env(), 'account': chosen['label'], 'accountId': account_id, 'retirement': False, 'warnings': warnings,
             'marketNote': 'Futures trade nearly around the clock on weekdays (with a daily break); Webull decides when the order can work.',
@@ -1481,6 +1524,23 @@ async def place_order(ctx, msg):
         if not futures_enabled():
             _log({**base, 'result': 'refused', 'reason': 'futures not enabled'})
             raise EngineError(FUTURES_OFF)
+        base.update({'symbol': order['symbol'], 'side': order['side'], 'closing': bool(preview['closing']),
+                     'orderId': preview['body']['new_orders'][0]['client_order_id']})
+        # One futures order per account at a time, from the position re-read to Webull's answer: two confirm windows
+        # closing the same contract can't both pass on one position (the second sees the first in orders.log).
+        async with _lock(('futures-place', preview['account'])):
+            if time.monotonic() > deadline:
+                _log({**base, 'result': 'refused', 'reason': 'waited for another futures order past the deadline'})
+                raise EngineError(NOT_SENT)
+            return await _place_rest(ctx, preview, order, base, lim, futures, deadline)
+    return await _place_rest(ctx, preview, order, base, lim, futures, deadline)
+
+
+async def _place_rest(ctx, preview, order, base, lim, futures, deadline):
+    """place_order after the token checks: the futures re-read and gate (under the account's lock), the limits, the
+    attempt line and the send."""
+    closing = False
+    if futures:
         # The position is read again: it may have changed since the preview (a fill, or a trade in the Webull app), and a
         # "closing" sell must never become a new short. These reads come before the checks below, which run with no
         # await between them and the attempt line.
@@ -1500,7 +1560,7 @@ async def place_order(ctx, msg):
     elif preview['value'] > lim['maxOrder']:
         _log({**base, 'result': 'refused', 'reason': 'above max order value'})
         raise EngineError('This order is above your maximum order value. Preview it again.')
-    if placed_today() >= lim['maxPerDay']:
+    if not closing and placed_today() >= lim['maxPerDay']:  # an exit is never held back by the daily count (still counted)
         _log({**base, 'result': 'refused', 'reason': 'daily order limit'})
         raise EngineError(f"You've reached your daily maximum of {lim['maxPerDay']} orders.")
     # The checks above and this line run with no await in between, so two confirm windows can't both pass the

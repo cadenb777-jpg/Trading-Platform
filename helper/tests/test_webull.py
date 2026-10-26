@@ -1092,6 +1092,7 @@ class Futures(FiveAccounts):
         f = self.fpreview(protectStop=4990)['futures']
         self.assertEqual(f['stopNote'], 'Not placed: no stop order is sent. Place a stop separately.')
         self.assertIn('only checked to be above $0', f['buyingPowerNote'])
+        self.assertEqual(f['expiryDays'], webull.EXPIRY_DAYS)
         self.assertNotIn('protect', json.dumps(next(c for c in self.fake.calls if c['path'] == '/trading/orders/preview')['body']).lower())
 
     def test_switching_environment_turns_futures_off(self):
@@ -1115,6 +1116,52 @@ class Futures(FiveAccounts):
                 self.fpreview(limitPrice=price)
             with self.assertRaisesRegex(core.EngineError, 'protective stop above 0'):
                 self.fpreview(protectStop=price)
+
+    def test_two_closing_sells_at_once_cannot_make_a_short(self):
+        self.fake.by_account['FUT00001']['positions'] = [{'symbol': 'MESZ6', 'quantity': '1', 'cost_price': '4990', 'instrument_type': 'FUTURES'}]
+        settings._cache = {**ON, 'webull_futures_max_per_day': 10}
+        self.fake.place_delay = 0.2  # Webull is slow to answer the first one
+        a, b = self.fpreview(side='SELL'), self.fpreview(side='SELL')
+
+        async def both():
+            return await asyncio.gather(webull.place_order(self.ctx, {'token': a['token']}), webull.place_order(self.ctx, {'token': b['token']}),
+                                        return_exceptions=True)
+        results = run(both())
+        self.assertEqual(sum(1 for r in results if isinstance(r, dict) and r.get('placed')), 1)
+        self.assertIn('close at most 0', str(next(r for r in results if isinstance(r, Exception))))
+        self.assertEqual(len(self.fake.placed_ids), 1)
+
+    def test_back_to_back_closes_before_webull_shows_the_first(self):
+        self.fake.by_account['FUT00001']['positions'] = [{'symbol': 'MESZ6', 'quantity': '1', 'cost_price': '4990', 'instrument_type': 'FUTURES'}]
+        settings._cache = {**ON, 'webull_futures_max_per_day': 10}
+        a = self.fpreview(side='SELL')
+        self.assertTrue(self.place(a)['placed'])  # Webull doesn't list it yet: not open, not in the history, position still 1
+        with self.assertRaisesRegex(core.EngineError, 'close at most 0'):
+            self.fpreview(side='SELL')  # the logged attempt counts as pending
+        # once Webull shows it (here: as an open sell), it is counted from there instead, not twice
+        self.fake.open_orders = [{'client_order_id': self.fake.placed_ids[0], 'orders': [{'symbol': 'MESZ6', 'side': 'SELL', 'quantity': '1', 'order_type': 'LIMIT',
+                                                                                          'limit_price': '5000', 'time_in_force': 'DAY', 'status': 'SUBMITTED'}]}]
+        self.fake.by_account['FUT00001']['positions'][0]['quantity'] = '2'
+        self.assertTrue(self.fpreview(side='SELL')['futures']['closing'])  # 2 held - 1 open = 1 left
+        # a failed attempt doesn't hold anything back
+        self.fake.open_orders = []
+        self.fake.by_account['FUT00001']['positions'][0]['quantity'] = '1'
+        webull.ORDERS_LOG.write_text('')
+        p = self.fpreview(side='SELL')
+        self.fake.place_fails = 400
+        with self.assertRaises(core.EngineError):
+            self.place(p)
+        self.fake.place_fails = None
+        self.assertTrue(self.fpreview(side='SELL')['futures']['closing'])
+
+    def test_closing_is_not_held_back_by_the_daily_order_limit(self):
+        settings._cache = {**ON, 'webull_max_per_day': 1, 'webull_futures_max_per_day': 10}
+        self.place(self.fpreview())  # the one order of the day
+        with self.assertRaisesRegex(core.EngineError, 'daily maximum'):
+            self.fpreview()
+        self.fake.by_account['FUT00001']['positions'] = [{'symbol': 'MESZ6', 'quantity': '1', 'cost_price': '4990', 'instrument_type': 'FUTURES'}]
+        self.assertTrue(self.place(self.fpreview(side='SELL'))['placed'])
+        self.assertEqual(webull.placed_today(), 2)  # still counted
 
     def test_limits_clamped_to_the_settings_caps(self):
         for per_order, per_day, expect in ((999, 999, (1, 3)), ('abc', None, (1, 3)), (0, -1, (1, 3)), (True, True, (1, 3)), (20, 50, (20, 50)), ('5', '7', (5, 7))):
