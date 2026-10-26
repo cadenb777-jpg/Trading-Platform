@@ -94,17 +94,23 @@ export function parseCommand(input: string): Parsed {
 
 // ---------- ranking ----------
 
+/** Scattered matches scoring below this are noise ("xa" somewhere in a long name). */
+export const FUZZY_MIN = 150;
+const isWordStart = (t: string, i: number) => i === 0 || /[^a-z0-9]/.test(t[i - 1]);
+
 /**
- * How well `query` matches `text`, 1-499 (higher is better), or null. A plain substring beats a scattered match;
- * matches at the start of a word score more.
+ * How well `query` matches `text`, FUZZY_MIN-499 (higher is better), or null. A plain substring beats a scattered
+ * match; matches at the start of a word score more. Short queries (4 characters or fewer) must match at word starts:
+ * "gold" finds "Gold", "na" finds "New alert", but "ld" finds nothing in "Gold".
  */
 export function fuzzyScore(query: string, text: string): number | null {
   const q = query.trim().toLowerCase();
   const t = text.toLowerCase();
   if (!q) return null;
-  const at = t.indexOf(q);
-  if (at >= 0) {
-    const wordStart = at === 0 || /[^a-z0-9]/.test(t[at - 1]);
+  const short = q.replace(/ /g, '').length <= 4;
+  for (let at = t.indexOf(q); at >= 0; at = t.indexOf(q, at + 1)) {
+    const wordStart = isWordStart(t, at);
+    if (short && !wordStart) continue;
     return Math.min(499, 400 - Math.min(at, 80) + (wordStart ? 60 : 0));
   }
   let score = 200;
@@ -112,7 +118,8 @@ export function fuzzyScore(query: string, text: string): number | null {
   let prev = -2;
   for (const ch of q) {
     if (ch === ' ') continue;
-    const found = t.indexOf(ch, ti);
+    let found = t.indexOf(ch, ti);
+    while (short && found >= 0 && !isWordStart(t, found)) found = t.indexOf(ch, found + 1);
     if (found < 0) return null;
     if (found === prev + 1) score += 10;
     else score -= Math.min(found - ti, 10);
@@ -120,7 +127,7 @@ export function fuzzyScore(query: string, text: string): number | null {
     prev = found;
     ti = found + 1;
   }
-  return Math.max(1, Math.min(399, score));
+  return score < FUZZY_MIN ? null : Math.min(399, score);
 }
 
 export type SymbolSource = 'watchlist' | 'holding' | 'nasdaq' | 'futures' | 'board' | 'search';
@@ -369,9 +376,13 @@ export interface Dispatch {
   consume: boolean;
 }
 
-/** What a key press does. Shortcuts never fire while typing in a field or inside a dialog (Ctrl/Cmd+K and +I do). */
+/**
+ * What a key press does. Nothing fires inside a dialog (above all the order confirm window) or a pinned ticker card;
+ * single keys and chords also never fire while typing in a field (Ctrl/Cmd+K and +I do).
+ */
 export function dispatchKey(pending: Pending | null, k: KeyInfo, now: number): Dispatch {
   const none: Dispatch = { action: null, pending: null, consume: false };
+  if (k.modalOpen) return none;
   if (k.ctrl || k.meta) {
     if (k.alt) return none;
     const key = k.key.toLowerCase();
@@ -379,7 +390,7 @@ export function dispatchKey(pending: Pending | null, k: KeyInfo, now: number): D
     if (key === 'i') return { action: 'ai', pending: null, consume: true };
     return none;
   }
-  if (k.alt || k.inField || k.modalOpen) return none;
+  if (k.alt || k.inField) return none;
   if (pending && now - pending.at <= CHORD_MS) {
     const chord = CHORDS.find((c) => c.keys === `${pending.key} ${k.key}`);
     if (chord) return { action: chord.id, pending: null, consume: true };
@@ -495,8 +506,10 @@ export function initCommandBar(d: CommandDeps): HTMLElement {
     'keydown',
     (e) => {
       const target = e.target instanceof Element ? e.target : null;
-      const inField = !!target?.closest('input, select, textarea, [contenteditable=""], [contenteditable="true"]');
-      const r = dispatchKey(pending, { key: e.key, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey, inField, modalOpen: !!document.querySelector('.modal-backdrop') }, Date.now());
+      const inField = !!target?.closest('input, select, textarea, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]');
+      // a dialog or a pinned ticker card owns the keyboard (the palette itself is neither, so Ctrl+K still closes it)
+      const modalOpen = !closePalette && !!document.querySelector('.modal-backdrop, .ticker-card.pinned');
+      const r = dispatchKey(pending, { key: e.key, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey, inField, modalOpen }, Date.now());
       pending = r.pending;
       if (r.consume) {
         e.preventDefault();
@@ -782,9 +795,9 @@ export function openPalette() {
 
   function queueSearch() {
     clearTimeout(searchTimer);
+    const mine = ++searchSeq; // first, so a reply for older text is dropped even when no new search starts
     const q = input.value.trim();
     if (q.length < 2 || q.includes(' ') || !helper.isConnected) return;
-    const mine = ++searchSeq;
     searchTimer = setTimeout(() => {
       engineRequest<{ results: { symbol: string; name: string }[] }>('invest.search', { query: q }, 15000).then(
         (r) => {
@@ -821,6 +834,7 @@ export function openPalette() {
       } else close();
     } else if (e.key === 'Tab') {
       e.preventDefault(); // focus stays in the bar; Tab completes instead
+      e.stopPropagation(); // and no dialog's Tab trap underneath moves focus
       const it = items[active];
       if (it && !e.shiftKey && input.value !== it.complete) {
         input.value = it.complete;

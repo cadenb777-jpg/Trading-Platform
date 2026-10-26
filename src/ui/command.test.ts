@@ -64,7 +64,15 @@ describe('parsing', () => {
     expect(fuzzyScore('apple', 'Apple Inc')).toBeGreaterThan(fuzzyScore('apple', 'Pineapple Co')!);
     expect(fuzzyScore('nwalrt', 'New alert')).not.toBeNull();
     expect(fuzzyScore('xyz', 'New alert')).toBeNull();
-    expect(fuzzyScore('alert', 'New alert')!).toBeGreaterThan(fuzzyScore('nwalrt', 'New alert')!);
+    expect(fuzzyScore('alert', 'New alert')!).toBeGreaterThan(fuzzyScore('nwalrt', 'New alert')!);  });
+  it('short queries match only at word starts, and weak scattered matches are dropped', () => {
+    expect(fuzzyScore('gold', 'Gold')).not.toBeNull();
+    expect(fuzzyScore('ld', 'Gold')).toBeNull();
+    expect(fuzzyScore('na', 'New alert')).not.toBeNull(); // N(ew) a(lert)
+    expect(fuzzyScore('ew', 'New alert')).toBeNull();
+    expect(fuzzyScore('ert', 'Vertex')).toBeNull();
+    expect(fuzzyScore('ale', 'Some sale today')).toBeNull(); // substring mid-word
+    expect(fuzzyScore('abcdefghij', [...'abcdefghij'].map((c) => `qqqqqqqqqqq${c}`).join(''))).toBeNull(); // scattered: below FUZZY_MIN
   });
 });
 
@@ -154,7 +162,13 @@ describe('shortcuts', () => {
       expect(dispatchKey(null, { key: k, modalOpen: true }, t0).action).toBeNull();
     }
     const first = dispatchKey(null, { key: 'g' }, t0);
-    expect(dispatchKey(first.pending, { key: 'h', inField: true }, t0 + 10).action).toBeNull();
+    expect(dispatchKey(first.pending, { key: 'h', inField: true }, t0 + 10).action).toBeNull();  });
+  it('with a dialog open (e.g. the order confirm window) nothing fires, not even Ctrl/Cmd+K', () => {
+    expect(dispatchKey(null, { key: 'k', ctrl: true, modalOpen: true }, t0)).toEqual({ action: null, pending: null, consume: false });
+    expect(dispatchKey(null, { key: 'k', meta: true, modalOpen: true }, t0).action).toBeNull();
+    expect(dispatchKey(null, { key: 'i', ctrl: true, modalOpen: true }, t0).action).toBeNull();
+    const first = dispatchKey(null, { key: 'g' }, t0);
+    expect(dispatchKey(first.pending, { key: 'h', modalOpen: true }, t0 + 10).action).toBeNull();
   });
 });
 
