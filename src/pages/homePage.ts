@@ -1,5 +1,5 @@
 /** The start screen: greeting, the three main US indexes, market news and the watchlist. */
-import { CandlestickSeries, LineStyle, createChart, type IPriceLine, type UTCTimestamp } from 'lightweight-charts';
+import { CandlestickSeries, LineStyle, TickMarkType, createChart, type IPriceLine, type UTCTimestamp } from 'lightweight-charts';
 import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
 import { HELPER_OUTDATED, helper, loadNews, schwab, type NewsItem, type NewsSection } from '../data/schwab';
 import { insightButton } from '../ai/insight';
@@ -41,6 +41,15 @@ const CARD_RANGES: Record<CardRange, { timeframe: Timeframe; sessions: number; l
 const nyTime = (t: number, withDay: boolean) =>
   new Date(t * 1000).toLocaleString('en-US', { timeZone: 'America/New_York', ...(withDay ? { month: 'short', day: 'numeric' } : {}), hour: 'numeric', minute: '2-digit' });
 const nyDate = (t: number) => new Date(t * 1000).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+/** Short axis labels for the small cards: "Mon 27" where a new session starts (the chart marks a new UTC day there,
+ *  which is the same day in New York during market hours), "10:30" otherwise, "Oct 3" on daily candles. */
+export function cardTick(t: number, tickType: TickMarkType, range: '1D' | '5D' | '1M') {
+  if (range === '1M') return nyDate(t);
+  const d = new Date(t * 1000);
+  if (range === '5D' && tickType <= TickMarkType.DayOfMonth)
+    return `${d.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'short' })} ${d.toLocaleDateString('en-US', { timeZone: 'America/New_York', day: 'numeric' })}`;
+  return d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).replace(/\s?[AP]M$/, '');
+}
 const signed = (v: number, digits = 2) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 
 function indexCard(index: { symbol: string; name: string }, onOpen: () => void) {
@@ -70,7 +79,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
     layout: { ...chartThemeOptions(true).layout, fontFamily: "'Inter', sans-serif", fontSize: 11 },
     grid: { vertLines: { visible: false }, horzLines: { color: THEME.grid } },
     rightPriceScale: { borderVisible: false, entireTextOnly: true, scaleMargins: { top: 0.18, bottom: 0.08 } }, // entireTextOnly: no half-cut labels at the edges
-    timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true, timeVisible: true, tickMarkFormatter: (t: number) => (daily() ? nyDate(t) : nyTime(t, range !== '1D').replace(/:00 /, ' ')) },
+    timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true, timeVisible: true, tickMarkMaxCharacterLength: 6, tickMarkFormatter: (t: number, type: TickMarkType) => cardTick(t, type, range) },
     localization: { timeFormatter: (t: number) => (daily() ? nyDate(t) : nyTime(t, true)), priceFormatter: (v: number) => formatPrice(v) },
     crosshair: { horzLine: { labelVisible: true }, vertLine: { labelVisible: false } },
     handleScroll: false,
