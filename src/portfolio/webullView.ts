@@ -127,7 +127,7 @@ type Synced = Portfolio & { id: string };
  * Saves Webull holdings as portfolios (helper request webull.sync), one per account: accountId() = that account
  * (saved even when empty: the owner chose it), '' = every stock account with something in it.
  */
-function syncButton(label: string, accountId: () => string, onSynced: (p: Synced) => void) {
+export function syncButton(label: string, accountId: () => string, onSynced: (p: Synced) => void) {
   const btn = h('button', { class: 'btn', title: 'Save the holdings as a portfolio per account so analysis and Dividends work on them' }, label) as HTMLButtonElement;
   btn.addEventListener('click', async () => {
     btn.disabled = true;
@@ -152,7 +152,7 @@ function syncButton(label: string, accountId: () => string, onSynced: (p: Synced
  * A small read-only Webull card for the Account page: balances and buying power per account, "Sync now", and a link to
  * the full Webull view (the only place with the order ticket). Draws nothing when Webull isn't set up.
  */
-export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio & { id: string }) => void, openFull: () => void, only?: string) {
+export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio & { id: string }) => void, openFull: () => void, only?: string, exclude: string[] = []) {
   let status: Snapshot;
   try {
     status = await loadSnapshot();
@@ -162,7 +162,7 @@ export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio
   if (!status.ok) return out.replaceChildren();
   const cards: HTMLElement[] = [];
   for (const a of status.accounts) {
-    if (only && a.id !== only) continue;
+    if ((only && a.id !== only) || exclude.includes(a.id)) continue;
     if (a.futures) {
       cards.push(await futuresCard(a.label, a.id, status.env));
       continue;

@@ -75,6 +75,17 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   random-walk check (100 block-shuffled histories). Only the owner's own symbols; cash shows as "Cash" (holdingLabel), not BIL.
   Account page (src/pages/accountPage.ts, #account): portfolios with Portfolio.mine (set by Import statement; unset = live
   Webull sync) merged by src/portfolio/account.ts, figures from dividends.portfolio + dividendsView; read-only (orders only in Webull view).
+  Gains (v33, src/portfolio/returns.ts): price gain (value − cost), dividends received, total return per account part,
+  holding, account and overall (totals/% only over holdings with a cost basis); View menu = day / gain as %, $ or both
+  (localStorage tp-account-display); holdings table has a Columns chooser and totals row; a symbol opens the detail.
+  Dividends received: dividends.portfolio `received` [{key portfolioId:SYMBOL, seen, purchaseDate, dividends...}] ->
+  method entered | statement (statement "Dividends received" column) | purchase | tracked | none, always labelled.
+  store.track_holdings keeps each share holding's `seen` log [{date, shares}] at every portfolio save (first seen,
+  then changes) and carries owner fields (purchaseDate, dividends*, rocPct, rocYear; null clears). Webull's OpenAPI has
+  a US-only /trading/activities/cash-activities/list but no documented types or fields, so it is not used.
+  Yield check (src/portfolio/yieldQuality.ts, yield > 6%): erosion = distribution yield − total return (market price,
+  not NAV); `dividends.history` (5y closes + dividends) feeds payoutCharts.ts (per-year earned vs paid-from-price
+  bars, $10,000 invested lines, src/portfolio/payoutSplit.ts). ROC is only what the owner enters (never estimated).
   Account risk/sectors/taxes (v30, follow the account switcher): engine/risk.py `risk.account` {holdings: symbol, value, kind}
   = 1y volatility, beta vs SPY, 1-day 95% historical VaR, max drawdown, per-holding vol/beta/riskShare from invest.closes
   (cash = zero risk; alts, <1y and stale histories left out) + sectors (SEC SIC -> 11 sectors, cached 30 days; only

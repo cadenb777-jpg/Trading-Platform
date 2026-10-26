@@ -179,10 +179,11 @@ def summarise(holdings, today):
 
 def total_return_stats(closes, divs):
     """1, 3 and 5-year total return (dividends reinvested on the ex-date; 3y/5y annualised) and price-only return from
-    [(date, close), ...] (oldest first) and {ex-date: cash per share}. None when the history is too short. Pure."""
+    [(date, close), ...] (oldest first) and {ex-date: cash per share}. None when the history is too short. Also
+    trSince/priceSince over the whole history given (sinceStart, sinceYears; yearly rates when it spans a year). Pure."""
     closes = [(d, float(c)) for d, c in closes if c]
     if len(closes) < 2:
-        return {f'{k}{y}y': None for k in ('tr', 'price') for y in (1, 3, 5)}
+        return {**{f'{k}{y}y': None for k in ('tr', 'price') for y in (1, 3, 5)}, 'trSince': None, 'priceSince': None, 'sinceStart': None, 'sinceYears': None}
     # Same rule as quant.price_matrix: a dividend counts on the first trading day on or after its ex-date.
     pending = sorted((d, a) for d, a in (divs or {}).items() if d > closes[0][0])
     index, j = [1.0], 0
@@ -202,6 +203,12 @@ def total_return_stats(closes, divs):
             continue
         tr, pr = index[-1] / index[start], closes[-1][1] / closes[start][1]
         out[f'tr{years}y'], out[f'price{years}y'] = tr ** (1 / years) - 1, pr ** (1 / years) - 1
+    # Since the first close we have (a fund's inception when its history is shorter than what was fetched):
+    # yearly rates from a year up, the plain change below a year (sinceYears says which).
+    span = (end - closes[0][0]).days / 365.25
+    tr, pr = index[-1] / index[0], closes[-1][1] / closes[0][1]
+    k = 1 / span if span >= 1 else 1
+    out.update(trSince=tr ** k - 1, priceSince=pr ** k - 1, sinceStart=closes[0][0].isoformat(), sinceYears=round(span, 2))
     return out
 
 
@@ -226,6 +233,86 @@ def weighted_total_return(holdings):
     if not value:
         return {'tr1y': None, 'price1y': None}
     return {k: sum(x['value'] * x[k] for x in have) / value for k in ('tr1y', 'price1y')}
+
+
+def _day(value):
+    try:
+        return dt.date.fromisoformat(str(value)[:10]) if value else None
+    except ValueError:
+        return None
+
+
+def received_dividends(divs, today, seen=None, purchase=None, base=None, base_as_of=None, base_source='entered'):
+    """Dividends one holding has paid the owner so far, and how that figure was found (`method`):
+    - 'entered' / 'statement': the owner's (or a statement's) total up to base_as_of, plus estimated payments after it;
+    - 'purchase': Yahoo dividends since the purchase date the owner typed;
+    - 'tracked': Yahoo dividends since the platform first saw the position (`seen`, the share log kept at each save);
+    - 'none': nothing to go on.
+    A payment counts when its ex-date is after the start (you must own the shares before the ex-date) and its estimated
+    pay date (ex-date + PAY_LAG_DAYS) has passed. Shares on an ex-date come from the share log: the last entry before
+    it, or the first entry for dates before the log starts. Pure, so it can be tested."""
+    log = []
+    for e in seen or []:
+        d = _day(e.get('date')) if isinstance(e, dict) else None
+        if d:
+            log.append((d, float(e.get('shares') or 0)))
+    log.sort(key=lambda t: t[0])
+    first_seen = log[0][0] if log else None
+    start = _day(purchase)
+    as_of = _day(base_as_of)
+    try:
+        base = float(base) if base not in (None, '') else None
+    except (TypeError, ValueError):
+        base = None
+    if base is not None:
+        method, start = (base_source if base_source in ('entered', 'statement') else 'entered'), as_of or today
+    elif start:
+        method = 'purchase'
+    elif first_seen:
+        method, start = 'tracked', first_seen
+    else:
+        return {'amount': None, 'method': 'none', 'since': None, 'base': None, 'estimated': None, 'firstSeen': None, 'payments': []}
+
+    def shares_on(day):
+        held = [s for d, s in log if d < day]
+        return held[-1] if held else (log[0][1] if log else 0.0)
+
+    payments = []
+    for ex, per in sorted((d, float(a)) for d, a in (divs or {}).items() if a and a > 0):
+        if ex <= start or ex + dt.timedelta(days=PAY_LAG_DAYS) > today:
+            continue
+        n = shares_on(ex)
+        if n > 0:
+            payments.append({'exDate': ex.isoformat(), 'perShare': per, 'shares': n, 'amount': round(per * n, 2)})
+    estimated = round(sum(p['amount'] for p in payments), 2)
+    return {'amount': round((base or 0) + estimated, 2), 'method': method, 'since': start.isoformat(),
+            'base': base, 'estimated': estimated, 'firstSeen': first_seen.isoformat() if first_seen else None, 'payments': payments}
+
+
+async def received(ctx, entries, today):
+    """{key: received_dividends} for the Account page's per-account holdings. Entries without a share log belong to
+    portfolios saved before tracking began: saving them once records today as the first-seen date."""
+    from . import store
+    entries = [e for e in entries[:600] if isinstance(e, dict) and e.get('key') and str(e.get('symbol') or '').strip()]
+    untracked = {str(e['portfolioId']) for e in entries if not e.get('seen') and e.get('portfolioId')}
+    logs = {}
+    for pid in untracked:
+        doc = store.get_doc('portfolios', pid)
+        if doc:
+            for x in store.save_doc('portfolios', doc).get('holdings') or []:
+                if isinstance(x, dict) and x.get('seen'):
+                    logs[(pid, str(x.get('symbol') or '').strip().upper())] = x['seen']
+    out = {}
+    for e in entries:
+        symbol = str(e['symbol']).strip().upper()
+        seen = e.get('seen') or logs.get((str(e.get('portfolioId')), symbol))
+        divs = await ctx.dividends(symbol)  # cached per symbol for a day
+        row = received_dividends(divs or {}, today, seen, e.get('purchaseDate'), e.get('dividends'), e.get('dividendsAsOf'),
+                                 e.get('dividendsSource') or 'entered')
+        if divs is None and row['method'] in ('purchase', 'tracked'):
+            row.update(amount=None, note='Dividend history unavailable')
+        out[str(e['key'])] = row
+    return out
 
 
 @handler('dividends.portfolio')
@@ -263,5 +350,34 @@ async def portfolio(ctx, msg):
             row.update(note='Dividend history unavailable', missing=True, forward=None, annualIncome=None, **{'yield': None, 'yieldOnCost': None})
         out.append({'symbol': symbol, 'name': (quotes.get(symbol) or {}).get('name') or '', 'shares': h['shares'], **row, **returns[symbol]})
     out.sort(key=lambda x: -(x['annualIncome'] or 0))
-    return {'holdings': out, 'missing': sum(1 for x in out if x.get('missing')), 'asOf': today.isoformat(), 'payLagDays': PAY_LAG_DAYS, **summarise(out, today),
-            'totalReturn': weighted_total_return(out)}
+    reply = {'holdings': out, 'missing': sum(1 for x in out if x.get('missing')), 'asOf': today.isoformat(), 'payLagDays': PAY_LAG_DAYS,
+             **summarise(out, today), 'totalReturn': weighted_total_return(out)}
+    if isinstance(msg.get('received'), list):  # v33: dividends received per account holding (Account page)
+        reply['received'] = await received(ctx, msg['received'], today)
+    return reply
+
+
+def payout_series(bars, divs, years=5):
+    """Daily closes [[YYYY-MM-DD, close], ...] for the last `years` years (plus a week, so the oldest 12-month window
+    has its start) and the dividends paid in that span [[ex-date, cash per share], ...], both oldest first. Pure."""
+    day = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).date()  # noqa: E731
+    closes = sorted((day(b['time']), float(b['close'])) for b in bars or [] if b.get('close'))
+    if not closes:
+        return {'closes': [], 'dividends': []}
+    start = closes[-1][0] - dt.timedelta(days=round(365.25 * years) + 7)
+    closes = [(d, c) for d, c in closes if d >= start]
+    return {'closes': [[d.isoformat(), round(c, 4)] for d, c in closes],
+            'dividends': [[d.isoformat(), float(a)] for d, a in sorted((divs or {}).items()) if closes[0][0] < d <= closes[-1][0] and a and a > 0]}
+
+
+@handler('dividends.history')
+async def history(ctx, msg):
+    """One holding's last 5 years of daily closes and dividends, for the Account page's "where the payout came from"
+    charts (the split itself is worked out in the browser, src/portfolio/payoutSplit.ts)."""
+    symbol = str(msg.get('symbol') or '').strip().upper()
+    if not symbol:
+        raise EngineError('Which symbol?')
+    bars, divs = await asyncio.gather(ctx.daily_bars(symbol, 6), ctx.dividends(symbol))
+    if divs is None:
+        raise EngineError(f'No dividend history for {symbol} right now. Try again later.')
+    return {'symbol': symbol, **payout_series(bars, divs)}

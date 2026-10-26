@@ -6,9 +6,11 @@ import { ColorType, type IChartApi } from 'lightweight-charts';
 
 export type ThemeName = 'dark' | 'light';
 
-const PALETTES: Record<ThemeName, { background: string; text: string; grid: string; border: string; up: string; down: string; accent: string }> = {
-  dark: { background: '#131722', text: '#d1d4dc', grid: '#1e222d', border: '#2a2e39', up: '#26a69a', down: '#ef5350', accent: '#2962ff' },
-  light: { background: '#ffffff', text: '#2a2f3a', grid: '#eef0f4', border: '#d6dbe3', up: '#26a69a', down: '#ef5350', accent: '#2962ff' },
+/** viz1-3: categorical series colours for multi-line charts (blue, orange, aqua; validated for colour-blind
+ * separation in each mode, same as --viz-1..3 in style.css). */
+const PALETTES: Record<ThemeName, { background: string; text: string; grid: string; border: string; up: string; down: string; accent: string; viz1: string; viz2: string; viz3: string }> = {
+  dark: { background: '#131722', text: '#d1d4dc', grid: '#1e222d', border: '#2a2e39', up: '#26a69a', down: '#ef5350', accent: '#2962ff', viz1: '#3987e5', viz2: '#d95926', viz3: '#199e70' },
+  light: { background: '#ffffff', text: '#2a2f3a', grid: '#eef0f4', border: '#d6dbe3', up: '#26a69a', down: '#ef5350', accent: '#2962ff', viz1: '#2a78d6', viz2: '#eb6834', viz3: '#1baf7a' },
 };
 
 const KEY = 'tp-theme';
