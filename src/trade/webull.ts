@@ -5,7 +5,9 @@
  * The safety flow lives in one place (confirmOrder): the helper previews the order (checks the limits and returns a
  * one-time token valid for 60 seconds), the window restates the exact order with the environment badge and a
  * countdown, and only its "Place order" button sends that token. Nothing places an order on its own; the Setups trade
- * guide only pre-fills the ticket (openOrderTicket).
+ * guide only pre-fills the ticket (openOrderTicket). Futures orders (helper 31+) use the same window with the contract,
+ * expiry, notional, tick value, margin and the loss to the protective stop, and a red line that futures can lose more
+ * than the money put in.
  */
 import { engineRequest } from '../data/schwab';
 import { statCards } from '../ui/charts';
@@ -32,6 +34,10 @@ export interface Balances {
   cash: number | null;
   buyingPower: number | null;
   marketValue?: number | null;
+  /** Futures account: open P/L in dollars, and the margin Webull reports (display only). */
+  openPnl?: number | null;
+  initMargin?: number | null;
+  maintMargin?: number | null;
 }
 export interface Position {
   symbol: string;
@@ -43,6 +49,8 @@ export interface Position {
   gain: number | null;
   dayGain?: number | null;
   type?: string;
+  /** Futures: dollars per one-point move of one contract (value and gain are then in dollars, qty < 0 = short). */
+  multiplier?: number | null;
 }
 export interface Order {
   orderId: string;
@@ -63,10 +71,16 @@ export interface WebullAccount {
   id: string;
   label: string;
   stocks?: boolean;
+  /** The Webull futures account (helper 31+): futures only, never stocks. */
+  futures?: boolean;
   retirement?: boolean;
 }
 /** The accounts the Trade page and the Webull view can show (older helpers: all of them). */
 export const stockAccounts = (accounts: WebullAccount[]) => accounts.filter((a) => a.stocks !== false);
+/** The futures account, when the owner has one and the helper knows about futures. */
+export const futuresAccount = (accounts: WebullAccount[]) => accounts.find((a) => a.futures === true) ?? null;
+export type Asset = 'stocks' | 'futures';
+export const FUTURES_WARNING = 'Futures can lose more than you put in.';
 export const IRA_NOTE = 'Retirement account (IRA): no margin and no short selling here; orders use the cash in the account.';
 
 /** webull.snapshot (helper v27): the status fields plus everything a view shows, in one request. */
@@ -90,6 +104,32 @@ export interface Snapshot {
   errors?: Record<string, string>;
   /** When the oldest section was fetched from Webull (unix seconds; the helper reuses answers for 20 s). */
   asOf?: number | null;
+  /** Which account kind this snapshot is for (helper 31+). */
+  asset?: Asset;
+  futuresEnabled?: boolean;
+  futuresLimits?: { maxContracts: number; maxPerDay: number };
+  placedContractsToday?: number | null;
+}
+interface FuturesPreview {
+  contract: string;
+  name: string;
+  expiry: string;
+  cutoff: string;
+  daysLeft: number;
+  notional: number;
+  tickValue: number;
+  tickSize: number;
+  multiplier: number;
+  lossToStop: number | null;
+  margin: number | null;
+  marginNote: string;
+  closing: boolean;
+  /** "Opens a new LONG position of 1 contract", "Closes 1 of your 2 contracts (LONG position)". */
+  effect?: string;
+  stopNote?: string;
+  buyingPowerNote?: string;
+  contractsToday: number;
+  limits: { maxContracts: number; maxPerDay: number };
 }
 interface Preview {
   token: string;
@@ -104,6 +144,7 @@ interface Preview {
   marketNote: string;
   limits: { maxOrder: number; maxPerDay: number };
   placedToday: number;
+  futures?: FuturesPreview;
 }
 export interface PlacedOrder {
   symbol: string;
@@ -113,6 +154,10 @@ export interface PlacedOrder {
   limitPrice?: number;
   stopPrice?: number;
   tif: 'DAY' | 'GTC';
+  /** 'futures': a contract (e.g. MESZ6) for the futures account. */
+  asset?: Asset;
+  /** Futures: the protective stop used only to show the loss to it (not placed with the order). */
+  protectStop?: number;
 }
 
 export const usd = (v: number | null | undefined) =>
@@ -131,19 +176,19 @@ export function friendly(err: unknown) {
 }
 
 /** Everything about one Webull account in one helper request (the helper paces and reuses Webull calls). */
-export function loadSnapshot(accountId?: string) {
-  return engineRequest<Snapshot>('webull.snapshot', accountId ? { accountId } : {}, 60000);
+export function loadSnapshot(accountId?: string, asset: Asset = 'stocks') {
+  return engineRequest<Snapshot>('webull.snapshot', { ...(accountId ? { accountId } : {}), ...(asset === 'futures' ? { asset } : {}) }, 60000);
 }
 
 /** Cancels an open order of that account after a plain confirm. Resolves true when the cancel was sent. */
-export async function cancelOrder(o: Order, accountId: string | undefined): Promise<boolean> {
+export async function cancelOrder(o: Order, accountId: string | undefined, asset: Asset = 'stocks'): Promise<boolean> {
   if (!accountId) {
     toast('The account for this order isn’t known yet. Refresh and try again.');
     return false;
   }
   if (!confirm(`Cancel the ${o.side.toLowerCase()} order for ${o.qty} ${o.symbol}?`)) return false;
   try {
-    await engineRequest('webull.cancel_order', { orderId: o.orderId, accountId }, 30000);
+    await engineRequest('webull.cancel_order', { orderId: o.orderId, accountId, ...(asset === 'futures' ? { asset } : {}) }, 30000);
     toast('Cancel sent');
     return true;
   } catch (err) {
@@ -205,16 +250,38 @@ export function confirmOrder(order: PlacedOrder, accountId: string, onPlaced: (o
         return;
       }
       const live = p.env === 'live';
+      if (order.asset === 'futures' && !p.futures) {
+        // never show a futures order without its contract figures (an older helper would have answered as a stock order)
+        content.replaceChildren(h('div', { class: 'ap-error' }, 'Your helper is too old for futures: download the project ZIP again to update it. Nothing was placed.'));
+        return;
+      }
+      const f = p.futures;
       content.replaceChildren(
         h('div', { class: 'wb-confirm-env' }, envBadge(p.env), h('span', { class: 'wb-confirm-acct' }, 'Account: ', h('b', {}, p.account))),
         live ? h('p', { class: 'wb-warning' }, 'This is a REAL order with real money.') : '',
+        f ? h('p', { class: 'wb-warning wb-fut-warning' }, FUTURES_WARNING) : '',
         p.retirement ? h('p', { class: 'muted small' }, IRA_NOTE) : '',
         h('p', { class: `wb-summary ${order.side === 'SELL' ? 'is-sell' : 'is-buy'}` }, p.summary),
-        statCards([
-          { label: 'Estimated value', value: usd(p.estimate.value), hint: 'Shares × price (limit, stop, or the last price for market orders)' },
-          { label: 'Last price', value: usd(p.estimate.last) },
-          { label: 'Orders today', value: `${p.placedToday} of ${p.limits.maxPerDay}`, hint: 'Every order sent today counts, even one that failed' },
-        ]),
+        f?.effect ? h('p', { class: 'wb-effect' }, h('b', {}, f.effect)) : '',
+        f
+          ? statCards([
+              { label: 'Contract', value: f.contract, hint: f.name },
+              { label: 'Expiry', value: f.expiry, hint: `Last trading day. New positions stop 2 trading days before ${f.cutoff} (${f.daysLeft} trading days left); closing is allowed to the last day.` },
+              { label: 'Contracts', value: String(order.qty), hint: f.closing ? 'Closing order (reduce only)' : 'Opening order (long only)' },
+              { label: 'Notional', value: usd(f.notional), hint: 'Price × multiplier × contracts: what the contracts control' },
+              { label: 'Tick value', value: usd(f.tickValue), hint: `One tick (${f.tickSize}) on one contract; multiplier ${f.multiplier}` },
+              { label: 'Initial margin', value: f.margin != null ? usd(f.margin) : 'Set by Webull', hint: f.margin != null ? 'Money Webull sets aside to open the position' : `${f.marginNote}: money Webull sets aside to open the position` },
+              { label: 'Max loss to stop', value: f.lossToStop != null ? usd(f.lossToStop) : 'No stop entered', hint: `${f.stopNote ?? 'Not placed: no stop order is sent. Place a stop separately.'} If the stop fills exactly; gaps can lose more.` },
+              { label: 'Last price', value: p.estimate.last != null ? String(p.estimate.last) : '—' },
+              { label: 'Contracts today', value: `${f.contractsToday} of ${f.limits.maxPerDay}`, hint: 'Every futures order sent today counts, even one that failed' },
+            ])
+          : statCards([
+              { label: 'Estimated value', value: usd(p.estimate.value), hint: 'Shares × price (limit, stop, or the last price for market orders)' },
+              { label: 'Last price', value: usd(p.estimate.last) },
+              { label: 'Orders today', value: `${p.placedToday} of ${p.limits.maxPerDay}`, hint: 'Every order sent today counts, even one that failed' },
+            ]),
+        f ? h('p', { class: 'wb-warn small' }, f.stopNote ?? 'Not placed: no stop order is sent. Place a stop separately.') : '',
+        f?.buyingPowerNote ? h('p', { class: 'muted small' }, f.buyingPowerNote) : '',
         h('p', { class: 'muted small' }, p.marketNote),
         ...p.warnings.map((w) => h('p', { class: 'wb-warn small' }, `⚠ ${w}`)),
       );

@@ -56,6 +56,9 @@ def public():
         'webullEnv': 'live' if data.get('webull_env') == 'live' else 'test',
         'webullMaxOrder': data.get('webull_max_order') or 1000,
         'webullMaxPerDay': data.get('webull_max_per_day') or 10,
+        'webullFutures': data.get('webull_futures_ok') is True,
+        'webullFuturesMaxContracts': data.get('webull_futures_max_contracts') or 1,
+        'webullFuturesMaxPerDay': data.get('webull_futures_max_per_day') or 3,
         'secContact': data.get('sec_contact', ''),
         'model': data.get('model') or DEFAULT_MODEL,
         'openBrowser': data.get('open_browser') is not False,
@@ -96,6 +99,7 @@ async def set_settings(ctx, msg):
             changes[name] = key
     if 'webullAppKey' in msg and 'webullAppSecret' in msg and not changes['webull_app_key'] and not changes['webull_app_secret']:
         changes['webull_env'], changes['webull_live_ok'] = 'test', False  # Remove: back to Test
+        changes['webull_futures_ok'] = False  # and futures trading off again
     if 'webullEnv' in msg:
         if msg['webullEnv'] == 'live':
             if msg.get('webullLiveConfirm') != 'LIVE':
@@ -121,6 +125,30 @@ async def set_settings(ctx, msg):
         if not 1 <= value <= 100:
             raise EngineError('Max orders per day must be between 1 and 100.')
         changes['webull_max_per_day'] = value
+    if 'webullFutures' in msg:
+        # Futures trading is a separate opt-in (on top of LIVE for real money): the owner types FUTURES to switch it on.
+        if msg['webullFutures'] is True:
+            if msg.get('webullFuturesConfirm') != 'FUTURES':
+                raise EngineError('Type FUTURES to switch on futures trading.')
+            changes['webull_futures_ok'] = True
+        elif msg['webullFutures'] is False:
+            changes['webull_futures_ok'] = False
+        else:
+            raise EngineError('Unknown futures setting')
+    for field, name, top, label in (('webullFuturesMaxContracts', 'webull_futures_max_contracts', 20, 'Max contracts per order'),
+                                    ('webullFuturesMaxPerDay', 'webull_futures_max_per_day', 50, 'Max contracts per day')):
+        if field in msg:
+            try:
+                value = int(msg[field])
+            except (TypeError, ValueError):
+                value = 0
+            if not 1 <= value <= top or isinstance(msg[field], bool):
+                raise EngineError(f'{label} must be between 1 and {top}.')
+            changes[name] = value
+    old_env = 'live' if load().get('webull_env') == 'live' else 'test'
+    if changes.get('webull_env', old_env) != old_env:
+        # A FUTURES typed in Test never carries over to Live (or back): switching environment turns futures off.
+        changes['webull_futures_ok'] = False
     if 'secContact' in msg:
         email = str(msg['secContact'] or '').strip()
         if email and ('@' not in email or ' ' in email):

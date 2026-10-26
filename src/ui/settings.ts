@@ -16,6 +16,10 @@ export interface PlatformSettings {
   webullEnv?: 'test' | 'live';
   webullMaxOrder?: number;
   webullMaxPerDay?: number;
+  /** Futures trading switched on (typed FUTURES; helper 31+) and its contract limits. */
+  webullFutures?: boolean;
+  webullFuturesMaxContracts?: number;
+  webullFuturesMaxPerDay?: number;
   secContact: string;
   model: string;
   models: { id: string; name: string }[];
@@ -207,6 +211,33 @@ function confirmLive(done: () => void) {
   });
 }
 
+/** Typed confirmation before futures trading is switched on. */
+function confirmFutures(done: () => void) {
+  const input = h('input', { class: 'input', placeholder: 'Type FUTURES', autocomplete: 'off', spellcheck: false, 'aria-label': 'Type FUTURES to confirm' }) as HTMLInputElement;
+  const go = h('button', { class: 'btn danger', disabled: true }, 'Enable futures trading') as HTMLButtonElement;
+  input.addEventListener('input', () => (go.disabled = input.value !== 'FUTURES'));
+  const close = openModal(
+    'Enable futures trading?',
+    h(
+      'div',
+      { class: 'settings' },
+      h('p', { class: 'wb-warning' }, 'Futures can lose more than you put in. A small price move on a full-size contract can cost thousands of dollars.'),
+      h('p', { class: 'muted small' }, 'Orders go only to your Webull futures account, one contract at a time by default, and every order still needs a preview and a confirm. Real money also needs Live (type LIVE). You can switch futures off at any time.'),
+      h('div', { class: 'ap-controls' }, input, go),
+    ),
+  );
+  go.addEventListener('click', async () => {
+    try {
+      await save({ webullFutures: true, webullFuturesConfirm: 'FUTURES' });
+      toast('Futures trading is on');
+      close();
+      done();
+    } catch (err) {
+      toast((err as Error).message);
+    }
+  });
+}
+
 /** Webull: the only place orders can be sent from. Keys, Test/Live (Live needs typed LIVE) and the order limits. */
 function webullRow(s: PlatformSettings, refresh: () => void): HTMLElement {
   const isSet = !!s.webullSet;
@@ -216,6 +247,9 @@ function webullRow(s: PlatformSettings, refresh: () => void): HTMLElement {
   const result = h('p', { class: 'muted small' });
   const maxOrder = h('input', { class: 'input', type: 'number', min: 1, step: 100, value: s.webullMaxOrder ?? 1000, 'aria-label': 'Max order value ($)' }) as HTMLInputElement;
   const maxDay = h('input', { class: 'input', type: 'number', min: 1, max: 100, step: 1, value: s.webullMaxPerDay ?? 10, 'aria-label': 'Max orders per day' }) as HTMLInputElement;
+  const futOn = !!s.webullFutures;
+  const futMax = h('input', { class: 'input', type: 'number', min: 1, max: 20, step: 1, value: s.webullFuturesMaxContracts ?? 1, 'aria-label': 'Max contracts per order' }) as HTMLInputElement;
+  const futDay = h('input', { class: 'input', type: 'number', min: 1, max: 50, step: 1, value: s.webullFuturesMaxPerDay ?? 3, 'aria-label': 'Max contracts per day' }) as HTMLInputElement;
   const test = async () => {
     result.textContent = 'Testing…';
     try {
@@ -328,6 +362,42 @@ function webullRow(s: PlatformSettings, refresh: () => void): HTMLElement {
         'Save limits',
       ),
     ),
+    s.webullFutures === undefined
+      ? ''
+      : h(
+          'div',
+          { class: 'settings-sub' },
+          h('div', { class: 'settings-label' }, h('b', {}, 'Futures trading'), futOn ? h('span', { class: 'badge down' }, 'ON') : h('span', { class: 'badge' }, 'OFF')),
+          h('p', { class: 'muted small' }, 'Off by default. When on, the Trade page can send futures orders to your Webull futures account only. Futures can lose more than you put in.'),
+          h(
+            'div',
+            { class: 'ap-controls' },
+            futOn
+              ? h('button', { class: 'btn', onclick: async () => (await save({ webullFutures: false }).catch((err) => toast((err as Error).message)), toast('Futures trading is off'), refresh()) }, 'Switch off futures trading')
+              : h('button', { class: 'btn danger', onclick: () => confirmFutures(refresh) }, 'Enable futures trading'),
+          ),
+          h(
+            'div',
+            { class: 'ap-controls' },
+            h('label', { class: 'wb-field' }, h('span', { class: 'muted tiny' }, 'Max contracts per order'), futMax),
+            h('label', { class: 'wb-field' }, h('span', { class: 'muted tiny' }, 'Max contracts per day'), futDay),
+            h(
+              'button',
+              {
+                class: 'btn',
+                onclick: async () => {
+                  try {
+                    await save({ webullFuturesMaxContracts: Number(futMax.value), webullFuturesMaxPerDay: Number(futDay.value) });
+                    toast('Futures limits saved');
+                  } catch (err) {
+                    toast((err as Error).message);
+                  }
+                },
+              },
+              'Save futures limits',
+            ),
+          ),
+        ),
   );
 }
 
