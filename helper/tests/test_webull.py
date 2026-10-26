@@ -44,6 +44,7 @@ class FakeWebull:
         self.delay = {}               # path -> seconds that request takes
         self.in_flight = self.max_in_flight = 0
         self.accounts = [{'account_id': 'ACC123456', 'account_number': '5MV12345', 'account_type': 'CASH'}]
+        self.contracts = {}           # futures root -> contracts/list rows
         self.by_account = {}          # account_id -> {'positions': [...], 'balances': {...}} (else the defaults)
 
     async def request(self, method, url, headers=None, content=None):
@@ -80,6 +81,8 @@ class FakeWebull:
             return Resp(200, {'token': 'tok-1', 'expires': 9999999999999, 'status': self.token_status})
         if p == '/auth/tokens/check':
             return Resp(200, {'token': 'tok-1', 'expires': 9999999999999, 'status': self.token_status})
+        if p == webull.CONTRACTS_PATH:
+            return Resp(200, self.contracts.get(parse_qs(u.query)['code'][0], []))
         if p == '/trading/accounts/list':
             return Resp(200, self.accounts)
         acct = self.by_account.get(parse_qs(u.query).get('account_id', [''])[0])
@@ -631,7 +634,8 @@ FIVE = [
 EMPTY = {'positions': [], 'balances': {'total_asset': '0', 'total_cash_balance': '0', 'account_currency_assets': [{'currency': 'USD', 'cash_balance': '0', 'buying_power': '0'}]}}
 
 
-class Accounts(Base):
+class FiveAccounts(Base):
+    """The owner's five accounts, two with stocks."""
     def setUp(self):
         super().setUp()
         self.fake.accounts = [dict(a) for a in FIVE]
@@ -642,6 +646,9 @@ class Accounts(Base):
                          'balances': {'total_asset': '6000', 'total_cash_balance': '1200', 'account_currency_assets': [{'currency': 'USD', 'cash_balance': '1200', 'buying_power': '1200'}]}},
             'CASH0001': EMPTY, 'MRGN0001': EMPTY,
         }
+
+
+class Accounts(FiveAccounts):
 
     def test_recent_buys_read_every_stock_account(self):
         r = run(webull.recent_buys(self.ctx))
@@ -654,7 +661,8 @@ class Accounts(Base):
 
     def test_labels_from_a_realistic_account_list(self):
         found = run(webull.accounts(self.ctx))
-        self.assertEqual([a['label'] for a in found], ['Traditional IRA ••5678', 'Roth IRA ••1234', 'Cash ••4444', 'Margin ••3333', 'Futures ••2222 (view not supported yet)'])
+        self.assertEqual([a['label'] for a in found], ['Traditional IRA ••5678', 'Roth IRA ••1234', 'Cash ••4444', 'Margin ••3333', 'Futures ••2222'])
+        self.assertEqual([a['futures'] for a in found], [False, False, False, False, True])
         self.assertEqual([a['stocks'] for a in found], [True, True, True, True, False])
         self.assertEqual([a['retirement'] for a in found], [True, True, False, False, False])
 
@@ -677,7 +685,7 @@ class Accounts(Base):
         first = run(webull.snapshot(self.ctx, {}))  # none named: the first stock account
         self.assertEqual(first['accountId'], 'TRAD0001')
 
-    def test_futures_account_is_listed_but_never_read_or_traded(self):
+    def test_futures_account_is_never_read_or_traded_as_a_stock_account(self):
         with self.assertRaises(core.EngineError) as e:
             run(webull.snapshot(self.ctx, {'accountId': 'FUT00001'}))
         self.assertIn('only US stock accounts', str(e.exception))
@@ -758,6 +766,238 @@ class Accounts(Base):
         run(webull.place_order(self.ctx, {'token': p['token']}))
         placed = [c for c in self.fake.calls if c['path'] == '/trading/orders/place'][-1]
         self.assertEqual(placed['body']['account_id'], 'ROTH0001')
+
+
+def contract_row(symbol, days, size='5.0000000000', tick='0.2500000000', status='OC', notice_days=None, month='202612'):
+    """A contracts/list row shaped like Webull's own reply (ES/MNQ/CL contracts, read with the Webull connector)."""
+    import datetime as dt
+    today = dt.datetime.now(webull.NEW_YORK).date()
+    row = {'symbol': symbol, 'code': symbol[:-2], 'name': f'{symbol} contract', 'currency': 'USD', 'size': size, 'unit': 1, 'settlement': 'CASH',
+           'status': status, 'instrument_id': '470001588', 'exchange_code': 'XCME', 'contract_month': month,
+           'settlement_date': (today + dt.timedelta(days=days)).isoformat(), 'min_tick': tick,
+           'last_trading_date': (today + dt.timedelta(days=days)).isoformat(), 'contract_type': 'MONTHLY'}
+    if notice_days is not None:
+        row['first_notice_date'] = (today + dt.timedelta(days=notice_days)).isoformat()
+    return row
+
+
+FUT = {'symbol': 'MESZ6', 'side': 'BUY', 'qty': 1, 'orderType': 'LIMIT', 'limitPrice': 5000.25, 'tif': 'DAY', 'asset': 'futures', 'accountId': 'FUT00001'}
+FUT_BAL = {'total_asset_currency': 'USD', 'total_net_liquidation_value': '8000.00', 'total_cash_balance': '8000.00', 'total_unrealized_profit_loss': '0.00',
+           'account_currency_assets': [{'currency': 'USD', 'net_liquidation_value': '8000.00', 'cash_balance': '8000.00', 'buying_power': '6000.00',
+                                        'unrealized_profit_loss': '0.00', 'init_margin': '0.00', 'maintenance_margin': '0.00'}]}
+ON = {**KEYS, 'webull_futures_ok': True}
+
+
+class Futures(FiveAccounts):
+    def setUp(self):
+        super().setUp()
+        self.fake.contracts = {'MES': [contract_row('MESZ6', 40), contract_row('MESH7', 130, month='202703')],
+                               'CL': [contract_row('CLZ6', 1, size='1000', tick='0.01'), contract_row('CLF7', 30, size='1000', tick='0.01', notice_days=2, month='202701')]}
+        self.fake.by_account['FUT00001'] = {'positions': [], 'balances': dict(FUT_BAL)}
+        settings._cache = dict(ON)
+        price = mock.patch.object(webull, 'futures_price', mock.AsyncMock(return_value=5000.0))
+        price.start()
+        self.addCleanup(price.stop)
+
+    def fpreview(self, **changes):
+        return run(webull.preview_order(self.ctx, {**FUT, **changes}))
+
+    def place(self, p):
+        return run(webull.place_order(self.ctx, {'token': p['token']}))
+
+    def test_contracts_and_front_month(self):
+        r = run(webull.futures_contracts_handler(self.ctx, {'root': 'mes'}))
+        self.assertEqual(r['front'], 'MESZ6')
+        c = r['contracts'][0]
+        self.assertEqual((c['multiplier'], c['tick'], c['tickValue'], c['schwab']), (5.0, 0.25, 1.25, '/MESZ26'))
+        cl = run(webull.futures_contracts_handler(self.ctx, {'root': 'CL'}))
+        self.assertEqual(cl['front'], None)  # CLZ6 expires tomorrow, CLF7's first notice is in 2 days: neither can be traded
+        self.assertEqual(cl['contracts'][1]['daysLeft'], 2)
+
+    def test_missing_contract_fields_fail_closed(self):
+        for key in ('size', 'min_tick', 'last_trading_date'):
+            row = contract_row('MESZ6', 40)
+            row.pop(key)
+            with self.assertRaises(core.EngineError):
+                webull.contract_info(row)
+
+    def test_preview_then_place_signed_body_matches_the_sdk(self):
+        p = self.fpreview(protectStop=4990)
+        f = p['futures']
+        self.assertEqual((f['notional'], f['tickValue'], f['multiplier'], f['lossToStop'], f['margin'], f['marginNote']),
+                         (25001.25, 1.25, 5.0, 51.25, None, 'Set by Webull; check buying power'))
+        self.assertEqual(p['account'], 'Futures ••2222')
+        self.place(p)
+        sent = next(c for c in self.fake.calls if c['path'] == '/trading/orders/place')
+        order = sent['body']['new_orders'][0]
+        # the keys of samples/trade/trade_client_v3.py "normal futures order" (webull-openapi-python-sdk 3.0.4), nothing else
+        self.assertEqual(set(order), {'combo_type', 'client_order_id', 'symbol', 'instrument_type', 'market', 'order_type', 'limit_price', 'quantity', 'side',
+                                      'time_in_force', 'entrust_type'})
+        self.assertEqual({k: order[k] for k in order if k != 'client_order_id'},
+                         {'combo_type': 'NORMAL', 'symbol': 'MESZ6', 'instrument_type': 'FUTURES', 'market': 'US', 'order_type': 'LIMIT', 'limit_price': '5000.25',
+                          'quantity': '1', 'side': 'BUY', 'time_in_force': 'DAY', 'entrust_type': 'QTY'})
+        self.assertEqual(sent['body']['account_id'], 'FUT00001')
+        self.assertEqual(sent['headers']['category'], 'US_FUTURES')  # market + "_" + instrument_type (place_order_request.py)
+        # the signature covers exactly the body that was sent (same signing as the SDK-checked stock requests)
+        text = json.dumps(sent['body'], ensure_ascii=False, separators=(',', ':'))
+        again = webull.sign(sent['host'], sent['path'], {}, text, KEYS['webull_app_key'], KEYS['webull_app_secret'],
+                            timestamp=sent['headers']['x-timestamp'], nonce=sent['headers']['x-signature-nonce'])
+        self.assertEqual(again['x-signature'], sent['headers']['x-signature'])
+        attempt = next(e for e in self.log() if e['result'] == 'attempt')
+        self.assertEqual((attempt['asset'], attempt['contracts']), ('futures', 1))
+
+    def test_stop_order_body_uses_webulls_stop_name(self):
+        p = self.fpreview(orderType='STOP_LIMIT', stopPrice=5010, limitPrice=5010.5, side='BUY')
+        self.place(p)
+        order = next(c for c in self.fake.calls if c['path'] == '/trading/orders/place')['body']['new_orders'][0]
+        self.assertEqual((order['order_type'], order['stop_price'], order['limit_price']), ('STOP_LOSS_LIMIT', '5010', '5010.5'))
+
+    def test_without_the_futures_opt_in_refused(self):
+        settings._cache = dict(KEYS)
+        with self.assertRaisesRegex(core.EngineError, 'type FUTURES'):
+            self.fpreview()
+        settings._cache = dict(ON)
+        p = self.fpreview()
+        settings._cache = dict(KEYS)  # switched off between preview and place
+        with self.assertRaisesRegex(core.EngineError, 'switched off'):
+            self.place(p)
+        self.assertNotIn('/trading/orders/place', self.fake.paths())
+        self.assertEqual(self.log()[-1]['reason'], 'futures not enabled')
+
+    def test_opt_in_needs_typed_futures(self):
+        settings._cache = dict(KEYS)
+        for bad in ({'webullFutures': True}, {'webullFutures': True, 'webullFuturesConfirm': 'futures'}, {'webullFutures': 'yes'}):
+            with self.assertRaises(core.EngineError):
+                run(settings.set_settings(mock.Mock(), bad))
+        self.assertFalse(webull.futures_enabled())
+        out = run(settings.set_settings(mock.Mock(), {'webullFutures': True, 'webullFuturesConfirm': 'FUTURES'}))
+        self.assertTrue(out['webullFutures'] and webull.futures_enabled())
+        run(settings.set_settings(mock.Mock(), {'webullAppKey': '', 'webullAppSecret': ''}))  # Remove keys: futures off too
+        self.assertFalse(webull.futures_enabled())
+
+    def test_live_needs_both_opt_ins(self):
+        settings._cache = {**KEYS, 'webull_env': 'live', 'webull_live_ok': True}  # LIVE typed, FUTURES not
+        with self.assertRaisesRegex(core.EngineError, 'type FUTURES'):
+            self.fpreview()
+        settings._cache = {**ON, 'webull_env': 'live'}  # FUTURES typed, LIVE not (settings.json edited by hand)
+        p = self.fpreview()
+        with self.assertRaisesRegex(core.EngineError, 'Live trading is not switched on'):
+            self.place(p)
+        self.assertNotIn('/trading/orders/place', self.fake.paths())
+        settings._cache = {**ON, 'webull_env': 'live', 'webull_live_ok': True}
+        self.assertTrue(self.place(self.fpreview())['placed'])
+        self.assertEqual(self.fake.calls[-1]['host'], 'api.webull.com')
+
+    def test_contract_limits(self):
+        with self.assertRaisesRegex(core.EngineError, 'maximum of 1 per order'):
+            self.fpreview(qty=2)
+        settings._cache = {**ON, 'webull_futures_max_contracts': 2, 'webull_futures_max_per_day': 3}
+        self.place(self.fpreview(qty=2))
+        with self.assertRaisesRegex(core.EngineError, 'daily maximum of 3'):
+            self.fpreview(qty=2)
+        self.place(self.fpreview(qty=1))
+        self.assertEqual(webull.placed_contracts_today(), 3)
+        with self.assertRaisesRegex(core.EngineError, 'daily maximum'):
+            self.fpreview(qty=1)
+
+    def test_daily_contracts_come_from_the_log_and_a_bad_line_refuses(self):
+        p = self.fpreview()
+        with webull.ORDERS_LOG.open('a') as f:  # three contracts sent earlier today (e.g. another window)
+            f.write(json.dumps({'time': webull.dt.datetime.now(webull.dt.timezone.utc).isoformat(), 'env': 'test', 'action': 'place', 'result': 'attempt',
+                                'asset': 'futures', 'contracts': 3}) + '\n')
+        with self.assertRaisesRegex(core.EngineError, 'daily maximum of 3'):
+            self.place(p)  # checked again at place, from the log
+        with webull.ORDERS_LOG.open('a') as f:
+            f.write(json.dumps({'time': webull.dt.datetime.now(webull.dt.timezone.utc).isoformat(), 'env': 'test', 'action': 'place', 'result': 'attempt',
+                                'asset': 'futures'}) + '\n')  # no contract count: unknown total
+        with self.assertRaisesRegex(core.EngineError, 'can’t be read'):
+            webull.placed_contracts_today()
+
+    def test_near_expiry_refused(self):
+        with self.assertRaisesRegex(core.EngineError, 'Roll to the next contract'):
+            self.fpreview(symbol='CLZ6', limitPrice=60.5)
+        with self.assertRaisesRegex(core.EngineError, 'Roll to the next contract'):  # first notice in 2 days
+            self.fpreview(symbol='CLF7', limitPrice=60.5)
+        self.assertNotIn('/trading/orders/preview', self.fake.paths())
+
+    def test_closing_beyond_position_refused(self):
+        self.fake.by_account['FUT00001']['positions'] = [{'symbol': 'MESZ6', 'quantity': '1', 'cost_price': '4990', 'last_price': '5000', 'instrument_type': 'FUTURES'}]
+        settings._cache = {**ON, 'webull_futures_max_contracts': 5, 'webull_futures_max_per_day': 10}
+        with self.assertRaisesRegex(core.EngineError, 'close at most 1'):
+            self.fpreview(side='SELL', qty=2)
+        self.assertTrue(self.fpreview(side='SELL', qty=1)['futures']['closing'])
+        self.fake.by_account['FUT00001']['positions'][0]['quantity'] = '-2'  # short 2: buys close
+        with self.assertRaisesRegex(core.EngineError, 'close at most 2'):
+            self.fpreview(side='BUY', qty=3)
+        self.fake.open_orders = [{'client_order_id': 'f1', 'orders': [{'symbol': 'MESZ6', 'side': 'BUY', 'quantity': '1', 'order_type': 'LIMIT', 'limit_price': '4900',
+                                                                        'time_in_force': 'GTC', 'status': 'SUBMITTED'}]}]
+        with self.assertRaisesRegex(core.EngineError, 'close at most 1'):  # one buy already working
+            self.fpreview(side='BUY', qty=2)
+
+    def test_no_buying_power_refuses_opening(self):
+        self.fake.by_account['FUT00001']['balances'] = {**FUT_BAL, 'account_currency_assets': [{'currency': 'USD', 'cash_balance': '0', 'buying_power': '0.00'}]}
+        with self.assertRaisesRegex(core.EngineError, 'no buying power'):
+            self.fpreview()
+        self.fake.by_account['FUT00001']['balances'] = {**FUT_BAL, 'account_currency_assets': [{'currency': 'USD', 'cash_balance': '0'}]}  # missing: fail closed
+        with self.assertRaisesRegex(core.EngineError, 'no buying power'):
+            self.fpreview()
+
+    def test_webull_refusal_at_preview_refuses(self):
+        real = self.fake.request
+
+        async def refusing(method, url, headers=None, content=None):
+            if '/trading/orders/preview' in url:
+                self.fake.calls.append({'path': '/trading/orders/preview', 'query': {}, 'body': None, 'headers': {}})
+                return Resp(417, {'message': 'Insufficient buying power'})
+            return await real(method, url, headers, content)
+        self.fake.request = refusing
+        with self.assertRaisesRegex(core.EngineError, 'Insufficient buying power'):
+            self.fpreview()
+        self.assertEqual(webull._previews, {})
+
+    def test_stock_orders_never_go_to_the_futures_account_and_back(self):
+        with self.assertRaises(core.EngineError):
+            run(webull.preview_order(self.ctx, {**ORDER, 'accountId': 'FUT00001'}))  # a stock order to the futures account
+        with self.assertRaisesRegex(core.EngineError, 'futures account'):
+            self.fpreview(accountId='ROTH0001')  # a futures order to a stock account
+        with self.assertRaises(core.EngineError):
+            run(webull.preview_order(self.ctx, {**ORDER, 'symbol': 'MESZ6', 'accountId': 'ROTH0001'}))  # a contract as a stock symbol
+        self.assertNotIn('/trading/orders/preview', self.fake.paths())
+
+    def test_timeout_is_unknown_and_looked_up(self):
+        p = self.fpreview()
+        self.fake.place_fails = 'timeout'
+        with self.assertRaisesRegex(core.EngineError, 'couldn.t confirm'):
+            self.place(p)
+        self.assertEqual([e['result'] for e in self.log()], ['attempt', 'unknown'])
+        self.assertIn('/trading/orders/get', self.fake.paths())
+        self.fake.lookup_finds = True
+        self.assertTrue(self.place(self.fpreview())['placed'])
+
+    def test_token_is_single_use_and_takes_nothing_else(self):
+        p = self.fpreview()
+        with self.assertRaisesRegex(core.EngineError, 'only the preview token'):
+            run(webull.place_order(self.ctx, {'token': p['token'], 'qty': 5}))
+        with self.assertRaises(core.EngineError):
+            self.place(p)
+        p = self.fpreview()
+        self.place(p)
+        with self.assertRaises(core.EngineError):
+            self.place(p)
+        self.assertEqual(len([c for c in self.fake.calls if c['path'] == '/trading/orders/place']), 1)
+
+    def test_snapshot_balances_positions_in_dollars(self):
+        self.fake.by_account['FUT00001']['positions'] = [{'symbol': 'MESZ6', 'quantity': '2', 'cost_price': '4990', 'last_price': '5000', 'instrument_type': 'FUTURES'}]
+        snap = run(webull.snapshot(self.ctx, {'asset': 'futures'}))
+        self.assertEqual((snap['asset'], snap['accountId'], snap['account']), ('futures', 'FUT00001', 'Futures ••2222'))
+        self.assertEqual((snap['balances']['value'], snap['balances']['buyingPower'], snap['balances']['openPnl']), (8000.0, 6000.0, 0.0))
+        pos = snap['positions'][0]
+        self.assertEqual((pos['multiplier'], pos['gain'], pos['value']), (5.0, 100.0, 50000.0))  # (5000-4990) x 2 x 5; 5000 x 2 x 5
+        self.assertTrue(all(c['query'].get('account_id') in (None, 'FUT00001') for c in self.fake.calls))
+
+    def test_cancel_in_the_futures_account(self):
+        run(webull.cancel_order(self.ctx, {'orderId': 'f1', 'accountId': 'FUT00001', 'asset': 'futures'}))
+        self.assertEqual(self.fake.calls[-1]['body'], {'account_id': 'FUT00001', 'client_order_id': 'f1'})
 
 
 class Isolation(unittest.TestCase):

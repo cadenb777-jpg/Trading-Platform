@@ -6151,6 +6151,21 @@ a.btn {
   .tr-stats { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
   .tr-updated { display: none; }
 }
+/* futures on the Trade page */
+.tr-grid > [hidden] { display: none; }
+.tr-grid.tr-futures { grid-template-columns: minmax(0, 1fr) 360px; grid-template-areas: 'lists ticket'; }
+.tr-asset:empty { display: none; }
+.tk-fut-pick { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: var(--sp-2); }
+.tk-fut-pick .input { min-width: 0; }
+.tk-quick .chip.active { background: var(--accent-soft); border-color: var(--accent-border); color: var(--text-strong); }
+.tk-fut-grid { display: flex; flex-wrap: wrap; gap: 2px var(--sp-3); font-size: var(--fs-sm); }
+.tk-fut-grid > :first-child { flex-basis: 100%; }
+.tk-optin:empty { display: none; }
+.tk-optin-box { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--sp-2); border: 1px solid var(--warn-border); background: var(--warn-soft); border-radius: var(--radius); padding: 8px 10px; }
+.wb-fut-warning { margin: 0 0 var(--sp-2); }
+@media (max-width: 900px) {
+  .tr-grid.tr-futures { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'ticket' 'lists'; }
+}
 .tr-stale { border: 1px solid var(--warn-border); background: var(--warn-soft); color: var(--warn-text); border-radius: var(--radius); padding: 8px 10px; }
 
 /* Portfolio optimiser */

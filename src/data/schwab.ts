@@ -12,7 +12,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 30;
+export const LATEST_HELPER_VERSION = 31;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -432,6 +432,7 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'alts.latest_private': 10 * 60_000,
   'risk.account': 5 * 60_000,
   'tax.account': 60_000,
+  'webull.futures_contracts': 20_000,
 };
 const engineCache = new Map<string, { at: number; value: Promise<unknown> }>();
 

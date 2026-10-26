@@ -1,12 +1,15 @@
 """
-Webull: view and sync the owner's Webull account, and place stock orders. This is the platform's ONLY order placement
+Webull: view and sync the owner's Webull account, and place stock and futures orders. This is the platform's ONLY order placement
 (Schwab stays market-data only). Every safety rail lives here in the helper, so the web page can't skip one:
 
 - Test environment by default. Live (real money) is only used after the owner types LIVE in Settings.
 - Two steps for every order: webull.preview_order checks it and returns a one-time token valid for 60 seconds;
   webull.place_order takes only that token and places exactly the previewed order, once.
 - Limits from Settings: a maximum order value (default $1,000) and a maximum number of orders a day (default 10).
-- US stocks only (no options); sells can't be larger than the position (no short selling).
+- US stocks only in stock accounts (no options); sells can't be larger than the position (no short selling).
+- Futures only in the futures account, and only after a separate opt-in (the owner types FUTURES in Settings, on top
+  of LIVE for real money). Max contracts per order (default 1) and per day (default 3); no contract within 2 days of
+  its last trade / first notice; closing orders can't be larger than the position. See "Futures" below.
 - Every placement attempt, result and cancel is appended to ~/.trading-platform/orders.log (never keys or tokens).
 - The AI assistant has no access: engine/ai.py must never mention this module (a test checks).
 
@@ -28,6 +31,7 @@ import re
 import secrets
 import time
 import uuid
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo
@@ -432,14 +436,15 @@ def account_info(row):
     cls = str(row.get('account_class') or '').strip().upper()
     typ = str(row.get('account_type') or '').strip().upper()
     label = row.get('account_label').strip() if isinstance(row.get('account_label'), str) else ''
+    futures = cls == 'FUTURES'  # Webull's US futures account (webull-openapi-mcp region_config.py: "futures": {"FUTURES"})
     if cls in CLASS_NAMES:
         name, stocks = CLASS_NAMES[cls], cls in STOCK_CLASSES
     else:
         stocks = not cls and typ in ACCOUNT_TYPES  # an unknown class is never treated as a stock account
         name = label or ACCOUNT_TYPES.get(typ) or (cls or typ).replace('_', ' ').title() or 'Account'
     number = str(row.get('account_number') or row['account_id'])
-    shown = f"{name} ••{number[-4:]}" + ('' if stocks else f' ({NOT_SUPPORTED})')
-    return {'id': str(row['account_id']), 'label': shown, 'name': name, 'stocks': stocks, 'retirement': 'IRA' in (cls or name.upper()),
+    shown = f"{name} ••{number[-4:]}" + ('' if stocks or futures else f' ({NOT_SUPPORTED})')
+    return {'id': str(row['account_id']), 'label': shown, 'name': name, 'stocks': stocks, 'futures': futures, 'retirement': 'IRA' in (cls or name.upper()),
             'managed': cls.startswith('MANAGED_')}
 
 
@@ -452,13 +457,25 @@ async def _fetch_accounts(ctx):
     return [account_info(a) for a in _list(await _call(ctx, 'GET', '/trading/accounts/list'), 'accounts')]
 
 
-async def _account(ctx, msg):
-    """The chosen account; the first stock account when none is named. Refuses an id that isn't the owner's, and
-    an account that isn't a US stock account (futures, crypto: not supported yet)."""
+def _asset(msg):
+    """'futures' when the request is about the futures account, else 'stocks' (the default, as before)."""
+    return 'futures' if msg.get('asset') == 'futures' else 'stocks'
+
+
+async def _account(ctx, msg, asset='stocks'):
+    """The chosen account; the first stock account (or the futures account) when none is named. Refuses an id that
+    isn't the owner's, a non-stock account for stocks and anything but the futures account for futures."""
     found = await accounts(ctx)
     if not found:
         raise EngineError('Webull returned no accounts for these keys.')
     wanted = str(msg.get('accountId') or '')
+    if asset == 'futures':
+        for a in found:
+            if (a['id'] == wanted) if wanted else a.get('futures'):
+                if not a.get('futures'):
+                    raise EngineError(f"{a['label']}: futures can only be viewed and traded in your Webull futures account.")
+                return a
+        raise EngineError('That account is not one of yours on Webull.' if wanted else 'None of your Webull accounts is a futures account.')
     if not wanted:
         stock = [a for a in found if a['stocks']]
         if not stock:
@@ -473,7 +490,7 @@ async def _account(ctx, msg):
 
 
 async def _account_id(ctx, msg):
-    return (await _account(ctx, msg))['id']
+    return (await _account(ctx, msg, _asset(msg)))['id']
 
 
 async def balances(ctx, account_id):
@@ -601,15 +618,32 @@ def placed_today(environment=None):
     """Orders sent (or attempted) through the platform today, New York date, in this environment, from orders.log.
     Every attempt counts, whatever its result, so two confirm windows can't both get under the daily limit.
     An unreadable log refuses (EngineError): the count must never silently read as 0."""
+    return len(_attempts_today(environment))
+
+
+def placed_contracts_today(environment=None):
+    """Futures contracts in orders sent (or attempted) today, from orders.log (same rules as placed_today). An
+    attempt line without a readable contract count refuses: the total must never read low."""
+    total = 0
+    for e in _attempts_today(environment):
+        if e.get('asset') == 'futures':
+            n = e.get('contracts')
+            if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+                raise EngineError(LOG_UNREADABLE)
+            total += n
+    return total
+
+
+def _attempts_today(environment=None):
     environment = environment or env()
     today = dt.datetime.now(NEW_YORK).date()
     try:
         lines = ORDERS_LOG.read_text(encoding='utf-8').splitlines()
     except FileNotFoundError:
-        return 0
+        return []
     except (OSError, UnicodeDecodeError) as err:
         raise EngineError(LOG_UNREADABLE) from err
-    count = 0
+    found = []
     for line in lines:
         if not line.strip():
             continue
@@ -619,8 +653,8 @@ def placed_today(environment=None):
         except (ValueError, KeyError, TypeError, AttributeError) as err:
             raise EngineError(LOG_UNREADABLE) from err
         if e.get('action') == 'place' and e.get('result') == 'attempt' and e.get('env') == environment and when == today:
-            count += 1
-    return count
+            found.append(e)
+    return found
 
 
 # ---------- checking an order ----------
@@ -748,10 +782,330 @@ def check(order, last, held, today_count, lim):
     return value, warnings, note
 
 
+# ---------- futures ----------
+#
+# Sources (read, never run): Webull's official SDK webull-openapi-python-sdk 3.0.4 and MCP server webull-openapi-mcp
+# 1.2.5.
+# - Orders: the same /trading/orders/preview and /place (v3) as stocks, one order in new_orders with combo_type NORMAL,
+#   instrument_type FUTURES, market US, symbol (the contract, e.g. ESZ5), side, order_type MARKET/LIMIT/STOP_LOSS/
+#   STOP_LOSS_LIMIT, time_in_force, quantity, entrust_type QTY, client_order_id, limit_price/stop_price as strings
+#   (samples/trade/trade_client_v3.py "normal futures order"; webull_openapi_mcp/tools/trading/futures_order.py
+#   _build_futures_order). Header category = market + "_" + instrument_type = US_FUTURES
+#   (webull/trade/request/v3/place_order_request.py add_custom_headers_from_order). Cancel, order detail, open orders
+#   and history are the same calls as stocks (trade_client_v3.py "futures order cancel/detail/open orders/history").
+# - Account: account_class FUTURES (webull_openapi_mcp/region_config.py asset_type_account_classes "futures").
+# - Contracts: GET /trading/instruments/futures/contracts/list (v3) with category US_FUTURES and code (the root, e.g.
+#   ES) (webull/data/request/get_futures_instruments_request.py; status OC = tradable, CO = liquidate only, NT = not
+#   tradable per webull_openapi_mcp/tools/trading/instrument.py). Neither package lists the reply fields; the names
+#   used (symbol, code, name, size = contract multiplier, min_tick, last_trading_date, first_notice_date,
+#   settlement_date, contract_month, status) are from Webull's own reply for ES/MNQ/CL contracts. A missing size,
+#   min_tick or last_trading_date refuses the contract.
+# - Balances: total_cash_balance, total_net_liquidation_value, total_unrealized_profit_loss and per-currency
+#   buying_power (webull_openapi_mcp/formatters.py format_account_balance). init_margin and maintenance_margin are in
+#   Webull's real futures balance reply but in neither package: shown when present, never used for a decision.
+# - Positions: symbol, quantity, cost_price, last_price, unrealized_profit_loss (formatters.py format_positions). How a
+#   short futures position is reported isn't documented: a negative quantity is read as short, anything else as long.
+# - The preview reply's fields aren't documented (format_order_preview prints whatever comes back), so no margin
+#   figure is read from it: the window says initial margin is set by Webull. A Webull refusal (for example not enough
+#   buying power) comes back as an error and the order is refused.
+# Prices to check orders come from Schwab (Webull futures quotes need a paid market-data subscription).
+
+FUTURES_CATEGORY = 'US_FUTURES'
+CONTRACTS_PATH = '/trading/instruments/futures/contracts/list'
+ROOT = re.compile(r'^[A-Z0-9]{1,4}$')
+CONTRACT = re.compile(r'^([A-Z0-9]{1,4})([FGHJKMNQUVXZ])(\d)$')
+#: A contract this many days (or fewer) before its last trading day or first notice day can't be traded here.
+EXPIRY_DAYS = 2
+DEFAULT_FUT_MAX_CONTRACTS = 1
+DEFAULT_FUT_MAX_PER_DAY = 3
+FUTURES_OFF = 'Futures trading is switched off. Turn it on in Settings > Webull (type FUTURES) first.'
+MARGIN_NOTE = 'Set by Webull; check buying power'
+
+
+def futures_enabled():
+    return settings.get('webull_futures_ok') is True
+
+
+def futures_limits():
+    def whole(key, default):
+        try:
+            v = int(settings.get(key) or default)
+        except (TypeError, ValueError):
+            v = default
+        return v if v >= 1 else default
+    return {'maxContracts': whole('webull_futures_max_contracts', DEFAULT_FUT_MAX_CONTRACTS),
+            'maxPerDay': whole('webull_futures_max_per_day', DEFAULT_FUT_MAX_PER_DAY)}
+
+
+def _today():
+    return dt.datetime.now(NEW_YORK).date()
+
+
+def _date(value):
+    try:
+        return dt.date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def _decimal_text(value):
+    """A number as a plain decimal string, as webull_openapi_mcp formatters.format_decimal sends it ("5000.25")."""
+    return f'{Decimal(str(value)).normalize():f}'
+
+
+def contract_info(row, today=None):
+    """One contracts/list row in plain words. Missing multiplier, tick or last trading day -> refused (FORMAT)."""
+    if not isinstance(row, dict):
+        raise EngineError(FORMAT)
+    symbol, code = row.get('symbol'), row.get('code')
+    if not (isinstance(symbol, str) and isinstance(code, str) and symbol.startswith(code)):
+        raise EngineError(FORMAT)
+    size, tick = _need(row, 'size'), _need(row, 'min_tick')
+    last_trade = _date(row.get('last_trading_date'))
+    if size <= 0 or tick <= 0 or last_trade is None:
+        raise EngineError(FORMAT)
+    # the earliest of last trading day, first notice day (physically delivered contracts) and settlement day
+    cutoff = min(d for d in (last_trade, _date(row.get('first_notice_date')), _date(row.get('settlement_date'))) if d)
+    days = (cutoff - (today or _today())).days
+    month = str(row.get('contract_month') or '')
+    letter = symbol[len(code):len(code) + 1]
+    return {'symbol': symbol.upper(), 'root': code.upper(), 'name': str(row.get('name') or symbol), 'multiplier': size, 'tick': tick,
+            'tickValue': round(size * tick, 6), 'lastTrade': last_trade.isoformat(), 'cutoff': cutoff.isoformat(), 'daysLeft': days,
+            'month': month, 'status': str(row.get('status') or '').upper(),
+            # Schwab's symbol for this contract ("/ESZ26"), used only to fetch a price
+            'schwab': f'/{code.upper()}{letter}{month[2:4]}' if re.fullmatch(r'\d{6}', month) and letter else None,
+            'tradable': str(row.get('status') or '').upper() == 'OC' and days > EXPIRY_DAYS}
+
+
+async def futures_contracts(ctx, root, fresh=False):
+    """The root's listed contracts (contract_info rows, nearest expiry first), reused for 10 minutes."""
+    root = str(root or '').strip().upper()
+    if not ROOT.match(root):
+        raise EngineError('Enter a futures root symbol, e.g. ES, MES, NQ or CL.')
+
+    async def fetch():
+        data = await _call(ctx, 'GET', CONTRACTS_PATH, {'category': FUTURES_CATEGORY, 'code': root})
+        return [r for r in (contract_info(x) for x in _list(data, 'contracts')) if r['root'] == root]
+    rows = await _cached(('fut-contracts', root), ACCOUNTS_TTL, fetch, fresh)
+    # days left are worked out again: a cached list may be from yesterday
+    rows = [contract_info({'symbol': r['symbol'], 'code': r['root'], 'name': r['name'], 'size': r['multiplier'], 'min_tick': r['tick'],
+                           'last_trading_date': r['lastTrade'], 'first_notice_date': r['cutoff'], 'contract_month': r['month'], 'status': r['status']})
+            for r in rows]
+    return sorted(rows, key=lambda r: r['cutoff'])
+
+
+async def find_contract(ctx, symbol):
+    """The listed contract for a symbol like ESZ6; refuses anything Webull doesn't list."""
+    m = CONTRACT.match(str(symbol or '').strip().upper())
+    if not m:
+        raise EngineError('Choose a futures contract (for example ESZ6: root ES, December, 2026).')
+    for r in await futures_contracts(ctx, m.group(1)):
+        if r['symbol'] == m.group(0):
+            return r
+    raise EngineError(f'Webull does not list the contract {m.group(0)}.')
+
+
+async def futures_price(ctx, contract):
+    """Schwab's last price for the contract (or None)."""
+    if not contract.get('schwab'):
+        return None
+    from . import invest
+    try:
+        row = (await invest.quotes(ctx, [contract['schwab']])).get(contract['schwab']) or {}
+    except Exception:
+        row = {}
+    return _num(row.get('price'))
+
+
+def _root_of(symbol):
+    m = CONTRACT.match(symbol or '')
+    return m.group(1) if m else None
+
+
+async def futures_balances(ctx, account_id):
+    d = await _call(ctx, 'GET', '/trading/assets/balances/get', {'account_id': account_id, 'total_asset_currency': 'USD'})
+    if not isinstance(d, dict):
+        raise EngineError(FORMAT)
+    usd = next((c for c in d.get('account_currency_assets') or [] if isinstance(c, dict) and c.get('currency') == 'USD'), {})
+    cash = _num(d.get('total_cash_balance'))
+    if cash is None:
+        raise EngineError('Webull’s balance reply has no cash balance, so nothing is shown rather than a guess.')
+    value = _num(d.get('total_net_liquidation_value'))
+    return {'value': value if value is not None else _num(usd.get('net_liquidation_value')), 'cash': cash,
+            'buyingPower': _num(usd.get('buying_power')),
+            'openPnl': _num(d.get('total_unrealized_profit_loss')),
+            'initMargin': _num(usd.get('init_margin')) if usd.get('init_margin') is not None else _num(d.get('init_margin')),
+            'maintMargin': _num(usd.get('maintenance_margin'))}
+
+
+async def futures_positions(ctx, account_id):
+    """Futures positions with the contract's multiplier: {symbol, qty (negative = short), avgCost, price, value
+    (notional), gain (dollars), multiplier, type}. gain is Webull's unrealized_profit_loss, else worked out from the
+    multiplier; None when neither is known."""
+    data = await _call(ctx, 'GET', '/trading/assets/positions/list', {'account_id': account_id})
+    out = []
+    for p in _list(data, 'positions'):
+        if not isinstance(p, dict) or not isinstance(p.get('symbol'), str) or not p['symbol']:
+            raise EngineError(FORMAT)
+        symbol = p['symbol'].upper()
+        qty = _need(p, 'quantity')
+        mult = None
+        if _root_of(symbol):
+            try:
+                mult = next((c['multiplier'] for c in await futures_contracts(ctx, _root_of(symbol)) if c['symbol'] == symbol), None)
+            except EngineError:
+                mult = None
+        avg, price = _num(p.get('cost_price')), _num(p.get('last_price'))
+        gain = _num(p.get('unrealized_profit_loss'))
+        if gain is None and None not in (avg, price, mult):
+            gain = (price - avg) * qty * mult
+        out.append({'symbol': symbol, 'qty': qty, 'avgCost': avg, 'price': price, 'multiplier': mult, 'gain': gain,
+                    'value': abs(price * qty * mult) if None not in (price, mult) else None, 'cost': None, 'dayGain': None,
+                    'type': str(p.get('instrument_type') or 'UNKNOWN').upper()})
+    return out
+
+
+def _fut_price(value, tick, label):
+    v = _num(value)
+    if v is None or v <= 0 or v > 10_000_000:
+        raise EngineError(f'Enter a {label} above 0.')
+    try:
+        steps = Decimal(str(v)) / Decimal(str(tick))
+    except InvalidOperation:
+        raise EngineError(f'Enter a {label} above 0.') from None
+    if steps != steps.to_integral_value():
+        raise EngineError(f'The {label} must be a multiple of the tick size {_decimal_text(tick)}.')
+    return float(Decimal(str(v)))
+
+
+def normalise_futures(msg, contract):
+    """The futures order fields, checked for shape against the contract (prices on its tick)."""
+    side = str(msg.get('side') or '').upper()
+    if side not in ('BUY', 'SELL'):
+        raise EngineError('Choose Buy or Sell.')
+    qty = msg.get('qty')
+    if isinstance(qty, bool) or not isinstance(qty, (int, float, str)):
+        raise EngineError('Enter a whole number of contracts.')
+    try:
+        qty_f = float(qty)
+    except ValueError:
+        raise EngineError('Enter a whole number of contracts.') from None
+    if qty_f <= 0 or qty_f != int(qty_f) or qty_f > 1000:
+        raise EngineError('Enter a whole number of contracts above 0.')
+    kind = str(msg.get('orderType') or '').upper().replace('-', '_')
+    if kind not in ORDER_TYPES:
+        raise EngineError('Choose Market, Limit, Stop or Stop-limit.')
+    tif = str(msg.get('tif') or 'DAY').upper()
+    if tif not in ('DAY', 'GTC'):
+        raise EngineError('Choose Day or GTC.')
+    if kind == 'MARKET' and tif != 'DAY':
+        raise EngineError('Market orders are Day only.')
+    order = {'symbol': contract['symbol'], 'side': side, 'qty': int(qty_f), 'orderType': kind, 'tif': tif, 'limitPrice': None, 'stopPrice': None,
+             'protectStop': None}
+    if kind in ('LIMIT', 'STOP_LIMIT'):
+        order['limitPrice'] = _fut_price(msg.get('limitPrice'), contract['tick'], 'limit price')
+    if kind in ('STOP', 'STOP_LIMIT'):
+        order['stopPrice'] = _fut_price(msg.get('stopPrice'), contract['tick'], 'stop price')
+    if msg.get('protectStop') not in (None, ''):
+        order['protectStop'] = _fut_price(msg.get('protectStop'), contract['tick'], 'protective stop')
+    return order
+
+
+def describe_futures(order, contract):
+    """e.g. "Buy 1 MESZ6 (Micro E-mini S&P 500 DEC 26) at a limit of 5000.25, day only"."""
+    head = f"{'Buy' if order['side'] == 'BUY' else 'Sell'} {order['qty']} {order['symbol']} ({contract['name']})"
+    lp, sp = order['limitPrice'], order['stopPrice']
+    how = {'MARKET': 'at market', 'LIMIT': f'at a limit of {_decimal_text(lp or 0)}', 'STOP': f'with a stop at {_decimal_text(sp or 0)} (then market)',
+           'STOP_LIMIT': f'with a stop at {_decimal_text(sp or 0)}, then a limit of {_decimal_text(lp or 0)}'}[order['orderType']]
+    return f"{head} {how}, {'good till cancelled' if order['tif'] == 'GTC' else 'day only'}"
+
+
+def webull_futures_order(order, client_order_id):
+    """The order in Webull's format (new_orders[0]), field for field as the SDK sample and MCP server build it."""
+    out = {
+        'combo_type': 'NORMAL',
+        'client_order_id': client_order_id,
+        'symbol': order['symbol'],
+        'instrument_type': 'FUTURES',
+        'market': 'US',
+        'order_type': ORDER_TYPES[order['orderType']],
+        'quantity': str(order['qty']),
+        'side': order['side'],
+        'time_in_force': order['tif'],
+        'entrust_type': 'QTY',
+    }
+    if order['limitPrice'] is not None:
+        out['limit_price'] = _decimal_text(order['limitPrice'])
+    if order['stopPrice'] is not None:
+        out['stop_price'] = _decimal_text(order['stopPrice'])
+    return out
+
+
+def futures_risk(order, contract, last):
+    """Notional (price x multiplier x contracts), one tick in dollars and the dollar loss to the protective stop."""
+    basis = order['limitPrice'] if order['limitPrice'] is not None else order['stopPrice'] if order['stopPrice'] is not None else last
+    mult = contract['multiplier']
+    out = {'basis': basis, 'notional': round(basis * mult * order['qty'], 2), 'tickValue': round(contract['tickValue'], 2),
+           'tickSize': contract['tick'], 'multiplier': mult, 'lossToStop': None}
+    if order['protectStop'] is not None:
+        out['lossToStop'] = round(abs(basis - order['protectStop']) * mult * order['qty'], 2)
+    return out
+
+
+def check_futures(order, contract, last, held, pending, today_orders, today_contracts, lim, flim, buying_power):
+    """The futures safety checks that don't need Webull. held = the signed position in this contract (negative =
+    short); pending = contracts already in open orders on the same side as this order. Returns (risk, warnings,
+    closing); raises EngineError to refuse."""
+    if not futures_enabled():
+        raise EngineError(FUTURES_OFF)
+    if contract['daysLeft'] <= EXPIRY_DAYS:
+        raise EngineError(f"{contract['symbol']} stops trading or reaches first notice on {contract['cutoff']} (in {max(contract['daysLeft'], 0)} days). "
+                          'Roll to the next contract. To close a position this near expiry, use the Webull app.')
+    if contract['status'] != 'OC':
+        raise EngineError(f"Webull lists {contract['symbol']} as not open for new trades (status {contract['status'] or 'unknown'}). Roll to the next contract.")
+    if last is None or last <= 0:
+        raise EngineError(f"Couldn't get a current price for {contract['symbol']} from Schwab to check the order. Make sure the helper is logged in to Schwab.")
+    for key, label in (('limitPrice', 'limit'), ('stopPrice', 'stop'), ('protectStop', 'protective stop')):
+        p = order[key]
+        if p is not None and abs(p / last - 1) > PRICE_BAND:
+            raise EngineError(f'The {label} price {_decimal_text(p)} is more than {PRICE_BAND:.0%} away from the last price {_decimal_text(last)}. Check for a typo.')
+    if order['qty'] > flim['maxContracts']:
+        raise EngineError(f"{order['qty']} contracts is above your maximum of {flim['maxContracts']} per order (change it in Settings).")
+    if today_contracts + order['qty'] > flim['maxPerDay']:
+        raise EngineError(f"You've sent {today_contracts} futures contracts today; {order['qty']} more would pass your daily maximum of {flim['maxPerDay']} (Settings).")
+    if today_orders >= lim['maxPerDay']:
+        raise EngineError(f"You've placed {today_orders} orders today, your daily maximum (change it in Settings).")
+    closing = (held > 0 and order['side'] == 'SELL') or (held < 0 and order['side'] == 'BUY')
+    if closing:
+        room = max(abs(held) - pending, 0)
+        if order['qty'] > room:
+            raise EngineError(f"You can close at most {room:g} {order['symbol']} (your position minus open orders on that side). "
+                              'A closing order can’t be larger than the position, so it never flips you to the other side.')
+    elif buying_power is None or buying_power <= 0:
+        raise EngineError('Webull reports no buying power in your futures account, so no new position can be opened.')
+    risk = futures_risk(order, contract, last)
+    if order['protectStop'] is not None:
+        wrong = order['protectStop'] >= risk['basis'] if order['side'] == 'BUY' else order['protectStop'] <= risk['basis']
+        if wrong:
+            raise EngineError('For a buy the protective stop must be below the entry price; for a sell, above it.')
+    warnings = []
+    kind, side, lp, sp = order['orderType'], order['side'], order['limitPrice'], order['stopPrice']
+    if kind == 'LIMIT' and ((side == 'BUY' and lp > last * 1.01) or (side == 'SELL' and lp < last * 0.99)):
+        warnings.append('The limit is past the current price, so it will probably fill straight away like a market order.')
+    if kind in ('STOP', 'STOP_LIMIT') and ((side == 'BUY' and sp <= last) or (side == 'SELL' and sp >= last)):
+        warnings.append('The stop is already past the current price, so it would trigger straight away.')
+    if kind == 'MARKET':
+        warnings.append('A market order fills at whatever the price is when it reaches the market; the notional shown is an estimate.')
+    if not closing and order['protectStop'] is None:
+        warnings.append('No protective stop entered: a futures position can lose more than the money in the account.')
+    return risk, warnings, closing
+
+
 # ---------- handlers ----------
 
 def _unavailable(message):
-    return {'ok': False, 'env': env(), 'liveEnabled': live_enabled(), 'keysSet': available(), 'limits': limits(), 'message': message, 'accounts': []}
+    return {'ok': False, 'env': env(), 'liveEnabled': live_enabled(), 'keysSet': available(), 'limits': limits(), 'message': message, 'accounts': [],
+            'futuresEnabled': futures_enabled(), 'futuresLimits': futures_limits()}
 
 
 @handler('webull.status')
@@ -763,11 +1117,11 @@ async def status(ctx, msg):
     except EngineError as err:
         return {**_unavailable(str(err)), 'busy': isinstance(err, Busy)}
     try:
-        today = placed_today()
+        today, contracts = placed_today(), placed_contracts_today()
     except EngineError:
-        today = None  # shown as unknown here; placing an order refuses until the log is readable
+        today = contracts = None  # shown as unknown here; placing an order refuses until the log is readable
     return {'ok': True, 'env': env(), 'liveEnabled': live_enabled(), 'keysSet': True, 'limits': limits(), 'accounts': found,
-            'placedToday': today,
+            'placedToday': today, 'futuresEnabled': futures_enabled(), 'futuresLimits': futures_limits(), 'placedContractsToday': contracts,
             'message': f"Connected to Webull {'LIVE (real money)' if env() == 'live' else 'Test (no real money)'}: {len(found)} account{'s' if len(found) != 1 else ''}."}
 
 
@@ -829,12 +1183,21 @@ async def snapshot(ctx, msg):
     head = await status(ctx, msg)
     if not head['ok']:
         return head
-    chosen = await _account(ctx, msg)
+    asset = _asset(msg)
+    chosen = await _account(ctx, msg, asset)
     account_id = chosen['id']
-    out = {**head, 'accountId': account_id, 'account': chosen['label'], 'retirement': chosen['retirement'], 'balances': None, 'positions': None, 'open': None, 'recent': None, 'errors': {},
+    out = {**head, 'asset': asset, 'accountId': account_id, 'account': chosen['label'], 'retirement': chosen['retirement'], 'balances': None, 'positions': None, 'open': None, 'recent': None, 'errors': {},
            'asOf': None}
-    for section, read in (('balances', lambda: cached_balances(ctx, account_id)), ('positions', lambda: priced_positions(ctx, account_id)),
-                          ('orders', lambda: cached_orders(ctx, account_id))):
+    if asset == 'futures':
+        reads = (('balances', lambda: _cached(('fbalances', account_id), READ_TTL, lambda: futures_balances(ctx, account_id))),
+                 ('positions', lambda: _cached(('fpositions', account_id), READ_TTL, lambda: futures_positions(ctx, account_id))),
+                 ('orders', lambda: cached_orders(ctx, account_id)))
+        keys = {'balances': 'fbalances', 'positions': 'fpositions', 'orders': 'orders'}
+    else:
+        reads = (('balances', lambda: cached_balances(ctx, account_id)), ('positions', lambda: priced_positions(ctx, account_id)),
+                 ('orders', lambda: cached_orders(ctx, account_id)))
+        keys = {'balances': 'balances', 'positions': 'positions', 'orders': 'orders'}
+    for section, read in reads:
         try:
             value = await read()
         except EngineError as err:
@@ -845,7 +1208,7 @@ async def snapshot(ctx, msg):
         else:
             out[section] = value
     # when the oldest shown section was fetched from Webull (unix time); now if a result wasn't kept
-    stamps = [fetched_at((k, account_id)) or time.time() for k in ('balances', 'positions', 'orders') if k not in out['errors']]
+    stamps = [fetched_at((keys[k], account_id)) or time.time() for k in ('balances', 'positions', 'orders') if k not in out['errors']]
     out['asOf'] = min(stamps) if stamps else None
     return out
 
@@ -911,8 +1274,65 @@ def _auto_name(existing):
     return not old or old == (existing or {}).get('webullAutoName') or bool(OLD_AUTO_NAME.fullmatch(old))
 
 
+@handler('webull.futures_contracts')
+async def futures_contracts_handler(ctx, msg):
+    """A root's contracts for the ticket's picker, with Schwab prices: {root, contracts, front} (front = the nearest
+    contract that can still be traded here)."""
+    rows = [dict(r) for r in await futures_contracts(ctx, msg.get('root'))]
+    from . import invest
+    wanted = [r['schwab'] for r in rows if r['schwab']]
+    try:
+        quotes = await invest.quotes(ctx, wanted) if wanted else {}
+    except Exception:
+        quotes = {}
+    for r in rows:
+        r['price'] = _num((quotes.get(r['schwab']) or {}).get('price')) if r['schwab'] else None
+    front = next((r['symbol'] for r in rows if r['tradable']), None)
+    return {'root': str(msg.get('root') or '').strip().upper(), 'contracts': rows, 'front': front, 'expiryDays': EXPIRY_DAYS}
+
+
+async def preview_futures(ctx, msg):
+    if not futures_enabled():
+        raise EngineError(FUTURES_OFF)
+    contract = await find_contract(ctx, msg.get('symbol'))
+    order = normalise_futures(msg, contract)
+    chosen = await _account(ctx, msg, 'futures')
+    account_id = chosen['id']
+    lim, flim = limits(), futures_limits()
+    rows = await positions(ctx, account_id)  # fresh reads: a decision is made on them
+    held = sum(p['qty'] for p in rows if p['symbol'] == order['symbol'])
+    pending = sum(max(o['qty'] - o['filled'], 0) for o in await open_orders(ctx, account_id) if o['symbol'] == order['symbol'] and o['side'] == order['side'])
+    closing = (held > 0 and order['side'] == 'SELL') or (held < 0 and order['side'] == 'BUY')
+    bp = None if closing else (await futures_balances(ctx, account_id))['buyingPower']
+    last = await futures_price(ctx, contract)
+    risk, warnings, closing = check_futures(order, contract, last, held, pending, placed_today(), placed_contracts_today(), lim, flim, bp)
+    client_order_id = uuid.uuid4().hex
+    body = {'account_id': account_id, 'new_orders': [webull_futures_order(order, client_order_id)]}
+    try:
+        await _call(ctx, 'POST', '/trading/orders/preview', body=body, extra={'category': FUTURES_CATEGORY})  # Webull's own check (buying power etc.)
+    except Busy:
+        raise EngineError('Webull is busy (too many requests). Wait a few seconds and preview again.') from None
+    for k in [k for k, v in _previews.items() if v['expires'] < time.monotonic()]:
+        _previews.pop(k, None)
+    token = secrets.token_urlsafe(24)
+    summary = describe_futures(order, contract)
+    _previews[token] = {'asset': 'futures', 'order': order, 'summary': summary, 'body': body, 'env': env(), 'fp': _fingerprint(),
+                        'expires': time.monotonic() + TOKEN_SECONDS, 'value': risk['notional'], 'contracts': order['qty'], 'cutoff': contract['cutoff'],
+                        'account': account_id}
+    return {'asset': 'futures', 'token': token, 'expiresIn': TOKEN_SECONDS, 'order': order, 'summary': summary,
+            'estimate': {'value': risk['notional'], 'last': last},
+            'futures': {**risk, 'contract': contract['symbol'], 'name': contract['name'], 'expiry': contract['lastTrade'], 'cutoff': contract['cutoff'],
+                        'daysLeft': contract['daysLeft'], 'margin': None, 'marginNote': MARGIN_NOTE, 'closing': closing, 'position': held,
+                        'contractsToday': placed_contracts_today(), 'limits': flim},
+            'env': env(), 'account': chosen['label'], 'accountId': account_id, 'retirement': False, 'warnings': warnings,
+            'marketNote': 'Futures trade nearly around the clock on weekdays (with a daily break); Webull decides when the order can work.',
+            'limits': lim, 'placedToday': placed_today()}
+
+
 @handler('webull.preview_order')
 async def preview_order(ctx, msg):
+    if _asset(msg) == 'futures':
+        return await preview_futures(ctx, msg)
     order = normalise(msg)
     chosen = await _account(ctx, msg)
     if chosen.get('managed'):
@@ -956,7 +1376,10 @@ async def place_order(ctx, msg):
         _log({'action': 'place', 'result': 'refused', 'reason': 'missing or already used token'})
         raise EngineError('This preview was already used or is unknown. Preview the order again.')
     order = preview['order']
-    base = {'action': 'place', 'order': describe(order), 'account': _mask(preview['account']), 'value': preview['value']}
+    futures = preview.get('asset') == 'futures'
+    base = {'action': 'place', 'order': preview['summary'] if futures else describe(order), 'account': _mask(preview['account']), 'value': preview['value']}
+    if futures:
+        base.update({'asset': 'futures', 'contracts': preview['contracts']})
     if preview['expires'] < time.monotonic():
         _log({**base, 'result': 'refused', 'reason': 'preview expired'})
         raise EngineError(f'The preview expired (it is valid for {TOKEN_SECONDS} seconds). Preview the order again.')
@@ -967,7 +1390,22 @@ async def place_order(ctx, msg):
         _log({**base, 'result': 'refused', 'reason': 'live not enabled'})
         raise EngineError('Live trading is not switched on. Turn it on in Settings (type LIVE) or use Test.')
     lim = limits()
-    if preview['value'] > lim['maxOrder']:
+    if futures:
+        # Futures use contract limits (a single contract's notional is far above a stock order's value limit).
+        flim = futures_limits()
+        if not futures_enabled():
+            _log({**base, 'result': 'refused', 'reason': 'futures not enabled'})
+            raise EngineError(FUTURES_OFF)
+        if preview['contracts'] > flim['maxContracts']:
+            _log({**base, 'result': 'refused', 'reason': 'above max contracts per order'})
+            raise EngineError('This order is above your maximum contracts per order. Preview it again.')
+        if placed_contracts_today() + preview['contracts'] > flim['maxPerDay']:
+            _log({**base, 'result': 'refused', 'reason': 'daily contract limit'})
+            raise EngineError(f"You've reached your daily maximum of {flim['maxPerDay']} futures contracts.")
+        if (dt.date.fromisoformat(preview['cutoff']) - _today()).days <= EXPIRY_DAYS:
+            _log({**base, 'result': 'refused', 'reason': 'contract near expiry'})
+            raise EngineError('This contract is now within 2 days of expiry. Roll to the next contract.')
+    elif preview['value'] > lim['maxOrder']:
         _log({**base, 'result': 'refused', 'reason': 'above max order value'})
         raise EngineError('This order is above your maximum order value. Preview it again.')
     if placed_today() >= lim['maxPerDay']:
@@ -977,10 +1415,10 @@ async def place_order(ctx, msg):
     # daily limit: the first attempt is counted before the second is checked.
     _log({**base, 'result': 'attempt'})
     client_order_id = preview['body']['new_orders'][0]['client_order_id']
-    done = {'placed': True, 'orderId': client_order_id, 'env': env(), 'summary': describe(order)}
+    done = {'placed': True, 'orderId': client_order_id, 'env': env(), 'summary': base['order'], 'asset': 'futures' if futures else 'stocks'}
     forget(preview['account'])  # whatever happens next, the account's cached balances/positions/orders are old
     try:
-        await _call(ctx, 'POST', '/trading/orders/place', body=preview['body'], extra={'category': 'US_EQUITY'}, deadline=deadline)
+        await _call(ctx, 'POST', '/trading/orders/place', body=preview['body'], extra={'category': FUTURES_CATEGORY if futures else 'US_EQUITY'}, deadline=deadline)
     except NotSent as err:
         # Never sent: it waited too long for its turn. Logged and counted as an attempt, reported as not placed.
         _log({**base, 'result': 'failed', 'reason': 'not sent: waited past the deadline'})

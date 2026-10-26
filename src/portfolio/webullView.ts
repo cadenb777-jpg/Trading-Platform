@@ -44,7 +44,7 @@ export async function renderWebull(out: HTMLElement, onSynced: (p: Portfolio & {
           const sel = h(
             'select',
             { class: 'input', 'aria-label': 'Account' },
-            ...status.accounts.map((a) => h('option', { value: a.id, selected: a.id === accountId, disabled: a.stocks === false }, a.label)),
+            ...status.accounts.map((a) => h('option', { value: a.id, selected: a.id === accountId, disabled: a.stocks === false }, a.futures ? `${a.label} (see the Trade page)` : a.label)),
           ) as HTMLSelectElement;
           sel.addEventListener('change', () => ((accountId = sel.value), load(true)));
           return sel;
@@ -163,6 +163,10 @@ export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio
   const cards: HTMLElement[] = [];
   for (const a of status.accounts) {
     if (only && a.id !== only) continue;
+    if (a.futures) {
+      cards.push(await futuresCard(a.label, a.id, status.env));
+      continue;
+    }
     if (a.stocks === false) {
       cards.push(h('div', { class: 'acct-card' }, h('div', { class: 'acct-card-head' }, h('b', {}, `Webull ${a.label}`)), h('span', { class: 'muted small' }, 'Only US stock accounts (cash, margin, IRA) are shown for now.')));
       continue;
@@ -187,6 +191,27 @@ export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio
     );
   }
   out.replaceChildren(...cards);
+}
+
+/** The futures account as its own card: kept out of the stock risk and tax figures, shown with its balance and open P/L. */
+async function futuresCard(label: string, id: string, env: Snapshot['env']): Promise<HTMLElement> {
+  const snap = await loadSnapshot(id, 'futures').catch((err) => err as Error);
+  const bal = snap instanceof Error ? snap : snap.balances ?? new Error(snap.errors?.balances ?? snap.message ?? 'Not available.');
+  const open = snap instanceof Error ? 0 : (snap.positions ?? []).length;
+  return h(
+    'div',
+    { class: 'acct-card' },
+    h('div', { class: 'acct-card-head' }, h('b', {}, `Webull ${label}`), envBadge(env)),
+    bal instanceof Error
+      ? h('div', { class: 'ap-error' }, friendly(bal))
+      : statCards([
+          { label: 'Net liquidation', value: usd(bal.value), hint: 'What the futures account would be worth if every position were closed now' },
+          { label: 'Open P/L', value: bal.openPnl == null ? '—' : `${bal.openPnl >= 0 ? '+' : ''}${usd(bal.openPnl)}`, hint: `${open} open position${open === 1 ? '' : 's'}, in dollars` },
+          { label: 'Buying power', value: usd(bal.buyingPower) },
+        ]),
+    h('p', { class: 'muted small' }, 'Futures are kept out of the stock risk and tax figures on this page.'),
+    h('div', { class: 'ap-controls' }, h('a', { class: 'btn', href: '#trade' }, 'Open Trade page')),
+  );
 }
 
 function ordersTable(orders: Order[], accountId: string | undefined, refresh: () => void) {

@@ -174,6 +174,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   the position minus open sells (stock positions only), every attempt logged to ~/.trading-platform/orders.log and
   counted toward the daily limit (unreadable log = refuse). A timeout/5xx on place is "unknown": looked up once by
   client_order_id, never reported as not placed. Reply fields are the documented names; missing ones fail closed.
+  Futures (v31): only in the FUTURES account (account_class FUTURES; stock accounts take only stocks), requests carry
+  asset 'futures' (snapshot, preview, cancel), webull.futures_contracts lists a root's contracts (size = multiplier,
+  min_tick, last_trading_date/first_notice_date). Guards: separate typed FUTURES opt-in (plus LIVE for real money), max
+  contracts per order (1) / per day (3, counted from orders.log `contracts`), no contract within 2 days of its cutoff
+  ("roll"), prices on the tick and within 25% of Schwab's price, closing orders <= position minus open orders, no
+  opening without Webull buying power; margin is never guessed ("set by Webull"). Sources are cited in webull.py.
   Rate limits (v27): every Webull call goes one at a time through `_call`'s gate, spaced per endpoint from Webull's
   documented limits (SPACING); reads are cached (account list 10 min, balances/positions/orders 20 s; place/cancel
   clear the account, sync reads fresh); a GET that gets 429 waits and retries twice, orders/previews never retry, and

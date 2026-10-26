@@ -6,13 +6,18 @@
  * Every order goes through the shared preview -> confirm window (src/trade/webull.ts); this page never places one by
  * itself and no key places an order (B/S switch side, Enter previews, Esc closes). The account refreshes with one
  * webull.snapshot request every 30 s while the page is open and the tab is visible (the helper paces Webull).
+ *
+ * Stocks | Futures (shown only when the owner has a Webull futures account): Futures swaps the watchlist and chart for
+ * the futures ticket (src/trade/futuresTicket.ts) and reads the futures account; positions show P/L in dollars.
  */
 import { CandlestickSeries, ColorType, LineStyle, createChart, type IChartApi, type IPriceLine, type ISeriesApi } from 'lightweight-charts';
 import { quoteChange, subscribeQuote, type Quote } from '../data/quotes';
 import { engineRequest, schwab } from '../data/schwab';
 import { state } from '../state';
+import { createFuturesTicket, type FuturesTicket } from '../trade/futuresTicket';
+import { positionPnl } from '../trade/futuresMath';
 import { createTicket, type TicketQuote } from '../trade/ticket';
-import { cancelOrder, envBadge, friendly, IRA_NOTE, loadSnapshot, OPEN, orderPrice, stockAccounts, takePrefill, usd, type Order, type PlacedOrder, type Snapshot, type TicketPrefill } from '../trade/webull';
+import { cancelOrder, envBadge, friendly, futuresAccount, IRA_NOTE, loadSnapshot, OPEN, orderPrice, stockAccounts, takePrefill, usd, type Asset, type Order, type PlacedOrder, type Snapshot, type TicketPrefill } from '../trade/webull';
 import { dataTable } from '../ui/charts';
 import { formatPrice, h, timeAgo, toast } from '../ui/dom';
 import { THEME, followTheme } from '../ui/theme';
@@ -22,6 +27,8 @@ const SYMBOL_KEY = 'tp-trade-symbol';
 const PROTECT_KEY = 'tp-trade-protect';
 /** The last account chosen in the header (the ticket always uses exactly this one account). */
 const ACCOUNT_KEY = 'tp-trade-account';
+/** Stocks or Futures, remembered on this device. */
+const ASSET_KEY = 'tp-trade-asset';
 const REFRESH_MS = 30_000;
 const DEFAULT_WATCH = ['AAPL', 'MSFT', 'NVDA', 'AMZN', 'SPY', 'QQQ'];
 
@@ -49,6 +56,12 @@ export function createTradePage() {
   /** Set while the last refresh failed (busy or slow) and the page shows older data: the reason. */
   let stale: string | null = null;
   let accountId = load<string>(ACCOUNT_KEY, '');
+  let asset: Asset = load<string>(ASSET_KEY, 'stocks') === 'futures' ? 'futures' : 'stocks';
+  /** The futures account's id once a snapshot named it ('' = let the helper pick the futures account). */
+  let futuresId = '';
+  /** Whether the owner has a futures account (from the last snapshot's account list). */
+  let hasFutures = false;
+  let futTicket: FuturesTicket | null = null;
   let loadedAt = 0;
   let started = false;
   let symbol = (load<string>(SYMBOL_KEY, '') || DEFAULT_WATCH[0]).toUpperCase();
@@ -69,11 +82,12 @@ export function createTradePage() {
 
   // ----- layout -----
   const envSlot = h('span', { class: 'tr-env' }, h('span', { class: 'badge' }, 'Webull…'));
+  const assetSlot = h('span', { class: 'tr-asset' });
   const acctSlot = h('span', { class: 'tr-acct' });
   const statsSlot = h('div', { class: 'tr-stats' });
   const updated = h('span', { class: 'muted tiny tr-updated' });
   const refreshBtn = h('button', { class: 'btn small', title: 'Refresh the account now', onclick: () => refresh(true) }, 'Refresh') as HTMLButtonElement;
-  const top = h('header', { class: 'tr-top' }, h('h1', {}, 'Trade'), envSlot, acctSlot, statsSlot, h('span', { class: 'spacer' }), updated, refreshBtn);
+  const top = h('header', { class: 'tr-top' }, h('h1', {}, 'Trade'), assetSlot, envSlot, acctSlot, statsSlot, h('span', { class: 'spacer' }), updated, refreshBtn);
   const notice = h('div', { class: 'tr-notice' });
 
   const search = h('input', { class: 'input', placeholder: 'Search symbol or company', autocomplete: 'off', spellcheck: false, 'aria-label': 'Search symbol' }) as HTMLInputElement;
@@ -95,6 +109,48 @@ export function createTradePage() {
     onPlaced: placed,
   });
   const ticketPanel = h('section', { class: 'panel tr-ticket' }, protectSlot, ticket.el);
+
+  /** The futures ticket is made the first time Futures is chosen (it loads contracts from the helper). */
+  function futuresTicket(): FuturesTicket {
+    if (!futTicket) futTicket = createFuturesTicket({ snapshot: () => snap, accountId: () => futuresId || snap?.accountId || '', onPlaced: () => refresh(true) });
+    return futTicket;
+  }
+
+  function drawAsset() {
+    assetSlot.replaceChildren(
+      hasFutures
+        ? h(
+            'div',
+            { class: 'segmented small', role: 'group', 'aria-label': 'Stocks or futures' },
+            ...(['stocks', 'futures'] as const).map((a) =>
+              h('button', { type: 'button', class: a === asset ? 'active' : '', 'aria-pressed': a === asset, onclick: () => setAsset(a) }, a === 'stocks' ? 'Stocks' : 'Futures'),
+            ),
+          )
+        : '',
+    );
+    if (shownAsset === asset) return; // moving the tickets again would drop the focus from a field being typed in
+    shownAsset = asset;
+    const fut = asset === 'futures';
+    grid.classList.toggle('tr-futures', fut);
+    watchPanel.hidden = fut;
+    chartPanel.hidden = fut;
+    if (fut) ticketPanel.replaceChildren(futuresTicket().el);
+    else ticketPanel.replaceChildren(protectSlot, ticket.el);
+  }
+  let shownAsset: Asset | null = null;
+
+  function setAsset(a: Asset) {
+    if (a === asset) return;
+    asset = a;
+    save(ASSET_KEY, a);
+    snap = null; // never show one account's data under the other's ticket
+    stale = null;
+    drawAsset();
+    drawLists();
+    statsSlot.replaceChildren();
+    acctSlot.replaceChildren();
+    refresh(true);
+  }
 
   const tabs: { key: 'positions' | 'open' | 'fills'; label: string }[] = [
     { key: 'positions', label: 'Positions' },
@@ -346,12 +402,19 @@ export function createTradePage() {
     refreshBtn.disabled = true;
     refreshing = (async () => {
       try {
-        const next = await loadSnapshot(accountId || undefined);
+        const wanted = asset;
+        const next = await loadSnapshot(wanted === 'futures' ? futuresId || undefined : accountId || undefined, wanted);
         loadedAt = Date.now();
+        if (wanted !== asset) {
+          queued = true; // switched while this was loading: read again for the new choice
+          return;
+        }
         if (next.ok) {
           snap = next;
           stale = null;
-          if (!accountId) accountId = next.accountId ?? ''; // never overwrite a choice made while this was loading
+          hasFutures = !!futuresAccount(next.accounts);
+          if (wanted === 'futures') futuresId = next.accountId ?? '';
+          else if (!accountId) accountId = next.accountId ?? ''; // never overwrite a choice made while this was loading
         } else if (next.busy && snap?.ok) {
           stale = next.message; // Webull busy: keep showing the last data, marked as old
         } else {
@@ -361,6 +424,16 @@ export function createTradePage() {
       } catch (err) {
         loadedAt = Date.now();
         const message = friendly(err);
+        if (asset === 'futures' && /futures account|not one of yours/i.test(message)) {
+          // no futures account (any more): back to stocks
+          futuresId = '';
+          hasFutures = false;
+          asset = 'stocks';
+          save(ASSET_KEY, 'stocks');
+          drawAsset();
+          queued = true;
+          return;
+        }
         if (accountId && /not one of yours|only US stock accounts/i.test(message)) {
           // the remembered account is gone or can't be traded here: fall back to the first stock account
           accountId = '';
@@ -425,6 +498,8 @@ export function createTradePage() {
     grid.classList.remove('tr-offline');
     el.classList.toggle('tr-is-live', snap.env === 'live');
     envSlot.replaceChildren(envBadge(snap.env));
+    drawAsset();
+    if (asset === 'futures') return drawFuturesAccount();
     // Trading needs one account, so there is no "all" here; futures/crypto accounts aren't listed (not supported yet).
     const tradable = stockAccounts(snap.accounts);
     if (tradable.length > 1) {
@@ -460,6 +535,31 @@ export function createTradePage() {
     drawLines();
     drawLists();
     ticket.refresh();
+    tickUpdated();
+  }
+
+  /** The futures account's header and notices (balances in dollars; margin as Webull reports it). */
+  function drawFuturesAccount() {
+    if (!snap) return;
+    acctSlot.replaceChildren(h('span', { class: 'muted small' }, snap.account ?? ''));
+    const b = snap.balances;
+    const stat = (label: string, value: string, cls = '', title = '') => h('div', { class: 'tr-stat', title }, h('span', { class: 'muted tiny' }, label), h('b', { class: `num ${cls}` }, value));
+    const lim = snap.futuresLimits;
+    statsSlot.replaceChildren(
+      stat('Net liquidation', usd(b?.value), '', 'What the account would be worth if every position were closed now'),
+      stat('Buying power', usd(b?.buyingPower), '', 'What Webull lets you use for new positions now'),
+      stat('Open P/L', b?.openPnl == null ? '—' : `${b.openPnl >= 0 ? '+' : ''}${usd(b.openPnl)}`, tone(b?.openPnl), 'Profit or loss on open futures positions, in dollars'),
+      stat('Margin in use', usd(b?.initMargin), '', 'Initial margin Webull has set aside for open positions'),
+      stat('Contracts today', `${snap.placedContractsToday ?? '?'} / ${lim?.maxPerDay ?? '?'}`, '', `Max ${lim?.maxContracts ?? '?'} per order (Settings)`),
+    );
+    const errs = Object.values(snap.errors ?? {});
+    notice.replaceChildren(
+      stale && snap.asOf ? h('div', { class: 'tr-stale' }, h('b', {}, `Showing data as of ${clock(snap.asOf)}.`), h('span', { class: 'muted small' }, ` ${stale} The page tries again by itself.`)) : '',
+      snap.env === 'live' ? h('p', { class: 'wb-warning small' }, 'LIVE: futures orders placed here use real money and can lose more than the account holds.') : '',
+      ...[...new Set(errs)].map((e) => h('div', { class: 'ap-error' }, e)),
+    );
+    drawLists();
+    futuresTicket().refresh();
     tickUpdated();
   }
 
@@ -541,6 +641,34 @@ export function createTradePage() {
     drawTabs();
     if (!snap?.ok) return listBody.replaceChildren(h('p', { class: 'muted small pad' }, 'Your positions and orders show here once Webull is connected.'));
     const err = (k: string) => h('div', { class: 'ap-error' }, snap?.errors?.[k] ?? 'Not available right now.');
+    if (tab === 'positions' && snap.asset === 'futures') {
+      const rows = snap.positions;
+      if (!rows) return listBody.replaceChildren(err('positions'));
+      if (!rows.length) return listBody.replaceChildren(h('div', { class: 'empty-state' }, 'No futures positions.'));
+      const table = dataTable(
+        ['Contract', 'Position', 'Open P/L', 'Last', 'Avg price', 'Multiplier', 'Notional'],
+        rows.map((p) => {
+          const pnl = p.gain ?? positionPnl(p.qty, p.avgCost, p.price, p.multiplier ?? null);
+          return [
+            { v: h('button', { type: 'button', class: 'link-btn', title: `Trade ${p.symbol}` }, p.symbol), cls: 'label' },
+            { v: `${p.qty < 0 ? 'Short' : 'Long'} ${Math.abs(p.qty)}`, cls: `num ${p.qty < 0 ? 'down' : 'up'}` },
+            { v: pnl == null ? '—' : `${pnl >= 0 ? '+' : ''}${usd(pnl)}`, cls: `num ${tone(pnl)}` },
+            { v: p.price == null ? '—' : String(p.price), cls: 'num' },
+            { v: p.avgCost == null ? '—' : String(p.avgCost), cls: 'num' },
+            { v: p.multiplier == null ? '—' : `$${p.multiplier}`, cls: 'num' },
+            { v: usd(p.value), cls: 'num' },
+          ];
+        }),
+        undefined,
+        { id: 'trade:futures-positions' },
+      );
+      table.classList.add('tr-clickable');
+      table.addEventListener('click', (e) => {
+        const s = (e.target as HTMLElement).closest('tbody tr')?.querySelector('td')?.textContent?.trim();
+        if (s) futuresTicket().setContract(s);
+      });
+      return listBody.replaceChildren(table);
+    }
     if (tab === 'positions') {
       const rows = snap.positions;
       if (!rows) return listBody.replaceChildren(err('positions'));
@@ -618,7 +746,7 @@ export function createTradePage() {
     const btn = h('button', { class: 'btn small', type: 'button' }, 'Cancel') as HTMLButtonElement;
     btn.addEventListener('click', async () => {
       btn.disabled = true;
-      if (await cancelOrder(o, snap?.accountId)) refresh(true);
+      if (await cancelOrder(o, snap?.accountId, snap?.asset === 'futures' ? 'futures' : 'stocks')) refresh(true);
       else btn.disabled = false;
     });
     return btn;
@@ -631,13 +759,14 @@ export function createTradePage() {
     const target = e.target instanceof HTMLElement ? e.target : document.body;
     const typing = target.closest('input, select, textarea, [contenteditable="true"]');
     const key = e.key.toLowerCase();
+    const active = asset === 'futures' ? futuresTicket() : ticket;
     if (!typing && (key === 'b' || key === 's')) {
       e.preventDefault();
-      ticket.setSide(key === 'b' ? 'BUY' : 'SELL');
+      active.setSide(key === 'b' ? 'BUY' : 'SELL');
     } else if (e.key === 'Enter' && !typing && !target.closest('button, a, [role="button"]')) {
       // (inside the ticket's fields Enter submits its form, which previews)
       e.preventDefault();
-      ticket.preview();
+      active.preview();
     } else if (e.key === 'Escape' && typing) {
       (target as HTMLElement).blur();
     }
@@ -645,6 +774,7 @@ export function createTradePage() {
 
   function usePrefill(p: TicketPrefill | null) {
     if (!p) return;
+    setAsset('stocks'); // the trade guide pre-fills stock orders only
     if (p.symbol) (addWatch(p.symbol.toUpperCase()), drawWatch(), select(p.symbol, false));
     ticket.fill(p);
     toast('Order ticket filled in. Check it, then Preview.');
@@ -656,6 +786,7 @@ export function createTradePage() {
   window.addEventListener('tp:trade-prefill', () => started && usePrefill(takePrefill()));
   window.addEventListener('tp:settings-saved', () => started && refresh(true)); // limits or Test/Live changed
   drawTf();
+  drawAsset();
   drawWatch();
   ticket.setSymbol(symbol);
   drawLists();
