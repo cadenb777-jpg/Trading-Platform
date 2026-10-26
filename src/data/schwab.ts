@@ -37,7 +37,7 @@ export const HELPER_UPDATE_FOR_FEATURE =
   'This feature needs the updated Schwab helper. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
 
 export const HELPER_NOT_RUNNING =
-  'The helper isn\'t running on this computer. Start it (double-click start-windows.bat or start-mac.command), then click Try again.';
+  'The helper isn\'t running on this computer. Start it (double-click start-windows.bat or start-mac.command), then press Refresh (or reload the page).';
 
 export type NewsSection = 'economy' | 'markets' | 'companies' | 'crypto';
 export type Impact = 'high' | 'medium' | 'low';

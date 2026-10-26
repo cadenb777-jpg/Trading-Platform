@@ -5,7 +5,7 @@
 import { insightButton } from '../ai/insight';
 import { engineRequest } from '../data/schwab';
 import { dataTable, money, numberField, pct, statCards, pctU } from '../ui/charts';
-import { h } from '../ui/dom';
+import { activatable, h } from '../ui/dom';
 import { sparkline } from '../ui/sparkline';
 import { openFredWindow } from '../ui/fredWindow';
 import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
@@ -109,7 +109,7 @@ export function createBondsView(ctx: InvestContext) {
         recentAuctions: seen.auctions.slice(0, 15),
       },
     };
-  }, 'AI summary');
+  });
 
   function renderMarket() {
     const rates = h('div', { class: 'inv-rates' }, h('div', { class: 'skeleton', style: 'height:120px' }));
@@ -132,7 +132,7 @@ export function createBondsView(ctx: InvestContext) {
                 ...series
                   .filter((s) => s.group === g)
                   .map((s) =>
-                    h(
+                    activatable(h(
                       'div',
                       { class: 'panel inv-rate clickable-card', title: 'Click for the full history: zoom, ranges, stats', onclick: () => openFredWindow(s.id, s.name) },
                       h('span', { class: 'muted small' }, s.name),
@@ -140,7 +140,7 @@ export function createBondsView(ctx: InvestContext) {
                       h('span', { class: 'small inv-rate-change' }, h('span', {}, `${bps(s.value, s.monthAgo)} 1m`), h('span', {}, `${bps(s.value, s.yearAgo)} 1y`)),
                       h('div', { class: 'inv-rate-spark' }, sparkline(s.spark, null, '#2962ff')),
                       h('span', { class: 'muted tiny' }, s.date),
-                    ),
+                    )),
                   ),
               ),
             ),
@@ -206,7 +206,7 @@ export function createBondsView(ctx: InvestContext) {
   // ----- CUSIP lookup -----
 
   function renderLookup() {
-    const input = h('input', { class: 'input', placeholder: 'CUSIP, e.g. 91282CLW9', value: lookupCusip, spellcheck: false, maxlength: 12, style: 'width:220px;text-transform:uppercase' });
+    const input = h('input', { class: 'input', 'aria-label': 'CUSIP', placeholder: 'CUSIP, e.g. 91282CLW9', value: lookupCusip, spellcheck: false, maxlength: 12, style: 'width:220px;text-transform:uppercase' });
     const result = h('div');
     const go = () => {
       lookupCusip = input.value.trim().toUpperCase();

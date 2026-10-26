@@ -17,9 +17,9 @@ import { state } from '../state';
 import { createFuturesTicket, type FuturesTicket } from '../trade/futuresTicket';
 import { positionPnl } from '../trade/futuresMath';
 import { createTicket, type TicketQuote } from '../trade/ticket';
-import { cancelOrder, envBadge, friendly, futuresAccount, IRA_NOTE, loadSnapshot, OPEN, orderPrice, stockAccounts, takePrefill, usd, type Asset, type Order, type PlacedOrder, type Snapshot, type TicketPrefill } from '../trade/webull';
+import { cancelOrder, envBadge, friendly, futuresAccount, IRA_NOTE, loadSnapshot, OPEN, orderPrice, stockAccounts, takePrefill, usd, type Asset, type Order, type PlacedOrder, type Position, type Snapshot, type TicketPrefill } from '../trade/webull';
 import { dataTable } from '../ui/charts';
-import { formatPrice, h, timeAgo, toast } from '../ui/dom';
+import { activatable, activatableRows, formatPrice, h, timeAgo, toast } from '../ui/dom';
 import { THEME, followTheme } from '../ui/theme';
 
 const WATCH_KEY = 'tp-trade-watch';
@@ -173,8 +173,45 @@ export function createTradePage() {
     return last == null && !book ? null : { last, bid: book?.bid ?? null, ask: book?.ask ?? null };
   }
 
+  /**
+   * A stock position priced with the same live quote as the watchlist and chart, so one symbol shows one price
+   * on the page (the snapshot's Schwab price is up to 30 s older). Falls back to the snapshot when there's no quote.
+   */
+  function livePosition(p: Position): Position {
+    const q = quotes.get(p.symbol);
+    if (q?.last == null || snap?.asset === 'futures') return p;
+    const value = q.last * p.qty;
+    return { ...p, price: q.last, value, gain: p.cost != null ? value - p.cost : p.gain, dayGain: q.prevClose ? (q.last - q.prevClose) * p.qty : p.dayGain };
+  }
+  /** Updates one symbol's price, today, P&L and value cells in the positions list in place. */
+  function drawPositionRow(s: string) {
+    const tr = listBody.querySelector<HTMLElement>(`tbody tr[data-symbol="${CSS.escape(s)}"]`);
+    const p = snap?.positions?.find((x) => x.symbol === s);
+    if (!tr || !p) return;
+    const cells = positionCells(livePosition(p));
+    tr.querySelectorAll('td').forEach((td, i) => {
+      if (i < 3) return; // symbol, shares and average cost don't move
+      const c = cells[i];
+      td.className = c.cls;
+      td.textContent = c.v as string;
+    });
+  }
+  function positionCells(p: Position) {
+    const totalPct = p.gain != null && p.cost ? (p.gain / p.cost) * 100 : null;
+    return [
+      { v: h('button', { type: 'button', class: 'link-btn', title: `Load ${p.symbol}` }, p.symbol), cls: 'label' },
+      { v: p.qty.toLocaleString('en-US'), cls: 'num' },
+      { v: usd(p.avgCost), cls: 'num' },
+      { v: usd(p.price), cls: 'num' },
+      { v: p.dayGain == null ? '—' : `${p.dayGain >= 0 ? '+' : ''}${usd(p.dayGain)}`, cls: `num ${tone(p.dayGain)}` },
+      { v: p.gain == null ? '—' : `${p.gain >= 0 ? '+' : ''}${usd(p.gain)}${totalPct != null ? ` (${pctText(totalPct)})` : ''}`, cls: `num ${tone(p.gain)}` },
+      { v: usd(p.value), cls: 'num' },
+    ];
+  }
+
   function followQuotes() {
-    const wanted = new Set([...watch, symbol]);
+    const held = snap?.asset === 'futures' ? [] : (snap?.positions ?? []).map((p) => p.symbol);
+    const wanted = new Set([...watch, symbol, ...held]);
     for (const [s, stop] of quoteStops) if (!wanted.has(s)) (stop(), quoteStops.delete(s));
     for (const s of wanted) {
       if (quoteStops.has(s)) continue;
@@ -183,6 +220,7 @@ export function createTradePage() {
         subscribeQuote({ provider: 'schwab', symbol: s }, (q) => {
           quotes.set(s, q);
           drawWatchRow(s);
+          if (tab === 'positions') drawPositionRow(s);
           if (s === symbol) {
             drawTitle();
             liveBar(q);
@@ -211,7 +249,7 @@ export function createTradePage() {
     rowEls.clear();
     watchList.replaceChildren(
       ...watch.map((s) => {
-        const row = h('div', { class: `tr-wrow${s === symbol ? ' on' : ''}`, role: 'button', tabindex: 0, onclick: () => select(s), onkeydown: (e: Event) => { if ((e as KeyboardEvent).key === 'Enter') select(s); } });
+        const row = activatable(h('div', { class: `tr-wrow${s === symbol ? ' on' : ''}`, role: 'button', onclick: () => select(s) }));
         rowEls.set(s, row);
         drawWatchRow(s);
         return row;
@@ -513,7 +551,7 @@ export function createTradePage() {
       acctSlot.replaceChildren(sel);
     } else acctSlot.replaceChildren(h('span', { class: 'muted small' }, snap.account ?? ''));
     const b = snap.balances;
-    const today = (snap.positions ?? []).reduce<number | null>((t, p) => (p.dayGain == null ? t : (t ?? 0) + p.dayGain), null);
+    const today = (snap.positions ?? []).map(livePosition).reduce<number | null>((t, p) => (p.dayGain == null ? t : (t ?? 0) + p.dayGain), null);
     const stat = (label: string, value: string, cls = '', title = '') => h('div', { class: 'tr-stat', title }, h('span', { class: 'muted tiny' }, label), h('b', { class: `num ${cls}` }, value));
     statsSlot.replaceChildren(
       stat('Account value', usd(b?.value)),
@@ -663,6 +701,7 @@ export function createTradePage() {
         { id: 'trade:futures-positions' },
       );
       table.classList.add('tr-clickable');
+      activatableRows(table);
       table.addEventListener('click', (e) => {
         const s = (e.target as HTMLElement).closest('tbody tr')?.querySelector('td')?.textContent?.trim();
         if (s) futuresTicket().setContract(s);
@@ -673,24 +712,16 @@ export function createTradePage() {
       const rows = snap.positions;
       if (!rows) return listBody.replaceChildren(err('positions'));
       if (!rows.length) return listBody.replaceChildren(h('div', { class: 'empty-state' }, 'No positions yet. Your first fill shows here.'));
+      followQuotes(); // live prices for held symbols too, so Price matches the watchlist and chart
       const table = dataTable(
         ['Symbol', 'Shares', 'Avg cost', 'Price', 'Today', 'Total P&L', 'Value'],
-        rows.map((p) => {
-          const totalPct = p.gain != null && p.cost ? (p.gain / p.cost) * 100 : null;
-          return [
-            { v: h('button', { type: 'button', class: 'link-btn', title: `Load ${p.symbol}` }, p.symbol), cls: 'label' },
-            { v: p.qty.toLocaleString('en-US'), cls: 'num' },
-            { v: usd(p.avgCost), cls: 'num' },
-            { v: usd(p.price), cls: 'num' },
-            { v: p.dayGain == null ? '—' : `${p.dayGain >= 0 ? '+' : ''}${usd(p.dayGain)}`, cls: `num ${tone(p.dayGain)}` },
-            { v: p.gain == null ? '—' : `${p.gain >= 0 ? '+' : ''}${usd(p.gain)}${totalPct != null ? ` (${pctText(totalPct)})` : ''}`, cls: `num ${tone(p.gain)}` },
-            { v: usd(p.value), cls: 'num' },
-          ];
-        }),
+        rows.map((p) => positionCells(livePosition(p))),
         undefined,
         { id: 'trade:positions' },
       );
+      table.querySelectorAll<HTMLElement>('tbody tr').forEach((tr) => (tr.dataset.symbol = tr.querySelector('td')?.textContent?.trim() ?? ''));
       table.classList.add('tr-clickable');
+      activatableRows(table);
       table.addEventListener('click', (e) => {
         const tr = (e.target as HTMLElement).closest('tbody tr');
         const s = tr?.querySelector('td')?.textContent?.trim();

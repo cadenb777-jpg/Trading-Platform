@@ -2,7 +2,7 @@
 import { insightButton } from '../ai/insight';
 import { clearEngineCache, engineRequest } from '../data/schwab';
 import { createLineChart, pageFrame } from '../ui/charts';
-import { h } from '../ui/dom';
+import { activatable, h } from '../ui/dom';
 import { openChartWindow } from '../ui/chartWindow';
 import { openFredWindow } from '../ui/fredWindow';
 import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
@@ -81,7 +81,7 @@ export function createMacroPage() {
     if (!loaded.size) return null;
     const readings = [...loaded.values()].map((s) => ({ name: s.name, group: s.group, unit: s.unit, date: s.date, value: s.value, previous: s.previous, monthAgo: s.monthAgo, yearAgo: s.yearAgo }));
     return { topic: 'macro', symbol: '', title: 'AI read: the economy', data: { readings, yieldCurve: curve } };
-  }, 'AI summary');
+  });
   const rangeButtons = (['1y', '5y', 'max'] as Range[]).map((r) => h('button', { 'data-range': r, onclick: () => setRange(r) }, r === 'max' ? 'Since 2006' : r === '1y' ? '1 year' : '5 years'));
   const frame = pageFrame('Macro', 'The economy at a glance, from the St. Louis Fed (FRED) and the US Treasury. Updates automatically.', [
     stamp,
@@ -170,14 +170,14 @@ export function createMacroPage() {
               .filter((c) => c.group === g)
               .map((c) => {
                 const box = h('div', { class: 'skeleton', style: 'height:130px' });
-                const el = h(
+                const el = activatable(h(
                   'div',
                   { class: 'panel macro-card loading clickable-card', title: 'Click for the full history: zoom, ranges, stats', onclick: () => openSeries(c.id) },
                   h('div', { class: 'muted small' }, c.name),
                   h('div', { class: 'macro-value' }, h('span', { class: 'skeleton', style: 'width:90px;height:28px' })),
                   h('div', { class: 'macro-changes small' }),
                   box,
-                );
+                ));
                 cards.set(c.id, { el, box, chart: null });
                 return el;
               }),

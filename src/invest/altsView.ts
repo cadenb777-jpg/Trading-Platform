@@ -9,7 +9,7 @@ import { FUND_SNAPSHOTS, SNAPSHOTS_RESEARCHED, type FundSnapshot } from './fundS
 import { insightButton } from '../ai/insight';
 import { engineRequest } from '../data/schwab';
 import { barList, createLineChart, dataTable, money, pct, statCards } from '../ui/charts';
-import { formatPrice, h, openModal, toast } from '../ui/dom';
+import { activatable, formatPrice, h, openModal, toast } from '../ui/dom';
 import { withTableTools } from '../ui/tableTools';
 import { BOARDS, MANAGER_SITES, PRIVATE_FUNDS, STRATEGIES, STRUCTURES, type PrivateFund, type Strategy } from './catalog';
 import { holdingStats, parseCsv, rowsToHoldings, totals, type AltHolding } from './holdings';
@@ -189,7 +189,7 @@ export function createAltsView(ctx: InvestContext) {
 
   function renderDirectory() {
     const grid = h('div', { class: 'fund-grid' });
-    const filterInput = h('input', { class: 'input', placeholder: 'Filter: name, manager, BDC, REIT…', value: fundFilter, style: 'width:260px' });
+    const filterInput = h('input', { class: 'input', 'aria-label': 'Filter funds', placeholder: 'Filter: name, manager, BDC, REIT…', value: fundFilter, style: 'width:260px' });
     const chips = h(
       'div',
       { class: 'chip-row' },
@@ -301,7 +301,7 @@ export function createAltsView(ctx: InvestContext) {
         listedShares: d.schwab?.map(({ spark: _spark, ...r }) => r),
         recentFilings: d.filings.slice(0, 10).map(({ form, filed, reportDate }) => ({ form, filed, reportDate })),
       },
-    }), 'AI summary');
+    }));
     out.push(
       h(
         'div',
@@ -476,7 +476,7 @@ export function createAltsView(ctx: InvestContext) {
   // ----- Search every private fund (Form D) -----
 
   function renderSearch() {
-    const input = h('input', { class: 'input', placeholder: 'Fund or manager name, e.g. "Blue Owl" or "iCapital"', value: searchQuery, style: 'width:320px' });
+    const input = h('input', { class: 'input', 'aria-label': 'Search private funds', placeholder: 'Fund or manager name, e.g. "Blue Owl" or "iCapital"', value: searchQuery, style: 'width:320px' });
     const results = h('div');
     const go = (q = input.value.trim()) => {
       searchQuery = q;
@@ -520,7 +520,7 @@ export function createAltsView(ctx: InvestContext) {
             'table',
             { class: 'data-table' },
             h('thead', {}, h('tr', {}, ...headers.map((t) => h('th', {}, t)))),
-            h('tbody', {}, ...rows.map((r) => h('tr', { class: 'clickable', onclick: () => openFund({ cik: r.cik, name: r.name }) }, h('td', { class: 'label' }, h('b', {}, r.name)), ...cells(r).map((c) => h('td', {}, c))))),
+            h('tbody', {}, ...rows.map((r) => activatable(h('tr', { class: 'clickable', onclick: () => openFund({ cik: r.cik, name: r.name }) }, h('td', { class: 'label' }, h('b', {}, r.name)), ...cells(r).map((c) => h('td', {}, c)))))),
           ),
           { id: `alts:${headers.join('|')}` },
         ),

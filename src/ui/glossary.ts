@@ -80,13 +80,29 @@ export const TERMS: Record<string, { title: string; text: string }> = {
   sigma: { title: 'Move in standard deviations (σ)', text: 'Today\'s move divided by this market\'s usual daily move (the standard deviation of the last 60 daily moves). +2σ is an unusually big up day for that market, whatever its size in %. Lets you compare a 1% move in bonds with a 1% move in natural gas. It (and 1W/1M/YTD) uses Schwab\'s continuous front-month history, which jumps when the contract rolls, so around a roll it can be off (most in crude, natural gas, cattle, hogs and VIX).' },
 };
 
-/** A small "i" that explains a term on hover, focus or tap. */
+let tipCount = 0;
+
+/**
+ * A small "i" that explains a term on hover, focus or tap. Screen readers hear the explanation as the
+ * button's description; Enter or Space toggles it and Escape hides it.
+ */
 export function infoTip(term: keyof typeof TERMS | string) {
   const t = TERMS[term];
   if (!t) return '';
-  const tip = h('span', { class: 'info-tip-text', role: 'tooltip' }, h('b', {}, t.title), ' ', t.text);
-  const el = h('span', { class: 'info-tip', tabindex: 0, 'aria-label': `What is ${t.title}?`, onclick: (e: Event) => (e.stopPropagation(), el.classList.toggle('open')) }, 'i', tip);
-  el.addEventListener('blur', () => el.classList.remove('open'));
+  const id = `tip-${++tipCount}`;
+  const tip = h('span', { class: 'info-tip-text', role: 'tooltip', id }, h('b', {}, t.title), ' ', t.text);
+  const el = h('span', { class: 'info-tip', role: 'button', tabindex: 0, 'aria-label': `What is ${t.title}?`, 'aria-describedby': id, 'aria-expanded': 'false' }, 'i', tip);
+  const show = (open: boolean) => {
+    el.classList.toggle('open', open);
+    el.classList.toggle('closed', !open && el.matches(':focus'));
+    el.setAttribute('aria-expanded', String(open));
+  };
+  el.addEventListener('click', (e) => (e.stopPropagation(), show(!el.classList.contains('open'))));
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') (e.preventDefault(), e.stopPropagation(), show(!el.classList.contains('open')));
+    else if (e.key === 'Escape' && !el.classList.contains('closed')) (e.stopPropagation(), show(false));
+  });
+  el.addEventListener('blur', () => (el.classList.remove('open', 'closed'), el.setAttribute('aria-expanded', 'false')));
   return el;
 }
 

@@ -184,7 +184,11 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
     const label = cellText(th);
     const n = seen.get(label) ?? 0;
     seen.set(label, n + 1);
-    return { th, label, name: label || `column ${i + 1}`, key: n ? `${label} ${n + 1}` : label, type: 'none' as ColumnType, forced: opts.columns?.[label], button: null as HTMLButtonElement | null, cell: h('th', { class: 'tt-f' }) };
+    // The name screen readers hear on its filter boxes: the header without its "i" explanation.
+    const bare = th.cloneNode(true) as HTMLElement;
+    bare.querySelectorAll('.info-tip').forEach((tip) => tip.remove());
+    const name = bare.textContent?.trim() || label || `column ${i + 1}`;
+    return { th, label, name, key: n ? `${label} ${n + 1}` : label, type: 'none' as ColumnType, forced: opts.columns?.[label], button: null as HTMLButtonElement | null, cell: h('th', { class: 'tt-f' }) };
   });
 
   table.classList.add('tt');

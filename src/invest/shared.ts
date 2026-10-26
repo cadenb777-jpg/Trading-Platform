@@ -4,7 +4,7 @@ import { insightButton } from '../ai/insight';
 import type { MarketRef } from '../data/quotes';
 import { engineRequest } from '../data/schwab';
 import { createLineChart, pct, rangeBar, statCards } from '../ui/charts';
-import { formatPrice, h, openModal } from '../ui/dom';
+import { activatable, formatPrice, h, openModal } from '../ui/dom';
 import { termLabel } from '../ui/glossary';
 import { openSettings } from '../ui/settings';
 import { sparkline } from '../ui/sparkline';
@@ -44,7 +44,7 @@ export function boardInsight(label: string, groups: BoardGroup[]) {
       rows: g.symbols.map(([s, name]) => rows.get(s) && { ...rows.get(s)!, name, spark: undefined }).filter((r) => r && r.price != null),
     }));
     return { topic: 'board', symbol: '', market: label, title: `AI read: ${label}`, data };
-  }, 'AI summary');
+  });
   const row = h('div', { class: 'home-ai-row' }, ai.button, h('span', { class: 'muted small' }, `What's leading and lagging in ${label.toLowerCase()}?`));
   return { row, panel: ai.panel, setRows: (rows: Map<string, BoardRow>) => (seen = rows) };
 }
@@ -92,9 +92,9 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
           ...items.map(([symbol, label]) => {
             const r = rows.get(symbol);
             const up = (r?.m3 ?? r?.change ?? 0) >= 0;
-            return h(
+            return activatable(h(
               'tr',
-              { class: 'clickable', tabindex: 0, onclick: () => onPick(symbol, label), onkeydown: (e: Event) => (e as KeyboardEvent).key === 'Enter' && onPick(symbol, label) },
+              { class: 'clickable', onclick: () => onPick(symbol, label) },
               h('td', { class: 'label', 'data-value': `${label} ${showSymbol(symbol)}` }, h('div', { class: 'inv-name' }, h('b', {}, label), h('span', { class: 'muted small' }, showSymbol(symbol)))),
               h('td', { 'data-value': r?.price != null ? String(r.price) : '' }, r?.price != null ? formatPrice(r.price) : h('span', { class: 'muted small', title: 'Schwab has no price for this right now' }, 'No quote'), r?.atClose ? h('div', { class: 'muted tiny' }, `At close ${closeDate(r.atClose)}`) : ''),
               pctCell(r?.change),
@@ -103,7 +103,7 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
               pctCell(r?.y1),
               r?.tr1y != null && r.y1 != null ? h('td', { class: tone(r.tr1y), title: `Price ${pct(r.y1)} + dividends ${pct(r.tr1y - r.y1)}` }, pct(r.tr1y)) : h('td', { class: 'muted' }, '—'),
               h('td', { class: 'inv-spark' }, r?.spark && r.spark.length > 1 ? sparkline(r.spark, null, up ? '#26a69a' : '#ef5350') : ''),
-            );
+            ));
           }),
         ),
       ), { id: `board:${group.title}`, columns: { '3 months': 'none' } }),

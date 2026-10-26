@@ -6,6 +6,7 @@
 import { LATEST_HELPER_VERSION, engineRequest, helper, setAlpacaConnected } from '../data/schwab';
 import { deliverySummary } from './alertsLogic';
 import { h, openModal, toast } from './dom';
+import { currentTheme, setTheme, type ThemeName } from './theme';
 
 export interface PlatformSettings {
   aiKeySet: boolean;
@@ -559,6 +560,19 @@ function aboutSection(): HTMLElement {
   );
 }
 
+/** Appearance: light or dark (saved in this browser, works without the helper). */
+function appearanceRow(): HTMLElement {
+  const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Theme' });
+  const draw = () =>
+    seg.replaceChildren(
+      ...(['dark', 'light'] as ThemeName[]).map((t) =>
+        h('button', { type: 'button', class: currentTheme() === t ? 'active' : '', 'aria-pressed': String(currentTheme() === t), onclick: () => (setTheme(t), draw()) }, t === 'dark' ? 'Dark' : 'Light'),
+      ),
+    );
+  draw();
+  return h('div', { class: 'settings-row' }, h('h3', { class: 'settings-section' }, 'Appearance'), h('div', { class: 'settings-label' }, h('b', {}, 'Theme')), seg);
+}
+
 export async function openSettings(focus?: 'ai' | 'alerts') {
   const body = h('div', { class: 'settings' }, h('div', { class: 'muted pad' }, 'Loading…'));
   const close = openModal('Settings', body, { wide: true });
@@ -567,7 +581,7 @@ export async function openSettings(focus?: 'ai' | 'alerts') {
     try {
       s = await getSettings(true);
     } catch (err) {
-      body.replaceChildren(connectionCheck(), h('div', { class: 'ap-error' }, `${(err as Error).message}`), aboutSection());
+      body.replaceChildren(appearanceRow(), connectionCheck(), h('div', { class: 'ap-error' }, `${(err as Error).message}`), aboutSection());
       return;
     }
     const model = h('select', { class: 'input' }, ...s.models.map((m) => h('option', { value: m.id, selected: m.id === s.model }, m.name)));
@@ -577,6 +591,7 @@ export async function openSettings(focus?: 'ai' | 'alerts') {
     });
     const email = h('input', { class: 'input', type: 'email', value: s.secContact, placeholder: 'you@example.com' });
     body.replaceChildren(
+      appearanceRow(),
       connectionCheck(),
       h('h3', { class: 'settings-section' }, 'AI assistant'),
       keyRow(
@@ -584,7 +599,7 @@ export async function openSettings(focus?: 'ai' | 'alerts') {
         h(
           'p',
           { class: 'muted small' },
-          'Powers the AI assistant and AI analysis buttons. Get a key at ',
+          'Powers the AI assistant and AI summary buttons. Get a key at ',
           h('a', { href: 'https://console.anthropic.com/settings/keys', target: '_blank', rel: 'noopener' }, 'console.anthropic.com'),
           ' (sign up, add a little credit under Billing, then Create Key). Typical personal use costs a few dollars a month; the low-cost model costs much less.',
         ),

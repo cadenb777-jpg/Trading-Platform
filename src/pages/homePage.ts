@@ -334,7 +334,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
       .slice(0, 12)
       .map((i) => ({ title: i.title, source: i.source, impact: i.impact, section: i.section, published: new Date(i.published * 1000).toISOString() }));
     return { topic: 'market', symbol: '', title: 'AI market read', data: { asOf: new Date().toISOString(), session: marketStatus(new Date()).label, indexes, headlines } };
-  }, 'AI market read');
+  });
 
   const watchlist = createWatchlist({ onSelect: onOpenChart });
 

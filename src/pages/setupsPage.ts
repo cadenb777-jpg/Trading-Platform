@@ -15,7 +15,7 @@ import { takeProfit, type SideRecord, type Setup, type StrategyInfo } from '../h
 import { tradeGuideBody } from '../home/tradeGuide';
 import type { Timeframe } from '../types';
 import { pageFrame, pct as fmtPct } from '../ui/charts';
-import { formatPrice, h, timeAgo, toast } from '../ui/dom';
+import { activatable, formatPrice, h, timeAgo, toast } from '../ui/dom';
 import { deleteHelperAlert, helperAlertsAvailable, listHelperAlerts, saveHelperAlert } from '../ui/alerts';
 import { infoTip, termLabel } from '../ui/glossary';
 import { withTableTools } from '../ui/tableTools';
@@ -209,7 +209,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   const research = h('details', { class: 'sp-fold' }, h('summary', {}, 'Research: the strategy lab and the rule tests on your data', infoTip('rules')), researchBody);
   const filters = h('div', { class: 'sp-filters' });
   const list = h('div', { class: 'sp-list' });
-  const detail = h('div', { class: 'sp-detail' }, h('p', { class: 'muted pad' }, 'Pick a setup on the left to see its live entry status, chart and step-by-step guide.'));
+  const detail = h('div', { class: 'sp-detail' }, h('p', { class: 'muted pad' }, 'Pick a setup from the list to see its live entry status, chart and step-by-step guide.'));
   const alertLog = h('div', { class: 'sp-alerts' });
   frame.body.replaceChildren(status, today, filters, h('div', { class: 'sp-main' }, h('div', { class: 'sp-left' }, list, alertLog), detail), evidence, research, howTo);
 
@@ -457,11 +457,14 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
         (prefs.side === 'all' || (prefs.side === 'buy') === s.direction > 0),
     );
     const mc = (s: Setup) => s.monteCarlo?.profitable ?? -1;
+    // Setups that are over (stop hit, target reached, entry window closed) go to the bottom whatever the sort.
+    const over = new Map(out.map((s) => [s, ['invalid', 'target', 'expired'].includes(entryZone(s, prices.get(s.symbol) ?? s.price).zone)]));
     return out.sort((a, b) =>
-      prefs.sort === 'rr' ? (b.plan.riskReward ?? 0) - (a.plan.riskReward ?? 0)
+      Number(over.get(a)) - Number(over.get(b)) ||
+      (prefs.sort === 'rr' ? (b.plan.riskReward ?? 0) - (a.plan.riskReward ?? 0)
         : prefs.sort === 'mc' ? mc(b) - mc(a)
           : prefs.sort === 'new' ? Number(!!b.new) - Number(!!a.new) || b.signalDate.localeCompare(a.signalDate)
-            : rank[a.tier ?? 'C'] - rank[b.tier ?? 'C'] || Number(a.status === 'forming') - Number(b.status === 'forming') || b.score - a.score,
+            : rank[a.tier ?? 'C'] - rank[b.tier ?? 'C'] || Number(a.status === 'forming') - Number(b.status === 'forming') || b.score - a.score),
     );
   }
 
@@ -491,10 +494,18 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     const id = idOf(s);
     const z = entryZone(s, prices.get(s.symbol) ?? s.price);
     const long = s.direction > 0;
-    return h(
+    // The list is rebuilt on a pick, so put keyboard focus back on the picked row.
+    const pick = () => {
+      const hadFocus = list.contains(document.activeElement);
+      selected = id;
+      render();
+      if (hadFocus) list.querySelector<HTMLElement>('tbody tr.sel')?.focus({ preventScroll: true });
+    };
+    const label = watched.has(id) ? `Stop watching ${s.symbol}` : `Watch ${s.symbol}: alert me when it's time to enter`;
+    return activatable(h(
       'tr',
-      { class: `${id === selected ? 'sel' : ''}`, onclick: () => ((selected = id), render()) },
-      h('td', {}, h('button', { class: `sp-star${watched.has(id) ? ' on' : ''}`, title: watched.has(id) ? 'Stop watching' : 'Watch: alert me when it\'s time to enter', onclick: (e: Event) => (e.stopPropagation(), toggleWatch(s)) }, watched.has(id) ? '★' : '☆')),
+      { class: `${id === selected ? 'sel' : ''}`, 'aria-current': id === selected ? 'true' : undefined, onclick: pick },
+      h('td', {}, h('button', { class: `sp-star${watched.has(id) ? ' on' : ''}`, title: label, 'aria-label': label, 'aria-pressed': String(watched.has(id)), onclick: (e: Event) => (e.stopPropagation(), toggleWatch(s)) }, watched.has(id) ? '★' : '☆')),
       h('td', {}, h('b', {}, s.symbol), ' ', h('span', { class: `sp-side ${long ? 'up' : 'down'}` }, long ? 'BUY' : 'SELL'), s.new ? h('span', { class: 'new-chip' }, 'New') : '', s.conflict ? h('span', { class: 'sp-warn', title: `${s.conflict.strategy} says the opposite` }, ' ⚠') : '', h('div', { class: 'muted tiny' }, s.strategyName.split(' (')[0])),
       h('td', {}, s.tier ? h('i', { class: `tier tier-${s.tier}` }, s.tier) : ''),
       h('td', { class: z.tone }, z.label),
@@ -502,7 +513,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       h('td', { class: 'num down' }, usd(s.plan.stop)),
       ((tp) => h('td', { class: 'num up', title: tp.note }, usd(tp.price), tp.tested ? '' : h('span', { class: 'muted tiny' }, ' 2R')))(takeProfit(s)),
       h('td', { class: 'num muted' }, holdShort(s)),
-    );
+    ));
   }
 
   // ----- Detail: live status, chart, guide -----
@@ -513,6 +524,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   function renderDetail() {
     const hr = horizon();
     const s = hr?.setups.find((x) => idOf(x) === selected);
+    detail.hidden = !s; // nothing to show until there is a list to pick from
     if (!s) {
       detailId = null;
       return;

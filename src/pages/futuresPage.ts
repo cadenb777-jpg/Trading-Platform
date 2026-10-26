@@ -8,7 +8,7 @@ import { clearEngineCache, engineRequest } from '../data/schwab';
 import { curveReading, cotTone, daysUntil, futuresPrice, heatStrength, sigmaText } from '../futures/view';
 import { compact, createLineChart, dataTable, money, pageFrame, pct, statCards } from '../ui/charts';
 import { openChartWindow } from '../ui/chartWindow';
-import { h, openModal } from '../ui/dom';
+import { activatableRows, h, openModal } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
 import { THEME } from '../ui/theme';
 import { xySvg } from '../ui/xyChart';
@@ -264,6 +264,7 @@ export function createFuturesPage() {
       { id: 'futures:board' },
     );
     table.classList.add('tr-clickable');
+    activatableRows(table);
     const head = table.querySelectorAll('th');
     const tips: Record<string, string> = { 'Move (σ)': 'sigma', 'Roll by': 'roll', Multiplier: 'multiplier', 'Tick value': 'tickvalue', Notional: 'notional', 'Commercials (COT)': 'cotindex' };
     head.forEach((th) => {
@@ -297,6 +298,7 @@ export function createFuturesPage() {
       { id: 'futures:cot' },
     );
     table.classList.add('tr-clickable');
+    activatableRows(table);
     const date = rows[0].positioning!.date;
     cotBox.replaceChildren(
       table,

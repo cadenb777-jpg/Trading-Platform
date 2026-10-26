@@ -218,12 +218,13 @@ export function createBacktestPage() {
     return { kind: 'value', value };
   }
 
-  function ruleRow(list: Rule[], i: number, redraw: () => void) {
+  function ruleRow(list: Rule[], i: number, redraw: () => void, side: string) {
     const r = list[i];
     const opsList = operandOptions();
-    const sel = (o: Operand, onChange: (o: Operand) => void) => {
-      const s = h('select', { class: 'input' }, ...opsList.map(([k, l]) => h('option', { value: k, selected: k === operandKey(o) }, l)));
-      const n = h('input', { class: 'input rule-num', type: 'number', step: 'any', value: o.kind === 'value' ? o.value : 0, hidden: o.kind !== 'value' });
+    const name = `${side} rule ${i + 1}`; // what screen readers call each box
+    const sel = (o: Operand, onChange: (o: Operand) => void, part: string) => {
+      const s = h('select', { class: 'input', 'aria-label': `${name}: ${part}` }, ...opsList.map(([k, l]) => h('option', { value: k, selected: k === operandKey(o) }, l)));
+      const n = h('input', { class: 'input rule-num', type: 'number', step: 'any', 'aria-label': `${name}: ${part} number`, value: o.kind === 'value' ? o.value : 0, hidden: o.kind !== 'value' });
       const update = () => {
         n.hidden = s.value !== 'value';
         onChange(parseOperand(s.value, parseFloat(n.value) || 0));
@@ -232,13 +233,13 @@ export function createBacktestPage() {
       n.addEventListener('input', update);
       return [s, n];
     };
-    const op = h('select', { class: 'input' }, ...OPERATORS.map(([k, l]) => h('option', { value: k, selected: k === r.op }, l)));
+    const op = h('select', { class: 'input', 'aria-label': `${name}: condition` }, ...OPERATORS.map(([k, l]) => h('option', { value: k, selected: k === r.op }, l)));
     op.addEventListener('change', () => (r.op = op.value as Rule['op']));
     return h(
       'div',
       { class: 'rule-row' },
-      h('div', { class: 'rule-fields' }, ...sel(r.left, (o) => (r.left = o)), op, ...sel(r.right, (o) => (r.right = o))),
-      h('button', { class: 'icon-btn', title: 'Remove rule', 'aria-label': 'Remove rule', onclick: () => (list.splice(i, 1), redraw()) }, '✕'),
+      h('div', { class: 'rule-fields' }, ...sel(r.left, (o) => (r.left = o), 'left side'), op, ...sel(r.right, (o) => (r.right = o), 'right side')),
+      h('button', { class: 'icon-btn', title: 'Remove rule', 'aria-label': `Remove ${name}`, onclick: () => (list.splice(i, 1), redraw()) }, '✕'),
     );
   }
 
@@ -247,11 +248,11 @@ export function createBacktestPage() {
     const draw = () => {
       const list = rules[which];
       const modeKey = which === 'entry' ? 'entryMode' : 'exitMode';
-      const mode = h('select', { class: 'input' }, h('option', { value: 'all', selected: rules[modeKey] === 'all' }, 'when ALL of these are true'), h('option', { value: 'any', selected: rules[modeKey] === 'any' }, 'when ANY of these is true'));
+      const mode = h('select', { class: 'input', 'aria-label': `${title} rules: when ALL or ANY are true` }, h('option', { value: 'all', selected: rules[modeKey] === 'all' }, 'when ALL of these are true'), h('option', { value: 'any', selected: rules[modeKey] === 'any' }, 'when ANY of these is true'));
       mode.addEventListener('change', () => (rules[modeKey] = mode.value as 'all' | 'any'));
       box.replaceChildren(
         h('div', { class: 'rule-head' }, h('b', {}, title), mode),
-        ...list.map((_, i) => ruleRow(list, i, draw)),
+        ...list.map((_, i) => ruleRow(list, i, draw, title)),
         list.length ? '' : h('p', { class: 'muted small' }, which === 'entry' ? 'No entry rules yet.' : 'No exit rules: trades only close on stop-loss, take-profit or the end of the data.'),
         h('button', { class: 'btn small', onclick: () => (list.push({ left: { kind: 'price', field: 'close' }, op: 'crossAbove', right: chartInds[0] ? { kind: 'ind', uid: chartInds[0].instance.uid, plot: chartInds[0].def.plots[0].key } : { kind: 'value', value: 0 } }), draw()) }, '+ Add rule'),
       );

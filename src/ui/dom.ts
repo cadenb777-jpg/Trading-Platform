@@ -14,6 +14,26 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = 
   return el;
 }
 
+/**
+ * Makes a clickable row or card usable from the keyboard: Tab reaches it and Enter or Space does what a
+ * click does. Keys pressed on a button or link inside it are left alone.
+ */
+export function activatable<T extends HTMLElement>(el: T): T {
+  el.tabIndex = 0;
+  el.classList.add('activatable');
+  el.addEventListener('keydown', (e) => {
+    if (e.target !== el || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault();
+    el.click();
+  });
+  return el;
+}
+
+/** activatable() for every body row of a table whose rows open something on click. */
+export function activatableRows(table: HTMLElement) {
+  table.querySelectorAll<HTMLElement>('tbody tr').forEach(activatable);
+}
+
 /** Opens a dialog box. Returns a function that closes it. */
 export function openModal(title: string, body: Node, opts: { wide?: boolean; onClose?: () => void; noAutofocus?: boolean } = {}): () => void {
   const close = () => {

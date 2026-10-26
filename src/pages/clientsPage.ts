@@ -107,7 +107,7 @@ export function createClientsPage() {
       const saved = await listDocs<Branding>('branding');
       branding = { ...DEFAULT_BRANDING, ...(saved.find((b) => b.id === 'default') ?? {}) };
     } catch (err) {
-      editor.replaceChildren(h('div', { class: 'ap-error' }, `${(err as Error).message}. Start the helper to manage clients.`));
+      editor.replaceChildren(h('div', { class: 'ap-error' }, `${(err as Error).message.replace(/\.$/, '')}. Clients are saved by the helper on your computer.`));
       return;
     }
     if (!current.portfolioId && portfolios[0]) current.portfolioId = portfolios[0].id;

@@ -1,4 +1,4 @@
-/** "AI analysis" buttons: one-off reads of the data on screen, streamed into a panel. */
+/** "AI summary" buttons (one label on every page): one-off reads of the data on screen, streamed into a panel. */
 import { engineRequest } from '../data/schwab';
 import { h } from '../ui/dom';
 import { openSettings } from '../ui/settings';
@@ -59,7 +59,7 @@ export async function runInsight(target: HTMLElement, req: InsightRequest) {
 }
 
 /** A button plus the panel it fills. `getRequest` returns null when there's no data yet. */
-export function insightButton(getRequest: () => InsightRequest | null, label = 'AI analysis') {
+export function insightButton(getRequest: () => InsightRequest | null, label = 'AI summary') {
   const panel = h('section', { class: 'panel insight-panel', hidden: true });
   const button = h(
     'button',

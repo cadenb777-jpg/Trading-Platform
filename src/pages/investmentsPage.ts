@@ -10,7 +10,7 @@ import { createBondsView } from '../invest/bondsView';
 import { BOARDS, CRYPTO_COINS, SECTIONS, searchCatalog, type Section } from '../invest/catalog';
 import { boardInsight, boardTable, errorBox, loadBoard, openSymbolDetail, showSymbol, skeletonBoard, tone, type BoardRow, type InvestContext } from '../invest/shared';
 import { pageFrame, pct } from '../ui/charts';
-import { formatPrice, h } from '../ui/dom';
+import { activatable, formatPrice, h } from '../ui/dom';
 import { tableTools } from '../ui/tableTools';
 
 const SECTION_KEY = 'tp-invest-section';
@@ -219,13 +219,13 @@ export function createInvestmentsPage(ctx: InvestContext) {
                 'tbody',
                 {},
                 ...rows.map((m) =>
-                  h(
+                  activatable(h(
                     'tr',
                     { class: 'clickable', onclick: () => openSymbolDetail(m.symbol, m.name || m.symbol, { ...m, price: m.price, change: m.change }, ctx) },
                     h('td', { class: 'label' }, h('div', { class: 'inv-name' }, h('b', {}, m.symbol), h('span', { class: 'muted small' }, m.name))),
                     h('td', {}, formatPrice(m.price)),
                     h('td', { class: tone(m.change) }, pct(m.change)),
-                  ),
+                  )),
                 ),
               ),
             ),
@@ -245,13 +245,13 @@ export function createInvestmentsPage(ctx: InvestContext) {
         'tbody',
         {},
         ...CRYPTO_COINS.map(([symbol, label]) => {
-          const tr = h(
+          const tr = activatable(h(
             'tr',
             { class: 'clickable', onclick: () => ctx.openChart({ provider: 'coinbase', symbol }) },
             h('td', { class: 'label', 'data-value': `${label} ${symbol}` }, h('div', { class: 'inv-name' }, h('b', {}, label), h('span', { class: 'muted small' }, symbol))),
             h('td', {}, '—'),
             h('td', {}, '—'),
-          );
+          ));
           rows.set(symbol, tr);
           return tr;
         }),

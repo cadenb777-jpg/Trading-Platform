@@ -12,7 +12,7 @@ import { createPriceAlert, openAlertsDialog, startAlertWatcher } from './ui/aler
 import { h, toast } from './ui/dom';
 import { icon, type IconName } from './ui/icons';
 import { openSettings } from './ui/settings';
-import { currentTheme, initTheme, onThemeChange, setTheme } from './ui/theme';
+import { initTheme } from './ui/theme';
 import { PAGE_SUGGESTIONS, screenText } from './ai/screen';
 
 initTheme();
@@ -72,6 +72,8 @@ window.addEventListener('tp:backtest-chart', () => {
  */
 interface PageEntry {
   route: string;
+  /** Which part of the menu it sits in (a thin divider separates the groups). */
+  group: keyof typeof GROUPS;
   label: string;
   icon: IconName;
   title: string;
@@ -80,30 +82,30 @@ interface PageEntry {
   loading?: Promise<Page>;
 }
 
+const GROUPS = { markets: 'Markets', analyse: 'Analyse', money: 'My money' } as const;
+
 const pages: PageEntry[] = [
-  { route: 'home', label: 'Home', icon: 'home', title: 'Trading Platform', create: () => createHomePage(openChart, () => (location.hash = '#calendar')) },
-  { route: 'chart', label: 'Chart', icon: 'chart', title: '', create: () => getChartPage() },
-  { route: 'setups', label: 'Setups', icon: 'target', title: 'Setups', create: async () => (await import('./pages/setupsPage')).createSetupsPage(openChart) },
-  { route: 'multi', label: 'Multi', icon: 'grid', title: 'Multi-chart', create: async () => (await import('./pages/multiChartPage')).createMultiChartPage(openChart) },
+  { route: 'home', group: 'markets', label: 'Home', icon: 'home', title: 'Trading Platform', create: () => createHomePage(openChart, () => (location.hash = '#calendar')) },
   {
     route: 'invest',
+    group: 'markets',
     label: 'Invest',
     icon: 'invest',
     title: 'Investments',
     create: async () => (await import('./pages/investmentsPage')).createInvestmentsPage({ openChart, openResearch }),
   },
-  { route: 'futures', label: 'Futures', icon: 'futures', title: 'Futures', create: async () => (await import('./pages/futuresPage')).createFuturesPage() },
-  { route: 'flow', label: 'Flow', icon: 'flow', title: 'Flow', create: async () => (await import('./pages/flowPage')).createFlowPage() },
-  { route: 'research', label: 'Research', icon: 'research', title: 'Research', create: async () => (await import('./pages/researchPage')).createResearchPage() },
-  { route: 'macro', label: 'Macro', icon: 'macro', title: 'Macro', create: async () => (await import('./pages/macroPage')).createMacroPage() },
-  { route: 'trade', label: 'Trade', icon: 'trade', title: 'Trade', create: async () => (await import('./pages/tradePage')).createTradePage() },
-  { route: 'account', label: 'Account', icon: 'account', title: 'Account', create: async () => (await import('./pages/accountPage')).createAccountPage(openPortfolio) },
-  { route: 'portfolio', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', create: async () => (await import('./pages/portfolioPage')).createPortfolioPage() },
-  { route: 'clients', label: 'Clients', icon: 'clients', title: 'Clients & Reports', create: async () => (await import('./pages/clientsPage')).createClientsPage() },
-  { route: 'backtest', label: 'Backtest', icon: 'backtest', title: 'Backtest', create: async () => (await import('./pages/backtestPage')).createBacktestPage() },
-  { route: 'calendar', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', create: async () => (await import('./pages/calendarPage')).createCalendarPage() },
+  { route: 'futures', group: 'markets', label: 'Futures', icon: 'futures', title: 'Futures', create: async () => (await import('./pages/futuresPage')).createFuturesPage() },
+  { route: 'macro', group: 'markets', label: 'Macro', icon: 'macro', title: 'Macro', create: async () => (await import('./pages/macroPage')).createMacroPage() },
+  { route: 'calendar', group: 'markets', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', create: async () => (await import('./pages/calendarPage')).createCalendarPage() },
+  { route: 'chart', group: 'analyse', label: 'Chart', icon: 'chart', title: '', create: () => getChartPage() },
+  { route: 'multi', group: 'analyse', label: 'Multi', icon: 'grid', title: 'Multi-chart', create: async () => (await import('./pages/multiChartPage')).createMultiChartPage(openChart) },
+  { route: 'setups', group: 'analyse', label: 'Setups', icon: 'target', title: 'Setups', create: async () => (await import('./pages/setupsPage')).createSetupsPage(openChart) },
+  { route: 'research', group: 'analyse', label: 'Research', icon: 'research', title: 'Research', create: async () => (await import('./pages/researchPage')).createResearchPage() },
+  { route: 'flow', group: 'analyse', label: 'Flow', icon: 'flow', title: 'Flow', create: async () => (await import('./pages/flowPage')).createFlowPage() },
+  { route: 'backtest', group: 'analyse', label: 'Backtest', icon: 'backtest', title: 'Backtest', create: async () => (await import('./pages/backtestPage')).createBacktestPage() },
   {
     route: 'scripts',
+    group: 'analyse',
     label: 'Scripts',
     icon: 'code',
     title: 'Scripts',
@@ -116,6 +118,10 @@ const pages: PageEntry[] = [
         onScriptSaved: (defId) => getChartPage().refreshIndicatorsFor(defId),
       }),
   },
+  { route: 'account', group: 'money', label: 'Account', icon: 'account', title: 'Account', create: async () => (await import('./pages/accountPage')).createAccountPage(openPortfolio) },
+  { route: 'portfolio', group: 'money', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', create: async () => (await import('./pages/portfolioPage')).createPortfolioPage() },
+  { route: 'trade', group: 'money', label: 'Trade', icon: 'trade', title: 'Trade', create: async () => (await import('./pages/tradePage')).createTradePage() },
+  { route: 'clients', group: 'money', label: 'Clients', icon: 'clients', title: 'Clients & Reports', create: async () => (await import('./pages/clientsPage')).createClientsPage() },
 ];
 
 // ---------- AI assistant ----------
@@ -276,14 +282,15 @@ if (isAiWindow) {
   });
 
   document.querySelector('#app')!.append(
+    h('a', { class: 'skip-link', href: '#content', onclick: (e: Event) => (e.preventDefault(), focusPageHeading()) }, 'Skip to content'),
     h(
       'nav',
       { class: 'rail', 'aria-label': 'Main' },
       h('div', { class: 'brand', title: 'Trading Platform' }, '◆'),
-      themeButton(),
-      ...pages.map((p) =>
+      ...pages.flatMap((p, i) => [
+        p.group !== pages[i - 1]?.group ? h('div', { class: 'rail-group', role: 'separator', 'aria-label': GROUPS[p.group], title: GROUPS[p.group] }) : null,
         h('a', { class: 'nav-btn', href: `#${p.route}`, 'data-route': p.route, title: p.label, 'aria-label': p.label }, icon(p.icon, 22), h('span', { class: 'nav-label' }, p.label)),
-      ),
+      ]),
       h(
         'div',
         { class: 'rail-bottom' },
@@ -292,7 +299,7 @@ if (isAiWindow) {
         h('button', { class: 'nav-btn', title: 'Settings', 'aria-label': 'Settings', onclick: () => openSettings() }, icon('gear', 22), h('span', { class: 'nav-label' }, 'Settings')),
       ),
     ),
-    h('div', { class: 'app-main' }, updateBanner, views),
+    h('main', { class: 'app-main', id: 'content', tabindex: -1 }, updateBanner, views),
     drawer,
   );
   helper.onAvailability(showUpdateBanner);
@@ -302,22 +309,6 @@ if (isAiWindow) {
   window.addEventListener('hashchange', () => { if (!drawer.hidden) assistant.reload(); }); // page-specific example questions
   route();
   startAlertWatcher();
-}
-
-/** Sun/moon button at the top of the menu: switches light and dark mode (remembered in this browser). */
-function themeButton() {
-  const btn = h('button', { class: 'nav-btn theme-btn' });
-  const draw = () => {
-    const dark = currentTheme() === 'dark';
-    const label = dark ? 'Switch to light mode' : 'Switch to dark mode';
-    btn.replaceChildren(icon(dark ? 'sun' : 'moon', 20), h('span', { class: 'nav-label' }, dark ? 'Light' : 'Dark'));
-    btn.title = label;
-    btn.setAttribute('aria-label', label);
-  };
-  btn.addEventListener('click', () => setTheme(currentTheme() === 'dark' ? 'light' : 'dark'));
-  onThemeChange(draw);
-  draw();
-  return btn;
 }
 
 function currentPage() {
@@ -339,7 +330,11 @@ function ensurePage(entry: PageEntry): Promise<Page> {
 async function route() {
   const current = currentPage();
   const mine = ++routeRequest;
-  document.querySelectorAll<HTMLElement>('.nav-btn[data-route]').forEach((b) => b.classList.toggle('active', b.dataset.route === current.route));
+  document.querySelectorAll<HTMLElement>('.nav-btn[data-route]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.route === current.route);
+    if (b.dataset.route === current.route) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
   // On phones the menu is a sideways-scrolling bar: bring the current page's button into view.
   document.querySelector<HTMLElement>('.nav-btn.active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
   if (current.title) document.title = current.title === 'Trading Platform' ? current.title : `${current.title} · Trading Platform`;
@@ -359,4 +354,17 @@ async function route() {
     if (p !== current) p.page.stop?.();
   }
   page.start();
+  // After a page switch (not the first load), move keyboard and screen-reader focus to the new page's heading.
+  if (!firstRoute) focusPageHeading();
+  firstRoute = false;
+}
+
+let firstRoute = true;
+
+/** Focuses the open page's heading (or the content area when it has none, like the chart). */
+function focusPageHeading() {
+  const el = currentPage().page?.el.querySelector<HTMLElement>('h1') ?? document.querySelector<HTMLElement>('#content');
+  if (!el) return;
+  if (!el.hasAttribute('tabindex')) el.tabIndex = -1;
+  el.focus({ preventScroll: true });
 }
