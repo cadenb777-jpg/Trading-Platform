@@ -6756,6 +6756,7 @@ button.stat-drill:focus-visible .stat-drill-mark {
 @media (max-width: 640px) {
   .opt-adv-grid { grid-template-columns: minmax(0, 1fr); }
   .opt-rbar-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
 /* ---- Sources chip and cross-check panel (src/ui/sourcesChip.ts) ---- */
 .xc-wrap {
   display: inline-flex;
