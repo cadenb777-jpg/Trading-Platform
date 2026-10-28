@@ -1,0 +1,31 @@
+{
+ "data": {
+  "symbol": "AAPL",
+  "summaryData": {
+   "Exchange": {
+    "label": "Exchange",
+    "value": "NASDAQ-GS"
+   },
+   "PreviousClose": {
+    "label": "Previous Close",
+    "value": "$229.35"
+   },
+   "AnnualizedDividend": {
+    "label": "Annualized Dividend",
+    "value": "$1.04"
+   },
+   "Yield": {
+    "label": "Current Yield",
+    "value": "0.45%"
+   },
+   "ExDividendDate": {
+    "label": "Ex Dividend Date",
+    "value": "Aug 11, 2026"
+   }
+  },
+  "assetClass": "STOCKS"
+ },
+ "status": {
+  "rCode": 200
+ }
+}

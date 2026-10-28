@@ -65,6 +65,19 @@ export interface Holding {
   distributed?: number;
   /** Date of the latest NAV / valuation for alternatives. */
   valueDate?: string;
+  /** Share log kept by the helper at every save (first time seen, then each change in shares): dividends are
+   * estimated from the first date. Never typed by the owner. */
+  seen?: { date: string; shares: number }[];
+  /** The owner's purchase date (YYYY-MM-DD), typed on the Account page; dividends are counted from it. */
+  purchaseDate?: string;
+  /** Dividends received in total (dollars), typed by the owner or read from a statement, as of dividendsAsOf. */
+  dividends?: number;
+  dividendsSource?: 'entered' | 'statement';
+  dividendsAsOf?: string;
+  /** The owner's return-of-capital share of the payouts (0.4 = 40%), from a 1099-DIV box 3 or the fund's 19(a)
+   * notices, and the year it describes. Never estimated. */
+  rocPct?: number;
+  rocYear?: string;
 }
 
 export interface Portfolio {

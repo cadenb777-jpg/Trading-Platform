@@ -298,6 +298,12 @@ export function createInvestmentsPage(ctx: InvestContext) {
   let started = false;
   return {
     el: frame.el,
+    /** Opens a section (the command bar's BONDS / WB). */
+    open(next: Section) {
+      if (!SECTIONS.some((s) => s.id === next)) return;
+      if (started) showSection(next);
+      else section = next; // start() shows it
+    },
     start() {
       if (!started) {
         started = true;

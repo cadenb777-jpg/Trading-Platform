@@ -7,6 +7,7 @@ import { cleanBars, regroupBars, type Bar, type Timeframe } from '../types';
 import type { ConnectionStatus, DataProvider, Trade } from './provider';
 import { feedOf, markFetched, recordError, recordOk, requestProblem } from './health';
 import type { Quote } from './quotes';
+import { recordEngineError } from '../diagnostics';
 
 const HELPER_URL = 'ws://127.0.0.1:8765';
 const CONNECT_TIMEOUT_MS = 10000;
@@ -31,6 +32,8 @@ const NEW_INSIGHTS = new Set(['scanner', 'market', 'macro', 'bonds', 'board', 'f
 const FUTURES_MARKET_HELPER_VERSION = 31;
 /** Alerts run by the helper (work with the tab closed; ntfy/Telegram) need at least this version. */
 export const ALERTS_HELPER_VERSION = 32;
+/** Cross-checking a value across free sources (the "Sources" chip) needs at least this version. */
+export const CROSSCHECK_HELPER_VERSION = 34;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
@@ -272,6 +275,7 @@ class HelperConnection {
     if ((INVEST_REQUEST.test(type) || msg.collection === 'alt_holdings') && (this.version ?? 0) < INVEST_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('futures.') || (type === 'ai.insight' && msg.topic === 'futures')) && (this.version ?? 0) < FUTURES_MARKET_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('alerts.') && (this.version ?? 0) < ALERTS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if (type.startsWith('crosscheck.') && (this.version ?? 0) < CROSSCHECK_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('scanner.') || (type === 'ai.insight' && NEW_INSIGHTS.has(String(msg.topic)))) && (this.version ?? 0) < SCANNER_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {
@@ -457,10 +461,12 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'flow.short_volume': 30 * 60_000,
   'research.company': 5 * 60_000,
   'alts.fund': 15 * 60_000,
+  'crosscheck.value': 60_000,
   'alts.search_private': 15 * 60_000,
   'alts.latest_private': 10 * 60_000,
   'risk.account': 5 * 60_000,
   'tax.account': 60_000,
+  'dividends.history': 30 * 60_000,
   'futures.board': 20_000,
   'futures.curve': 60_000,
   'futures.detail': 5 * 60_000,
@@ -523,6 +529,7 @@ export async function engineRequest<T>(type: string, params: Record<string, unkn
  * when the problem is one request's own input (an unknown symbol says nothing about the feed).
  */
 function noteFailure(type: string, err: Error) {
+  if (err?.name !== 'AbortError') recordEngineError(type, err?.message ?? String(err)); // for Send diagnostics
   const feed = feedOf(type);
   if (feed && err?.name !== 'AbortError' && helper.isConnected && !requestProblem(err.message)) recordError(feed, err.message);
 }

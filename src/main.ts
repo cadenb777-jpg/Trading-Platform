@@ -16,6 +16,10 @@ import { initTheme } from './ui/theme';
 import { PAGE_SUGGESTIONS, screenText } from './ai/screen';
 import { followHealth, openDataHealth } from './ui/dataHealth';
 import { initTickerCards } from './ui/tickerCard';
+import { initCommandBar } from './ui/command';
+import { captureConsoleErrors } from './diagnostics';
+
+captureConsoleErrors(); // kept for Settings > Send diagnostics
 
 initTheme();
 
@@ -45,20 +49,18 @@ const openChart = (ref: MarketRef) => {
 };
 
 /** Opens the Research page on a company (from the Investments page, for example). */
-const openResearch = (symbol: string) => {
-  const entry = pages.find((p) => p.route === 'research');
-  if (!entry) return;
-  location.hash = '#research';
-  ensurePage(entry).then((page) => (page as Page & { open?(symbol: string): void }).open?.(symbol));
-};
+const openResearch = (symbol: string) => openPageWith('research', 'open', symbol);
 
 /** Opens a saved portfolio (or, with 'webull', the Webull view) on the Portfolios page (from the Account page). */
-const openPortfolio = (id: string) => {
-  const entry = pages.find((p) => p.route === 'portfolio');
+const openPortfolio = (id: string) => openPageWith('portfolio', 'open', id);
+
+/** Goes to a page and, once it's built, calls one of its methods (e.g. the Research page's open(symbol, tab)). */
+function openPageWith(route: string, method?: string, ...args: unknown[]) {
+  const entry = pages.find((p) => p.route === route);
   if (!entry) return;
-  location.hash = '#portfolio';
-  ensurePage(entry).then((page) => (page as Page & { open?(id: string): void }).open?.(id));
-};
+  location.hash = `#${route}`;
+  if (method) ensurePage(entry).then((page) => (page as unknown as Record<string, ((...a: unknown[]) => void) | undefined>)[method]?.(...args));
+}
 
 /** The chart's Backtest button: open the backtester with the chart's symbol, timeframe and indicators. */
 window.addEventListener('tp:backtest-chart', () => {
@@ -201,7 +203,7 @@ if (isAiWindow) {
   let updateError = '';
   /** What the new helper adds, by the version you have. */
   const updateReason = (v: number) =>
-    v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : v < 12 ? 'It adds the Nasdaq-100 swing scanner (weekly swing with COT, z-score and Williams; mean reversion; breakouts) every 5 minutes, RIA fee schedules in client reports and fresher fund data. ' : v < 21 ? 'It adds the free Alpaca history option (Settings), a faster and steadier helper and fixes. ' : v < 22 ? 'It reworks the Setups scanner: honest tests (trades from the same week count as one bet, results after costs, corrected for many tests), 15 years of daily history, hourly history kept for good, simpler rules and weekly rule tests on your own data. ' : v < 23 ? 'The AI assistant can now see the page you’re on, so you can ask about anything on screen. ' : v < 24 ? 'It adds dividend tracking (import a statement, yields, income calendar). ' : v < 25 ? 'It fixes dividend estimates after raises and for twice-a-year payers. ' : v < 26 ? 'It adds Webull: view and sync your account, and place orders (Test first). ' : v < 27 ? 'It fixes Webull "too many requests" and adds the Trade page. ' : v < 28 ? 'It adds total return (with dividends) to Account, Investments and Research. ' : v < 29 ? 'It rebuilds the portfolio optimizer (shrinkage, risk parity, resampling, walk-forward test) and shows cash as Cash. ' : v < 30 ? 'It adds one-click helper updates and shows each Webull account (Roth IRA, Traditional IRA, Cash, Margin) separately, with a combined view, plus account risk, sectors and a tax view. ' : v < 31 ? 'It adds the Futures page: the whole futures market by sector, what’s moving, term structure and who is positioned how (COT), and futures trading in your Webull futures account (Trade page, Futures switch; off until you type FUTURES in Settings). Updates are checked every 10 minutes. ' : v < 32 ? 'It adds alerts that work with the platform closed, sent free to your phone by ntfy or Telegram (set up in Settings), and news on your holdings. The Account risk card opens charts of the daily swings behind its numbers. ' : v < 33 ? 'The portfolio optimizer now tests young holdings too: before a holding existed, its history is estimated from a similar long-running fund, and it shows how firmly the data pins down each suggested weight. ' : v < 34 ? 'The portfolio optimizer gets professional goals (most diversified, hierarchical risk parity, smallest bad months, target volatility, income, stay close to a benchmark), advanced limits, an efficient frontier and a side-by-side test of every goal. ' : 'It includes bug fixes. ';
+    v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : v < 12 ? 'It adds the Nasdaq-100 swing scanner (weekly swing with COT, z-score and Williams; mean reversion; breakouts) every 5 minutes, RIA fee schedules in client reports and fresher fund data. ' : v < 21 ? 'It adds the free Alpaca history option (Settings), a faster and steadier helper and fixes. ' : v < 22 ? 'It reworks the Setups scanner: honest tests (trades from the same week count as one bet, results after costs, corrected for many tests), 15 years of daily history, hourly history kept for good, simpler rules and weekly rule tests on your own data. ' : v < 23 ? 'The AI assistant can now see the page you’re on, so you can ask about anything on screen. ' : v < 24 ? 'It adds dividend tracking (import a statement, yields, income calendar). ' : v < 25 ? 'It fixes dividend estimates after raises and for twice-a-year payers. ' : v < 26 ? 'It adds Webull: view and sync your account, and place orders (Test first). ' : v < 27 ? 'It fixes Webull "too many requests" and adds the Trade page. ' : v < 28 ? 'It adds total return (with dividends) to Account, Investments and Research. ' : v < 29 ? 'It rebuilds the portfolio optimizer (shrinkage, risk parity, resampling, walk-forward test) and shows cash as Cash. ' : v < 30 ? 'It adds one-click helper updates and shows each Webull account (Roth IRA, Traditional IRA, Cash, Margin) separately, with a combined view, plus account risk, sectors and a tax view. ' : v < 31 ? 'It adds the Futures page: the whole futures market by sector, what’s moving, term structure and who is positioned how (COT), and futures trading in your Webull futures account (Trade page, Futures switch; off until you type FUTURES in Settings). Updates are checked every 10 minutes. ' : v < 32 ? 'It adds alerts that work with the platform closed, sent free to your phone by ntfy or Telegram (set up in Settings), and news on your holdings. The Account risk card opens charts of the daily swings behind its numbers. ' : v < 33 ? 'The portfolio optimizer now tests young holdings too: before a holding existed, its history is estimated from a similar long-running fund, and it shows how firmly the data pins down each suggested weight. The Account page adds dividends received and total gain per holding and account, display choices (% or $), a holding detail with purchase date and dividend entry, and an "Is the yield sustainable?" check with charts for high-yield funds. Futures prices are matched more reliably.' : v < 34 ? 'It adds Send diagnostics (Settings and the Data button): one file, with keys and account numbers masked, to upload in your Claude chat when something isn’t working. It adds a Sources check: a fund’s NAV or a price is compared across free sources (Schwab, SEC filings, Yahoo, Nasdaq), each shown with its time and link, plus a confidence meter. The portfolio optimizer gets professional goals (most diversified, hierarchical risk parity, smallest bad months, target volatility, income, stay close to a benchmark), advanced limits, an efficient frontier and a side-by-side test of every goal. ' : 'It includes bug fixes. ';
   async function updateNow() {
     updateError = '';
     try {
@@ -265,7 +267,7 @@ if (isAiWindow) {
   );
   followHealth(healthDot);
   initTickerCards({ openChart, openResearch });
-  const aiBtn = h('button', { class: 'nav-btn ai-nav', title: 'AI assistant (Ctrl+K)', 'aria-label': 'AI assistant', onclick: () => toggleAssistant() }, icon('spark', 24), h('span', { class: 'nav-label' }, 'AI'));
+  const aiBtn = h('button', { class: 'nav-btn ai-nav', title: 'AI assistant (Ctrl+I)', 'aria-keyshortcuts': 'Control+I Meta+I', 'aria-label': 'AI assistant', onclick: () => toggleAssistant() }, icon('spark', 24), h('span', { class: 'nav-label' }, 'AI'));
   function toggleAssistant(show: boolean = drawer.hidden === true) {
     drawer.hidden = !show;
     aiBtn.classList.toggle('active', show);
@@ -290,11 +292,14 @@ if (isAiWindow) {
       toggleAssistant(true);
     },
   });
-  document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-      e.preventDefault();
-      toggleAssistant();
-    }
+  // The command bar (/ or Ctrl/Cmd+K) and the global shortcuts (g h, n a, ?, Ctrl/Cmd+I for the AI)
+  const commandBtn = initCommandBar({
+    pages: pages.map((p) => ({ route: p.route, label: p.label, group: GROUPS[p.group] })),
+    currentRoute: () => currentPage().route,
+    openChart,
+    openPage: openPageWith,
+    toggleAssistant: () => toggleAssistant(),
+    openHealth: () => openDataHealth(healthBtn),
   });
 
   document.querySelector('#app')!.append(
@@ -303,6 +308,7 @@ if (isAiWindow) {
       'nav',
       { class: 'rail', 'aria-label': 'Main' },
       h('div', { class: 'brand', title: 'Trading Platform' }, '◆'),
+      commandBtn,
       ...pages.flatMap((p, i) => [
         p.group !== pages[i - 1]?.group ? h('div', { class: 'rail-group', role: 'separator', 'aria-label': GROUPS[p.group], title: GROUPS[p.group] }) : null,
         h('a', { class: 'nav-btn', href: `#${p.route}`, 'data-route': p.route, title: p.label, 'aria-label': p.label }, icon(p.icon, 22), h('span', { class: 'nav-label' }, p.label)),

@@ -38,6 +38,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (e.g. `series`, `docId`). Long requests stream `engine_event` messages before the reply (`onEvent`).
   Settings (Anthropic key, model, SEC email, FRED key) are set in the Settings window and saved by the helper in
   ~/.trading-platform/settings.json; keys are never stored in or sent back to the browser.
+  Send diagnostics (v34; Settings and the Data popover, src/ui/diagnostics.ts): `diagnostics.collect` (engine/diagnostics.py,
+  stdlib) returns ring buffers of the last 300 requests (type, ms, ok/error, reply size; never payloads) and outside calls
+  (httpx hooks: host, path, status, latency), feature notes (`diagnostics.note`: futures quotes keys/matched, Webull
+  endpoint/status), settings flags, feed health and the helper.log tail. Everything goes through one `redact` (saved
+  secrets by value, token/key patterns, accounts last 2 via `diagnostics.account`, emails, home paths, long hex/base64);
+  the browser adds page/console/engine errors (src/diagnostics.ts, same rules) and only saves a file, never uploads.
   AI screen context (v23): the browser sends the open page's visible text plus any open pop-up (src/ai/screen.ts,
   capped 8,000 chars) as context.screen; ai.py adds it in a <screen> block only when it changed since the last message;
   PAGE_SUGGESTIONS gives per-page example questions.
@@ -90,8 +96,30 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (real-prices-only table when >= 2.5y). Toggle payload `standIns`. test_window: 4y+ full test, 2.5-4y short 1y fit/
   monthly hold ("low confidence"), less none. weight_stability: 200 block-bootstrap refits -> 10th-90th percentile bars,
   `pinned` = held by the owner's limit. Texts in src/portfolio/optimiserText.ts.
+  Cross-check (v34, engine/crosscheck.py `crosscheck.value` {field last/prevClose/nav/divYield/expenseRatio, symbol, cik}):
+  free sources only (Schwab, SEC XBRL + NAV filings, Nasdaq.com, Yahoo chart/quoteSummary; Google Finance and Stooq left
+  out), paced per site, answers cached per source+symbol+field in cache.db, failures remembered 10 min. Every source is
+  returned with value, time, link and basis (yield forward/trailing, expense net/gross, NAV share class; only the main
+  basis is compared). Rubric in the module docstring: reliability x freshness (unknown time 0.4), one family (SEC, Yahoo)
+  = one confirmation, a fresh filing wins over disagreeing market data, one source capped at 60%. Best estimate = the
+  most trusted agreeing source's value (never an average). Expense ratio is "aggregator only". Glossary `confidence`.
+  UI: src/ui/sourcesChip.ts (chip + panel + meter; formatting in src/ui/confidence.ts): fund NAV (auto, only funds that
+  publish NAVs) and ticker card (only on click, never on hover). Parsers tested on fixtures (helper/tests/fixtures/crosscheck).
   Account page (src/pages/accountPage.ts, #account): portfolios with Portfolio.mine (set by Import statement; unset = live
   Webull sync) merged by src/portfolio/account.ts, figures from dividends.portfolio + dividendsView; read-only (orders only in Webull view).
+  Gains (v33, src/portfolio/returns.ts): price gain (value − cost), dividends received, total return per account part,
+  holding, account and overall (totals/% only over holdings with a cost basis); View menu = day / gain as %, $ or both
+  (localStorage tp-account-display); holdings table has a Columns chooser and totals row; a symbol opens the detail.
+  Dividends received: dividends.portfolio `received` [{key portfolioId:SYMBOL, seen, purchaseDate, dividends...}] ->
+  method entered | statement (statement "Dividends received" column) | purchase | tracked | none, always labelled.
+  store.track_holdings keeps one `seen` log per symbol per portfolio [{date, shares}] (total over lots, on the first
+  holding; from the store, never the browser; removed symbols wait in `seenArchive`) and carries/validates owner fields
+  (purchaseDate, dividends*, rocPct, rocYear; null clears; a statement never replaces typed dividends). Logged shares
+  are converted with Yahoo splits (ctx.splits; Yahoo dividends are per today's share). Webull's OpenAPI has
+  a US-only /trading/activities/cash-activities/list but no documented types or fields, so it is not used.
+  Yield check (src/portfolio/yieldQuality.ts, yield > 6%): paid = total − price return; from the price falling =
+  min(paid, −price return), 0 when the price held or rose (market price, not NAV); `dividends.history` (5y closes + dividends) feeds payoutCharts.ts (per-year earned vs paid-from-price
+  bars, $10,000 invested lines, src/portfolio/payoutSplit.ts). ROC is only what the owner enters (never estimated).
   Account risk/sectors/taxes (v30, follow the account switcher): engine/risk.py `risk.account` {holdings: symbol, value, kind}
   = 1y volatility, beta vs SPY, 1-day 95% historical VaR, max drawdown, per-holding vol/beta/riskShare from invest.closes
   (cash = zero risk; alts, <1y and stale histories left out) + sectors (SEC SIC -> 11 sectors, cached 30 days; only
@@ -200,6 +228,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   src/portfolio/riskCharts.ts opens the P/L histogram, beta scatter and drawdown curve from the risk card.
   Line-chart indicators: chart windows have an Indicators menu (src/ui/windowIndicators.ts, LINE_INDICATORS run on
   the first line as flat bars); page charts have an fx button that opens it.
+  Command bar (src/ui/command.ts, browser only): / or Ctrl/Cmd+K opens a palette over symbols (watchlist, holdings,
+  NASDAQ_100 copy checked against the scanner's by a test, futures roots, invest.search), pages, accounts, clients,
+  portfolios and actions; Bloomberg codes (CODES: "AAPL GP/DES/FA/CN/OMON/TRADE/ALRT/WL", WEI, ECO, FUT/CTM, PORT, ACCT,
+  BTST, SET, MACRO, BONDS/WB, INV, HELP) call pages' open() methods. Ranking: exact ticker > exact code > prefixes >
+  fuzzy name. Global chords (CHORDS: g h/c/s/a/t/f/p, n a), ? sheet (SHORTCUT_SHEET lists every page's keys; keep it
+  in step), Ctrl/Cmd+I = AI assistant; never inside fields or dialogs. TRADE only pre-fills. Recents in localStorage.
   Pop-out charts: `openChartWindow` (src/ui/chartWindow.ts); `createLineChart` adds hover values and an expand button;
   `openFredWindow` opens a FRED series' full history.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).

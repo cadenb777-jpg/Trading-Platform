@@ -369,8 +369,13 @@ export function createResearchPage() {
   let started = false;
   return {
     el: frame.el,
-    open(symbol: string) {
+    /** Opens a company, optionally on a tab (the command bar's DES / FA). */
+    open(symbol: string, on?: Tab) {
       symbolInput.value = symbol;
+      if (on && TABS.some(([t]) => t === on)) {
+        tab = on;
+        tabs.querySelectorAll<HTMLElement>('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === on));
+      }
       started = true;
       load();
     },

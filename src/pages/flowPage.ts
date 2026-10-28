@@ -539,6 +539,16 @@ export function createFlowPage() {
   let timer: ReturnType<typeof setInterval> | undefined;
   return {
     el: frame.el,
+    /** Opens a symbol, optionally on a tab (the command bar's OMON). */
+    open(symbol: string, on?: Tab) {
+      symbolInput.value = symbol;
+      if (on && on in TAB_LABELS) {
+        tab = on;
+        tabs.querySelectorAll<HTMLElement>('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === on));
+        cotSelect.hidden = on !== 'cot';
+      }
+      if (started) load(); // otherwise start() loads it
+    },
     async start() {
       // Options and positioning change during the day: refresh quietly every minute while the page is open.
       timer ??= setInterval(() => (tab === 'options' || tab === 'positioning') && !frame.el.hidden && load(undefined, true), 60000);

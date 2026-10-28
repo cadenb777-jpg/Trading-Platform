@@ -90,6 +90,8 @@ export function createClientsPage() {
   let portfolios: (Portfolio & { id: string })[] = templates;
   let branding: Branding = { ...DEFAULT_BRANDING };
   let current: Client = blankClient();
+  /** A client to select once the list has loaded (from the command bar). */
+  let openId: string | null = null;
   const list = h('div', { class: 'pf-list' });
   const editor = h('section', { class: 'panel' });
   const preview = h('div', { class: 'ap-body' });
@@ -111,6 +113,9 @@ export function createClientsPage() {
       return;
     }
     if (!current.portfolioId && portfolios[0]) current.portfolioId = portfolios[0].id;
+    const wanted = openId && clients.find((c) => c.id === openId);
+    openId = null;
+    if (wanted) current = structuredClone(wanted);
     renderList();
     renderEditor();
   }
@@ -432,6 +437,11 @@ export function createClientsPage() {
   let started = false;
   return {
     el: frame.el,
+    /** Opens a client (the command bar). */
+    open(id: string) {
+      openId = id;
+      if (started) void refresh();
+    },
     start() {
       if (!started) {
         started = true;

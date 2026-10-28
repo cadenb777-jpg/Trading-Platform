@@ -1,0 +1,48 @@
+{
+ "AAPL": {
+  "assetMainType": "EQUITY",
+  "symbol": "AAPL",
+  "quote": {
+   "lastPrice": 230.12,
+   "netChange": 0.77,
+   "closePrice": 229.35,
+   "quoteTime": 1792785600123,
+   "tradeTime": 1792785599000
+  },
+  "reference": {
+   "description": "Apple Inc",
+   "exchangeName": "NASDAQ"
+  },
+  "fundamental": {
+   "divYield": 0.45,
+   "peRatio": 35.1
+  }
+ },
+ "CCLFX": {
+  "assetMainType": "MUTUAL_FUND",
+  "symbol": "CCLFX",
+  "quote": {
+   "lastPrice": 10.62,
+   "closePrice": 10.62,
+   "nAV": 10.62,
+   "quoteTime": 1792785600000
+  },
+  "reference": {
+   "description": "CLIFFWATER CORPORATE LENDING FUND CLASS I",
+   "exchangeName": "MUTUAL_FUND"
+  }
+ },
+ "BXSL": {
+  "assetMainType": "EQUITY",
+  "assetSubType": "CEF",
+  "symbol": "BXSL",
+  "quote": {
+   "lastPrice": 29.8,
+   "netChange": -0.1,
+   "quoteTime": 1792785600000
+  },
+  "reference": {
+   "exchangeName": "NYSE"
+  }
+ }
+}

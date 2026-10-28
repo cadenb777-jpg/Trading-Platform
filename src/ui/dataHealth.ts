@@ -5,6 +5,7 @@
 import { FEEDS, feedState, health, replyTime, isStale, onHealthChange, stampTime, type FeedId, type Health } from '../data/health';
 import { alpacaKeysSaved, helper } from '../data/schwab';
 import { h, openPopover } from './dom';
+import { diagnosticsButton } from './diagnostics';
 
 interface Stamp {
   el: HTMLElement;
@@ -103,7 +104,8 @@ function healthList() {
     list.replaceChildren(...(Object.keys(FEEDS) as FeedId[]).map(feedRow));
   };
   draw();
-  return { el: h('div', { class: 'health-pop' }, head, list), draw };
+  const foot = h('div', { class: 'health-foot' }, diagnosticsButton('btn small'));
+  return { el: h('div', { class: 'health-pop' }, head, list, foot), draw };
 }
 
 /** Worst state across feeds that have been used (for the button's dot). */

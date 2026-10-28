@@ -127,32 +127,37 @@ type Synced = Portfolio & { id: string };
  * Saves Webull holdings as portfolios (helper request webull.sync), one per account: accountId() = that account
  * (saved even when empty: the owner chose it), '' = every stock account with something in it.
  */
-function syncButton(label: string, accountId: () => string, onSynced: (p: Synced) => void) {
+export function syncButton(label: string, accountId: () => string, onSynced: (p: Synced) => void) {
   const btn = h('button', { class: 'btn', title: 'Save the holdings as a portfolio per account so analysis and Dividends work on them' }, label) as HTMLButtonElement;
   btn.addEventListener('click', async () => {
     btn.disabled = true;
-    try {
-      const id = accountId();
-      const r = await engineRequest<{ portfolio?: Synced; portfolios?: Synced[]; empty?: string[]; skipped: number }>('webull.sync', id ? { accountId: id } : {}, 120000);
-      const saved = r.portfolios ?? (r.portfolio ? [r.portfolio] : []); // helpers before the account names send only portfolio
-      const names = saved.map((p) => `"${p.name}"`).join(', ');
-      const empty = r.empty?.length ? ` Not saved (empty): ${r.empty.join(', ')}.` : '';
-      toast(`${saved.length ? `Saved ${names}` : 'Nothing saved'}${r.skipped ? ` (${r.skipped} non-stock position${r.skipped === 1 ? '' : 's'} left out)` : ''}.${empty}`);
-      if (saved[0]) onSynced(saved[0]);
-    } catch (err) {
-      toast(friendly(err));
-    } finally {
-      btn.disabled = false;
-    }
+    const saved = await syncAccounts(accountId());
+    if (saved[0]) onSynced(saved[0]);
+    btn.disabled = false;
   });
   return btn;
+}
+
+/** Runs webull.sync for one account ('' = all) and says what was saved. Also used by the command bar. */
+export async function syncAccounts(id: string): Promise<Synced[]> {
+  try {
+    const r = await engineRequest<{ portfolio?: Synced; portfolios?: Synced[]; empty?: string[]; skipped: number }>('webull.sync', id ? { accountId: id } : {}, 120000);
+    const saved = r.portfolios ?? (r.portfolio ? [r.portfolio] : []); // helpers before the account names send only portfolio
+    const names = saved.map((p) => `"${p.name}"`).join(', ');
+    const empty = r.empty?.length ? ` Not saved (empty): ${r.empty.join(', ')}.` : '';
+    toast(`${saved.length ? `Saved ${names}` : 'Nothing saved'}${r.skipped ? ` (${r.skipped} non-stock position${r.skipped === 1 ? '' : 's'} left out)` : ''}.${empty}`);
+    return saved;
+  } catch (err) {
+    toast(friendly(err));
+    return [];
+  }
 }
 
 /**
  * A small read-only Webull card for the Account page: balances and buying power per account, "Sync now", and a link to
  * the full Webull view (the only place with the order ticket). Draws nothing when Webull isn't set up.
  */
-export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio & { id: string }) => void, openFull: () => void, only?: string) {
+export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio & { id: string }) => void, openFull: () => void, only?: string, exclude: string[] = []) {
   let status: Snapshot;
   try {
     status = await loadSnapshot();
@@ -162,7 +167,7 @@ export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio
   if (!status.ok) return out.replaceChildren();
   const cards: HTMLElement[] = [];
   for (const a of status.accounts) {
-    if (only && a.id !== only) continue;
+    if ((only && a.id !== only) || exclude.includes(a.id)) continue;
     if (a.futures) {
       cards.push(await futuresCard(a.label, a.id, status.env));
       continue;

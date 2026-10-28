@@ -87,6 +87,13 @@ describe('statement import', () => {
     expect(r.positions.map((p) => p.cost)).toEqual([undefined, undefined]);
   });
 
+  it('reads a dividends-received column when the export has one (never the yield or reinvested columns)', () => {
+    const r = parseStatement(rows('Symbol,Quantity,Cost Basis,Dividend Yield,Dividends Received\nKO,10,600,3%,$42.10\nKO,5,300,3%,10\nPG,5,800,2%,--'));
+    expect(r.columns.dividends).toBe(4);
+    expect(r.positions.map((p) => p.dividends)).toEqual([52.1, undefined]);
+    expect(parseStatement(rows(SCHWAB)).columns.dividends).toBeUndefined();
+  });
+
   it('lets the owner correct the column match', () => {
     const r = parseStatement(rows(WEBULL), { symbol: 0, shares: 2, cost: 5 }); // use market value as the cost
     expect(r.positions[0].cost).toBe(2250);

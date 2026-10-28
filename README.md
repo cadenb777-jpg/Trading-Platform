@@ -29,7 +29,9 @@ A personal, customizable charting and trading platform, like your own TradingVie
 - **Portfolios:** total-return history (dividends included), risk statistics, stress tests,
   Monte Carlo and weight optimisation (max Sharpe, minimum risk, risk parity, Black-Litterman)
 - **Backtest:** try strategies on history with commissions, slippage, stops and targets
-- **AI assistant (✦ in the left menu, or Ctrl+K):** ask about any stock or the market and it answers with live
+- **Command bar (/ or Ctrl/Cmd+K, or "Go" in the left menu):** type a ticker, a Bloomberg-style code (AAPL GP, AAPL DES,
+  WEI, ECO) or a page name and press Enter; press ? for every keyboard shortcut
+- **AI assistant (✦ in the left menu, or Ctrl/Cmd+I):** ask about any stock or the market and it answers with live
   data; it can build and save portfolios, open charts, add indicators and set alerts; attach Excel, CSV, PDF or
   image files; pop it out into its own window. "AI analysis" buttons on Flow, Research and every indicator's ⓘ.
   Needs your own Anthropic API key (Settings, gear icon)

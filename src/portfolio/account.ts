@@ -4,6 +4,9 @@ import { isCashOrAlt, isMine, type AssetClass, type Holding, type HoldingKind, t
 /** One account's share of a combined holding. */
 export interface AccountPart {
   account: string;
+  /** The saved portfolio's id (when it has one) and the holding itself, for per-account dividends and overrides. */
+  portfolioId?: string;
+  holdings: Holding[];
   shares: number;
   /** Dollar amount (cash, alternatives, dollars-mode holdings). */
   amount: number;
@@ -52,12 +55,13 @@ export function combineHoldings(portfolios: Portfolio[]): CombinedHolding[] {
       row.amount += amount;
       if (cost != null) row.cost = (row.cost ?? 0) + cost;
       if (!row.name && x.name) row.name = x.name;
-      const part = row.parts.find((a) => a.account === p.name);
+      const part = row.parts.find((a) => (p.id ? a.portfolioId === p.id : a.account === p.name));
       if (part) {
         part.shares += shares;
         part.amount += amount;
         if (cost != null) part.cost = (part.cost ?? 0) + cost;
-      } else row.parts.push({ account: p.name, shares, amount, cost });
+        part.holdings.push(x);
+      } else row.parts.push({ account: p.name, portfolioId: p.id, holdings: [x], shares, amount, cost });
     }
   }
   return [...out.values()];
@@ -66,6 +70,24 @@ export function combineHoldings(portfolios: Portfolio[]): CombinedHolding[] {
 /** What the helper's dividends.portfolio request needs: share holdings only (cash and dollar amounts have no shares). */
 export const dividendPayload = (rows: CombinedHolding[]) =>
   rows.filter((r) => r.kind === 'security' && r.shares > 0).map((r) => ({ symbol: r.symbol, shares: r.shares, costBasis: r.cost ?? undefined }));
+
+/** The key the helper's dividends `received` reply uses for one account's holding. */
+export const partKey = (part: Pick<AccountPart, 'portfolioId' | 'account'>, symbol: string) => `${part.portfolioId ?? part.account}:${symbol}`;
+
+/** The v33 `received` entries for dividends.portfolio: one per account's share holding, with its share log and the
+ * owner's purchase date / dividends received (the first holding of a symbol in an account carries them). */
+export function receivedPayload(rows: CombinedHolding[]) {
+  return rows
+    .filter((r) => r.kind === 'security')
+    .flatMap((r) =>
+      r.parts
+        .filter((part) => part.shares > 0)
+        .map((part) => {
+          const x = part.holdings.find((h) => h.seen || h.purchaseDate || h.dividends != null) ?? part.holdings[0];
+          return { key: partKey(part, r.symbol), portfolioId: part.portfolioId, symbol: r.symbol, seen: x?.seen, purchaseDate: x?.purchaseDate, dividends: x?.dividends, dividendsAsOf: x?.dividendsAsOf, dividendsSource: x?.dividendsSource };
+        }),
+    );
+}
 
 /** Market value of a combined holding (null when its shares have no price yet). */
 export function combinedValue(r: CombinedHolding, price: number | null | undefined): number | null {
