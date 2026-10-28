@@ -4,7 +4,7 @@ import { deleteDoc, listDocs, saveDoc } from '../data/store';
 import { PRIVATE_FUNDS, STRATEGIES, type Strategy } from '../invest/catalog';
 import { openStatementImport, renderDividends } from '../portfolio/dividendsView';
 import { renderWebull } from '../portfolio/webullView';
-import { DEFAULT_GOAL, GOALS, cleanViews, compareNote, compareRows, figureRows, goalInfo, randomWalkLine, rowName } from '../portfolio/goals';
+import { DEFAULT_GOAL, GOALS, cleanViews, compareName, compareNote, compareRows, compareVerdict, defaultMaxWeight, figureRows, goalInfo, randomWalkLine, rowName, vsText } from '../portfolio/goals';
 import { frontierChart, riskBars, type FrontierPoint } from '../portfolio/optimiserCharts';
 import { leftOutLine, shortHistoryAdvice, standInLine, yearsBetween } from '../portfolio/optimiserText';
 import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
@@ -618,8 +618,10 @@ export function createPortfolioPage() {
     const numIn = (label: string, value: number | '', opts: { min?: number; max?: number; step?: number; placeholder?: string } = {}) =>
       h('input', { class: 'input', type: 'number', value, min: opts.min ?? 0, max: opts.max ?? 100, step: opts.step ?? 1, placeholder: opts.placeholder ?? '', 'aria-label': label }) as HTMLInputElement;
     const field = (label: string, input: HTMLElement, term?: string) => h('label', { class: 'field-input compact' }, h('span', { class: 'muted small' }, label, term ? ' ' : '', term ? infoTip(term) : ''), input);
-    const maxW = numIn('Max per holding %', 25, { min: 1 });
-    const maxChange = numIn('Max change per holding %', 20, { min: 1 });
+    // Default max per holding: 2 / holdings, between 25% and 50% (the helper uses the same rule when it's blank).
+    const holdingCount = new Set(current.holdings.map(analysisSymbol).filter(Boolean)).size || 1;
+    const maxW = numIn('Max per holding %', Math.round(100 * defaultMaxWeight(holdingCount)), { min: 1 });
+    const maxChange = numIn('Max change per holding %', '', { min: 1, placeholder: 'no limit' });
     const maxTurnover = numIn('Max total change %', '', { min: 0, placeholder: 'no limit' });
     const hasCash = current.holdings.some((x) => x.kind === 'cash');
     const minCash = numIn('Minimum cash %', '', { min: 0, max: 95, placeholder: hasCash ? 'none' : 'add Cash first' });
@@ -629,7 +631,7 @@ export function createPortfolioPage() {
     const select = (label: string, options: [string, string][], value: string) =>
       h('select', { class: 'input', 'aria-label': label }, ...options.map(([v, t]) => h('option', { value: v, selected: v === value }, t))) as HTMLSelectElement;
     const lookback = select('Lookback', [['1', '1 year'], ['3', '3 years'], ['5', '5 years'], ['10', '10 years']], '3');
-    const estimate = select('Return estimate', [['shrunk', 'History, pulled toward equilibrium'], ['equilibrium', 'Equilibrium only (no history)'], ['views', 'My views (Black-Litterman)']], 'shrunk');
+    const estimate = select('Return estimate', [['shrunk', 'History, pulled toward equilibrium'], ['views', 'My views (Black-Litterman)']], 'shrunk');
     const testRebalance = select('Test rebalance', [['monthly', 'Monthly'], ['quarterly', 'Quarterly'], ['yearly', 'Yearly']], 'quarterly');
     const cost = numIn('Cost per trade %', 0.1, { min: 0, max: 5, step: 0.05 });
     const keepCash = h('input', { type: 'checkbox', checked: true }) as HTMLInputElement;
@@ -713,7 +715,7 @@ export function createPortfolioPage() {
 
     const pctVal = (el: HTMLInputElement) => (el.value === '' || !Number.isFinite(parseFloat(el.value)) ? null : parseFloat(el.value) / 100);
     async function run() {
-      const progress = h('div', { class: 'muted pad' }, 'Optimising and testing every goal on data it hadn’t seen (about a minute)…');
+      const progress = h('div', { class: 'muted pad' }, 'Optimising and testing every goal on data it hadn’t seen (one to a few minutes, depending on your computer)…');
       out.replaceChildren(progress);
       try {
         const limits: Record<string, { min?: number; max?: number }> = {};
@@ -736,7 +738,7 @@ export function createPortfolioPage() {
           {
             holdings: holdingsPayload(current, priceMap(prices)),
             method: goal.value,
-            maxWeight: (parseFloat(maxW.value) || 25) / 100,
+            maxWeight: parseFloat(maxW.value) > 0 ? parseFloat(maxW.value) / 100 : null,
             maxChange: parseFloat(maxChange.value) > 0 ? parseFloat(maxChange.value) / 100 : null,
             maxTurnover: pctVal(maxTurnover),
             minCash: pctVal(minCash),
@@ -804,6 +806,7 @@ export function createPortfolioPage() {
     if (!m || !c) return '';
     const edge = (m.sharpe ?? 0) - (c.sharpe ?? 0);
     const chance = wf.short ? ' With this little history, differences between goals are likely chance.' : '';
+    if (Math.abs(edge) < 0.01) return `On data it hadn’t seen, ${name} did about the same as your current mix (Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)}). Keeping what you have is a reasonable choice.${chance}`;
     if (edge <= 0) return `On data it hadn’t seen, ${name} did not beat your current mix (Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)}). Keeping what you have is a reasonable choice.${chance}`;
     const base = `On data it hadn’t seen, ${name} beat your current mix: Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)}, ${pct(m.return, 1)} vs ${pct(c.return, 1)} a year, worst drop ${pct(m.maxDrawdown, 0)} vs ${pct(c.maxDrawdown, 0)}.${chance}`;
     if (!rw || !rw.runs) return base;
@@ -838,12 +841,20 @@ export function createPortfolioPage() {
       ...(g ? [{ key: g.key, label: name, volatility: g.volatility, return: g.expectedReturn, kind: 'chosen' as const }] : []),
     ];
     const compare = compareRows(r);
+    const goalNotes = g?.notes ?? [];
+    const changeCapped = r.settings?.maxTurnover != null || r.settings?.maxChange != null;
     const lead = wf ? wf.rows.filter((x) => x.key === 'current' || x.key === 'equal') : [];
-    const tableRows = [...lead.map((row) => ({ row, p: null as number | null, goal: false })), ...compare.map((c) => ({ row: c.row, p: c.p, goal: true }))];
+    const tableRows = [
+      ...lead.map((row) => ({ row, name: rowName(row.key), p: null as number | null, goal: false, vs: '', twins: [] as string[] })),
+      ...compare.map((c) => ({ row: c.row, name: compareName(c) + (c.key === 'income' || c.twins.includes('income') ? ' †' : ''), p: c.p, goal: true, vs: vsText(c.vs), twins: c.twins })),
+    ];
+    const wfLine = wf
+      ? `Test used: each goal refit on the previous ${wf.windowYears.toFixed(0)} year${wf.windowYears >= 2 ? 's' : ''} and rebalanced every ${wf.short ? 'month' : (wf.stepDays ?? 63) >= 252 ? 'year' : (wf.stepDays ?? 63) <= 21 ? 'month' : 'quarter'}; results cover ${wf.oosStart ? `${wf.oosStart} to ${wf.oosEnd}` : 'the last'} (${(wf.days / 252).toFixed(1)} years), paying ${pctU(r.settings?.cost ?? 0, 2)} of every trade. Dividends included.`
+      : '';
     out.replaceChildren(
       ...(switcher ? [h('div', { class: 'opt-showing' }, h('span', { class: 'muted small' }, 'Showing'), switcher, infoTip(goalInfo(shown)?.term ?? ''))] : []),
       h('p', { class: 'opt-verdict' }, verdict(r, shown, rw)),
-      ...(r.notes?.length ? [h('div', { class: 'opt-notes' }, ...r.notes.map((n) => h('p', {}, n)))] : []),
+      ...([...(r.notes ?? []), ...goalNotes].length ? [h('div', { class: 'opt-notes' }, ...[...(r.notes ?? []), ...goalNotes].map((n) => h('p', {}, n)))] : []),
       ...(wf?.short ? [h('p', { class: 'opt-guide' }, shortHistoryAdvice(yearsBetween(r.testStart ?? r.start, r.end), 'short'))] : []),
       ...(history.length ? [h('div', { class: 'opt-standins' }, ...history.map((x) => h('p', { class: 'ap-note' }, x)))] : []),
       h(
@@ -878,9 +889,9 @@ export function createPortfolioPage() {
             ? h(
                 'div',
                 {},
-                h('h4', {}, 'Before and after'),
+                h('h4', {}, 'Before and after, on the history it was fitted to'),
                 dataTable(['', 'Now', name], figures.map((f) => [h('span', {}, f.label, f.term ? ' ' : '', f.term ? infoTip(f.term) : ''), f.now, h('b', {}, f.next)]), undefined, false),
-                h('p', { class: 'ap-note' }, `Expected return comes from the return estimate (${r.settings?.estimate === 'views' ? 'your views' : r.settings?.estimate === 'equilibrium' ? 'equilibrium only' : 'history pulled toward equilibrium'}), not a promise. Worst drop and bad-month loss replay the last ${r.settings?.lookbackYears ?? ''} years with these weights.${r.keepCash ? ' Cash is kept as is; only the invested part moves.' : ''} History ${r.start} to ${r.end}.`),
+                h('p', { class: 'ap-note' }, `In-sample: these weights were chosen on this same history, so the figures flatter them; the comparison below uses data each goal hadn’t seen. Expected return comes from the return estimate (${r.settings?.estimate === 'views' ? 'your views' : 'history pulled toward equilibrium'}), not a promise. Worst drop and bad-month loss replay the last ${r.settings?.lookbackYears ?? ''} years with these weights.${r.keepCash ? ' Cash is kept as is; only the invested part moves.' : ''} History ${r.start} to ${r.end}.`),
               )
             : h('p', { class: 'ap-note' }, `Expected volatility ${pctU(r.volatility.suggested, 1)} (now ${pctU(r.volatility.current, 1)}).${r.keepCash ? ' Cash is kept as is; only the invested part moves.' : ''} History ${r.start} to ${r.end}.`),
           h(
@@ -930,33 +941,46 @@ export function createPortfolioPage() {
           wf && r.estimatedShare
             ? h('p', { class: 'opt-estimated' }, `${Math.round(r.estimatedShare * 100)}% of the test period uses estimated (stand-in) history `, infoTip('standIn'), '. The estimate uses relationships measured later, which can flatter results.')
             : null,
+          wf && compare.length ? h('p', { class: 'opt-verdict' }, compareVerdict(r)) : null,
           wf
-            ? dataTable(
-                ['Goal', 'Return/yr', 'Volatility', 'Worst drop', 'Sharpe', 'Traded/yr', 'Random-walk p', ''],
-                tableRows.map(({ row: x, p, goal: isGoal }) => [
-                  x.key === shown ? h('b', {}, rowName(x.key)) : rowName(x.key),
-                  { v: pct(x.return, 1), cls: tone(x.return) },
-                  pctU(x.volatility, 1),
-                  { v: pct(x.maxDrawdown, 0), cls: 'down' },
-                  ratio(x.sharpe),
-                  pctU(x.turnover, 0),
-                  p == null ? (isGoal ? 'no edge' : '—') : p.toFixed(2),
-                  isGoal && goals.length && x.key !== shown ? h('button', { class: 'btn', onclick: () => show(x.key), 'aria-label': `Show ${rowName(x.key)}` }, 'Show') : '',
-                ]),
-                (i) => (tableRows[i].row.key === shown ? 'opt-chosen' : ''),
-                false,
+            ? h(
+                'div',
+                { class: 'opt-table-scroll' },
+                dataTable(
+                  ['Goal', 'Return/yr', 'Volatility', 'Worst drop', 'Sharpe', 'Vs Even risk', 'Traded/yr', 'Needs real timing? (p)', ''],
+                  tableRows.map((t) => {
+                    const x = t.row;
+                    const isShown = x.key === shown || t.twins.includes(shown);
+                    return [
+                      isShown ? h('b', {}, t.name) : t.name,
+                      { v: pct(x.return, 1), cls: tone(x.return) },
+                      pctU(x.volatility, 1),
+                      { v: pct(x.maxDrawdown, 0), cls: 'down' },
+                      ratio(x.sharpe),
+                      t.vs || '—',
+                      pctU(x.turnover, 0),
+                      t.p == null ? (t.goal ? 'no edge' : '—') : t.p.toFixed(2),
+                      t.goal && goals.length && !isShown ? h('button', { class: 'btn', onclick: () => show(x.key), 'aria-label': `Show ${rowName(x.key)}` }, 'Show') : '',
+                    ];
+                  }),
+                  (i) => (tableRows[i].row.key === shown ? 'opt-chosen' : ''),
+                  false,
+                ),
               )
             : h('p', { class: 'muted small' }, 'Not enough history for this test.'),
           wf && compare.length ? h('p', { class: 'ap-note' }, compareNote(r)) : null,
+          wf && compare.some((c) => c.key === 'income' || c.twins.includes('income'))
+            ? h('p', { class: 'ap-note' }, '† Income’s test uses today’s dividend yields for every past year (look-ahead), which flatters it.')
+            : null,
           wf
             ? h(
                 'p',
                 { class: 'ap-note' },
                 wf.short ? h('b', {}, 'Short test: low confidence. ') : null,
-                `Each goal refit on the previous ${wf.windowYears.toFixed(0)} year${wf.windowYears >= 2 ? 's' : ''}, held each ${wf.short ? 'month' : (wf.stepDays ?? 63) >= 252 ? 'year' : (wf.stepDays ?? 63) <= 21 ? 'month' : 'quarter'}, over ${(wf.days / 252).toFixed(1)} years, paying ${pctU(r.settings?.cost ?? 0, 2)} of every trade. Dividends included. Random-walk p: how often shuffled histories gave the same edge over your mix (low = less likely luck).`,
+                wfLine,
+                changeCapped ? ' The test doesn’t apply your max-change limits (each refit starts fresh), so it may trade more than you would.' : '',
                 r.testStart && r.testStart < r.start ? ` Tested from ${r.testStart}, before the ${r.start} start of your real shared history: see the notes on young holdings above.` : '',
                 r.settings?.estimate === 'views' ? ' Your views aren’t used in the test.' : '',
-                shown === 'income' ? ' Income’s test uses today’s yields for the past, which flatters it a little.' : '',
               )
             : null,
           wf && r.estimatedShare

@@ -304,6 +304,8 @@ class HandlerGoalsTest(unittest.TestCase):
         self.assertTrue(any('Cash raised' in n for n in out['notes']))
         self.assertTrue(any('loosened' in n for n in out['notes']))  # one sector can't be capped at 30%
         self.assertIn('Tested 9 of 9 goals on data they hadn’t seen', events)
+        self.assertIn('Testing 9 goals on 1 processor core (about 3 minutes)', events)
+        self.assertTrue(out['walkForward']['oosStart'] < out['walkForward']['oosEnd'])
         self.assertTrue(all(g['trackingError'] is not None for g in out['goals']))
         self.assertGreater(len(out['frontier']), 2)
 
@@ -333,6 +335,62 @@ class HandlerGoalsTest(unittest.TestCase):
         self.assertEqual(out['settings']['estimate'], 'views')
         self.assertGreater(out['weights'][0], 0.5)
         self.assertIsNone(out['walkForward'])  # ~1.6 years: too short to test
+
+
+class ReviewFixesTest(unittest.TestCase):
+    def test_holm_adjustment(self):
+        self.assertEqual(quant.holm([0.01, 0.04, 0.03, 0.5]), [0.04, 0.09, 0.09, 0.5])
+        self.assertEqual(quant.holm([1.0]), [1.0])
+
+    def test_sharpe_difference_paired_and_seeded(self):
+        r = _returns(n=2, t=800, seed=4)
+        d, se = quant.sharpe_difference(r[:, 0], r[:, 0], 0.04, np.random.default_rng(1), runs=50)
+        self.assertEqual((d, se), (0.0, 0.0))  # the same series: no difference at all
+        a = quant.sharpe_difference(r[:, 0], r[:, 1], 0.04, np.random.default_rng(1), runs=50)
+        b = quant.sharpe_difference(r[:, 0], r[:, 1], 0.04, np.random.default_rng(1), runs=50)
+        self.assertEqual(a, b)
+        self.assertGreater(a[1], 0)
+
+    def test_default_max_weight(self):
+        self.assertEqual(quant.default_max_weight(2), 0.5)
+        self.assertEqual(quant.default_max_weight(5), 0.4)
+        self.assertEqual(quant.default_max_weight(20), 0.25)
+
+    def test_same_weights_merge_into_the_first_goal(self):
+        w = np.array([0.5, 0.5])
+        res = [{'key': 'min_var', 'weights': w}, {'key': 'target_vol', 'weights': w + 0.001}, {'key': 'income', 'weights': np.array([0.2, 0.8])}]
+        self.assertEqual(quant.same_as(res), {'target_vol': 'min_var'})
+
+    def test_unreachable_target_volatility_is_noted(self):
+        r = _returns(seed=9)
+        o = {'rf': 0.04, 'lo': 0, 'hi': 1, 'targetVol': 0.01}
+        with mock.patch.object(quant, 'RW_RUNS', 1):
+            job = quant.goal_job(r, np.full(4, 0.25), 'target_vol', o, 7, None, 3)
+        self.assertTrue(any('lowest-volatility mix is used' in n for n in job['notes']), job['notes'])
+        mv = quant.goal_job(r, np.full(4, 0.25), 'min_var', o, 7, None, 3)
+        self.assertEqual(mv['notes'], [])
+
+    def test_scaled_limits_are_noted(self):
+        r = _returns(seed=9)
+        o = {'rf': 0.04, 'lo': 0, 'hi': 1, 'loEach': np.array([0.5, 0.5, 0.5, 0.0]), 'maxHoldings': 1}
+        with mock.patch.object(quant, 'RW_RUNS', 1):
+            job = quant.goal_job(r, np.full(4, 0.25), 'min_var', o, 7, None, 3)
+        self.assertTrue(any('minimum weights add up' in n for n in job['notes']), job['notes'])
+
+    def test_compare_evidence_vs_even_risk_and_holm(self):
+        r = _returns(n=3, t=1300, seed=6)
+        o = {'rf': 0.04, 'lo': 0, 'hi': 1, 'yields': np.array([0.02, 0.0, 0.01])}
+        with mock.patch.object(quant, 'RW_RUNS', 3), mock.patch.object(quant, 'RESAMPLES', 5), mock.patch.object(quant, 'SE_RUNS', 20):
+            out = quant.run_optimizer(r, np.array([0.5, 0.3, 0.2]), 'risk_parity', o, stability_runs=3)
+        by = {g['key']: g for g in out['goals']}
+        self.assertIsNone(by['risk_parity']['vsEvenRisk'])
+        self.assertGreater(by['min_var']['vsEvenRisk']['se'], 0)
+        family = by['risk_parity']['randomWalk']['family']
+        self.assertEqual(family, sum(1 for g in out['goals'] if not g['sameAs']))
+        for g in out['goals']:
+            self.assertGreaterEqual(g['randomWalk']['pAdjusted'], g['randomWalk']['p'] - 1e-12)
+            if g['sameAs']:
+                self.assertEqual(g['randomWalk']['pAdjusted'], by[g['sameAs']]['randomWalk']['pAdjusted'])
 
 
 if __name__ == '__main__':

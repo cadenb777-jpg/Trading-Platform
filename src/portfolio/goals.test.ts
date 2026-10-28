@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TERMS } from '../ui/glossary';
-import { GOALS, cleanViews, compareNote, compareRows, figureRows, pctOrDash, randomWalkLine, rowName } from './goals';
+import { GOALS, cleanViews, compareName, compareNote, compareRows, compareVerdict, defaultMaxWeight, figureRows, pctOrDash, randomWalkLine, rowName, vsText } from './goals';
 import { niceTicks, tickDecimals } from './optimiserCharts';
 import type { GoalResult, Optimisation, WalkForwardRow } from './types';
 
@@ -12,7 +12,7 @@ const goal = (key: GoalResult['key'], p: number, runs = 100): GoalResult => ({
 
 const result = {
   walkForward: { windowYears: 3, days: 1000, short: false, rows: [row('current', 0.4), row('equal', 0.45), row('growth', 0.3), row('risk_parity', 0.6), row('hrp', 0.5)] },
-  goals: [goal('growth', 1, 0), goal('risk_parity', 0.04), goal('hrp', 0.3)],
+  goals: [goal('growth', 1, 0), { ...goal('risk_parity', 0.04), randomWalk: { method: 'risk_parity', runs: 100, edge: 0.1, p: 0.04, pAdjusted: 0.08, family: 3 } }, goal('hrp', 0.3)],
 } as unknown as Optimisation;
 
 describe('optimiser goals', () => {
@@ -27,20 +27,39 @@ describe('optimiser goals', () => {
     expect(rowName('risk_parity')).toBe('Even risk');
   });
 
-  it('ranks goals by out-of-sample Sharpe and keeps p only when shuffles ran', () => {
+  it('lists goals in goal order (Even risk first), merges identical ones and uses Holm-adjusted p', () => {
     const rows = compareRows(result);
-    expect(rows.map((x) => x.key)).toEqual(['risk_parity', 'hrp', 'growth']);
-    expect(rows.map((x) => x.beatCurrent)).toEqual([true, true, false]);
+    expect(rows.map((x) => x.key)).toEqual(['risk_parity', 'growth', 'hrp']);
+    expect(rows.map((x) => x.beatCurrent)).toEqual([true, false, true]);
     expect(rows.find((x) => x.key === 'growth')!.p).toBeNull();
-    expect(compareNote(result)).toContain('2 of 3 goals beat your current mix');
+    expect(rows.find((x) => x.key === 'risk_parity')!.p).toBe(0.08);
+    expect(compareNote(result)).toContain('2 of 3 distinct goals beat your current mix');
     expect(compareNote(result)).toContain('(1 here)');
     expect(compareNote({ ...result, walkForward: null } as Optimisation)).toBe('');
+    const merged = { ...result, goals: [...result.goals!, { ...goal('min_var', 0.5), sameAs: 'risk_parity' }] } as Optimisation;
+    merged.walkForward = { ...merged.walkForward!, rows: [...merged.walkForward!.rows, row('min_var', 0.6)] };
+    const m = compareRows(merged);
+    expect(m).toHaveLength(3);
+    expect(compareName(m[0])).toBe('Even risk (same weights: Lowest volatility)');
+  });
+
+  it('says whether any goal clearly beats Even risk (2 standard errors)', () => {
+    const withVs = (vs: { diff: number; se: number }[]) =>
+      ({ ...result, goals: result.goals!.map((g) => ({ ...g, vsEvenRisk: g.key === 'risk_parity' ? null : vs[g.key === 'growth' ? 0 : 1] })) }) as Optimisation;
+    expect(compareVerdict(withVs([{ diff: 0.1, se: 0.08 }, { diff: -0.05, se: 0.04 }]))).toContain('No goal clearly beats Even risk: every difference');
+    expect(compareVerdict(withVs([{ diff: 0.3, se: 0.1 }, { diff: 0.0, se: 0.04 }]))).toContain('Best return for the risk beat Even risk');
+    expect(compareVerdict(withVs([{ diff: -0.3, se: 0.1 }, { diff: 0.0, se: 0.04 }]))).toContain('did clearly worse');
+    expect(vsText({ diff: -0.05, se: 0.04 })).toBe('−0.05 ± 0.04');
+    expect(vsText(null)).toBe('baseline');
+    expect(defaultMaxWeight(3)).toBeCloseTo(2 / 3 > 0.5 ? 0.5 : 2 / 3);
+    expect(defaultMaxWeight(6)).toBeCloseTo(1 / 3);
+    expect(defaultMaxWeight(12)).toBe(0.25);
   });
 
   it('formats before/after figures and the random-walk line', () => {
     const cur = { ...goal('growth', 1), yield: null, trackingError: null };
     const rows = figureRows(cur, goal('hrp', 0.3));
-    expect(rows.map((r) => r.label)).toEqual(['Expected return / yr', 'Volatility / yr', 'Dividend yield', 'Worst drop (history)', 'Bad-month loss (CVaR 95%)']);
+    expect(rows.map((r) => r.label)).toEqual(['Expected return / yr', 'Volatility / yr', 'Dividend yield', 'Worst drop', 'Bad-month loss (CVaR 95%)']);
     expect(rows[2]).toMatchObject({ now: '—', next: '2.10%' });
     expect(rows[4].next).toBe('-8.0%');
     expect(randomWalkLine({ method: 'hrp', runs: 100, edge: 0.1, p: 0.0495 }, 'HRP')).toContain('In 4 of 100');

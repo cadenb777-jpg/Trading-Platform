@@ -6748,6 +6748,7 @@ button.stat-drill:focus-visible .stat-drill-mark {
 .opt-rbar.chosen { background: var(--viz-1); }
 .opt-rbar-val { flex: none; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .opt-compare .btn { padding: 2px 8px; }
+.opt-table-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 @media (max-width: 640px) {
   .opt-adv-grid { grid-template-columns: minmax(0, 1fr); }
   .opt-rbar-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }

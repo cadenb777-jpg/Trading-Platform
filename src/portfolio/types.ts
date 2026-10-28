@@ -224,7 +224,14 @@ export interface GoalResult extends MixFigures {
   key: GoalKey;
   weights: number[];
   stability: { runs: number; low: number[]; high: number[]; pinned?: boolean[] };
-  randomWalk: { method: string; runs: number; edge: number; p: number } | null;
+  /** p = share of block-shuffled histories with at least the real edge over the current mix; pAdjusted = Holm across the `family` distinct goals. */
+  randomWalk: { method: string; runs: number; edge: number; p: number; pAdjusted?: number; family?: number } | null;
+  /** Fallbacks and loosened limits met while fitting this goal. */
+  notes?: string[];
+  /** An earlier goal with the same weights (shown and counted once). */
+  sameAs?: GoalKey | null;
+  /** Out-of-sample Sharpe minus Even risk's, with a paired block-bootstrap standard error. */
+  vsEvenRisk?: { diff: number; se: number } | null;
 }
 
 export interface Optimisation {
@@ -242,7 +249,7 @@ export interface Optimisation {
   /** Plain notes about limits that were loosened or couldn't be used. */
   notes?: string[];
   settings?: {
-    estimate: 'shrunk' | 'equilibrium' | 'views';
+    estimate: 'shrunk' | 'views';
     lookbackYears: number;
     testRebalance: 'monthly' | 'quarterly' | 'yearly';
     cost: number;
@@ -253,6 +260,7 @@ export interface Optimisation {
     sectorCap: number | null;
     maxHoldings: number | null;
     maxTurnover: number | null;
+    maxChange?: number | null;
   };
   start: string;
   end: string;
@@ -271,13 +279,13 @@ export interface Optimisation {
   /** Share of the walk-forward's out-of-sample days that use estimated (stand-in) history, 0-1; null without stand-ins. */
   estimatedShare?: number | null;
   /** The same walk-forward on real prices only, when real shared history alone is long enough (with stand-ins in use). */
-  realOnly?: { windowYears: number; days: number; rows: WalkForwardRow[]; stepDays?: number; short?: boolean } | null;
+  realOnly?: { windowYears: number; days: number; rows: WalkForwardRow[]; stepDays?: number; short?: boolean; oosStart?: string; oosEnd?: string } | null;
   /** Young holdings whose earlier history is estimated from a long-running ETF (v33+). */
   standIns?: { symbol: string; standIn: string; correlation: number; beta: number; realStart: string }[];
   /** Young holdings with no good stand-in: left out of the walk-forward (v33+). */
   leftOut?: { symbol: string; realStart: string }[];
   /** short = the 1-year fit / monthly hold test (2.5-4 years of history): low confidence. */
-  walkForward: { windowYears: number; days: number; rows: WalkForwardRow[]; stepDays?: number; short?: boolean } | null;
+  walkForward: { windowYears: number; days: number; rows: WalkForwardRow[]; stepDays?: number; short?: boolean; oosStart?: string; oosEnd?: string } | null;
   /** How often shuffled histories gave the method at least its real out-of-sample Sharpe edge over the current portfolio. */
   randomWalk: { method: string; runs: number; edge: number; p: number } | null;
 }

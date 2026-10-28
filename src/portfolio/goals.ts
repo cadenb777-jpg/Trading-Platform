@@ -28,6 +28,11 @@ export const GOALS: GoalInfo[] = [
 
 export const DEFAULT_GOAL: GoalKey = 'risk_parity';
 
+/** Max per holding by default: 2 / holdings, kept between 25% and 50% (same rule as the helper's default_max_weight). */
+export function defaultMaxWeight(n: number): number {
+  return Math.min(Math.max(2 / Math.max(n, 1), 0.25), 0.5);
+}
+
 export function goalInfo(key: string): GoalInfo | undefined {
   return GOALS.find((g) => g.key === key);
 }
@@ -53,32 +58,83 @@ export function cleanViews(rows: { symbol: string; ret: string; confidence: numb
     .filter((v) => v.symbol && Number.isFinite(v.return));
 }
 
-/** The compare-goals rows: each goal's walk-forward result next to the current mix, best walk-forward Sharpe first. */
-export function compareRows(r: Optimisation): { key: GoalKey; row: WalkForwardRow; p: number | null; beatCurrent: boolean }[] {
+/** Holm-adjusted random-walk p at or below this: the goal's edge needed the real order of events. */
+export const TIMING_LEVEL = 0.1;
+
+export interface CompareRow {
+  key: GoalKey;
+  row: WalkForwardRow;
+  /** Holm-adjusted random-walk p (null when no shuffles were needed: no edge over the current mix). */
+  p: number | null;
+  beatCurrent: boolean;
+  /** Later goals with the same weights, merged into this row. */
+  twins: GoalKey[];
+  /** Sharpe minus Even risk's, with its standard error (null for Even risk itself). */
+  vs: { diff: number; se: number } | null;
+}
+
+/** The compare-goals rows in goal order (Even risk first, as the baseline); goals with identical weights share one row. */
+export function compareRows(r: Optimisation): CompareRow[] {
   const wf = r.walkForward;
   if (!wf) return [];
   const cur = wf.rows.find((x) => x.key === 'current');
   const byGoal = new Map((r.goals ?? []).map((g) => [g.key, g] as const));
-  return wf.rows
-    .filter((x): x is WalkForwardRow & { key: GoalKey } => x.key !== 'current' && x.key !== 'equal')
-    .map((row) => {
-      const rw = byGoal.get(row.key)?.randomWalk;
-      return { key: row.key, row, p: rw && rw.runs ? rw.p : null, beatCurrent: (row.sharpe ?? 0) > (cur?.sharpe ?? 0) };
-    })
-    .sort((a, b) => (b.row.sharpe ?? -Infinity) - (a.row.sharpe ?? -Infinity));
+  const rows = new Map(wf.rows.map((x) => [x.key, x] as const));
+  const out: CompareRow[] = [];
+  for (const info of GOALS) {
+    const row = rows.get(info.key);
+    if (!row) continue;
+    const g = byGoal.get(info.key);
+    if (g?.sameAs) continue;
+    const rw = g?.randomWalk;
+    out.push({
+      key: info.key,
+      row,
+      p: rw && rw.runs ? (rw.pAdjusted ?? rw.p) : null,
+      beatCurrent: (row.sharpe ?? 0) > (cur?.sharpe ?? 0),
+      twins: (r.goals ?? []).filter((x) => x.sameAs === info.key).map((x) => x.key),
+      vs: g?.vsEvenRisk ?? null,
+    });
+  }
+  return out;
 }
 
-/** The honest line under the compare table. */
+/** "Lowest volatility (same weights: Target volatility, Income)". */
+export function compareName(c: Pick<CompareRow, 'key' | 'twins'>): string {
+  return c.twins.length ? `${rowName(c.key)} (same weights: ${c.twins.map(rowName).join(', ')})` : rowName(c.key);
+}
+
+/** "+0.05 ± 0.04": Sharpe difference vs Even risk, ± one standard error. */
+export function vsText(vs: CompareRow['vs']): string {
+  if (!vs) return 'baseline';
+  return `${vs.diff >= 0 ? '+' : '−'}${Math.abs(vs.diff).toFixed(2)} ± ${vs.se.toFixed(2)}`;
+}
+
+/** The headline of the comparison: does any goal beat Even risk by more than 2 standard errors? */
+export function compareVerdict(r: Optimisation): string {
+  const rows = compareRows(r).filter((x) => x.vs);
+  if (!rows.length) return '';
+  const clear = rows.filter((x) => x.vs!.se > 0 && Math.abs(x.vs!.diff) >= 2 * x.vs!.se);
+  const better = clear.filter((x) => x.vs!.diff > 0);
+  if (!better.length)
+    return clear.length
+      ? `No goal clearly beats Even risk; ${clear.map((x) => rowName(x.key)).join(', ')} did clearly worse.`
+      : 'No goal clearly beats Even risk: every difference is within 2 standard errors, so it could be chance.';
+  return `${better.map((x) => rowName(x.key)).join(', ')} beat Even risk by more than 2 standard errors on data ${better.length > 1 ? 'they' : 'it'} hadn’t seen. With several goals compared, one such result can still be luck.`;
+}
+
+/** The honest lines under the compare table. */
 export function compareNote(r: Optimisation): string {
   const rows = compareRows(r);
   if (!rows.length) return '';
   const beat = rows.filter((x) => x.beatCurrent).length;
-  const strong = rows.filter((x) => x.p != null && x.p <= 0.1).length;
+  const timing = rows.filter((x) => x.p != null && x.p <= TIMING_LEVEL).length;
   const short = r.walkForward?.short ? ' This test is short, so treat every difference as chance.' : '';
   return (
-    `${beat} of ${rows.length} goals beat your current mix on data they hadn’t seen. ` +
-    `Differences between goals are often chance: with ${rows.length} goals tested, one or two “wins” (p ≤ 0.10) are expected even when none is really better` +
-    `${strong ? ` (${strong} here)` : ''}. Prefer a goal that held up and suits you over the top row.${short}`
+    `${beat} of ${rows.length} distinct goals beat your current mix on data they hadn’t seen (goals with the same weights count once). ` +
+    `“Vs Even risk” is the Sharpe difference ± one standard error (paired block bootstrap); under 2 standard errors is within chance. ` +
+    `“Needs real timing?” reruns the test on history shuffled in 1-month blocks: p ≤ ${TIMING_LEVEL.toFixed(2)} (Holm-adjusted across the ${rows.length} goals) means the edge over your mix needed the real order of events` +
+    `${timing ? ` (${timing} here)` : ''}. A high p is not luck: risk-based goals keep their edge on shuffled data because it comes from how the holdings move together.${short}`
   );
 }
 
@@ -89,7 +145,7 @@ export function figureRows(current: Optimisation['currentFigures'], chosen: Goal
     { label: 'Expected return / yr', now: pct(current.expectedReturn), next: pct(chosen.expectedReturn), term: 'returnEstimate' },
     { label: 'Volatility / yr', now: pct(current.volatility), next: pct(chosen.volatility) },
     { label: 'Dividend yield', now: pctOrDash(current.yield, 2), next: pctOrDash(chosen.yield, 2) },
-    { label: 'Worst drop (history)', now: pct(current.maxDrawdown, 0), next: pct(chosen.maxDrawdown, 0) },
+    { label: 'Worst drop', now: pct(current.maxDrawdown, 0), next: pct(chosen.maxDrawdown, 0) },
     { label: 'Bad-month loss (CVaR 95%)', now: pct(-current.cvar), next: pct(-chosen.cvar), term: 'cvarMonth' },
   ];
   if (current.trackingError != null && chosen.trackingError != null) rows.push({ label: 'Tracking error', now: pct(current.trackingError), next: pct(chosen.trackingError), term: 'trackingError' });
@@ -101,5 +157,6 @@ export function randomWalkLine(rw: GoalResult['randomWalk'], name: string): stri
   if (!rw) return '';
   if (!rw.runs) return ' Not needed: there was no edge over your mix to explain.';
   const times = Math.round(rw.p * (rw.runs + 1)) - 1;
-  return ` In ${times} of ${rw.runs} shuffled histories ${name} beat your mix by at least as much (p = ${rw.p.toFixed(2)}).`;
+  const adj = rw.pAdjusted != null && rw.family ? ` Holm-adjusted for the ${rw.family} goals compared: p = ${rw.pAdjusted.toFixed(2)}.` : '';
+  return ` In ${times} of ${rw.runs} shuffled histories ${name} beat your mix by at least as much (p = ${rw.p.toFixed(2)}).${adj}`;
 }

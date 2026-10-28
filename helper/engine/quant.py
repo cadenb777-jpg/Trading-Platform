@@ -2,6 +2,7 @@
 Portfolio analytics, risk and optimisation from daily prices (Schwab history), using numpy/scipy.
 """
 import asyncio
+import contextvars
 import datetime as dt
 import zlib
 
@@ -444,15 +445,32 @@ async def analyze(ctx, msg):
 #:   income      highest forward dividend yield (as on the Dividends view) under a volatility cap.
 #:   track       stay close to a benchmark: the highest expected return within a tracking-error budget (closest
 #:               portfolio when the budget is 0): Roll (1992), "A Mean/Variance Analysis of Tracking Error", JPM 18(4).
-GOALS = ('growth', 'risk_parity', 'min_var', 'max_div', 'hrp', 'min_cvar', 'target_vol', 'income', 'track')
+GOALS = ('risk_parity', 'growth', 'min_var', 'max_div', 'hrp', 'min_cvar', 'target_vol', 'income', 'track')  # Even risk first: the baseline
 METHODS = GOALS + ('black_litterman',)  # old name (helper v33 and before): Growth with my views
-ESTIMATES = ('shrunk', 'equilibrium', 'views')  # history shrunk 70% toward equilibrium / equilibrium only / Black-Litterman with views
+ESTIMATES = ('shrunk', 'views')  # history shrunk 70% toward equilibrium / Black-Litterman with views ('equilibrium' stays internal)
 TEST_STEPS = {'monthly': 21, 'quarterly': 63, 'yearly': 252}  # how often the walk-forward test refits and rebalances
 WINDOW, STEP, BLOCK = 3 * TRADING_DAYS, 63, 21  # fit on 3 years, hold a quarter, 1-month blocks when resampling
 HIST_SHARE = 0.3  # expected returns = 70% equilibrium (Black-Litterman prior) + 30% history
 RESAMPLES, WF_RESAMPLES, RW_RESAMPLES, RW_RUNS = 200, 10, 3, 100
 CVAR_LEVEL, CVAR_DAYS, CVAR_STRIDE = 0.95, 21, 5  # 95% expected shortfall of 1-month returns, one scenario every 5 days
 TARGET_VOL, VOL_CAP, TE_BUDGET = 0.10, 0.12, 0.02  # defaults: target volatility, income's volatility cap, tracking-error budget
+SAME_WEIGHTS = 0.005  # goals whose weights all differ by less than 0.5 points are the same portfolio
+HOLM_LEVEL = 0.10  # Holm-adjusted random-walk p at or below this: the goal's edge needed the real order of events
+SE_RUNS = 500  # paired block-bootstrap runs for the standard error of a Sharpe difference vs Even risk
+
+# Notes about fallbacks and loosened limits, collected only while a goal's suggested weights are fit (goal_job).
+_NOTES = contextvars.ContextVar('optimiser_notes', default=None)
+
+
+def _note(text):
+    notes = _NOTES.get()
+    if notes is not None and text not in notes:
+        notes.append(text)
+
+
+def default_max_weight(n):
+    """Max per holding by default: 2 / holdings, kept between 25% and 50% (room to move without one bet)."""
+    return min(max(2 / max(n, 1), 0.25), 0.5)
 
 
 def ledoit_wolf(returns):
@@ -499,6 +517,8 @@ def _solve(fun, bounds, x0, jac=True, cons=()):
     lo, hi = np.array(bounds).T
     eq = [{'type': 'eq', 'fun': lambda w: w.sum() - 1, 'jac': lambda w: np.ones_like(w)}]
     res = minimize(fun, np.clip(x0, lo, hi), jac=jac, method='SLSQP', bounds=bounds, constraints=eq + list(cons), options={'maxiter': 300, 'ftol': 1e-12})
+    if not res.success:
+        _note('The optimiser didn’t fully settle on an answer, so these weights are its best attempt.')
     w = np.clip(res.x, lo, hi)
     return w / w.sum()
 
@@ -522,6 +542,8 @@ def project(w0, bounds, lin=None, cur=None, max_turnover=None):
     x0 = np.r_[start, np.abs(start - cur) if turn else zeros]
     res = minimize(lambda x: (((x[:n] - w0) ** 2).sum(), np.r_[2 * (x[:n] - w0), zeros]), x0, jac=True, method='SLSQP',
                    bounds=list(zip(lo, hi)) + [(0, None)] * n, constraints=cons, options={'maxiter': 500, 'ftol': 1e-14})
+    if not res.success:
+        _note('Your limits couldn’t all be met exactly; the weights are as close as the optimiser could get.')
     w = np.clip(res.x[:n], lo, hi)
     return w / w.sum()
 
@@ -648,6 +670,7 @@ def min_cvar(scen, bounds, lin=None, level=CVAR_LEVEL):
     res = linprog(c, A_ub=a_ub, b_ub=b_ub, A_eq=np.r_[np.ones(n), 0.0, np.zeros(s)][None], b_eq=[1.0],
                   bounds=list(zip(lo, hi)) + [(None, None)] + [(0, None)] * s, method='highs')
     if not res.success:
+        _note('The smallest-bad-months calculation failed, so equal weights (within your limits) are shown instead.')
         return _into_bounds(np.full(n, 1 / n), bounds)
     w = np.clip(res.x[:n], lo, hi)
     return w / w.sum()
@@ -669,10 +692,16 @@ def max_at_volatility(score, cov, cap, bounds, lin=None):
     when even that swings more than the cap."""
     base = min_variance(cov, bounds, lin)
     if np.sqrt(base @ cov @ base) >= cap:
+        _note(f'Even the calmest mix swings {np.sqrt(base @ cov @ base):.1%} a year, more than the {cap:.1%} volatility you set, so the lowest-volatility mix is used.')
         return base
     cons = [{'type': 'ineq', 'fun': lambda w: cap ** 2 - w @ cov @ w, 'jac': lambda w: -2 * cov @ w}] + _ineq(lin)
     w = _solve(lambda w: (-(score @ w), -score), bounds, base, cons=cons)
-    return w if np.sqrt(w @ cov @ w) <= cap * 1.005 else base
+    if np.sqrt(w @ cov @ w) > cap * 1.005:
+        _note('No mix could be found at your volatility setting, so the lowest-volatility mix is used.')
+        return base
+    if np.sqrt(w @ cov @ w) < cap * 0.98:
+        _note(f'The best mix only swings {np.sqrt(w @ cov @ w):.1%} a year, below the {cap:.1%} you allowed: more risk wouldn’t add to the aim.')
+    return w
 
 
 def tracking_fit(sub, rest, bench, share, excess, bounds, budget, lin=None):
@@ -690,11 +719,17 @@ def tracking_fit(sub, rest, bench, share, excess, bounds, budget, lin=None):
         return 2 * share * share * sig @ w + 2 * share * g
 
     closest = _solve(lambda w: (te2(w), grad(w)), bounds, np.full(k, 1 / k), cons=_ineq(lin))
-    if budget <= 0 or te2(closest) >= budget ** 2:
+    if budget <= 0:
+        return closest
+    if te2(closest) >= budget ** 2:
+        _note(f'Your holdings can’t get within the {budget:.1%} tracking-error budget (the closest is {np.sqrt(max(te2(closest), 0)):.1%}), so the closest mix is used.')
         return closest
     cons = [{'type': 'ineq', 'fun': lambda w: budget ** 2 - te2(w), 'jac': lambda w: -grad(w)}] + _ineq(lin)
     w = _solve(lambda w: (-(excess @ w), -excess), bounds, closest, cons=cons)
-    return w if te2(w) <= budget ** 2 * 1.01 else closest
+    if te2(w) > budget ** 2 * 1.01:
+        _note('No mix within the tracking-error budget could be found, so the closest mix to the benchmark is used.')
+        return closest
+    return w
 
 
 def black_litterman(cov, prior_weights, views, symbols, delta=2.5, tau=0.05):
@@ -728,9 +763,11 @@ def expected_excess(r, cov, rf, views=(), symbols=(), estimate='shrunk'):
 
 def _feasible(lo, hi):
     """Loosens impossible limits just enough: lows scaled down to add to at most 1, highs up to add to at least 1."""
-    if lo.sum() > 1:
+    if lo.sum() > 1 + 1e-9:
+        _note(f'Your minimum weights add up to {lo.sum():.0%}, more than everything, so each was scaled down.')
         lo = lo / lo.sum()
-    if hi.sum() < 1:
+    if hi.sum() < 1 - 1e-9:
+        _note(f'Your maximum weights add up to only {hi.sum():.0%} (max per holding or max number of holdings too low), so each maximum was raised to fit.')
         hi = hi / hi.sum() if hi.sum() > 0 else np.full(len(hi), 1 / len(hi))
     return lo, np.maximum(hi, lo)
 
@@ -745,6 +782,8 @@ def _bounds(n, lo, hi, cur=None, max_change=None):
         hi_c = np.maximum(hi_c, lo_c)
         if lo_c.sum() <= 1 and hi_c.sum() >= 1:  # otherwise the move limit is dropped
             lo_b, hi_b = lo_c, hi_c
+        else:
+            _note('Max change per holding couldn’t be kept together with your other limits, so it was dropped.')
     return list(zip(lo_b, hi_b))
 
 
@@ -1053,7 +1092,7 @@ def wf_row(returns, key, current, o, rf, rng, plan):
     t_o = _test_options(o)
     weigh = (lambda past: current) if key == 'current' else (lambda past: fit(past, key, t_o, rng))
     port, _, turned = walk_forward(returns, weigh, window, step, float(o.get('cost') or 0))
-    return {'key': key, **oos_stats(port, rf), 'turnover': turned}, len(port)
+    return {'key': key, **oos_stats(port, rf), 'turnover': turned}, port
 
 
 def _table(rows, plan, days):
@@ -1096,18 +1135,26 @@ def goal_job(returns, current, goal, o, seed=7, test=None, stability_runs=None):
     rng = np.random.default_rng(_goal_seed(seed, goal))
     fit_r = returns[-int(o['lookback']):] if o.get('lookback') else returns
     mine = {**o, 'cur': current}
-    out = {'key': goal, 'weights': fit(fit_r, goal, mine, rng), 'stability': weight_stability(fit_r, goal, mine, _goal_seed(seed, goal) + 4, stability_runs),
-           'row': None, 'realRow': None, 'randomWalk': None, 'days': 0, 'realDays': 0}
+    notes = []
+    token = _NOTES.set(notes)  # notes only from fitting the suggestion, not from the many test refits
+    try:
+        weights = fit(fit_r, goal, mine, rng)
+    finally:
+        _NOTES.reset(token)
+    out = {'key': goal, 'weights': weights, 'notes': notes, 'stability': weight_stability(fit_r, goal, mine, _goal_seed(seed, goal) + 4, stability_runs),
+           'row': None, 'realRow': None, 'randomWalk': None, 'days': 0, 'realDays': 0, 'oos': None}
     t_returns, t_current, t_o = test or (returns, current, o)
     plan = _plan(t_returns, t_o)
     if not plan:
         return out
-    out['row'], out['days'] = wf_row(t_returns, goal, t_current, t_o, o['rf'], rng, plan)
+    out['row'], out['oos'] = wf_row(t_returns, goal, t_current, t_o, o['rf'], rng, plan)
+    out['days'] = len(out['oos'])
     real_plan = _plan(returns, o) if test is not None else None
     if real_plan:  # same test on real prices only: no estimated history at all
-        out['realRow'], out['realDays'] = wf_row(returns, goal, current, o, o['rf'], np.random.default_rng(_goal_seed(seed, goal) + 8), real_plan)
-    base, _ = wf_row(t_returns, 'current', t_current, t_o, o['rf'], rng, plan)
-    edge = (out['row']['sharpe'] or 0) - (base['sharpe'] or 0)
+        out['realRow'], real = wf_row(returns, goal, current, o, o['rf'], np.random.default_rng(_goal_seed(seed, goal) + 8), real_plan)
+        out['realDays'] = len(real)
+    mix, _ = wf_row(t_returns, 'current', t_current, t_o, o['rf'], rng, plan)
+    edge = (out['row']['sharpe'] or 0) - (mix['sharpe'] or 0)
     out['randomWalk'] = random_walk(t_returns, t_current, goal, t_o, o['rf'], plan, edge, rng)
     return out
 
@@ -1132,6 +1179,43 @@ def portfolio_figures(w, assets, cov, mu, rf, yields=None, bench=None):
         'cvar': cvar(-(scenarios(assets) @ w)),
         'trackingError': float((daily - bench).std(ddof=1) * np.sqrt(TRADING_DAYS)) if bench is not None else None,
     }
+
+
+def sharpe_difference(a, b, rf, rng, runs=SE_RUNS, block=BLOCK):
+    """Sharpe(a) - Sharpe(b) on the same out-of-sample days, and its standard error from a paired block bootstrap
+    (the same 1-month blocks drawn for both, so their shared market moves cancel)."""
+    sharpe = lambda x: oos_stats(x, rf)['sharpe'] or 0.0  # noqa: E731
+    diff = sharpe(a) - sharpe(b)
+    draws = []
+    for _ in range(runs):
+        idx = _block_sample(len(a), rng, block)
+        draws.append(sharpe(a[idx]) - sharpe(b[idx]))
+    return float(diff), float(np.std(draws, ddof=1))
+
+
+def holm(ps):
+    """Holm-adjusted p-values (step-down, monotone), in the input order."""
+    order = sorted(range(len(ps)), key=lambda i: ps[i])
+    out, running = [1.0] * len(ps), 0.0
+    for rank, i in enumerate(order):
+        running = max(running, min(1.0, (len(ps) - rank) * ps[i]))
+        out[i] = running
+    return out
+
+
+def same_as(results):
+    """{goal: earlier goal with the same weights} (GOALS order), so identical portfolios are shown and counted once."""
+    out, seen = {}, []
+    for g in GOALS:
+        r = next((x for x in results if x['key'] == g), None)
+        if r is None:
+            continue
+        twin = next((k for k, w in seen if np.abs(w - r['weights']).max() < SAME_WEIGHTS), None)
+        if twin:
+            out[g] = twin
+        else:
+            seen.append((g, r['weights']))
+    return out
 
 
 def efficient_frontier(mu, cov, bounds, lin=None, points=14):
@@ -1167,12 +1251,27 @@ def assemble(returns, current, method, o, results, test=None, seed=7):
     except Exception:  # a frontier that can't be traced is left out, never a failed reply
         frontier = []
     w = chosen['weights']
+    twins = same_as(results)
+    # Holm across the distinct goals (a goal with no edge to explain counts with p = 1).
+    distinct = [g for g in GOALS if g in by and g not in twins and by[g]['randomWalk']]
+    adjusted = dict(zip(distinct, holm([by[g]['randomWalk']['p'] for g in distinct])))
+    for g in GOALS:
+        if g in by and by[g]['randomWalk']:
+            by[g]['randomWalk'] = {**by[g]['randomWalk'], 'pAdjusted': adjusted.get(twins.get(g, g), 1.0), 'family': len(distinct)}
+    base = by.get('risk_parity')
+    se_rng = np.random.default_rng(seed + 16)
+    versus = {}
+    for g in GOALS:
+        if g in by and base is not None and by[g]['oos'] is not None and base['oos'] is not None and g != 'risk_parity':
+            d, se = sharpe_difference(by[g]['oos'], base['oos'], o['rf'], se_rng)
+            versus[g] = {'diff': d, 'se': se}
     out = {
         'weights': w,
         'volatility': {'current': float(np.sqrt(current @ cov @ current)), 'suggested': float(np.sqrt(w @ cov @ w))},
-        'stability': chosen['stability'], 'walkForward': None, 'randomWalk': chosen['randomWalk'], 'realOnly': None,
+        'stability': chosen['stability'], 'walkForward': None, 'randomWalk': by[method]['randomWalk'], 'realOnly': None,
         'goals': [{'key': g, 'weights': by[g]['weights'].round(4).tolist(), **figures(by[g]['weights']), 'riskContributions': contrib(by[g]['weights']),
-                   'stability': by[g]['stability'], 'randomWalk': by[g]['randomWalk']} for g in GOALS if g in by],
+                   'stability': by[g]['stability'], 'randomWalk': by[g]['randomWalk'], 'notes': by[g].get('notes') or [],
+                   'sameAs': twins.get(g), 'vsEvenRisk': versus.get(g)} for g in GOALS if g in by],
         'currentFigures': {**figures(current), 'riskContributions': contrib(current)},
         'frontier': frontier,
     }
@@ -1180,13 +1279,13 @@ def assemble(returns, current, method, o, results, test=None, seed=7):
     plan = _plan(t_returns, t_o)
     if plan and chosen['row']:
         rng = np.random.default_rng(seed)
-        base = [wf_row(t_returns, k, t_current, t_o, o['rf'], rng, plan)[0] for k in ('current', 'equal')]
-        out['walkForward'] = _table(base + [by[g]['row'] for g in GOALS if g in by and by[g]['row']], plan, chosen['days'])
+        lead = [wf_row(t_returns, k, t_current, t_o, o['rf'], rng, plan)[0] for k in ('current', 'equal')]
+        out['walkForward'] = _table(lead + [by[g]['row'] for g in GOALS if g in by and by[g]['row']], plan, chosen['days'])
     real_plan = _plan(returns, o) if test is not None else None
     if real_plan and chosen['realRow']:
         rng = np.random.default_rng(seed + 8)
-        base = [wf_row(returns, k, current, o, o['rf'], rng, real_plan)[0] for k in ('current', 'equal')]
-        out['realOnly'] = _table(base + [by[g]['realRow'] for g in GOALS if g in by and by[g]['realRow']], real_plan, chosen['realDays'])
+        lead = [wf_row(returns, k, current, o, o['rf'], rng, real_plan)[0] for k in ('current', 'equal')]
+        out['realOnly'] = _table(lead + [by[g]['realRow'] for g in GOALS if g in by and by[g]['realRow']], real_plan, chosen['realDays'])
     return out
 
 
@@ -1242,12 +1341,16 @@ def _worker_init():
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # the helper stops the workers itself (shutdown) when it exits
 
 
+def _workers():
+    import os
+    return max(1, min(4, (os.cpu_count() or 2) - 1))
+
+
 def _pool():
     if not _executor:
         import concurrent.futures
         import multiprocessing
-        import os
-        workers = max(1, min(4, (os.cpu_count() or 2) - 1))
+        workers = _workers()
         # 'spawn' on every system: a fresh interpreter, never a copy of the helper's threads and open sockets.
         _executor.append(concurrent.futures.ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context('spawn'), initializer=_worker_init))
     return _executor[0]
@@ -1264,6 +1367,10 @@ async def _run_jobs(jobs, emit):
     """goal_job for every job, in worker processes when possible, reporting "Tested 3 of 9 goals" as each finishes."""
     import concurrent.futures.process
     loop = asyncio.get_running_loop()
+    if emit:
+        workers = _workers() if USE_PROCESSES else 1
+        minutes = max(1, round(-(-len(jobs) // workers) * 15 / 60 + 0.4))
+        await emit({'type': 'status', 'text': f'Testing {len(jobs)} goals on {workers} processor core{"s" if workers > 1 else ""} (about {minutes} minute{"s" if minutes > 1 else ""})'})
     for attempt in range(2):
         use = USE_PROCESSES and attempt == 0
         try:
@@ -1375,7 +1482,7 @@ async def optimize(ctx, msg):
     notes = []
     fixed = {j: float(current[j]) for j in cash_idx} if keep_cash else {}
     lo_all = 0.01 if msg.get('keepAll') else 0.0
-    hi_all = _number(msg, 'maxWeight', 0.01, 1.0, 0.25)
+    hi_all = _number(msg, 'maxWeight', 0.01, 1.0, default_max_weight(n))
     lo_each, hi_each = np.full(n, lo_all), np.full(n, hi_all)
     for j, s in enumerate(symbols):
         lim = (msg.get('limits') or {}).get(s) if isinstance(msg.get('limits'), dict) else None
@@ -1468,6 +1575,12 @@ async def optimize(ctx, msg):
         # Share of the test's out-of-sample days on which at least one holding's history is estimated.
         oos = test_dates[-r['walkForward']['days']:]
         estimated = round(sum(d <= dates[0] for d in oos) / len(oos), 3)
+    for table, table_dates in ((r['walkForward'], test_dates), (r['realOnly'], dates)):
+        if table:  # the test period actually used (out-of-sample days only)
+            table['oosStart'], table['oosEnd'] = table_dates[-table['days']].isoformat(), table_dates[-1].isoformat()
+    wf = r['walkForward']
+    if wf and not wf['short'] and abs(wf['windowYears'] - lookback) > 0.01:
+        notes.append(f'Your {lookback}-year lookback would leave less than a year to test on, so the test refits on {wf["windowYears"]:.0f} years instead.')
     if o['maxTurnover'] is not None and turnover(r['weights'], current) > o['maxTurnover'] + 0.005:
         notes.append(f'The {o["maxTurnover"]:.0%} limit on total change couldn’t be met together with your other limits.')
     return {
@@ -1498,5 +1611,6 @@ async def optimize(ctx, msg):
         'notes': notes,
         'settings': {'estimate': estimate, 'lookbackYears': lookback, 'testRebalance': msg.get('testRebalance') if msg.get('testRebalance') in TEST_STEPS else 'quarterly',
                      'cost': o['cost'], 'targetVol': o['targetVol'], 'volCap': o['volCap'], 'teBudget': o['teBudget'], 'benchmark': bench_name,
-                     'sectorCap': cap_used, 'maxHoldings': o['maxHoldings'], 'maxTurnover': o['maxTurnover']},
+                     'sectorCap': cap_used, 'maxHoldings': o['maxHoldings'], 'maxTurnover': o['maxTurnover'], 'maxChange': o['maxChange'],
+                     'maxWeight': hi_all},
     }

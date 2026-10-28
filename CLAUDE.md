@@ -86,7 +86,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   testRebalance, cost per trade (walk_forward cost). Every goal runs goal_job (weights, ranges, walk-forward row, random-walk
   p; seeded per goal) in a spawn process pool (USE_PROCESSES, quant.shutdown) streaming "Tested n of 9 goals"; assemble adds
   frontier, figures (exp. return, vol, yield, max DD, 1-month CVaR, TE) and risk contributions. UI: frontier + risk bars
-  (src/portfolio/optimiserCharts.ts, --viz-1/--viz-2), compare-goals table with "Show". Notes list loosened limits. Walk-forward
+  (src/portfolio/optimiserCharts.ts, --viz-1/--viz-2), compare-goals table (goal order, Even risk first; identical weights merged via sameAs and counted once; "Vs Even risk" = Sharpe diff ± paired block-bootstrap SE, verdict at 2 SE; "Needs real timing? (p)" = Holm-adjusted random-walk p, 0.10). Defaults: max weight clamp(2/n, 25%, 50%), max change off (the test never applies change caps). Every fallback adds a note (_note, per goal). Walk-forward
   and random-walk check (100 block-shuffled histories) per goal. Only the owner's own symbols; cash shows as "Cash" (holdingLabel), not BIL.
   Short history (v33): weights are fit on real shared history only. For the tests, a young holding (starts 90+ days after
   the oldest) gets stand-in history (extend_history: best-correlated ETF, CORE_STAND_INS first then STAND_INS, never an
