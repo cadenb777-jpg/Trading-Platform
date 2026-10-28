@@ -7355,6 +7355,16 @@ button.stat-drill:focus-visible .stat-drill-mark {
 .script-toolbar .chart-ws-tabs {
   margin-right: var(--sp-2);
 }
+/* the mode tabs make the editor's toolbar wider: let it wrap on phones */
+.script-toolbar {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.script-toolbar .script-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .cot-summary {
   margin: 0;
   padding: var(--sp-2) var(--sp-3);
