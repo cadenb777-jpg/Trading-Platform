@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cotTone, curveReading, daysUntil, futuresPrice, heatStrength, sigmaText, tickDecimals } from './view';
+import { cotSummaryText, cotTone, curveReading, daysUntil, futuresPrice, heatStrength, sigmaText, tickDecimals } from './view';
 
 describe('futures view helpers', () => {
   it('shows as many decimals as the tick', () => {
@@ -43,5 +43,19 @@ describe('futures view helpers', () => {
     expect(cotTone(15)).toBe('down');
     expect(cotTone(50)).toBe('');
     expect(daysUntil('2026-11-01', new Date(2026, 9, 26))).toBe(6);
+  });
+});
+
+describe('cotSummaryText (the one-line COT summary on Flow, Research and Home)', () => {
+  it('reads the latest week and flags extremes', () => {
+    const rows = [
+      { date: '2026-10-13', specIndex: 50, commIndex: 50 },
+      { date: '2026-10-20', specIndex: 12, commIndex: 85 },
+    ];
+    expect(cotSummaryText({ market: 'Nasdaq-100', rows })).toBe('Nasdaq-100 futures: hedgers 85 / 100 (crowded long), speculators 12 / 100 (crowded short) · CFTC 2026-10-20');
+  });
+  it('says so when there is no report', () => {
+    expect(cotSummaryText({ market: 'Gold', rows: [] })).toBe('No COT report for Gold yet.');
+    expect(cotSummaryText({ market: 'Gold', rows: [{ date: '2026-10-20', specIndex: null, commIndex: 40 }] })).toBe('Gold futures: hedgers 40 / 100, speculators — · CFTC 2026-10-20');
   });
 });
