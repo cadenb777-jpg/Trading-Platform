@@ -30,6 +30,9 @@ export function checkValue(req: CheckRequest): Promise<CrossCheck> {
   return engineRequest<CrossCheck>('crosscheck.value', params, 45000);
 }
 
+/** The name of the source the best estimate comes from. */
+export const bestSourceName = (c: CrossCheck) => c.sources.find((s) => s.source === c.bestSource)?.name ?? 'the sources';
+
 /** The meter: a bar and "65% confident (Medium)", with the scoring rubric on hover. */
 export function confidenceMeter(c: CrossCheck) {
   const pct = meterPercent(c.score);
@@ -52,15 +55,16 @@ export function crossCheckPanel(c: CrossCheck) {
   const rows = c.sources.map((s) =>
     h(
       'li',
-      { class: `xc-src${s.value == null ? ' xc-missing' : s.agrees === false ? ' xc-off' : ''}` },
+      { class: `xc-src${s.value == null ? ' xc-missing' : s.compared === false ? ' xc-other' : s.agrees === false ? ' xc-off' : ''}` },
       h('span', { class: 'xc-src-name' }, s.name, h('span', { class: 'muted tiny' }, ` ${s.kind}`)),
       h('span', { class: 'xc-src-val' }, s.value == null ? h('span', { class: 'muted' }, s.error ? `no value: ${s.error}` : 'no value') : formatCheckValue(s.value, c.unit)),
       h(
         'span',
         { class: 'xc-src-meta muted small' },
         s.value != null ? ageText(s.asOf) : '',
+        s.basisLabel ? ` · ${s.basisLabel}` : '',
         s.note ? ` · ${s.note}` : '',
-        s.agrees === false ? h('span', { class: 'xc-badge' }, ' differs') : '',
+        s.compared === false ? h('span', { class: 'xc-badge-other' }, ' · different definition, not compared') : s.agrees === false ? h('span', { class: 'xc-badge' }, ' differs') : '',
         s.url ? h('a', { href: s.url, target: '_blank', rel: 'noopener', class: 'xc-link', 'aria-label': `Open ${s.name}` }, ' ↗') : '',
       ),
     ),
@@ -71,13 +75,13 @@ export function crossCheckPanel(c: CrossCheck) {
     h(
       'div',
       { class: 'xc-best' },
-      h('span', { class: 'muted small' }, `${c.label}, best estimate`),
-      h('b', { class: 'xc-best-val' }, c.best == null ? 'not available' : formatCheckValue(c.best, c.unit)),
+      h('span', { class: 'muted small' }, `${c.label}${c.basisLabel ? ` (${c.basisLabel})` : ''}, best estimate`),
+      h('span', {}, h('b', { class: 'xc-best-val' }, c.best == null ? 'not available' : formatCheckValue(c.best, c.unit)), c.best == null ? '' : h('span', { class: 'muted tiny' }, ` from ${bestSourceName(c)}`)),
     ),
     confidenceMeter(c),
     h('p', { class: `xc-status xc-${c.tone}`, role: c.tone === 'ok' ? undefined : 'status' }, h('b', {}, `${statusWords(c.status)}. `), c.message),
     h('ul', { class: 'xc-list', 'aria-label': 'Values found, by source' }, ...rows),
-    h('p', { class: 'muted tiny' }, 'Best estimate = the middle value of the sources that agree. Free public sources only; values can lag.'),
+    h('p', { class: 'muted tiny' }, 'Best estimate = the value from the most trusted source that agrees with the others (never an average). Free public sources only; values can lag.'),
   );
 }
 

@@ -15,7 +15,7 @@ import type { Portfolio } from '../portfolio/types';
 import { asOfStamp } from './dataHealth';
 import { clickTargets, formatPrice, h } from './dom';
 import { formatCheckValue } from './confidence';
-import { canCrossCheck, sourcesChip } from './sourcesChip';
+import { bestSourceName, canCrossCheck, sourcesChip } from './sourcesChip';
 import { sparkline } from './sparkline';
 import { THEME } from './theme';
 
@@ -274,7 +274,7 @@ function buildCard(symbol: string, pinned: boolean) {
         stamp.set(reply.asOf, r?.atClose ? { prefix: 'close', refreshMs: 0 } : {});
         if (r?.name) name.textContent = r.name;
         price.replaceChildren(
-          r?.price != null ? h('span', { class: 'tc-last' }, formatPrice(r.price)) : h('span', { class: 'muted small' }, 'No quote right now'),
+          r?.price != null ? h('span', { class: 'tc-last' }, formatPrice(r.price)) : h('span', { class: 'muted small' }, noQuoteText()),
           r?.change != null ? h('span', { class: `tc-chg ${r.change >= 0 ? 'up' : 'down'}` }, `${pctText(r.change)} today`) : '',
         );
         if (r?.spark && r.spark.length > 1) {
@@ -283,17 +283,16 @@ function buildCard(symbol: string, pinned: boolean) {
           sparkLabel.textContent = `3 months${r.m3 != null ? `: ${pctText(r.m3)}` : ''}`;
         }
         if (canCrossCheck() && !index && !future) {
-          // Compare the price across free sources on click; with no Schwab quote, check straight away and show the
-          // best estimate (always labelled with where it came from).
+          // Other sites are asked only when Sources is clicked (never on hover). With no Schwab quote, the best estimate
+          // then fills the price, labelled with where it came from.
           const missing = r?.price == null;
           checks.replaceChildren(
             sourcesChip({ field: 'last', symbol }, {
-              auto: missing,
               onResult: (c) => {
                 if (!missing || c.best == null || !still()) return;
                 price.replaceChildren(
                   h('span', { class: 'tc-last' }, formatCheckValue(c.best, 'usd')),
-                  h('span', { class: 'muted small' }, `best estimate from ${c.agreeing} other source${c.agreeing === 1 ? '' : 's'} (no Schwab quote)`),
+                  h('span', { class: 'muted small' }, `from ${bestSourceName(c)} (no Schwab quote; see Sources)`),
                 );
               },
             }),
@@ -306,7 +305,7 @@ function buildCard(symbol: string, pinned: boolean) {
         ].filter(Boolean);
         facts.textContent = f.join(' · ');
       } catch (err) {
-        if (still()) price.replaceChildren(h('span', { class: 'muted small' }, (err as Error).message || 'No quote right now'));
+        if (still()) price.replaceChildren(h('span', { class: 'muted small' }, (err as Error).message || noQuoteText()));
         if (still() && canCrossCheck() && !index && !future) checks.replaceChildren(sourcesChip({ field: 'last', symbol }));
       }
     }
@@ -323,6 +322,11 @@ function buildCard(symbol: string, pinned: boolean) {
     );
     if (open?.card === card) place(card, open.anchor);
   }
+}
+
+/** What the card says when Schwab has no price (pointing to the Sources check when the helper has it). */
+function noQuoteText() {
+  return canCrossCheck() ? 'No live price; click Sources to check other sites.' : 'No quote right now';
 }
 
 function scheduleHide() {

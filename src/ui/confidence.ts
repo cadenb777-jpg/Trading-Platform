@@ -15,6 +15,11 @@ export interface SourceReading {
   url: string | null;
   note?: string;
   error?: string;
+  /** The definition: 'forward' / 'trailing' (yields), 'net' / 'gross' (expense ratios), 'Class I' (NAVs). */
+  basis?: string | null;
+  basisLabel?: string | null;
+  /** False when its definition differs from the main one (listed, not compared). */
+  compared?: boolean;
   reliability?: number;
   freshness?: number;
   weight?: number;
@@ -29,6 +34,10 @@ export interface CrossCheck {
   cik: number | null;
   tolerance: number;
   best: number | null;
+  /** The source whose value is the best estimate (the most trusted one that agrees). */
+  bestSource: string | null;
+  basis: string | null;
+  basisLabel: string | null;
   score: number;
   level: 'High' | 'Medium' | 'Low' | 'None';
   tone: CheckTone;

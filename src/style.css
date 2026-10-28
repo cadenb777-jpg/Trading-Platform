@@ -6843,6 +6843,10 @@ button.stat-drill:focus-visible .stat-drill-mark {
 .xc-badge {
   color: var(--warn-text);
 }
+.xc-other .xc-src-val {
+  color: var(--muted);
+  font-weight: 400;
+}
 .xc-link {
   color: var(--link);
   text-decoration: none;

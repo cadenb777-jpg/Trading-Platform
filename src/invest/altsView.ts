@@ -361,14 +361,22 @@ export function createAltsView(ctx: InvestContext) {
     // Show the researched figures unless the SEC's live data already has a newer NAV.
     if (snap && !(lastNav && !staleNav && lastNav.end > snap.asOf) && !(useHist && histLast!.date >= snap.asOf)) out.push(snapshotPanel(snap));
     if (cards.length) out.push(statCards(cards));
-    // The NAV compared across free sources (SEC filings, Schwab, Yahoo, Google Finance), each listed with its time and link.
-    if (canCrossCheck()) {
-      const listed = d.schwab?.find((r) => r.assetType === 'MUTUAL_FUND')?.symbol ?? d.schwab?.[0]?.symbol;
-      out.push(h('div', { class: 'xc-line' }, h('span', { class: 'muted small' }, `NAV per share checked across sources${listed ? ` (incl. ${listed})` : ''}:`), sourcesChip({ field: 'nav', cik: d.cik, symbol: listed }, { auto: true })));
-    }
     else if (d.formD && !d.filings.some((x) => ['10-K', '10-Q', 'NPORT-P', 'N-CSR'].includes(x.form)))
       out.push(h('p', { class: 'muted' }, 'Private funds don\'t report NAV or returns publicly; what is public is their Form D below (money raised, investors, minimum). The manager\'s fact sheet or your iCapital statements have the performance.'));
     else out.push(h('p', { class: 'muted' }, 'This fund doesn\'t publish NAV figures in a format the SEC makes machine-readable. Its NAV announcements and filings are below; the fund website and fact sheet have the rest.'));
+    // The NAV compared across free sources (SEC filings, Schwab, Yahoo), each with its time and link. Only for funds
+    // that publish NAVs (private funds, which don't, send no requests).
+    const listedFund = d.schwab?.find((r) => r.assetType === 'MUTUAL_FUND');
+    if (canCrossCheck() && (nav.length > 0 || !!hist?.points.length || !!listedFund)) {
+      out.push(
+        h(
+          'div',
+          { class: 'xc-line' },
+          h('span', { class: 'muted small' }, `NAV per share checked across sources${listedFund ? ` (incl. ${listedFund.symbol})` : ''}:`),
+          sourcesChip({ field: 'nav', cik: d.cik, symbol: listedFund?.symbol }, { auto: true }),
+        ),
+      );
+    }
 
     const navNotesBlock = () => {
       if (!d.navNotes?.length) return;
