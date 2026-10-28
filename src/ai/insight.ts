@@ -58,6 +58,22 @@ export async function runInsight(target: HTMLElement, req: InsightRequest) {
   }
 }
 
+/**
+ * Moves the summary panel to sit directly under the row that holds its button, wherever the page first put it: the
+ * row is the button's nearest ancestor whose parent stacks its children (not a side-by-side flex row).
+ */
+export function placeUnder(button: HTMLElement, panel: HTMLElement) {
+  let row: HTMLElement = button;
+  while (row.parentElement && row.parentElement !== document.body) {
+    const parent = row.parentElement;
+    const s = getComputedStyle(parent);
+    const sideBySide = (s.display.includes('flex') && !s.flexDirection.startsWith('column')) || s.display.startsWith('inline');
+    if (!sideBySide) break;
+    row = parent;
+  }
+  if (row.nextElementSibling !== panel) row.after(panel);
+}
+
 /** A button plus the panel it fills. `getRequest` returns null when there's no data yet. */
 export function insightButton(getRequest: () => InsightRequest | null, label = 'AI summary') {
   const panel = h('section', { class: 'panel insight-panel', hidden: true });
@@ -67,7 +83,9 @@ export function insightButton(getRequest: () => InsightRequest | null, label = '
       class: 'btn ai-btn',
       onclick: () => {
         const req = getRequest();
-        if (req) runInsight(panel, req);
+        if (!req) return;
+        placeUnder(button, panel);
+        runInsight(panel, req);
       },
     },
     h('span', { class: 'ai-spark' }, '✦'),
