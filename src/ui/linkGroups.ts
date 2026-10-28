@@ -2,7 +2,7 @@
  * Linked symbol groups (like Bloomberg's coloured link chips). Every panel that shows one symbol (the Chart, the
  * workspace panels, Research, Flow, the Futures detail, the Setups detail, the Trade ticket, the Home news, the
  * watchlist) has a small chip: Not linked, Red, Green, Blue or Yellow. Changing the symbol in one panel changes it in
- * every other panel of the same colour. Everything starts on Blue, so the platform follows what you're looking at;
+ * every other panel of the same colour. Everything starts on Blue (Trade starts unlinked), so the platform follows what you're looking at;
  * pick "Not linked" to keep a panel to itself. Each panel's colour and each group's symbol are saved in this browser
  * (localStorage, with a memory fallback when storage is blocked).
  *
@@ -14,6 +14,8 @@ import { h } from './dom';
 export const LINK_COLORS = ['none', 'red', 'green', 'blue', 'yellow'] as const;
 export type LinkColor = (typeof LINK_COLORS)[number];
 export const DEFAULT_LINK: LinkColor = 'blue';
+/** Panels that start unlinked: Trade (its ticket only follows a group once the owner links it). */
+export const PANEL_DEFAULTS: Record<string, LinkColor> = { trade: 'none' };
 export const LINK_LABELS: Record<LinkColor, string> = { none: 'Not linked', red: 'Red', green: 'Green', blue: 'Blue', yellow: 'Yellow' };
 
 const KEY = 'tp-link-groups';
@@ -55,7 +57,7 @@ export function createLinkBus(store: KeyStore | null) {
     }
   }
 
-  const colorOf = (panelId: string): LinkColor => saved.panels[panelId] ?? DEFAULT_LINK;
+  const colorOf = (panelId: string): LinkColor => saved.panels[panelId] ?? PANEL_DEFAULTS[panelId] ?? DEFAULT_LINK;
   const tell = (panelId: string, symbol: string) => subs.get(panelId)?.forEach((fn) => fn(symbol));
 
   /** Sets a group's symbol and tells its panels (except `from`, which already shows it). False when nothing changed. */

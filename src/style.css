@@ -2561,7 +2561,8 @@ button.news-item {
 .ws-head {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
   gap: 6px;
   padding: 5px 8px;
   border-bottom: 1px solid var(--border);
@@ -2574,8 +2575,20 @@ button.news-item {
   font-weight: 700;
   color: var(--muted);
 }
+.ws-head > .input {
+  min-width: 0;
+  flex-shrink: 1;
+}
+.ws-head > .ws-num,
+.ws-head > .link-chip,
+.ws-head > .icon-btn {
+  flex-shrink: 0;
+}
+.ws-head > .ws-symbol {
+  min-width: 56px;
+}
 .ws-symbol {
-  width: 96px;
+  width: 88px;
   font-weight: 600;
   text-transform: uppercase;
   padding: 5px 8px;

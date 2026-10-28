@@ -184,24 +184,41 @@ describe('shortcuts', () => {
 
 describe('panel keys', () => {
   const t0 = 1_000_000;
-  it('Ctrl/Cmd+[ ] and F6 move between panels, Alt+1-6 jumps', () => {
-    expect(dispatchKey(null, { key: ']', ctrl: true }, t0)).toEqual({ action: 'panel:next', pending: null, consume: true });
-    expect(dispatchKey(null, { key: '[', meta: true }, t0).action).toBe('panel:prev');
-    expect(dispatchKey(null, { key: 'F6' }, t0).action).toBe('panel:next');
-    expect(dispatchKey(null, { key: 'F6', shift: true }, t0).action).toBe('panel:prev');
-    expect(dispatchKey(null, { key: '¡', code: 'Digit1', alt: true }, t0).action).toBe('panel:1'); // a Mac's Alt+1
-    expect(dispatchKey(null, { key: '6', code: 'Digit6', alt: true }, t0).action).toBe('panel:6');
-    expect(dispatchKey(null, { key: '7', code: 'Digit7', alt: true }, t0).action).toBeNull();
+  const P = { hasPanels: true };
+  it('Ctrl+[ ] and F6 move between panels, Alt+1-6 jumps', () => {
+    expect(dispatchKey(null, { key: ']', ctrl: true, ...P }, t0)).toEqual({ action: 'panel:next', pending: null, consume: true });
+    expect(dispatchKey(null, { key: '[', ctrl: true, ...P }, t0).action).toBe('panel:prev');
+    expect(dispatchKey(null, { key: 'F6', ...P }, t0).action).toBe('panel:next');
+    expect(dispatchKey(null, { key: 'F6', shift: true, ...P }, t0).action).toBe('panel:prev');
+    expect(dispatchKey(null, { key: '¡', code: 'Digit1', alt: true, ...P }, t0).action).toBe('panel:1'); // a Mac's Alt+1
+    expect(dispatchKey(null, { key: '6', code: 'Digit6', alt: true, ...P }, t0).action).toBe('panel:6');
+    expect(dispatchKey(null, { key: '7', code: 'Digit7', alt: true, ...P }, t0).action).toBeNull();
+  });
+  it('leaves Cmd+[ ] (Mac Back/Forward) and pages without panels to the browser', () => {
+    expect(dispatchKey(null, { key: '[', meta: true, ...P }, t0)).toEqual({ action: null, pending: null, consume: false });
+    expect(dispatchKey(null, { key: ']', meta: true, ...P }, t0).consume).toBe(false);
+    for (const k of [{ key: ']', ctrl: true }, { key: 'F6' }, { key: '1', code: 'Digit1', alt: true }]) expect(dispatchKey(null, k, t0)).toEqual({ action: null, pending: null, consume: false });
   });
   it('a letter on a panel opens the scoped command bar; elsewhere letters stay the page’s', () => {
-    expect(dispatchKey(null, { key: 'n', inPanel: true }, t0)).toEqual({ action: 'panel-type', pending: null, consume: true });
-    expect(dispatchKey(null, { key: 'A', inPanel: true }, t0).action).toBe('panel-type');
+    expect(dispatchKey(null, { key: 'a', inPanel: true }, t0)).toEqual({ action: 'panel-type', pending: null, consume: true, text: 'A' });
+    expect(dispatchKey(null, { key: 'T', inPanel: true }, t0).action).toBe('panel-type');
     expect(dispatchKey(null, { key: 'f' }, t0).action).toBeNull(); // the chart's fit (the Chart opts out of typing)
     expect(dispatchKey(null, { key: '1', inPanel: true }, t0).action).toBeNull();
     expect(dispatchKey(null, { key: '/', inPanel: true }, t0).action).toBe('palette');
   });
+  it('g and n still start two-key shortcuts on a focused panel', () => {
+    const g = dispatchKey(null, { key: 'g', inPanel: true }, t0);
+    expect(g).toMatchObject({ action: null, consume: false, pending: { key: 'g' } });
+    expect(dispatchKey(g.pending, { key: 't', inPanel: true }, t0 + 200)).toEqual({ action: 'page:trade', pending: null, consume: true });
+    const n = dispatchKey(null, { key: 'n', inPanel: true }, t0);
+    expect(dispatchKey(n.pending, { key: 'a', inPanel: true }, t0 + 200).action).toBe('act:alert');
+    // "g" then "o" isn't a shortcut: it was a ticker (GOOGL), and the g isn't lost
+    expect(dispatchKey(g.pending, { key: 'o', inPanel: true }, t0 + 200)).toEqual({ action: 'panel-type', pending: null, consume: true, text: 'GO' });
+    // after the chord window a lone letter starts fresh
+    expect(dispatchKey(g.pending, { key: 'o', inPanel: true }, t0 + CHORD_MS + 1).text).toBe('O');
+  });
   it('panel keys never fire in a field or a dialog', () => {
-    for (const k of [{ key: ']', ctrl: true }, { key: 'F6' }, { key: '1', code: 'Digit1', alt: true }, { key: 'a', inPanel: true }]) {
+    for (const k of [{ key: ']', ctrl: true, ...P }, { key: 'F6', ...P }, { key: '1', code: 'Digit1', alt: true, ...P }, { key: 'a', inPanel: true }]) {
       expect(dispatchKey(null, { ...k, inField: true }, t0).action).toBeNull();
       expect(dispatchKey(null, { ...k, modalOpen: true }, t0).action).toBeNull();
     }
