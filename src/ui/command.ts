@@ -43,8 +43,11 @@ export const CODES: FnCode[] = [
   { code: 'WEI', label: 'World equity indices (Home)', keywords: 'indexes indices markets home' },
   { code: 'ECO', label: 'Economic calendar', keywords: 'calendar economic releases fomc' },
   { code: 'FUT', aliases: ['CTM'], label: 'Futures', keywords: 'futures contracts commodities' },
-  { code: 'PORT', label: 'Portfolios', keywords: 'portfolio optimizer' },
-  { code: 'ACCT', label: 'My account', keywords: 'account holdings dividends' },
+  { code: 'PORT', label: 'Portfolios (models, what-ifs, optimizer)', keywords: 'portfolio model optimizer what-if' },
+  { code: 'ACCT', label: 'Account (my real money, all accounts)', keywords: 'account holdings dividends total value' },
+  { code: 'MULTI', label: 'Multi-chart (Chart mode)', keywords: 'multi chart grid side by side' },
+  { code: 'SCRIPT', aliases: ['PINE'], label: 'Scripts (Chart mode)', keywords: 'script pine editor indicator code' },
+  { code: 'COT', label: 'Futures positioning (COT)', keywords: 'cot commitment traders positioning hedgers cftc' },
   { code: 'BTST', label: 'Backtest', keywords: 'backtest strategy test' },
   { code: 'SET', label: 'Setups', keywords: 'setups scanner signals' },
   { code: 'MACRO', label: 'Macro', keywords: 'economy fred rates' },
@@ -56,7 +59,7 @@ export const CODES: FnCode[] = [
 /** Where a code without a ticker goes. */
 const CODE_ROUTE: Record<string, string> = {
   GP: 'chart', DES: 'research', FA: 'research', CN: 'home', OMON: 'flow', TRADE: 'trade', WEI: 'home', ECO: 'calendar', FUT: 'futures',
-  PORT: 'portfolio', ACCT: 'account', BTST: 'backtest', SET: 'setups', MACRO: 'macro', INV: 'invest',
+  PORT: 'portfolio', ACCT: 'account', MULTI: 'chart/multi', SCRIPT: 'chart/scripts', COT: 'futures/cot', BTST: 'backtest', SET: 'setups', MACRO: 'macro', INV: 'invest',
 };
 
 export function findCode(token: string): FnCode | null {
@@ -275,10 +278,11 @@ export function buildResults(input: string, src: Sources, recents: RecentEntry[]
     );
   fuzzyGroup('Pages', src.pages.map((pg) => ({ id: `page:${pg.route}`, title: pg.label, subtitle: pg.group, keywords: pg.route })));
   fuzzyGroup('Accounts', [
-    { id: 'pf:webull', title: 'Webull (live accounts)', subtitle: 'Balances, positions and orders', keywords: 'account broker' },
-    ...src.portfolios.filter((x) => x.mine).map((x) => ({ id: `pf:${x.id}`, title: x.name, subtitle: 'My account', keywords: 'account' })),
+    { id: 'page:account', title: 'All accounts (total value)', subtitle: 'Account: your real money, every account', keywords: 'account total holdings webull broker' },
+    { id: 'page:trade', title: 'Webull ordering account', subtitle: 'Trade: one account’s buying power, positions and orders', keywords: 'account broker webull buying power orders' },
+    ...src.portfolios.filter((x) => x.mine).map((x) => ({ id: `ac:${x.id}`, title: x.name, subtitle: 'My account (Account page)', keywords: 'account' })),
   ]);
-  fuzzyGroup('Portfolios', src.portfolios.filter((x) => !x.mine).map((x) => ({ id: `pf:${x.id}`, title: x.name, subtitle: 'Portfolio', keywords: 'portfolio' })));
+  fuzzyGroup('Portfolios', src.portfolios.filter((x) => !x.mine).map((x) => ({ id: `pf:${x.id}`, title: x.name, subtitle: 'Model portfolio', keywords: 'portfolio model' })));
   fuzzyGroup('Clients', src.clients.map((c) => ({ id: `cl:${c.id}`, title: c.name, subtitle: 'Client', keywords: 'client report' })));
   fuzzyGroup('Actions', src.actions);
 
@@ -349,7 +353,8 @@ export const CHORDS: { keys: string; id: string; label: string }[] = [
   { keys: 'g a', id: 'page:account', label: 'Go to Account' },
   { keys: 'g t', id: 'page:trade', label: 'Go to Trade (nothing is placed by a key)' },
   { keys: 'g f', id: 'page:futures', label: 'Go to Futures' },
-  { keys: 'g p', id: 'page:portfolio', label: 'Go to Portfolios' },
+  { keys: 'g p', id: 'page:portfolio', label: 'Go to Portfolios (models)' },
+  { keys: 'g m', id: 'page:chart/multi', label: 'Go to Multi-chart' },
   { keys: 'n a', id: 'act:alert', label: 'New alert' },
 ];
 export const CHORD_MS = 1500;
@@ -575,7 +580,7 @@ function sources(search: SymbolEntry[]): Sources {
 
 const refFor = (symbol: string): MarketRef | null => (symbol.startsWith('/') ? null : guessMarket(symbol));
 
-/** Carries out a command id: page:route, fn:CODE, tk:SYMBOL:CODE, pf:id, cl:id, act:name, set:section. */
+/** Carries out a command id: page:route, fn:CODE, tk:SYMBOL:CODE, pf:id (a model), ac:id (my account), cl:id, act:name, set:section. */
 export async function runId(id: string) {
   const d = deps;
   if (!d) return;
@@ -587,6 +592,7 @@ export async function runId(id: string) {
     const cut = arg.lastIndexOf(':');
     runCode(arg.slice(cut + 1), arg.slice(0, cut));
   } else if (kind === 'pf') d.openPage('portfolio', 'open', arg);
+  else if (kind === 'ac') d.openPage('account', 'open', arg);
   else if (kind === 'cl') d.openPage('clients', 'open', arg);
   else if (kind === 'set') (await import('./settings')).openSettings(arg);
   else if (kind === 'act') runAction(arg);
@@ -631,7 +637,11 @@ async function runCode(code: string, symbol: string | null) {
   if (!c) return;
   if (!symbol) {
     if (c.code === 'HELP') return openShortcutSheet();
-    if (c.code === 'ALRT') return (await import('./alerts')).openAlertsDialog();
+    if (c.code === 'ALRT') {
+      // on Multi-chart: the panel last clicked or focused
+      const ref = location.hash === '#chart/multi' ? (await import('../pages/multiChartPage')).activeMultiRef() : null;
+      return (await import('./alerts')).openAlertsDialog(ref ?? undefined);
+    }
     if (c.code === 'BONDS') return d.openPage('invest', 'open', 'bonds');
     if (CODE_ROUTE[c.code]) location.hash = `#${CODE_ROUTE[c.code]}`;
     return;

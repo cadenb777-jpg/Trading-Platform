@@ -18,6 +18,7 @@ import { followHealth, openDataHealth } from './ui/dataHealth';
 import { initTickerCards } from './ui/tickerCard';
 import { initCommandBar } from './ui/command';
 import { captureConsoleErrors } from './diagnostics';
+import { resolveHash } from './routes';
 
 captureConsoleErrors(); // kept for Settings > Send diagnostics
 
@@ -25,7 +26,8 @@ initTheme();
 
 interface Page {
   el: HTMLElement;
-  start(): void;
+  /** sub = the part of the hash after the page ("multi" in #chart/multi). */
+  start(sub?: string): void;
   stop?(): void;
 }
 
@@ -51,7 +53,7 @@ const openChart = (ref: MarketRef) => {
 /** Opens the Research page on a company (from the Investments page, for example). */
 const openResearch = (symbol: string) => openPageWith('research', 'open', symbol);
 
-/** Opens a saved portfolio (or, with 'webull', the Webull view) on the Portfolios page (from the Account page). */
+/** Opens a saved portfolio on the Portfolios page (from the Account page: "Analyse in Portfolios"). */
 const openPortfolio = (id: string) => openPageWith('portfolio', 'open', id);
 
 /** Goes to a page and, once it's built, calls one of its methods (e.g. the Research page's open(symbol, tab)). */
@@ -69,6 +71,9 @@ window.addEventListener('tp:backtest-chart', () => {
   location.hash = '#backtest';
   ensurePage(entry).then((page) => (page as Page & { fromChart?(): void }).fromChart?.());
 });
+
+/** "See all on Futures" from a COT summary line: the Futures page's COT panel on that market (or stock). */
+window.addEventListener('tp:open-cot', (e) => openPageWith('futures', 'openCot', (e as CustomEvent).detail ?? {}));
 
 /**
  * Each page is built the first time it's opened (and its code downloaded then), so the platform starts
@@ -101,28 +106,13 @@ const pages: PageEntry[] = [
   { route: 'futures', group: 'markets', label: 'Futures', icon: 'futures', title: 'Futures', create: async () => (await import('./pages/futuresPage')).createFuturesPage() },
   { route: 'macro', group: 'markets', label: 'Macro', icon: 'macro', title: 'Macro', create: async () => (await import('./pages/macroPage')).createMacroPage() },
   { route: 'calendar', group: 'markets', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', create: async () => (await import('./pages/calendarPage')).createCalendarPage() },
-  { route: 'chart', group: 'analyse', label: 'Chart', icon: 'chart', title: '', create: () => getChartPage() },
-  { route: 'multi', group: 'analyse', label: 'Multi', icon: 'grid', title: 'Multi-chart', create: async () => (await import('./pages/multiChartPage')).createMultiChartPage(openChart) },
+  // Chart | Multi | Scripts are modes of one page (#chart, #chart/multi, #chart/scripts; #multi and #scripts redirect)
+  { route: 'chart', group: 'analyse', label: 'Chart', icon: 'chart', title: '', create: async () => (await import('./pages/chartWorkspace')).createChartWorkspace(getChartPage(), openChart) },
   { route: 'setups', group: 'analyse', label: 'Setups', icon: 'target', title: 'Setups', create: async () => (await import('./pages/setupsPage')).createSetupsPage(openChart) },
   { route: 'research', group: 'analyse', label: 'Research', icon: 'research', title: 'Research', create: async () => (await import('./pages/researchPage')).createResearchPage() },
   { route: 'flow', group: 'analyse', label: 'Flow', icon: 'flow', title: 'Flow', create: async () => (await import('./pages/flowPage')).createFlowPage() },
   { route: 'backtest', group: 'analyse', label: 'Backtest', icon: 'backtest', title: 'Backtest', create: async () => (await import('./pages/backtestPage')).createBacktestPage() },
-  {
-    route: 'scripts',
-    group: 'analyse',
-    label: 'Scripts',
-    icon: 'code',
-    title: 'Scripts',
-    create: async () =>
-      (await import('./pages/scriptsPage')).createScriptsPage({
-        onAddToChart: (defId) => {
-          getChartPage().addIndicatorById(defId);
-          location.hash = '#chart';
-        },
-        onScriptSaved: (defId) => getChartPage().refreshIndicatorsFor(defId),
-      }),
-  },
-  { route: 'account', group: 'money', label: 'Account', icon: 'account', title: 'Account', create: async () => (await import('./pages/accountPage')).createAccountPage(openPortfolio) },
+  { route: 'account', group: 'money', label: 'Account', icon: 'account', title: 'Account', create: async () => (await import('./pages/accountPage')).createAccountPage(openPortfolio, (id, kind) => openPageWith('trade', 'open', id, kind)) },
   { route: 'portfolio', group: 'money', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', create: async () => (await import('./pages/portfolioPage')).createPortfolioPage() },
   { route: 'trade', group: 'money', label: 'Trade', icon: 'trade', title: 'Trade', create: async () => (await import('./pages/tradePage')).createTradePage() },
   { route: 'clients', group: 'money', label: 'Clients', icon: 'clients', title: 'Clients & Reports', create: async () => (await import('./pages/clientsPage')).createClientsPage() },
@@ -132,9 +122,17 @@ const pages: PageEntry[] = [
 
 const AI_CHANNEL = 'tp-ai-actions';
 
+/** The route with its mode, e.g. 'chart/multi' (keys PAGE_SUGGESTIONS and tells the AI which Chart mode is open). */
+function routeKey() {
+  const { route, sub } = resolveHash(location.hash, ROUTES());
+  return sub && route === 'chart' ? `${route}/${sub}` : route;
+}
+const MODE_LABELS: Record<string, string> = { 'chart/multi': 'Chart (Multi-chart mode)', 'chart/scripts': 'Chart (Scripts mode: indicator editor)' };
+
 function aiContext(): Record<string, string> {
   const page = currentPage();
-  return { page: page.label, route: page.route, symbol: state.symbols[state.provider] ?? '', timeframe: state.timeframe, screen: screenText(page.page?.el) };
+  const key = routeKey();
+  return { page: MODE_LABELS[key] ?? page.label, route: key, symbol: state.symbols[state.provider] ?? '', timeframe: state.timeframe, screen: screenText(page.page?.el) };
 }
 
 /** Carries out something the AI asked for (open a chart, add an indicator, set an alert...). */
@@ -246,7 +244,7 @@ if (isAiWindow) {
   const assistant = createAssistant({
     mode: 'drawer',
     getContext: aiContext,
-    getSuggestions: () => PAGE_SUGGESTIONS[currentPage().route] ?? [],
+    getSuggestions: () => PAGE_SUGGESTIONS[routeKey()] ?? [],
     onAction: runAction,
     onClose: () => toggleAssistant(false),
     onPopOut: () => {
@@ -294,7 +292,12 @@ if (isAiWindow) {
   });
   // The command bar (/ or Ctrl/Cmd+K) and the global shortcuts (g h, n a, ?, Ctrl/Cmd+I for the AI)
   const commandBtn = initCommandBar({
-    pages: pages.map((p) => ({ route: p.route, label: p.label, group: GROUPS[p.group] })),
+    pages: [
+      ...pages.map((p) => ({ route: p.route, label: p.label, group: GROUPS[p.group] })),
+      // the Chart page's modes (they used to be pages)
+      { route: 'chart/multi', label: 'Multi-chart', group: 'Chart mode' },
+      { route: 'chart/scripts', label: 'Scripts (indicator editor)', group: 'Chart mode' },
+    ],
     currentRoute: () => currentPage().route,
     openChart,
     openPage: openPageWith,
@@ -334,8 +337,14 @@ if (isAiWindow) {
   startAlertWatcher();
 }
 
+/** The page routes (a function declaration, so code that runs before this line can use it). */
+function ROUTES() {
+  return pages.map((p) => p.route);
+}
+
 function currentPage() {
-  return pages.find((p) => location.hash === `#${p.route}`) ?? pages[0];
+  const { route } = resolveHash(location.hash, ROUTES());
+  return pages.find((p) => p.route === route) ?? pages[0];
 }
 
 /** Builds a page the first time it's needed and adds it to the screen. */
@@ -351,6 +360,9 @@ function ensurePage(entry: PageEntry): Promise<Page> {
 }
 
 async function route() {
+  // old routes (#multi, #scripts, #portfolio/webull, #flow/cot...) are replaced by their new home, so bookmarks work
+  const where = resolveHash(location.hash, ROUTES());
+  if (where.redirected) history.replaceState(null, '', where.hash);
   const current = currentPage();
   const mine = ++routeRequest;
   document.querySelectorAll<HTMLElement>('.nav-btn[data-route]').forEach((b) => {
@@ -376,7 +388,7 @@ async function route() {
     p.page.el.hidden = p !== current;
     if (p !== current) p.page.stop?.();
   }
-  page.start();
+  page.start(where.sub);
   // After a page switch (not the first load), move keyboard and screen-reader focus to the new page's heading.
   if (!firstRoute) focusPageHeading();
   firstRoute = false;

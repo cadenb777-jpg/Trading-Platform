@@ -54,3 +54,13 @@ export function daysUntil(iso: string, now = new Date()): number {
   const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   return Math.round((Date.parse(`${iso}T00:00:00Z`) - today) / 86_400_000);
 }
+
+const cotIdx = (v: number | null | undefined) => (v == null ? '—' : `${v.toFixed(0)} / 100`);
+
+/** The words of the one-line summary (pure, tested). */
+export function cotSummaryText(d: { market: string; rows: { date: string; specIndex: number | null; commIndex: number | null }[] }): string {
+  const last = d.rows[d.rows.length - 1];
+  if (!last) return `No COT report for ${d.market} yet.`;
+  const crowd = (v: number | null) => (v == null ? '' : v >= 80 ? ' (crowded long)' : v <= 20 ? ' (crowded short)' : '');
+  return `${d.market} futures: hedgers ${cotIdx(last.commIndex)}${crowd(last.commIndex)}, speculators ${cotIdx(last.specIndex)}${crowd(last.specIndex)} · CFTC ${last.date}`;
+}

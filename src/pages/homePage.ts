@@ -1,4 +1,5 @@
 /** The start screen: greeting, the three main US indexes, market news and the watchlist. */
+import { cotSummary } from '../futures/cot';
 import { CandlestickSeries, LineStyle, TickMarkType, createChart, type IPriceLine, type UTCTimestamp } from 'lightweight-charts';
 import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
 import { HELPER_OUTDATED, helper, loadNews, schwab, type NewsItem, type NewsSection } from '../data/schwab';
@@ -291,7 +292,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
   let holdingsEmpty = false;
   function showNews() {
     if (newsTab === 'holdings' && holdingsEmpty) {
-      newsList.replaceChildren(h('div', { class: 'muted pad' }, 'No holdings yet. Import a statement in Portfolios (or connect Webull) and mark it "This is my account": news on those stocks then shows here.'));
+      newsList.replaceChildren(h('div', { class: 'muted pad' }, 'No holdings yet. On the Account page, import a statement or sync Webull: news on those stocks then shows here.'));
       newsFooter.textContent = '';
       return;
     }
@@ -355,6 +356,8 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     h('section', { class: 'idx-row', 'aria-label': 'Market indexes' }, ...cards.map((c) => c.card)),
     h('div', { class: 'home-ai-row' }, marketRead.button, h('span', { class: 'muted small' }, 'Bullish or bearish? A quick read of the indexes and the biggest headlines.')),
     marketRead.panel,
+    // futures positioning: one line here, the full COT table is on Futures
+    cotSummary('QQQ', undefined, { quiet: true }),
     setups.el,
     h(
       'div',

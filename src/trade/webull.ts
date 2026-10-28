@@ -1,5 +1,5 @@
 /**
- * Webull pieces shared by the Trade page and the Portfolios > Webull view: the reply types, the environment badge,
+ * Webull pieces shared by the Trade page and the Account page's Webull cards: the reply types, the environment badge,
  * the one-request account snapshot, cancelling with a confirm, and the confirm window.
  *
  * The safety flow lives in one place (confirmOrder): the helper previews the order (checks the limits and returns a
@@ -75,7 +75,7 @@ export interface WebullAccount {
   futures?: boolean;
   retirement?: boolean;
 }
-/** The accounts the Trade page and the Webull view can show (older helpers: all of them). */
+/** The stock accounts the Trade page can order in (older helpers: all of them). */
 export const stockAccounts = (accounts: WebullAccount[]) => accounts.filter((a) => a.stocks !== false);
 /** The futures account, when the owner has one and the helper knows about futures. */
 export const futuresAccount = (accounts: WebullAccount[]) => accounts.find((a) => a.futures === true) ?? null;

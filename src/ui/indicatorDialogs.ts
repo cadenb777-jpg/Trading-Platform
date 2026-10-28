@@ -117,7 +117,7 @@ export function openIndicatorManager(ops: IndicatorManagerOps): { refresh: () =>
         'div',
         { class: 'picker-footer mgr-footer' },
         h('span', { class: 'muted small' }, 'Want something that isn\'t here?'),
-        h('button', { class: 'btn', onclick: () => ((location.hash = '#scripts'), close()) }, '✎ Write your own indicator'),
+        h('button', { class: 'btn', onclick: () => ((location.hash = '#chart/scripts'), close()) }, '✎ Write your own indicator'),
       ),
     ),
     { wide: true },

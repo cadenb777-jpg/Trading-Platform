@@ -462,7 +462,7 @@ export function createBacktestPage() {
         { label: 'Typical max drawdown', value: pctU(mc.maxDrawdown.p50, 1), tone: 'down', hint: `1 in 20 runs worse than ${pctU(mc.maxDrawdown.p95, 1)}` },
         { label: 'Chance of a deeper drawdown than the backtest', value: pctU(mc.worseDrawdownChance, 0), hint: 'Plan for drawdowns bigger than the one you saw' },
       ]),
-      h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Account value by trade number'), h('span', { class: 'muted small' }, 'The fan of possible paths')), fanChart(mc.bands)),
+      h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Backtest account value by trade number'), h('span', { class: 'muted small' }, 'The fan of possible paths')), fanChart(mc.bands)),
       h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Distribution of final returns')), histogram(mc.histogram, { value: r.stats.totalReturn, label: 'Backtest' })),
     ];
   }

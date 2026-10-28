@@ -5,6 +5,7 @@
  */
 import { insightButton } from '../ai/insight';
 import { clearEngineCache, engineRequest } from '../data/schwab';
+import { createCotPanel } from '../futures/cot';
 import { curveReading, cotTone, daysUntil, futuresPrice, heatStrength, sigmaText } from '../futures/view';
 import { compact, createLineChart, dataTable, money, pageFrame, pct, statCards } from '../ui/charts';
 import { openChartWindow } from '../ui/chartWindow';
@@ -156,6 +157,8 @@ export function createFuturesPage() {
   const curveSelect = h('select', { class: 'input', 'aria-label': 'Market for the term structure' });
   const curveBox = h('div', {}, h('div', { class: 'skeleton', style: 'height:220px' }));
   const cotBox = h('div', {});
+  // COT has one home: this page (the board's table here, any CFTC market or a stock's market in the panel below)
+  const cotAny = createCotPanel();
 
   frame.body.replaceChildren(
     ai.panel,
@@ -169,11 +172,12 @@ export function createFuturesPage() {
       h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Term structure'), curveSelect), curveBox),
       h(
         'section',
-        { class: 'panel' },
+        { class: 'panel', id: 'fut-cot' },
         h('div', { class: 'panel-head' }, h('h3', {}, termLabel('Positioning (COT)', 'cotgroups')), h('span', { class: 'muted small' }, 'Net contracts and the 3-year ', termLabel('COT index', 'cotindex'))),
         cotBox,
       ),
     ),
+    cotAny.el,
   );
   curveSelect.addEventListener('change', () => {
     curveRoot = curveSelect.value;
@@ -182,7 +186,7 @@ export function createFuturesPage() {
   // One click handler for every market on the page: chips, board rows and COT rows open the detail panel.
   frame.body.addEventListener('click', (e) => {
     const t = e.target as HTMLElement;
-    if (t.closest('thead, caption, .info-tip, .fut-tile, select, .insight-panel')) return;
+    if (t.closest('thead, caption, .info-tip, .fut-tile, select, .insight-panel, #fut-cot-any')) return;
     const el = t.closest<HTMLElement>('[data-root]') ?? t.closest('tbody tr')?.querySelector<HTMLElement>('[data-root]');
     if (el?.dataset.root) openDetail(el.dataset.root);
   });
@@ -306,6 +310,14 @@ export function createFuturesPage() {
     );
   }
 
+  /** A section to bring into view (#futures/cot, "See all on Futures"): now, and once more when the board has drawn. */
+  let scrollTarget: string | null = null;
+  let boardDrawn = false;
+  function scrollTo(selector: string) {
+    if (!boardDrawn) scrollTarget = selector;
+    requestAnimationFrame(() => frame.el.querySelector(selector)?.scrollIntoView({ block: 'start' }));
+  }
+
   let loading = false;
   async function load(force = false) {
     if (loading) return;
@@ -315,6 +327,9 @@ export function createFuturesPage() {
       board = await engineRequest<Board>('futures.board', {}, 90_000);
       stamp.textContent = `Updated ${new Date(board.asOf * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
       render();
+      boardDrawn = true;
+      if (scrollTarget) scrollTo(scrollTarget);
+      scrollTarget = null;
     } catch (err) {
       note.hidden = false;
       note.textContent = (err as Error).message;
@@ -442,11 +457,19 @@ export function createFuturesPage() {
     open(root: string) {
       void openDetail(root.toUpperCase());
     },
-    start() {
+    /** Shows a CFTC market (code) or a stock's related market in the COT panel (other pages' "See all on Futures"). */
+    openCot(target: { code?: string; symbol?: string }) {
+      scrollTo('#fut-cot-any');
+      void cotAny.show(target).then(() => scrollTo('#fut-cot-any')); // again once its charts have height
+    },
+    /** sub 'cot' (#futures/cot, and the old #flow/cot): scroll to the positioning section. */
+    start(sub = '') {
       if (!started) {
         started = true;
         load();
+        cotAny.start();
       }
+      if (sub === 'cot') scrollTo('#fut-cot');
       // Quotes refresh every minute while the page is open (Schwab is asked at most every 15 s by the helper).
       timer ??= setInterval(() => load(), 60_000);
     },

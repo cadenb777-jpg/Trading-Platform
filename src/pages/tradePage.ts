@@ -20,6 +20,7 @@ import { createTicket, type TicketQuote } from '../trade/ticket';
 import { cancelOrder, envBadge, friendly, futuresAccount, IRA_NOTE, loadSnapshot, OPEN, orderPrice, stockAccounts, takePrefill, usd, type Asset, type Order, type PlacedOrder, type Position, type Snapshot, type TicketPrefill } from '../trade/webull';
 import { dataTable } from '../ui/charts';
 import { activatable, activatableRows, formatPrice, h, timeAgo, toast } from '../ui/dom';
+import { fallbackNotice, valueGapNote } from '../trade/accountNotes';
 import { THEME, followTheme } from '../ui/theme';
 import { tickerAttr } from '../ui/tickerCard';
 
@@ -142,6 +143,12 @@ export function createTradePage() {
 
   function setAsset(a: Asset) {
     if (a === asset) return;
+    switchAsset(a);
+    refresh(true);
+  }
+
+  /** Stocks <-> Futures without reading Webull (the caller refreshes). */
+  function switchAsset(a: Asset) {
     asset = a;
     save(ASSET_KEY, a);
     snap = null; // never show one account's data under the other's ticket
@@ -150,7 +157,6 @@ export function createTradePage() {
     drawLists();
     statsSlot.replaceChildren();
     acctSlot.replaceChildren();
-    refresh(true);
   }
 
   const tabs: { key: 'positions' | 'open' | 'fills'; label: string }[] = [
@@ -430,6 +436,8 @@ export function createTradePage() {
   // ----- account -----
   let refreshing: Promise<void> | null = null;
   let queued = false;
+  /** Set when the account asked for couldn't be used: its name (or ''), for the toast after the fallback loads. */
+  let fellBackFrom: string | null = null;
   function refresh(force = false): Promise<void> {
     // A forced refresh (after an order or cancel) asked while one is on its way runs again right after it, so the
     // page doesn't keep the answer that started before the order.
@@ -454,6 +462,10 @@ export function createTradePage() {
           hasFutures = !!futuresAccount(next.accounts);
           if (wanted === 'futures') futuresId = next.accountId ?? '';
           else if (!accountId) accountId = next.accountId ?? ''; // never overwrite a choice made while this was loading
+          if (fellBackFrom != null && wanted === 'stocks') {
+            toast(fallbackNotice(fellBackFrom, next.account));
+            fellBackFrom = null;
+          }
         } else if (next.busy && snap?.ok) {
           stale = next.message; // Webull busy: keep showing the last data, marked as old
         } else {
@@ -474,7 +486,9 @@ export function createTradePage() {
           return;
         }
         if (accountId && /not one of yours|only US stock accounts/i.test(message)) {
-          // the remembered account is gone or can't be traded here: fall back to the first stock account
+          // the remembered (or asked-for) account is gone or can't be traded here: fall back to the first stock account,
+          // and say so once the fallback's data is in
+          fellBackFrom = snap?.ok ? (snap.accounts.find((a) => a.id === accountId)?.label ?? '') : '';
           accountId = '';
           save(ACCOUNT_KEY, '');
           queued = true;
@@ -554,11 +568,18 @@ export function createTradePage() {
     const b = snap.balances;
     const today = (snap.positions ?? []).map(livePosition).reduce<number | null>((t, p) => (p.dayGain == null ? t : (t ?? 0) + p.dayGain), null);
     const stat = (label: string, value: string, cls = '', title = '') => h('div', { class: 'tr-stat', title }, h('span', { class: 'muted tiny' }, label), h('b', { class: `num ${cls}` }, value));
+    // Only this account's ordering figures: totals across every account are on the Account page.
+    const name = snap.account || 'This account';
+    // Account values holdings at live Schwab prices; Webull's own figure can differ, so say so on screen
+    const held = (snap.positions ?? []).map(livePosition);
+    const liveValue = snap.positions && b?.cash != null && held.every((p) => p.value != null) ? held.reduce((t, p) => t + (p.value ?? 0), b.cash) : null;
+    const gapNote = valueGapNote(name, b?.value, liveValue);
     statsSlot.replaceChildren(
-      stat('Account value', usd(b?.value)),
-      stat('Buying power', usd(b?.buyingPower), '', 'What you can spend on new orders now'),
-      stat('Today', today == null ? '—' : `${today >= 0 ? '+' : ''}${usd(today)}`, tone(today), 'Change in your positions’ value today (Schwab prices)'),
+      stat(`${name} value (for ordering)`, usd(b?.value), '', `Webull’s value of ${name} only. All your accounts added together are on the Account page.`),
+      stat('Buying power', usd(b?.buyingPower), '', `What you can spend on new orders in ${name} now`),
+      stat('Today (this account)', today == null ? '—' : `${today >= 0 ? '+' : ''}${usd(today)}`, tone(today), `Change in ${name}’s positions today (Schwab prices)`),
       stat('Orders today', `${snap.placedToday ?? '?'} / ${snap.limits.maxPerDay}`, '', `Max ${usd(snap.limits.maxOrder)} per order (Settings)`),
+      totalsLink(),
     );
     const errs = Object.values(snap.errors ?? {});
     notice.replaceChildren(
@@ -567,6 +588,7 @@ export function createTradePage() {
         : '',
       snap.env === 'live' ? h('p', { class: 'wb-warning small' }, 'LIVE: orders placed here use real money in your Webull account.') : '',
       snap.retirement ? h('p', { class: 'muted small' }, `${snap.account}: ${IRA_NOTE}`) : '',
+      gapNote ? h('p', { class: 'muted small tr-value-gap' }, gapNote) : '',
       ...[...new Set(errs)].map((e) => h('div', { class: 'ap-error' }, e)),
     );
     for (const s of rowEls.keys()) drawWatchRow(s);
@@ -585,11 +607,12 @@ export function createTradePage() {
     const stat = (label: string, value: string, cls = '', title = '') => h('div', { class: 'tr-stat', title }, h('span', { class: 'muted tiny' }, label), h('b', { class: `num ${cls}` }, value));
     const lim = snap.futuresLimits;
     statsSlot.replaceChildren(
-      stat('Net liquidation', usd(b?.value), '', 'What the account would be worth if every position were closed now'),
+      stat(`${snap.account || 'Futures account'} net liquidation`, usd(b?.value), '', 'What this futures account would be worth if every position were closed now'),
       stat('Buying power', usd(b?.buyingPower), '', 'What Webull lets you use for new positions now'),
       stat('Open P/L', b?.openPnl == null ? '—' : `${b.openPnl >= 0 ? '+' : ''}${usd(b.openPnl)}`, tone(b?.openPnl), 'Profit or loss on open futures positions, in dollars'),
       stat('Margin in use', usd(b?.initMargin), '', 'Initial margin Webull has set aside for open positions'),
       stat('Contracts today', `${snap.placedContractsToday ?? '?'} / ${lim?.maxPerDay ?? '?'}`, '', `Max ${lim?.maxContracts ?? '?'} per order (Settings)`),
+      totalsLink(),
     );
     const errs = Object.values(snap.errors ?? {});
     notice.replaceChildren(
@@ -600,6 +623,11 @@ export function createTradePage() {
     drawLists();
     futuresTicket().refresh();
     tickUpdated();
+  }
+
+  /** Trade shows one account; the totals for every account have one home, the Account page. */
+  function totalsLink() {
+    return h('a', { class: 'small tr-totals-link', href: '#account', title: 'Total value, gains, dividends and risk across all your accounts' }, 'All accounts & totals → Account');
   }
 
   function tickUpdated() {
@@ -825,6 +853,22 @@ export function createTradePage() {
 
   return {
     el,
+    /** Opens the page on one Webull account (from an Account page card): a stock account, or the futures view. */
+    open(id: string, kind: Asset = 'stocks') {
+      if (kind === 'futures') futuresId = id || futuresId;
+      else {
+        if (!id) return;
+        accountId = id;
+        save(ACCOUNT_KEY, accountId);
+      }
+      if (asset !== kind) switchAsset(kind);
+      loadedAt = 0; // a different account: start()'s read must not be skipped as "recent"
+      // one read: start() loads it when the page is being opened; refresh here only when it is already showing
+      if (started) {
+        ticket.refresh();
+        refresh(true);
+      }
+    },
     start() {
       started = true;
       document.addEventListener('keydown', onKey);

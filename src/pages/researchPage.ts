@@ -1,4 +1,5 @@
 /** Research: a company's financial statements, ratios, valuation (DCF) and SEC filings. */
+import { cotSummary } from '../futures/cot';
 import { insightButton } from '../ai/insight';
 import { subscribeQuote } from '../data/quotes';
 import { engineRequest } from '../data/schwab';
@@ -173,6 +174,8 @@ export function createResearchPage() {
         { label: 'Net income (TTM)', value: money(d.ttm.netIncome), tone: (d.ttm.netIncome ?? 0) >= 0 ? '' : 'down' },
         { label: 'Net margin', value: pct(lastRatio('netMargin'), 1) },
       ]),
+      // futures positioning for the company's market: one line, the full COT table is on Futures
+      cotSummary(d.symbol, undefined, { quiet: true }),
       h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Revenue, net income and free cash flow (yearly)')), chartBox),
       h(
         'section',

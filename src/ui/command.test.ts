@@ -108,7 +108,7 @@ describe('ranking', () => {
     expect(top('gold').symbol).toBe('GLD'); // the name beats GOLD as an unknown ticker
     expect(top('xyzq').id).toBe('tk:XYZQ:GP'); // an unknown ticker still works
     expect(top('jane').id).toBe('cl:c1');
-    expect(top('roth').id).toBe('pf:p1');
+    expect(top('roth').id).toBe('ac:p1');
     expect(buildResults('roth', src())[0].label).toBe('Accounts');
     expect(top('growth model').id).toBe('pf:p2');
     expect(top('new alert').id).toBe('act:alert');

@@ -1,9 +1,12 @@
-/** Portfolios: build a portfolio, see its long-run performance and risk, and optimise its weights. */
+/**
+ * Portfolios: models and what-ifs. Build a portfolio, see its long-run performance and risk, and optimise its weights.
+ * The owner's real accounts (marked "mine": imported statements, synced Webull accounts) have their home on the
+ * Account page; "Analyse in Portfolios" there opens one here, with a note and "Save as a what-if copy".
+ */
 import { engineRequest } from '../data/schwab';
 import { deleteDoc, listDocs, saveDoc } from '../data/store';
 import { PRIVATE_FUNDS, STRATEGIES, type Strategy } from '../invest/catalog';
-import { openStatementImport, renderDividends } from '../portfolio/dividendsView';
-import { renderWebull } from '../portfolio/webullView';
+import { renderDividends } from '../portfolio/dividendsView';
 import { DEFAULT_GOAL, GOALS, cleanViews, compareName, compareNote, compareRows, compareVerdict, defaultMaxWeight, figureRows, goalInfo, randomWalkLine, rowName, vsText } from '../portfolio/goals';
 import { frontierChart, riskBars, type FrontierPoint } from '../portfolio/optimiserCharts';
 import { leftOutLine, shortHistoryAdvice, standInLine, yearsBetween } from '../portfolio/optimiserText';
@@ -52,7 +55,7 @@ export function createPortfolioPage() {
   const list = h('div', { class: 'pf-list' });
   const editor = h('section', { class: 'panel' });
   const results = h('div', { class: 'ap-body' });
-  const frame = pageFrame('Portfolios', 'Build a portfolio and see how it would have done: returns, risk, stress tests, optimal weights and dividend income.', []);
+  const frame = pageFrame('Portfolios', 'Models and what-ifs: build a portfolio and see how it would have done (returns, risk, stress tests, optimal weights, dividend income). Your real accounts are on Account.', []);
   frame.body.replaceChildren(h('div', { class: 'pf-layout' }, h('aside', { class: 'panel' }, list), h('div', { class: 'ap-body' }, editor, results)));
 
   async function refreshList() {
@@ -65,16 +68,23 @@ export function createPortfolioPage() {
   }
 
   function renderList() {
-    const item = (p: Portfolio, onclick: () => void, active: boolean) =>
-      h('button', { class: active ? 'active' : '', onclick }, p.name, p.id && isMine(p) ? h('span', { class: 'badge accent pf-mine-badge', title: 'Your own account (shown on the Account page)' }, 'Mine') : null);
+    const item = (p: Portfolio, onclick: () => void, active: boolean) => h('button', { class: active ? 'active' : '', onclick }, p.name);
+    // models and client portfolios only: the owner's real accounts live on the Account page
+    const models = saved.filter((p) => !isMine(p));
+    const accounts = saved.length - models.length;
     list.replaceChildren(
       h('button', { class: 'btn primary', onclick: () => select(blank()) }, '+ New portfolio'),
-      h('button', { class: 'btn', title: 'Upload a positions export (CSV or Excel) from your broker', onclick: () => openStatementImport(imported) }, 'Import statement'),
-      h('button', { class: 'btn', title: 'Your Webull account: balances, positions, orders and sync (place orders on the Trade page)', onclick: () => renderWebull(results, synced) }, 'Webull'),
-      h('div', { class: 'muted small' }, 'Saved'),
-      ...(saved.length ? saved.map((p) => item(p, () => select(structuredClone(p)), p.id === current.id)) : [h('div', { class: 'muted small' }, 'None yet. Saved portfolios are stored by the helper on your computer.')]),
+      h('div', { class: 'muted small' }, 'Saved models'),
+      ...(models.length ? models.map((p) => item(p, () => select(structuredClone(p)), p.id === current.id)) : [h('div', { class: 'muted small' }, 'None yet. Saved portfolios are stored by the helper on your computer.')]),
       h('div', { class: 'muted small' }, 'Templates'),
       ...TEMPLATES.map((t) => item(t, () => select(structuredClone(t)), false)),
+      h(
+        'p',
+        { class: 'muted small pf-accounts-link' },
+        accounts ? `Your ${accounts} real account${accounts === 1 ? '' : 's'} (statements, Webull) are on ` : 'Your real accounts (import a statement, sync Webull) are on ',
+        h('a', { href: '#account' }, 'Account →'),
+        accounts ? ' Use “Analyse in Portfolios” there to test one here.' : '',
+      ),
     );
   }
 
@@ -223,11 +233,21 @@ export function createPortfolioPage() {
         h('label', { class: 'field' }, h('span', { class: 'muted small' }, 'Rebalancing'), reb),
         h('label', { class: 'field' }, h('span', { class: 'muted small' }, 'Measure from (optional)'), since),
       ),
+      p.id && isMine(p)
+        ? h(
+            'div',
+            { class: 'callout pf-real' },
+            h('b', {}, `${p.name} is one of your real accounts. `),
+            'Its home is the Account page. Saving here changes that account’s record; to try changes without touching it, make a copy. ',
+            h('button', { class: 'btn small', onclick: saveCopy }, 'Save as a what-if copy'),
+            ' ',
+            h('a', { href: '#account', class: 'small' }, 'Back to Account →'),
+          )
+        : '',
       h(
         'div',
         { class: 'pf-mine' },
-        h('label', { class: 'pf-mine-toggle', title: 'Your own accounts are added together on the Account page; client portfolios stay out' }, mineBox, h('span', {}, 'This is my account')),
-        isMine(p) ? h('a', { href: '#account', class: 'small' }, 'See it in Account →') : null,
+        h('label', { class: 'pf-mine-toggle', title: 'Your own accounts are added together on the Account page (and leave this list); client portfolios stay out' }, mineBox, h('span', {}, 'This is my account (real money)')),
         mode === 'weight' && isMine(p) ? h('span', { class: 'muted small' }, 'Percent-only portfolios have no amounts, so Account leaves them out. Use Shares or Dollars.') : null,
       ),
       h('div', { class: 'holdings-wrap' }, h('table', { class: `holdings-table mode-${mode}` }, h('thead', {}, h('tr', {}, ...head.map((t) => h('th', {}, t)))), rows)),
@@ -377,6 +397,18 @@ export function createPortfolioPage() {
     }
   }
 
+  /** A copy of the open portfolio that is a model (not one of the owner's accounts): safe for what-ifs. */
+  async function saveCopy() {
+    const copy: Portfolio = { ...structuredClone(current), name: `${current.name} (what-if)`, mine: false };
+    delete copy.id;
+    delete copy.webullAccount;
+    delete copy.webullEnv;
+    delete copy.webullClass;
+    delete copy.syncedAt;
+    current = copy;
+    await save();
+  }
+
   /** "This is my account": saved straight away for a saved portfolio (only the flag, not unsaved edits). */
   async function setMine(on: boolean) {
     current.mine = on;
@@ -385,26 +417,11 @@ export function createPortfolioPage() {
       try {
         await saveDoc('portfolios', { ...stored, mine: on });
         await refreshList();
-        toast(on ? `"${stored.name}" now shows on the Account page` : `"${stored.name}" is no longer on the Account page`);
+        toast(on ? `"${stored.name}" is now one of your accounts: it moves to the Account page` : `"${stored.name}" is now a model: it left the Account page`);
       } catch (err) {
         toast((err as Error).message);
       }
     }
-    renderEditor();
-  }
-
-  /** A statement was imported and saved: open it and show its dividends. */
-  async function imported(p: Portfolio & { id: string }) {
-    await refreshList();
-    select(structuredClone(p));
-    renderDividends(results, current);
-  }
-
-  /** Webull holdings were synced to a portfolio: refresh the list and select it, keeping the Webull view open. */
-  async function synced(p: Portfolio & { id: string }) {
-    await refreshList();
-    current = structuredClone(p);
-    renderList();
     renderEditor();
   }
 
@@ -1009,9 +1026,9 @@ export function createPortfolioPage() {
       renderList();
       refreshList();
     },
-    /** Opens a saved portfolio, or the Webull view for 'webull' (from the Account page). */
+    /** Opens a saved portfolio (a model, or one of your accounts from Account's "Analyse in Portfolios"). */
     async open(id: string) {
-      if (id === 'webull') return renderWebull(results, synced);
+      if (id === 'webull') return void (location.hash = '#trade'); // the old Webull view: ordering is on Trade
       await refreshList();
       const p = saved.find((x) => x.id === id);
       if (p) select(structuredClone(p));

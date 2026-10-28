@@ -4,12 +4,14 @@
  * Per holding and account: day change, cost basis, price gain, dividends received (with how each figure was found),
  * total return, yield and income; a holding opens a detail window (accounts, dividends counted, the owner's purchase
  * date / dividends / return-of-capital entries, and "Is the yield sustainable?"). Display choices ($ / % / both) are
- * remembered on this device. Read-only: orders stay in the Webull view's preview → confirm ticket.
+ * remembered on this device. Real money only: this is the one home for totals across accounts. Read-only: orders
+ * are placed on the Trade page (one account at a time, preview → confirm). Import statement and Sync live here; model
+ * portfolios and what-ifs are on Portfolios ("Analyse in Portfolios" opens an account there).
  */
 import { listDocs, saveDoc } from '../data/store';
 import { clearEngineCache, loadNews, type NewsItem } from '../data/schwab';
 import { ALL_ACCOUNTS, allocation, combineHoldings, holdingNewsSymbols, dividendPayload, myPortfolios, partKey, pickAccounts, receivedPayload, todayChange, type AccountPart, type CombinedHolding } from '../portfolio/account';
-import { drawDividends, fetchDividends, type DividendHolding, type DividendReport } from '../portfolio/dividendsView';
+import { drawDividends, fetchDividends, openStatementImport, type DividendHolding, type DividendReport } from '../portfolio/dividendsView';
 import { fetchPrices, type PriceInfo } from '../portfolio/prices';
 import { DEFAULT_PREFS, dayTotal, gainOf, methodLabel, methodOf, readPrefs, savePrefs, showChange, sumGains, type DisplayPrefs, type Gain, type Received, type ShowAs } from '../portfolio/returns';
 import { fetchRisk, fetchTax, type RiskInput, type RiskReport, type TaxReport, type TaxType } from '../portfolio/risk';
@@ -111,15 +113,17 @@ function readColumns(): Set<string> {
 
 const METHOD_SHORT: Record<string, string> = { entered: 'entered', statement: 'statement', purchase: 'est.', tracked: 'est.', mixed: 'mixed', none: '' };
 
-export function createAccountPage(openPortfolio: (id: string) => void) {
+export function createAccountPage(openPortfolio: (id: string) => void, openTrade: (accountId: string, kind?: 'stocks' | 'futures') => void) {
   let prefs: DisplayPrefs = readPrefs(storage());
   let columns = readColumns();
   /** Redraws the parts that follow the display choices (set by each load). */
   let paint: () => void = () => {};
   const viewBtn = h('button', { class: 'btn', 'aria-haspopup': 'dialog', title: 'How changes and gains are shown' }, 'View') as HTMLButtonElement;
   viewBtn.addEventListener('click', () => openViewMenu());
-  const frame = pageFrame('Account', 'Just your own money: every account you marked as yours, added together, with gains, dividends and allocation.', [
+  const frame = pageFrame('Account', 'Your real money only: every account of yours, added together (or one at a time), with gains, dividends, risk and allocation.', [
     viewBtn,
+    h('button', { class: 'btn', title: 'Upload a positions export (CSV or Excel) from your broker; it becomes one of your accounts here', onclick: () => openStatementImport(imported) }, 'Import statement'),
+    syncButton('Sync Webull', () => '', synced),
     h('button', { class: 'btn', onclick: () => (clearEngineCache('dividends.'), load()) }, 'Refresh'),
   ]);
   let loading = 0;
@@ -200,7 +204,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
     const webull = h('div', { class: 'acct-cards acct-webull' });
     if (!mine.length) {
       frame.body.replaceChildren(emptyState(all), webull);
-      renderWebullCard(webull, synced, () => openPortfolio('webull'));
+      renderWebullCard(webull, synced, openTrade);
       return;
     }
     // Thumb through: every account combined, or one account's own makeup. Every figure below follows the choice.
@@ -320,7 +324,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
       mine.length > 1 ? switcher(mine, picked.choice) : '',
       overviewBox,
       unpriced.length ? h('p', { class: 'badge warn' }, `No live price for ${unpriced.join(', ')}: left out of the totals. Check the helper is logged in to Schwab, then Refresh.`) : '',
-      panel(single ? 'Account' : 'Accounts', 'Marked "This is my account" in Portfolios', accountsBox, webull),
+      panel(single ? 'Account' : 'Accounts', 'Imported statements, synced Webull accounts and portfolios marked as yours', accountsBox, webull),
       holdingsBox,
       riskBox,
       newsBox,
@@ -401,7 +405,7 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
       (err) => run === loading && showTax(taxSection(null, (err as Error).message, accountsForTax(null), setType, report, {})),
     );
     // Webull accounts that aren't one of the cards above (futures, not synced yet): combined view only
-    if (!single) renderWebullCard(webull, synced, () => openPortfolio('webull'), undefined, chosen.map((p) => p.webullAccount ?? '').filter(Boolean));
+    if (!single) renderWebullCard(webull, synced, openTrade, undefined, chosen.map((p) => p.webullAccount ?? '').filter(Boolean));
 
     // ---------- pieces that use this load's data ----------
 
@@ -534,8 +538,8 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
         'div',
         { class: 'acct-stats' },
         statCards([
-          { label: 'Total value', value: usd(sum), hint: cash ? `Includes ${usd(cash)} cash and other amounts` : one ? `Only ${one.name}` : 'All your accounts added together' },
-          { label: 'Today', value: fmtDay(d.usd, d.pct), tone: tone(d.usd), hint: 'Change since yesterday’s close on your shares' },
+          { label: one ? `${one.name} value` : 'Total value (all accounts)', value: usd(sum), hint: `${one ? `Only ${one.name}` : 'All your accounts added together'}${cash ? `; includes ${usd(cash)} cash and other amounts` : ''}` },
+          { label: one ? 'Today' : 'Today (all accounts)', value: fmtDay(d.usd, d.pct), tone: tone(d.usd), hint: 'Change since yesterday’s close on your shares' },
           { label: 'Price gain', value: fmtGain(g.priceGain, g.priceGainPct), tone: tone(g.priceGain), hint: `Value − cost basis ${usd(g.cost)} (unrealized)${withCost < securities ? `, on ${withCost} of ${securities} holdings with a cost basis` : ''}` },
           { label: 'Dividends received', value: usd(g.dividends), hint: divHint },
           {
@@ -589,7 +593,8 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
           { class: 'ap-controls' },
           combined ? h('button', { class: 'btn small', onclick: () => choose(p.id) }, 'View alone') : null,
           p.webullAccount ? syncButton('Sync', () => p.webullAccount!, synced) : null,
-          h('button', { class: 'btn small', onclick: () => openPortfolio(p.id) }, 'Open in Portfolios'),
+          p.webullAccount ? h('button', { class: 'btn small', title: 'Positions, open orders and the order ticket for this account', onclick: () => openTrade(p.webullAccount!) }, 'Order in Trade') : null,
+          h('button', { class: 'btn small', title: 'Backtest, stress-test and optimise this account’s mix, or edit its holdings', onclick: () => openPortfolio(p.id) }, 'Analyse in Portfolios'),
         ),
       );
     }
@@ -855,14 +860,21 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
         h(
           'ol',
           {},
-          h('li', {}, 'Import a statement: Portfolios → ', h('b', {}, 'Import statement'), ' (CSV or Excel from your broker). It’s marked as yours automatically.'),
-          h('li', {}, 'Or sync Webull: Portfolios → ', h('b', {}, 'Webull'), ' → ', h('b', {}, 'Sync to Portfolios'), ' (a live account counts as yours).'),
-          h('li', {}, 'Or open any saved portfolio with share or dollar amounts and tick ', h('b', {}, 'This is my account'), '.'),
+          h('li', {}, h('b', {}, 'Import statement'), ' (above): a CSV or Excel positions export from your broker.'),
+          h('li', {}, 'Or ', h('b', {}, 'Sync Webull'), ' (above): each live Webull account becomes one of yours.'),
+          h('li', {}, 'Or type an account in by hand: Portfolios → a portfolio with share or dollar amounts → tick ', h('b', {}, 'This is my account'), '.'),
         ),
-        all.length ? h('span', { class: 'muted small' }, `You have ${all.length} saved portfolio${all.length === 1 ? '' : 's'}; client portfolios stay off this page.`) : null,
-        h('a', { class: 'btn primary', href: '#portfolio' }, 'Go to Portfolios'),
+        all.length ? h('span', { class: 'muted small' }, `You have ${all.length} saved portfolio${all.length === 1 ? '' : 's'}; models and client portfolios stay on Portfolios.`) : null,
+        h('button', { class: 'btn primary', onclick: () => openStatementImport(imported) }, 'Import statement'),
       ),
     );
+  }
+
+  /** A statement was imported (always marked as yours): show it on its own. */
+  function imported(p: Saved) {
+    view = p.id;
+    saveKey(VIEW_KEY, view);
+    load();
   }
 
   function synced(p: Saved) {
@@ -875,6 +887,12 @@ export function createAccountPage(openPortfolio: (id: string) => void) {
   let started = false;
   return {
     el: frame.el,
+    /** Shows one account on its own (the command bar's account entries). */
+    open(id: string) {
+      view = id;
+      saveKey(VIEW_KEY, view);
+      if (started) load();
+    },
     /** Reloads every time the page is opened, so changes made in Portfolios show up. */
     start() {
       started = true;
