@@ -6450,6 +6450,8 @@ a[data-ticker] {
   display: grid;
   gap: 6px;
   font-size: var(--fs-sm);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 .ticker-card.sheet {
   left: 8px !important;
@@ -6514,6 +6516,7 @@ a[data-ticker] {
   padding-top: 6px;
 }
 .tc-pos:empty,
+.tc-checks:empty,
 .tc-facts:empty {
   display: none;
 }
@@ -6693,6 +6696,168 @@ button.stat-drill:focus-visible .stat-drill-mark {
   margin-top: 8px;
 }
 
+/* ---- Sources chip and cross-check panel (src/ui/sourcesChip.ts) ---- */
+.xc-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  max-width: 100%;
+}
+.xc-chip {
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--link);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+.xc-chip:hover {
+  background: var(--row-hover);
+}
+.xc-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.xc-chip.loading {
+  opacity: 0.7;
+}
+.xc-chip.xc-ok {
+  color: var(--up-text);
+  background: var(--up-soft);
+  border-color: var(--up-border);
+}
+.xc-chip.xc-amber {
+  color: var(--warn-text);
+  background: var(--warn-soft);
+  border-color: var(--warn-border);
+}
+.xc-chip.xc-red {
+  color: var(--down-text);
+  background: var(--down-soft);
+  border-color: var(--down-border);
+}
+.xc-panel {
+  width: min(420px, 100%);
+  background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+.xc-panel[hidden] {
+  display: none;
+}
+.xc-body {
+  display: grid;
+  gap: var(--sp-2);
+}
+.xc-body p {
+  margin: 0;
+}
+.xc-best {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.xc-best-val {
+  font-size: var(--fs-md, 15px);
+  font-variant-numeric: tabular-nums;
+}
+.xc-meter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.xc-meter {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--panel-3);
+  overflow: hidden;
+  min-width: 80px;
+}
+.xc-meter-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.xc-ok .xc-meter-fill {
+  background: var(--up);
+}
+.xc-amber .xc-meter-fill {
+  background: var(--warn);
+}
+.xc-red .xc-meter-fill {
+  background: var(--down);
+}
+.xc-meter-text {
+  white-space: nowrap;
+}
+.xc-status {
+  border-left: 3px solid var(--border-strong);
+  padding-left: var(--sp-2);
+}
+.xc-status.xc-amber {
+  border-left-color: var(--warn);
+  color: var(--warn-text);
+}
+.xc-status.xc-red {
+  border-left-color: var(--down);
+  color: var(--down-text);
+}
+.xc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.xc-src {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) auto minmax(0, 1fr);
+  gap: var(--sp-2);
+  align-items: baseline;
+  padding: 3px 0;
+  border-top: 1px solid var(--border);
+}
+.xc-src-val {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  font-weight: 600;
+}
+.xc-missing .xc-src-val {
+  font-weight: 400;
+  text-align: left;
+  grid-column: span 2;
+}
+.xc-src-meta {
+  text-align: right;
+}
+.xc-off .xc-src-val,
+.xc-badge {
+  color: var(--warn-text);
+}
+.xc-other .xc-src-val {
+  color: var(--muted);
+  font-weight: 400;
+}
+.xc-link {
+  color: var(--link);
+  text-decoration: none;
+}
+.xc-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0;
+}
 /* ---------- Account page (v33): display menu, account lines, holdings extras, holding detail ---------- */
 .acct-view-menu {
   display: flex;

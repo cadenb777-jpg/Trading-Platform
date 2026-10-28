@@ -1,0 +1,29 @@
+{
+ "chart": {
+  "result": [
+   {
+    "meta": {
+     "symbol": "CCLFX",
+     "instrumentType": "MUTUALFUND",
+     "regularMarketTime": 1792785600,
+     "regularMarketPrice": 10.62
+    },
+    "timestamp": [
+     1792699200,
+     1792785600
+    ],
+    "indicators": {
+     "quote": [
+      {
+       "close": [
+        10.61,
+        10.62
+       ]
+      }
+     ]
+    }
+   }
+  ],
+  "error": null
+ }
+}

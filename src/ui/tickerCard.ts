@@ -14,6 +14,8 @@ import { combineHoldings, myPortfolios } from '../portfolio/account';
 import type { Portfolio } from '../portfolio/types';
 import { asOfStamp } from './dataHealth';
 import { clickTargets, formatPrice, h } from './dom';
+import { formatCheckValue } from './confidence';
+import { bestSourceName, canCrossCheck, sourcesChip } from './sourcesChip';
 import { sparkline } from './sparkline';
 import { THEME } from './theme';
 
@@ -218,6 +220,7 @@ function buildCard(symbol: string, pinned: boolean, embedded = false) {
   const sparkLabel = h('div', { class: 'muted tiny' });
   const pos = h('div', { class: 'tc-pos' });
   const facts = h('div', { class: 'tc-facts muted small' });
+  const checks = h('div', { class: 'tc-checks' });
   const stamp = asOfStamp('quotes');
   const btn = (label: string, title: string, run: () => void) =>
     h('button', { type: 'button', class: 'btn small', title, onclick: () => (close(), run()) }, label);
@@ -237,6 +240,7 @@ function buildCard(symbol: string, pinned: boolean, embedded = false) {
     sparkLabel,
     pos,
     facts,
+    checks,
     embedded
       ? ''
       : h(
@@ -254,6 +258,7 @@ function buildCard(symbol: string, pinned: boolean, embedded = false) {
       ),
     ),
   );
+  card.addEventListener('xc:resize', () => open?.card === card && place(card, open.anchor)); // the Sources panel opened
   card.addEventListener('pointerenter', () => clearTimeout(hideTimer));
   card.addEventListener('pointerleave', () => !open?.pinned && scheduleHide());
   void fill();
@@ -274,13 +279,29 @@ function buildCard(symbol: string, pinned: boolean, embedded = false) {
         stamp.set(reply.asOf, r?.atClose ? { prefix: 'close', refreshMs: 0 } : {});
         if (r?.name) name.textContent = r.name;
         price.replaceChildren(
-          r?.price != null ? h('span', { class: 'tc-last' }, formatPrice(r.price)) : h('span', { class: 'muted small' }, 'No quote right now'),
+          r?.price != null ? h('span', { class: 'tc-last' }, formatPrice(r.price)) : h('span', { class: 'muted small' }, noQuoteText()),
           r?.change != null ? h('span', { class: `tc-chg ${r.change >= 0 ? 'up' : 'down'}` }, `${pctText(r.change)} today`) : '',
         );
         if (r?.spark && r.spark.length > 1) {
           const up = r.spark[r.spark.length - 1] >= r.spark[0];
           spark.replaceChildren(sparkline(r.spark, null, up ? THEME.up : THEME.down));
           sparkLabel.textContent = `3 months${r.m3 != null ? `: ${pctText(r.m3)}` : ''}`;
+        }
+        if (canCrossCheck() && !index && !future) {
+          // Other sites are asked only when Sources is clicked (never on hover). With no Schwab quote, the best estimate
+          // then fills the price, labelled with where it came from.
+          const missing = r?.price == null;
+          checks.replaceChildren(
+            sourcesChip({ field: 'last', symbol }, {
+              onResult: (c) => {
+                if (!missing || c.best == null || !still()) return;
+                price.replaceChildren(
+                  h('span', { class: 'tc-last' }, formatCheckValue(c.best, 'usd')),
+                  h('span', { class: 'muted small' }, `from ${bestSourceName(c)} (no Schwab quote; see Sources)`),
+                );
+              },
+            }),
+          );
         }
         const f = [
           r?.divYield ? `Dividend yield ${r.divYield.toFixed(2)}%` : '',
@@ -289,7 +310,8 @@ function buildCard(symbol: string, pinned: boolean, embedded = false) {
         ].filter(Boolean);
         facts.textContent = f.join(' · ');
       } catch (err) {
-        if (still()) price.replaceChildren(h('span', { class: 'muted small' }, (err as Error).message || 'No quote right now'));
+        if (still()) price.replaceChildren(h('span', { class: 'muted small' }, (err as Error).message || noQuoteText()));
+        if (still() && canCrossCheck() && !index && !future) checks.replaceChildren(sourcesChip({ field: 'last', symbol }));
       }
     }
     if (open?.card === card) place(card, open.anchor); // it grew: keep it on screen
@@ -305,6 +327,11 @@ function buildCard(symbol: string, pinned: boolean, embedded = false) {
     );
     if (open?.card === card) place(card, open.anchor);
   }
+}
+
+/** What the card says when Schwab has no price (pointing to the Sources check when the helper has it). */
+function noQuoteText() {
+  return canCrossCheck() ? 'No live price; click Sources to check other sites.' : 'No quote right now';
 }
 
 function scheduleHide() {

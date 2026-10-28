@@ -87,6 +87,15 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (real-prices-only table when >= 2.5y). Toggle payload `standIns`. test_window: 4y+ full test, 2.5-4y short 1y fit/
   monthly hold ("low confidence"), less none. weight_stability: 200 block-bootstrap refits -> 10th-90th percentile bars,
   `pinned` = held by the owner's limit. Texts in src/portfolio/optimiserText.ts.
+  Cross-check (v34, engine/crosscheck.py `crosscheck.value` {field last/prevClose/nav/divYield/expenseRatio, symbol, cik}):
+  free sources only (Schwab, SEC XBRL + NAV filings, Nasdaq.com, Yahoo chart/quoteSummary; Google Finance and Stooq left
+  out), paced per site, answers cached per source+symbol+field in cache.db, failures remembered 10 min. Every source is
+  returned with value, time, link and basis (yield forward/trailing, expense net/gross, NAV share class; only the main
+  basis is compared). Rubric in the module docstring: reliability x freshness (unknown time 0.4), one family (SEC, Yahoo)
+  = one confirmation, a fresh filing wins over disagreeing market data, one source capped at 60%. Best estimate = the
+  most trusted agreeing source's value (never an average). Expense ratio is "aggregator only". Glossary `confidence`.
+  UI: src/ui/sourcesChip.ts (chip + panel + meter; formatting in src/ui/confidence.ts): fund NAV (auto, only funds that
+  publish NAVs) and ticker card (only on click, never on hover). Parsers tested on fixtures (helper/tests/fixtures/crosscheck).
   Account page (src/pages/accountPage.ts, #account): portfolios with Portfolio.mine (set by Import statement; unset = live
   Webull sync) merged by src/portfolio/account.ts, figures from dividends.portfolio + dividendsView; read-only (orders only in Webull view).
   Gains (v33, src/portfolio/returns.ts): price gain (value − cost), dividends received, total return per account part,

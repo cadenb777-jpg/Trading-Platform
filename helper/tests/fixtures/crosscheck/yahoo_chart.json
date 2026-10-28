@@ -1,0 +1,69 @@
+{
+ "chart": {
+  "result": [
+   {
+    "meta": {
+     "currency": "USD",
+     "symbol": "AAPL",
+     "exchangeName": "NMS",
+     "fullExchangeName": "NasdaqGS",
+     "instrumentType": "EQUITY",
+     "regularMarketTime": 1792785600,
+     "regularMarketPrice": 230.12,
+     "chartPreviousClose": 224.5,
+     "dataGranularity": "1d",
+     "range": "5d"
+    },
+    "timestamp": [
+     1792416600,
+     1792503000,
+     1792589400,
+     1792675800,
+     1792762200
+    ],
+    "indicators": {
+     "quote": [
+      {
+       "open": [
+        225.1,
+        226.0,
+        227.3,
+        228.2,
+        229.0
+       ],
+       "high": [
+        226.4,
+        227.9,
+        228.8,
+        229.9,
+        231.0
+       ],
+       "low": [
+        224.0,
+        225.2,
+        226.1,
+        227.5,
+        228.4
+       ],
+       "close": [
+        226.0,
+        227.4,
+        228.1,
+        229.35,
+        230.12
+       ],
+       "volume": [
+        41000000,
+        39000000,
+        42000000,
+        40000000,
+        45000000
+       ]
+      }
+     ]
+    }
+   }
+  ],
+  "error": null
+ }
+}
