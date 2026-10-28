@@ -1,4 +1,8 @@
-/** Clients: client accounts, report branding, and printable white-label performance reports. */
+/**
+ * Clients: one review page per client (holdings, performance net and gross of fees, risk vs their tolerance, drift vs
+ * the target model, upcoming income, notes, one-click report), the client details editor, report branding, and
+ * printable white-label performance reports. "CLIENT <name>" in the command bar opens a client's review.
+ */
 import { engineRequest } from '../data/schwab';
 import { deleteDoc, listDocs, saveDoc } from '../data/store';
 import type { AltHolding } from '../invest/holdings';
@@ -7,6 +11,8 @@ import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
 import { TEMPLATES, describeFees, holdingsPayload, isCashOrAlt, type Analysis, type FeeSchedule, type Portfolio } from '../portfolio/types';
 import { buildReport, type FundFacts, type MarketRow } from '../reports/report';
 import '../reports/report.css';
+import { drawClientReview } from '../reports/clientReview';
+import { RISK_LEVELS, defaultTolerance } from '../reports/review';
 import { DEFAULT_BRANDING, OBJECTIVES, REPORT_SECTIONS, type Branding, type Client } from '../reports/types';
 import { pageFrame } from '../ui/charts';
 import { h, openModal, toast } from '../ui/dom';
@@ -92,14 +98,34 @@ export function createClientsPage() {
   let current: Client = blankClient();
   /** A client to select once the list has loaded (from the command bar). */
   let openId: string | null = null;
-  const list = h('div', { class: 'pf-list' });
+  const list = h('div', { class: 'pf-list', role: 'list', 'aria-label': 'Clients' });
   const editor = h('section', { class: 'panel' });
   const preview = h('div', { class: 'ap-body' });
+  /** A saved client opens on its review; a new one (or Edit details) on the editor. */
+  let mode: 'review' | 'edit' = 'review';
+  const reviewHead = h('div', { class: 'rv-head' });
+  const reviewBox = h('div', { class: 'rv-body' });
+  const review = h('section', { class: 'rv', 'aria-label': 'Client review', hidden: true }, reviewHead, reviewBox);
+  /** The last review's data, so saving a note or a setting redraws without asking the helper again. */
+  let reviewData: { id: string; input: { portfolio: Portfolio; analysis: Analysis | null; analysisError?: string; prices: Record<string, PriceInfo> } } | null = null;
+  let reviewRun = 0;
   const frame = pageFrame('Clients & Reports', 'Client accounts and white-label performance reports. Client data is stored by the helper on your computer.', [
     h('button', { class: 'btn', onclick: () => openBranding() }, 'Report branding'),
     h('button', { class: 'btn', onclick: () => batchPrint() }, 'Print all reports'),
   ]);
-  frame.body.replaceChildren(h('div', { class: 'pf-layout' }, h('aside', { class: 'panel' }, list), h('div', { class: 'ap-body' }, editor, preview)));
+  frame.body.replaceChildren(h('div', { class: 'pf-layout' }, h('aside', { class: 'panel' }, list), h('div', { class: 'ap-body' }, review, editor, preview)));
+  // Up / Down in the client list move between clients (the review follows)
+  list.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    const items = [...list.querySelectorAll<HTMLButtonElement>('button[data-client]')];
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = items[Math.min(items.length - 1, Math.max(0, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+    if (!next) return;
+    e.preventDefault();
+    const id = next.dataset.client!;
+    next.click();
+    list.querySelector<HTMLElement>(`button[data-client="${CSS.escape(id)}"]`)?.focus();
+  });
 
   async function refresh() {
     try {
@@ -109,15 +135,29 @@ export function createClientsPage() {
       const saved = await listDocs<Branding>('branding');
       branding = { ...DEFAULT_BRANDING, ...(saved.find((b) => b.id === 'default') ?? {}) };
     } catch (err) {
+      review.hidden = true;
+      editor.hidden = false;
       editor.replaceChildren(h('div', { class: 'ap-error' }, `${(err as Error).message.replace(/\.$/, '')}. Clients are saved by the helper on your computer.`));
       return;
     }
     if (!current.portfolioId && portfolios[0]) current.portfolioId = portfolios[0].id;
     const wanted = openId && clients.find((c) => c.id === openId);
     openId = null;
-    if (wanted) current = structuredClone(wanted);
+    if (wanted) {
+      current = structuredClone(wanted);
+      mode = 'review';
+    } else if (!current.id && clients.length && mode === 'review') current = structuredClone(clients[0]); // open on the first client's review
     renderList();
-    renderEditor();
+    renderRight();
+  }
+
+  /** The review for a saved client, or the editor. */
+  function renderRight() {
+    const reviewing = mode === 'review' && !!current.id;
+    review.hidden = !reviewing;
+    editor.hidden = reviewing;
+    if (reviewing) void renderReview();
+    else renderEditor();
   }
 
   function renderList() {
@@ -125,16 +165,83 @@ export function createClientsPage() {
       h('button', { class: 'btn primary', onclick: () => select(blankClient(portfolios[0]?.id)) }, '+ New client'),
       h('div', { class: 'muted small' }, 'Clients'),
       ...(clients.length
-        ? clients.map((c) => h('button', { class: c.id === current.id ? 'active' : '', onclick: () => select(structuredClone(c)) }, c.name, c.household ? h('div', { class: 'muted small', style: 'padding:0' }, c.household) : null))
+        ? clients.map((c) => h('button', { class: c.id === current.id ? 'active' : '', role: 'listitem', 'data-client': c.id, 'aria-current': c.id === current.id ? 'true' : undefined, onclick: () => select(structuredClone(c)) }, c.name, c.household ? h('div', { class: 'muted small', style: 'padding:0' }, c.household) : null))
         : [h('div', { class: 'muted small' }, 'No clients yet.')]),
     );
   }
 
   function select(c: Client) {
     current = c;
+    mode = c.id ? 'review' : 'edit';
     renderList();
-    renderEditor();
+    renderRight();
     preview.replaceChildren();
+  }
+
+  const tolText = (c: Client) => {
+    const r = RISK_LEVELS.find((x) => x.level === (c.riskTolerance ?? defaultTolerance(c.objective)))!;
+    return `${r.label} risk${c.riskTolerance ? '' : ' (from the objective)'}`;
+  };
+
+  async function renderReview() {
+    const c = current;
+    const run = ++reviewRun;
+    reviewHead.replaceChildren(
+      h('div', { class: 'rv-title' }, h('h2', {}, c.name), h('span', { class: 'muted small' }, [c.household, c.accountName, c.objective, tolText(c)].filter(Boolean).join(' · '))),
+      h(
+        'div',
+        { class: 'rv-actions' },
+        h('button', { class: 'btn primary', title: 'Builds the white-label report and opens Print (choose Save as PDF)', onclick: () => printOne() }, 'Report (PDF)'),
+        h('button', { class: 'btn', onclick: () => showPreview() }, 'Preview report'),
+        h('button', { class: 'btn', onclick: () => ((mode = 'edit'), renderRight()) }, 'Edit details'),
+      ),
+    );
+    const portfolio = portfolios.find((p) => p.id === c.portfolioId);
+    if (!portfolio) {
+      reviewBox.replaceChildren(h('div', { class: 'ap-error' }, `${c.name} has no portfolio (it may have been deleted). Choose one in Edit details.`));
+      return;
+    }
+    if (reviewData?.id === c.id) return drawReview(); // a saved note or setting: redraw only
+    reviewBox.replaceChildren(h('div', { class: 'muted pad' }, `Building ${c.name}'s review…`));
+    const symbols = [...new Set(portfolios.filter((p) => p.id === c.portfolioId || p.id === c.targetId).flatMap((p) => p.holdings).filter((x) => !isCashOrAlt(x) && x.symbol.trim()).map((x) => x.symbol.trim().toUpperCase()))];
+    const prices: Record<string, PriceInfo> = symbols.length ? await fetchPrices(symbols).catch(() => ({})) : {};
+    let analysis: Analysis | null = null;
+    let analysisError: string | undefined;
+    try {
+      analysis = await analyse(c, portfolio, prices);
+    } catch (err) {
+      analysisError = (err as Error).message;
+    }
+    if (run !== reviewRun || current.id !== c.id) return; // moved to another client meanwhile
+    reviewData = { id: c.id!, input: { portfolio, analysis, analysisError, prices } };
+    drawReview();
+  }
+
+  function drawReview() {
+    if (!reviewData || reviewData.id !== current.id) return;
+    const c = current;
+    const own = reviewData.input.portfolio;
+    const target = c.targetId ? (portfolios.find((p) => p.id === c.targetId) ?? null) : (own.mode ?? 'weight') === 'weight' ? own : null;
+    drawClientReview(reviewBox, {
+      ...reviewData.input,
+      client: c,
+      target,
+      models: portfolios.filter((p) => (p.mode ?? 'weight') === 'weight'),
+      save: (change) => void saveChange(change),
+    });
+  }
+
+  /** Saves a change made on the review (tolerance, target model, notes) and redraws it. */
+  async function saveChange(change: Partial<Client>) {
+    Object.assign(current, change);
+    try {
+      current = await saveDoc('clients', current);
+      clients = clients.map((x) => (x.id === current.id ? (structuredClone(current) as Client & { id: string }) : x));
+      toast(change.notes != null ? 'Note saved' : `Saved ${current.name}`);
+    } catch (err) {
+      toast((err as Error).message);
+    }
+    void renderReview();
   }
 
   function field(label: string, input: HTMLElement, hint?: string) {
@@ -168,6 +275,10 @@ export function createClientsPage() {
     additions.addEventListener('input', () => (c.netAdditions = parseFloat(additions.value) || 0));
     const objective = h('select', { class: 'input' }, h('option', { value: '' }, '—'), ...OBJECTIVES.map((o) => h('option', { value: o, selected: o === c.objective }, o)));
     objective.addEventListener('change', () => (c.objective = objective.value || undefined));
+    const tolerance = h('select', { class: 'input' }, h('option', { value: '' }, 'From the objective'), ...RISK_LEVELS.map((r) => h('option', { value: r.level, selected: r.level === c.riskTolerance }, `${r.level} · ${r.label}`)));
+    tolerance.addEventListener('change', () => (c.riskTolerance = tolerance.value ? (Number(tolerance.value) as Client['riskTolerance']) : undefined));
+    const targetModel = h('select', { class: 'input' }, h('option', { value: '' }, 'None'), ...portfolios.filter((p) => (p.mode ?? 'weight') === 'weight').map((p) => h('option', { value: p.id, selected: p.id === c.targetId }, p.name)));
+    targetModel.addEventListener('change', () => (c.targetId = targetModel.value || undefined));
     const altBox = h(
       'div',
       { class: 'check-list' },
@@ -195,7 +306,7 @@ export function createClientsPage() {
     );
     const history = c.reports?.length ? h('p', { class: 'muted small' }, `Reports generated: ${c.reports.slice(-5).reverse().map((r) => `${r.generated} (as of ${r.asOf})`).join(', ')}`) : '';
     editor.replaceChildren(
-      h('div', { class: 'panel-head' }, h('h3', {}, 'Client')),
+      h('div', { class: 'panel-head' }, h('h3', {}, c.id ? `Edit ${c.name}` : 'New client'), h('span', { class: 'spacer' }), c.id ? h('button', { class: 'btn small', onclick: () => ((mode = 'review'), renderRight()) }, '← Back to review') : ''),
       h(
         'div',
         { class: 'field-grid' },
@@ -208,6 +319,8 @@ export function createClientsPage() {
         field('Benchmark (optional)', text('benchmark', 'Uses the portfolio’s benchmark')),
         field('Net additions since start ($)', additions, 'Deposits minus withdrawals, for the change-in-value table'),
         field('Investment objective', objective),
+        field('Risk tolerance', tolerance, 'Compared with the portfolio’s volatility on the review'),
+        field('Target model (for drift)', targetModel, 'The model this account should match; the review shows the drift'),
       ),
       h('div', { class: 'two-col', style: 'margin-top:12px' }, h('div', { class: 'field' }, h('span', { class: 'muted small' }, 'Alternative investments to include'), altBox), h('div', { class: 'field' }, h('span', { class: 'muted small' }, 'Report sections'), sectionBox)),
       fees,
@@ -230,6 +343,8 @@ export function createClientsPage() {
       for (const k of ['name', 'household', 'accountName', 'benchmark'] as const) if (typeof current[k] === 'string') current[k] = current[k]!.trim();
       current = await saveDoc('clients', current);
       toast(`Saved ${current.name}`);
+      mode = 'review';
+      reviewData = null; // portfolio, dates or fees may have changed
       await refresh();
     } catch (err) {
       toast((err as Error).message);
@@ -240,6 +355,8 @@ export function createClientsPage() {
     if (!current.id || !confirm(`Delete ${current.name}? Their saved details will be removed from this computer.`)) return;
     await deleteDoc('clients', current.id).catch((err) => toast((err as Error).message));
     current = blankClient(portfolios[0]?.id);
+    mode = 'review';
+    reviewData = null;
     await refresh();
   }
 
@@ -253,15 +370,20 @@ export function createClientsPage() {
     if (symbols.length) prices = await fetchPrices(symbols).catch(() => ({}));
     const alternatives = altHoldings.filter((x) => c.altIds?.includes(x.id));
     const [analysis, market, fundFacts] = await Promise.all([
-      engineRequest<Analysis>(
-        'portfolio.analyze',
-        { holdings: holdingsPayload(portfolio, priceMap(prices)), benchmark: c.benchmark?.trim() || portfolio.benchmark, rebalance: portfolio.rebalance, since: c.inception || undefined, fee: c.fee, feeSchedule: c.feeSchedule, initial: c.initialInvestment || undefined },
-        120000,
-      ),
+      analyse(c, portfolio, prices),
       on('market') ? loadMarket() : Promise.resolve([] as MarketRow[]),
       on('alternatives') ? loadFundFacts(portfolio, alternatives) : Promise.resolve({}),
     ]);
     return { doc: buildReport({ client: c, portfolio, analysis, branding, prices, alternatives, fundFacts, market }), analysis };
+  }
+
+  /** The client's performance with fees (the same request as the report, so the browser reuses it for 5 minutes). */
+  function analyse(c: Client, portfolio: Portfolio, prices: Record<string, PriceInfo>) {
+    return engineRequest<Analysis>(
+      'portfolio.analyze',
+      { holdings: holdingsPayload(portfolio, priceMap(prices)), benchmark: c.benchmark?.trim() || portfolio.benchmark, rebalance: portfolio.rebalance, since: c.inception || undefined, fee: c.fee, feeSchedule: c.feeSchedule, initial: c.initialInvestment || undefined },
+      120000,
+    );
   }
 
   async function loadMarket(): Promise<MarketRow[]> {
@@ -440,6 +562,7 @@ export function createClientsPage() {
     /** Opens a client (the command bar). */
     open(id: string) {
       openId = id;
+      reviewData = null;
       if (started) void refresh();
     },
     start() {

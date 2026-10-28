@@ -6,7 +6,7 @@
 import { formatPrice, h, toast } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { accountReady as isAccountReady, basisPrice, estimate, maxBuyShares, readSize, riskShares, saveSize, sellFraction, sharesForDollars } from './sizing';
-import { confirmOrder, IRA_NOTE, OPEN, TYPE_LABELS, usd, type OrderType, type PlacedOrder, type Snapshot, type TicketPrefill } from './webull';
+import { confirmOrder, IRA_NOTE, OPEN, TYPE_LABELS, usd, type OrderType, type PlacedOrder, type SetupPlan, type Snapshot, type TicketPrefill } from './webull';
 
 export interface TicketQuote {
   last: number | null;
@@ -22,6 +22,24 @@ export interface TicketHost {
   onSymbol?(symbol: string): void;
   /** ok=false: the place failed or is unconfirmed (refresh only). */
   onPlaced(order: PlacedOrder, protectStop: number | null, ok: boolean, orderId?: string): void;
+  /** The ticket redrew (fields, quotes or account changed): the plan card follows. */
+  onChange?(): void;
+}
+
+/** What the plan card needs from the ticket. */
+export interface TicketPlanState {
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  /** The price the buy is valued at (limit, else stop, else last). */
+  entry: number | null;
+  /** The stop typed in Size by: Risk (or filled from a setup). */
+  stop: number | null;
+  riskPct: number;
+  account: number | null;
+  /** The shares the ticket would send now. */
+  shares: number;
+  /** From a setup's Trade this, while the symbol is unchanged. */
+  setup: SetupPlan | null;
 }
 export interface Ticket {
   el: HTMLElement;
@@ -31,6 +49,7 @@ export interface Ticket {
   preview(): void;
   /** Redraws the estimate after new quotes or a new snapshot. */
   refresh(): void;
+  planState(): TicketPlanState;
 }
 
 type SizeMode = 'shares' | 'dollars' | 'risk';
@@ -52,6 +71,8 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
   let tif: 'DAY' | 'GTC' = 'DAY';
   let mode: SizeMode = 'shares';
   const size = readSize();
+  /** The setup this ticket was filled from, and its symbol (forgotten when the symbol changes). */
+  let setupPlan: { symbol: string; plan: SetupPlan } | null = null;
 
   const input = (attrs: Record<string, unknown>) => h('input', { class: 'input', autocomplete: 'off', ...attrs }) as HTMLInputElement;
   const symbol = input({ placeholder: 'AAPL', spellcheck: false, 'aria-label': 'Symbol', maxlength: 7, class: 'input tk-symbol' });
@@ -94,6 +115,7 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
     return Math.max(held - selling, 0);
   };
   const basis = () => basisPrice(type, quote()?.last ?? null, num(limit), num(stop));
+  /** The selected account's value (the risk % is taken from it); the saved size only before the account loads. */
   const accountValue = () => host.snapshot()?.balances?.value ?? size.account;
 
   /** Shares the ticket would send, and a sentence on how they were worked out. */
@@ -185,6 +207,7 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
       ...warns.map((w) => h('p', { class: 'wb-warn small tk-warn' }, `⚠ ${w}`)),
       snap?.retirement ? h('p', { class: 'muted small tk-warn' }, IRA_NOTE) : '',
     );
+    host.onChange?.();
   }
 
   function setSide(v: 'BUY' | 'SELL') {
@@ -205,7 +228,13 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
     if (p.qty) ((mode = 'shares'), (qty.value = String(p.qty)));
     limit.value = p.limitPrice != null ? String(p.limitPrice) : p.orderType ? '' : limit.value;
     stop.value = p.stopPrice != null ? String(p.stopPrice) : p.orderType ? '' : stop.value;
-    if (p.guideStop != null) riskStop.value = String(p.guideStop);
+    if (p.guideStop != null) {
+      riskStop.value = String(p.guideStop);
+      if (!p.qty && (p.side ?? side) === 'BUY') mode = 'risk'; // size from the real account at the saved risk %
+    }
+    // a new setup's plan replaces the old one; another symbol forgets it (a stop sell for the same symbol keeps it)
+    if (p.plan && p.symbol) setupPlan = { symbol: p.symbol.toUpperCase(), plan: p.plan };
+    else if (p.symbol && p.symbol.toUpperCase() !== setupPlan?.symbol) setupPlan = null;
     draw();
     if (p.symbol) host.onSymbol?.(sym());
   }
@@ -270,5 +299,19 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
     h('p', { class: 'muted tiny tk-foot' }, 'Preview checks the order with Webull and your limits. Nothing is sent until you press Place order in the next window.'),
   );
   fill(prefill);
-  return { el, fill, setSide, setSymbol, preview, refresh };
+  function planState(): TicketPlanState {
+    const s = sym();
+    return {
+      symbol: s,
+      side,
+      entry: basis(),
+      stop: num(riskStop),
+      riskPct: num(riskPct) ?? size.risk,
+      account: host.snapshot()?.balances?.value ?? null,
+      shares: shares().n,
+      setup: setupPlan && setupPlan.symbol === s ? setupPlan.plan : null,
+    };
+  }
+
+  return { el, fill, setSide, setSymbol, preview, refresh, planState };
 }

@@ -1,10 +1,12 @@
-/** The start screen: greeting, the three main US indexes, market news and the watchlist. */
-import { cotSummary } from '../futures/cot';
+/**
+ * The start screen: greeting, the morning brief (overnight strip, my accounts, what needs attention), the three main
+ * US indexes, news (my holdings first when there are any), the week's calendar and the watchlist.
+ */
 import { CandlestickSeries, LineStyle, TickMarkType, createChart, type IPriceLine, type UTCTimestamp } from 'lightweight-charts';
 import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
 import { HELPER_OUTDATED, helper, loadNews, schwab, type NewsItem, type NewsSection } from '../data/schwab';
 import { insightButton } from '../ai/insight';
-import { createSetupsTeaser } from '../home/setupsTeaser';
+import { briefKeys, createMorningBrief } from '../home/morningBrief';
 import { createUpcomingPanel } from './calendarPage';
 import { openNewsSummary } from '../ui/newsSummary';
 import { listDocs } from '../data/store';
@@ -182,7 +184,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
   return { card, onQuote, loadSparkline: loadCandles, snapshot };
 }
 
-export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCalendar: () => void) {
+export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCalendar: () => void, openPage: (route: string, method?: string, ...args: unknown[]) => void) {
   const greetingEl = h('h1', { class: 'greeting' });
   const dateEl = h('span', { class: 'muted' });
   const marketPill = h('span', { class: 'market-pill' });
@@ -356,7 +358,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
   }
 
   const upcoming = createUpcomingPanel(onOpenCalendar);
-  const setups = createSetupsTeaser(); // the full list lives on the Setups page
+  const brief = createMorningBrief({ openChart: onOpenChart, openPage });
   const marketRead = insightButton(() => {
     const indexes = cards.map((c) => c.snapshot()).filter(Boolean);
     if (!indexes.length && !general) return null;
@@ -380,12 +382,10 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
       h('div', { class: 'hero-sub' }, dateEl, marketPill),
     ),
     banner,
+    brief.el,
     h('section', { class: 'idx-row', 'aria-label': 'Market indexes' }, ...cards.map((c) => c.card)),
-    h('div', { class: 'home-ai-row' }, marketRead.button, h('span', { class: 'muted small' }, 'Bullish or bearish? A quick read of the indexes and the biggest headlines.')),
+    h('div', { class: 'home-ai-row' }, marketRead.button, h('span', { class: 'muted small' }, 'A quick read of the indexes and the biggest headlines.')),
     marketRead.panel,
-    // futures positioning: one line here, the full COT table is on Futures
-    cotSummary('QQQ', undefined, { quiet: true }),
-    setups.el,
     h(
       'div',
       { class: 'home-grid' },
@@ -436,6 +436,17 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     marketPill.className = `market-pill ${status.phase}`;
   }
 
+  /** News on my holdings first when I hold anything (the morning question), otherwise the top stories. */
+  let tabPicked = false;
+  async function pickNewsTab() {
+    if (!tabPicked && newsTab === 'top') {
+      tabPicked = true;
+      const held = await listDocs<Portfolio>('portfolios').then(holdingNewsSymbols, () => []);
+      if (held.length && newsTab === 'top') return setTab('holdings');
+    }
+    refreshNews(true);
+  }
+
   let started = false;
   function start() {
     if (started) return void (newsTab === 'linked' && linkedNews?.symbol !== linkedSymbol() && refreshNews());
@@ -446,14 +457,16 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     helper.onAvailability((up) => {
       showBanner(up);
       if (up && !helper.tooOld) {
-        refreshNews(true);
+        void pickNewsTab();
         upcoming.refresh();
-        setups.start();
+        void brief.refresh();
         for (const c of cards) c.loadSparkline();
       }
     });
     setInterval(() => !el.hidden && helper.isConnected && refreshNews(true), NEWS_REFRESH_MS);
     setInterval(() => !el.hidden && helper.isConnected && upcoming.refresh(), 5 * 60 * 1000);
+    setInterval(() => !el.hidden && helper.isConnected && document.visibilityState === 'visible' && void brief.refresh(), 2 * 60 * 1000);
+    briefKeys(el);
     setInterval(() => helper.isConnected && cards.forEach((c) => c.loadSparkline()), 5 * 60 * 1000);
     refreshNews();
   }

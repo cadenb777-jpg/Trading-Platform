@@ -25,8 +25,23 @@ export interface TicketPrefill {
   limitPrice?: number;
   stopPrice?: number;
   tif?: 'DAY' | 'GTC';
-  /** The trade guide's stop: remembered so "Protect" can offer a stop sell after the buy fills. */
+  /** The trade guide's stop: the ticket sizes by risk to it, and "Protect" offers a stop sell after the buy fills. */
   guideStop?: number;
+  /** From a setup ("Trade this"): the target and the guide's read, for the plan next to the ticket. */
+  plan?: SetupPlan;
+}
+
+/** What a setup adds to the ticket's plan card (the entry and stop come from the ticket itself). */
+export interface SetupPlan {
+  target: number | null;
+  /** "Target", "Target (moves)" or "2R guide". */
+  targetLabel: string;
+  /** The trade guide's read: its verdict and what to do. */
+  read?: { title: string; action: string; tone: string };
+  /** "Pullback · B-grade · about 1 week". */
+  setup?: string;
+  /** Close the trade by this date (YYYY-MM-DD). */
+  exitBy?: string;
 }
 
 export interface Balances {

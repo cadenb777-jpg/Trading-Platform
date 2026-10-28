@@ -17,6 +17,7 @@ import { state } from '../state';
 import { createFuturesTicket, type FuturesTicket } from '../trade/futuresTicket';
 import { positionPnl } from '../trade/futuresMath';
 import { createTicket, type TicketQuote } from '../trade/ticket';
+import { createPlanCard } from '../trade/planCard';
 import { cancelOrder, envBadge, friendly, futuresAccount, IRA_NOTE, loadSnapshot, OPEN, orderPrice, stockAccounts, takePrefill, usd, type Asset, type Order, type PlacedOrder, type Position, type Snapshot, type TicketPrefill } from '../trade/webull';
 import { dataTable } from '../ui/charts';
 import { activatable, activatableRows, formatPrice, h, timeAgo, toast } from '../ui/dom';
@@ -110,14 +111,42 @@ export function createTradePage() {
   const userSelect = (s: string) => (select(s), link.publish(s));
 
   const protectSlot = h('div', { class: 'tr-protect-slot' });
+  /** Set once the plan card exists (the ticket draws once while it is being made). */
+  let planReady = false;
   const ticket = createTicket({
     snapshot: () => snap,
     accountId: () => accountId || snap?.accountId || '',
     quote: (s) => quoteFor(s),
     onSymbol: (s) => select(s, false),
     onPlaced: placed,
+    onChange: () => planReady && drawPlan(),
   });
   const ticketPanel = h('section', { class: 'panel tr-ticket' }, protectSlot, ticket.el);
+  /** Buys placed from this page this session (checklist step 1). */
+  const placedEntries = new Set<string>();
+  // The plan next to the ticket: entry, stop, target, R, size, $ and % at risk, the setup's read and the checklist.
+  const plan = createPlanCard({
+    state: () => ticket.planState(),
+    snapshot: () => snap,
+    canSell: (s) => canSell(s),
+    entryPlaced: (s) => placedEntries.has(s) || (snap?.open ?? []).some((o) => o.symbol === s && o.side === 'BUY' && OPEN.test(o.status)),
+    fillStop: (s, stop, qty) => (select(s), ticket.fill({ symbol: s, side: 'SELL', orderType: 'STOP', stopPrice: stop, qty, tif: 'GTC' }), ticket.el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })),
+  });
+  const planPanel = h('section', { class: 'panel tr-plan', hidden: true }, plan.el);
+  planReady = true;
+  let planKey = '';
+  /** Redraws the plan, and the chart's plan lines when the levels changed. */
+  function drawPlan() {
+    plan.draw();
+    planPanel.hidden = plan.el.hidden || asset === 'futures';
+    const lv = plan.levels();
+    const key = lv ? `${lv.symbol}|${lv.entry}|${lv.stop}|${lv.target}` : '';
+    if (key !== planKey) {
+      planKey = key;
+      drawLines();
+      drawProtect();
+    }
+  }
 
   /** The futures ticket is made the first time Futures is chosen (it loads contracts from the helper). */
   function futuresTicket(): FuturesTicket {
@@ -176,7 +205,7 @@ export function createTradePage() {
   const listBody = h('div', { class: 'tr-list-body' });
   const listsPanel = h('section', { class: 'panel tr-lists' }, tabsEl, listBody);
 
-  const grid = h('div', { class: 'tr-grid' }, watchPanel, chartPanel, ticketPanel, listsPanel);
+  const grid = h('div', { class: 'tr-grid' }, watchPanel, chartPanel, planPanel, ticketPanel, listsPanel);
   const el = h('div', { class: 'analysis-page trade-page' }, top, notice, grid);
 
   // ----- quotes -----
@@ -425,6 +454,12 @@ export function createTradePage() {
     const add = (price: number, color: string, title: string, style = LineStyle.Dashed) => lines.push(series!.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
     const pos = snap?.positions?.find((p) => p.symbol === symbol && p.qty > 0);
     if (pos?.avgCost) add(pos.avgCost, THEME.accent, `Avg cost · ${pos.qty}`, LineStyle.Solid);
+    const lv = plan.levels();
+    if (lv && lv.symbol === symbol) {
+      add(lv.entry, THEME.accent, 'Plan entry');
+      add(lv.stop, THEME.down, 'Plan stop');
+      add(lv.target, THEME.up, 'Plan target');
+    }
     for (const o of (snap?.open ?? []).filter((x) => x.symbol === symbol && OPEN.test(x.status))) {
       const color = o.side === 'BUY' ? THEME.up : THEME.down;
       const left = (o.qty ?? 0) - o.filled;
@@ -666,6 +701,7 @@ export function createTradePage() {
 
   // ----- protect after a buy -----
   function placed(order: PlacedOrder, protectStop: number | null, ok: boolean, orderId?: string) {
+    if (ok && order.side === 'BUY') placedEntries.add(order.symbol);
     if (ok && order.side === 'BUY' && protectStop && protectStop > 0) protect[order.symbol] = { stop: protectStop, orderId };
     if (ok && order.side === 'SELL' && order.orderType.startsWith('STOP')) delete protect[order.symbol];
     save(PROTECT_KEY, protect);
@@ -677,7 +713,8 @@ export function createTradePage() {
       const open = (snap?.open ?? []).filter((o) => o.symbol === s && OPEN.test(o.status));
       const guarded = open.some((o) => o.side === 'SELL' && o.stopPrice != null); // a stop sell is already working
       const waiting = !!p.orderId && open.some((o) => o.orderId === p.orderId); // that buy hasn't filled yet
-      return canSell(s) > 0 && !guarded && !waiting;
+      const inPlan = !planPanel.hidden && plan.levels()?.symbol === s; // the plan's checklist offers this stop
+      return canSell(s) > 0 && !guarded && !waiting && !inPlan;
     });
     protectSlot.replaceChildren(
       ...items.map(([s, { stop }]) => {
@@ -842,7 +879,7 @@ export function createTradePage() {
   function usePrefill(p: TicketPrefill | null) {
     if (!p) return;
     setAsset('stocks'); // the trade guide pre-fills stock orders only
-    if (p.symbol) (addWatch(p.symbol.toUpperCase()), drawWatch(), select(p.symbol, false));
+    if (p.symbol) (addWatch(p.symbol.toUpperCase()), drawWatch(), select(p.symbol, false), link.publish(p.symbol.toUpperCase()));
     ticket.fill(p);
     toast('Order ticket filled in. Check it, then Preview.');
   }

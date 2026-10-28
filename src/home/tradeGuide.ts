@@ -1,11 +1,11 @@
 /**
- * The trade guide: clicking a setup card opens this pop-up, which explains the trade in plain language: whether
+ * The trade guide (the Setups page's detail) explains the trade in plain language: whether
  * to take it, exactly where to get in, where you're wrong, where to take profit, when to leave anyway, how many
  * shares, why it got its grade, and what 1,000 simulations of its history say. Education, not advice.
  */
 import type { MarketRef } from '../data/quotes';
 import { pct as fmtPct } from '../ui/charts';
-import { formatPrice, h, openModal } from '../ui/dom';
+import { formatPrice, h } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
 import { sideRecord, takeProfit, type Setup, type StrategyInfo } from './setupsPanel';
 import { readTrade } from './tradeRead';
@@ -66,10 +66,33 @@ function readBox(r: ReturnType<typeof readTrade>, v: ReturnType<typeof verdict>)
   );
 }
 
-export function openTradeGuide(s: Setup, strat: StrategyInfo | undefined, onOpenChart: (ref: MarketRef) => void) {
-  let close = () => {};
-  const body = tradeGuideBody(s, strat, (ref) => (close(), onOpenChart(ref)));
-  close = openModal(`${s.symbol} trade guide`, body, { wide: true, noAutofocus: true }); // open at the top, not at the size boxes
+/** Whether a setup can go to the order ticket: buys only (no short selling) and not already in the trade. */
+export const canTrade = (s: Setup) => s.direction > 0 && !s.trade;
+
+/**
+ * "Trade this": opens the Trade page's ticket filled from the setup (buy-stop at the trigger or a limit near the
+ * price, the stop for sizing by risk, and the plan: target, the read, exit date). Pre-fills only: the owner still
+ * previews and confirms in the confirm window, which is the only way an order is sent.
+ */
+export async function tradeSetup(s: Setup, strat?: StrategyInfo, marketTrend?: number | null) {
+  if (!canTrade(s)) return;
+  const p = s.plan;
+  const tp = takeProfit(s);
+  const v = verdict(s);
+  const read = readTrade(s, strat, marketTrend);
+  (await import('../trade/webull')).openOrderTicket({
+    symbol: s.symbol,
+    side: 'BUY',
+    guideStop: +p.stop.toFixed(2),
+    ...(p.entryType === 'stop' ? { orderType: 'STOP' as const, stopPrice: +p.trigger.toFixed(2) } : { orderType: 'LIMIT' as const, limitPrice: +s.price.toFixed(2) }),
+    plan: {
+      target: +tp.price.toFixed(2),
+      targetLabel: tp.tested ? tp.label : '2R guide',
+      read: { title: v.title, action: read.action, tone: v.tone },
+      setup: [s.strategyName.split(' (')[0], s.tier ? `${s.tier}-grade` : '', p.holdText ?? p.horizon].filter(Boolean).join(' · '),
+      exitBy: p.exitBy,
+    },
+  });
 }
 
 /** The guide itself (also shown inline on the Setups page). */
@@ -86,7 +109,6 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
   const account = h('input', { class: 'input', type: 'number', min: 100, step: 1000, value: size.account, 'aria-label': 'Account size ($)' }) as HTMLInputElement;
   const risk = h('input', { class: 'input', type: 'number', min: 0.1, max: 5, step: 0.25, value: size.risk, 'aria-label': 'Risk per trade (%)' }) as HTMLInputElement;
   const sizeOut = h('p', { class: 'guide-size-out' });
-  let sizedShares = 0;
   const drawSize = () => {
     const a = Math.max(0, parseFloat(account.value) || 0);
     const r = Math.min(5, Math.max(0, parseFloat(risk.value) || 0));
@@ -94,7 +116,6 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
     const dollars = (a * r) / 100;
     const shares = riskPerShare > 0 ? Math.floor(dollars / riskPerShare) : 0;
     const cost = shares * entry;
-    sizedShares = shares;
     sizeOut.replaceChildren(
       shares > 0
         ? h('span', {}, h('b', {}, `${shares} share${shares === 1 ? '' : 's'}`), ` (about ${usd(cost)}). If the stop is hit you lose about ${usd(shares * riskPerShare)}, which is ${r}% of your account.`, cost > a ? h('span', { class: 'down' }, ' That costs more than the account, so buy fewer or skip it.') : '')
@@ -133,26 +154,11 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
         h('label', {}, h('span', { class: 'muted tiny' }, 'Account size ($)'), account),
         h('label', {}, h('span', { class: 'muted tiny' }, 'Risk per trade (%)'), risk),
         sizeOut,
-        s.trade
-          ? null
-          : !long
-            ? h('p', { class: 'muted tiny' }, 'Short selling isn’t supported, so there’s no order ticket for this setup.')
-            : h(
-              'button',
-              {
-                class: 'btn small',
-                title: 'Opens the Trade page with this symbol, side, entry price and size filled in. You still preview and confirm.',
-                onclick: async () =>
-                  (await import('../trade/webull')).openOrderTicket({
-                    symbol: s.symbol,
-                    side: 'BUY',
-                    qty: sizedShares || undefined,
-                    guideStop: +p.stop.toFixed(2),
-                    ...(p.entryType === 'stop' ? { orderType: 'STOP' as const, stopPrice: +p.trigger.toFixed(2) } : { orderType: 'LIMIT' as const, limitPrice: +s.price.toFixed(2) }),
-                  }),
-              },
-              'Open in order ticket',
-            ),
+        !long && !s.trade
+          ? h('p', { class: 'muted tiny' }, 'Short selling isn’t supported, so there’s no order ticket for this setup.')
+          : canTrade(s)
+            ? h('p', { class: 'muted tiny' }, 'Trade this (top of the guide, or the t key) opens the order ticket sized from your real account at this risk %.')
+            : null,
         h('p', { class: 'muted tiny' }, 'Default 0.5% of the account per trade (the research behind the scanner suggests 0.25-1%), so a losing streak can\'t do real damage.'),
       ),
     ],
@@ -265,7 +271,10 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
     h(
       'div',
       { class: 'guide-actions' },
-      h('button', { class: 'btn primary', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, `Open ${s.symbol} chart`),
+      canTrade(s)
+        ? h('button', { class: 'btn primary', title: 'Opens the order ticket filled from this plan, sized by your risk %. You still preview and confirm.', onclick: () => tradeSetup(s, strat, marketTrend) }, `Trade ${s.symbol}`)
+        : '',
+      h('button', { class: 'btn', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, `Open ${s.symbol} chart`),
     ),
     h('p', { class: 'muted tiny' }, `Education, not advice. Past results and simulations don't guarantee the future. Plan to ${side} only what you can afford to lose.`),
   );

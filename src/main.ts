@@ -94,7 +94,7 @@ interface PageEntry {
 const GROUPS = { markets: 'Markets', analyse: 'Analyse', money: 'My money' } as const;
 
 const pages: PageEntry[] = [
-  { route: 'home', group: 'markets', label: 'Home', icon: 'home', title: 'Trading Platform', create: () => createHomePage(openChart, () => (location.hash = '#calendar')) },
+  { route: 'home', group: 'markets', label: 'Home', icon: 'home', title: 'Trading Platform', create: () => createHomePage(openChart, () => (location.hash = '#calendar'), openPageWith) },
   {
     route: 'invest',
     group: 'markets',

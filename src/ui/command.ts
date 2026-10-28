@@ -46,6 +46,7 @@ export const CODES: FnCode[] = [
   { code: 'FUT', aliases: ['CTM'], label: 'Futures', keywords: 'futures contracts commodities' },
   { code: 'PORT', label: 'Portfolios (models, what-ifs, optimizer)', keywords: 'portfolio model optimizer what-if' },
   { code: 'ACCT', label: 'Account (my real money, all accounts)', keywords: 'account holdings dividends total value' },
+  { code: 'CLIENT', aliases: ['CLNT'], label: 'Client review (CLIENT smith)', keywords: 'client review report household adviser ria' },
   { code: 'MULTI', aliases: ['WS'], label: 'Workspace: linked panels (Chart mode)', keywords: 'multi chart grid side by side workspace panels linked layout launchpad' },
   { code: 'SCRIPT', aliases: ['PINE'], label: 'Scripts (Chart mode)', keywords: 'script pine editor indicator code' },
   { code: 'COT', label: 'Futures positioning (COT)', keywords: 'cot commitment traders positioning hedgers cftc' },
@@ -60,7 +61,7 @@ export const CODES: FnCode[] = [
 /** Where a code without a ticker goes. */
 const CODE_ROUTE: Record<string, string> = {
   GP: 'chart', DES: 'research', FA: 'research', CN: 'home', OMON: 'flow', TRADE: 'trade', WEI: 'home', ECO: 'calendar', FUT: 'futures',
-  PORT: 'portfolio', ACCT: 'account', MULTI: 'chart/multi', SCRIPT: 'chart/scripts', COT: 'futures/cot', BTST: 'backtest', SET: 'setups', MACRO: 'macro', INV: 'invest',
+  PORT: 'portfolio', ACCT: 'account', CLIENT: 'clients', MULTI: 'chart/multi', SCRIPT: 'chart/scripts', COT: 'futures/cot', BTST: 'backtest', SET: 'setups', MACRO: 'macro', INV: 'invest',
 };
 
 export function findCode(token: string): FnCode | null {
@@ -220,8 +221,18 @@ export function buildResults(input: string, src: Sources, recents: RecentEntry[]
     groups.push({ label: 'Functions', items: CODES.filter((c) => !c.tickerOnly).map((c, i) => codeItem(c, 50 - i)) });
     return groups;
   }
+  // "CLIENT smith": that client's review, best name match first (Bloomberg-style code + argument)
+  const client = /^(?:CLIENT|CLNT)(?:\s+(.+))?$/.exec(q);
+  if (client?.[1]) {
+    const items = src.clients.flatMap((c) => {
+      const score = fuzzyScore(client[1], c.name);
+      return score == null ? [] : [{ id: `cl:${c.id}`, title: c.name, subtitle: 'Client review', hint: 'CLIENT', complete: `CLIENT ${c.name}`, score: 2000 + score }];
+    });
+    if (items.length) return [{ label: 'Clients', items: items.sort((a, b) => b.score - a.score).slice(0, LIMIT.other) }];
+  }
   const symbols = mergeSymbols(src.symbols);
   const groups: ResultGroup[] = [];
+  if (client && !client[1] && src.clients.length) groups.push({ label: 'Clients', items: src.clients.slice(0, LIMIT.other).map((c, i) => ({ id: `cl:${c.id}`, title: c.name, subtitle: 'Client review', hint: 'CLIENT', complete: `CLIENT ${c.name}`, score: 850 - i })) });
   const known = (t: string) => symbols.find((s) => s.symbol === t) ?? symbols.find((s) => bare(s.symbol) === bare(t));
 
   // "AAPL GP": one obvious thing to run
@@ -457,6 +468,15 @@ export const SHORTCUT_SHEET: { title: string; rows: [string, string][] }[] = [
       ['Delete / Backspace', 'Remove the selected drawing'],
       ['Esc', 'Cancel the drawing tool or selection'],
       ['Enter (symbol box)', 'Load the symbol'],
+    ],
+  },
+  {
+    title: 'Home, Setups and Clients',
+    rows: [
+      ['j / k (Home)', 'Move through the morning brief; Enter opens the item'],
+      ['↑ ↓  or  j / k (Setups)', 'Move through the setups list'],
+      ['t (Setups)', 'Trade this: fill the order ticket from the selected setup (nothing is placed)'],
+      ['↑ ↓ (Clients list)', 'Move between clients'],
     ],
   },
   {

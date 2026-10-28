@@ -1,6 +1,6 @@
 /**
- * Types for the helper's market scanner (scanner.results) shared by the Setups page, the Home teaser and the trade
- * guide. (The old Home "Best setups" panel that lived here was replaced by the Setups page and its teaser.)
+ * Types for the helper's market scanner (scanner.results) shared by the Setups page, Home's morning brief and the
+ * trade guide, plus takeProfit and sideRecord.
  */
 
 type StrategyKey = 'weekly_swing' | 'mean_reversion' | 'breakout' | string;

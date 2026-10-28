@@ -115,6 +115,16 @@ describe('ranking', () => {
     expect(top('home').id).toBe('page:home');
     for (const g of buildResults('a', src())) expect(g.items.length).toBeGreaterThan(0);
   });
+  it('CLIENT <name> opens that client, CLIENT alone lists the clients after the code', () => {
+    const two = src({ clients: [{ id: 'c1', name: 'Jane Smith' }, { id: 'c2', name: 'Robert Chen' }] });
+    expect(top('client smith', two).id).toBe('cl:c1');
+    expect(top('CLIENT chen', two).id).toBe('cl:c2');
+    expect(top('clnt rob', two).id).toBe('cl:c2');
+    expect(buildResults('client smi', two).map((g) => g.label)).toEqual(['Clients']);
+    expect(top('client', two).id).toBe('fn:CLIENT'); // Enter on the code alone opens the Clients page
+    expect(buildResults('client', two).find((g) => g.label === 'Clients')?.items.map((i) => i.id)).toEqual(['cl:c1', 'cl:c2']);
+    expect(flatten(buildResults('client zzzz', two)).some((i) => i.id.startsWith('cl:'))).toBe(false);
+  });
   it('futures and indexes only offer what works for them', () => {
     expect(codesFor('/ES').map((c) => c.code)).toEqual(['GP']);
     expect(codesFor('$SPX').map((c) => c.code)).toEqual(['GP', 'ALRT', 'WL']);

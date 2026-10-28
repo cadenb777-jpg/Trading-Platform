@@ -12,7 +12,7 @@ import { engineRequest, helper, schwab } from '../data/schwab';
 import type { MarketRef } from '../data/quotes';
 import { entryZone, type Zone } from '../home/entryZone';
 import { takeProfit, type SideRecord, type Setup, type StrategyInfo } from '../home/setupsPanel';
-import { tradeGuideBody } from '../home/tradeGuide';
+import { canTrade, tradeGuideBody, tradeSetup } from '../home/tradeGuide';
 import type { Timeframe } from '../types';
 import { pageFrame, pct as fmtPct } from '../ui/charts';
 import { activatable, formatPrice, h, timeAgo, toast } from '../ui/dom';
@@ -74,7 +74,7 @@ interface LabResult {
   ran?: number;
   minForward?: number;
   survivors?: { id: string; name: string; description: string; firstShownDate: string }[];
-  results: { id: string; name: string; description: string; direction: number; validated: boolean; p: number; pAdjusted: number;
+  results?: { id: string; name: string; description: string; direction: number; validated: boolean; p: number; pAdjusted: number;
     theory?: string; folds?: number; dsr?: number | null; rejected?: string[];
     train: { trades: number; expectancy: number | null; tStat: number | null }; test: { trades: number; expectancy: number | null; winRate: number | null; tStat: number | null } }[];
 }
@@ -216,7 +216,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   const link = linkPanel({ id: 'setups', label: 'Setups detail', el: detail, accepts: isStockSymbol, apply: (s) => pickSymbol(s), active: () => !frame.el.hidden });
   function pickSymbol(symbol: string) {
     const match = horizon()?.setups.find((x) => x.symbol === symbol);
-    if (!match || idOf(match) === selected) return;
+    if (!match || idOf(match) === selected || selected?.split(':')[2] === symbol) return;
     selected = idOf(match);
     render();
   }
@@ -425,7 +425,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
         L.effectiveTrials ? h('span', {}, termLabel('Independent ideas tried', 'efftrials'), ` ${L.effectiveTrials}`) : '',
         L.graveyard != null ? h('span', {}, termLabel('Graveyard', 'graveyard'), ` ${L.graveyard} rejected so far`) : '',
         L.ran ? h('span', { class: 'muted' }, `ran ${timeAgo(L.ran)}`) : ''),
-      L.results.length
+      L.results?.length // a lab saved while it was running carries only its survivors
         ? h('table', { class: 'sp-edge-table small' },
             h('thead', {}, h('tr', {}, h('th', {}, 'Rule combination'), h('th', {}, 'Older data'), h('th', {}, 'Unseen data'), h('th', {}, termLabel('p', 'qvalue')), h('th', {}, termLabel('DSR', 'dsr')), h('th', {}, ''))),
             h('tbody', {}, ...L.results.map((r) => h('tr', { title: `${r.description}${r.theory ? `\nTheory: ${r.theory}` : ''}${r.rejected?.length ? `\nRejected: ${r.rejected.join('; ')}` : ''}` },
@@ -545,7 +545,8 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     const watchBtn = h('button', { class: 'btn small', onclick: () => (toggleWatch(s), render()) });
     const strat = hr!.strategies[s.strategy as StrategyKey];
     detail.replaceChildren(
-      h('div', { class: 'sp-detail-head' }, link.chip, h('h2', tickerAttr(s.symbol), s.symbol), h('span', { class: 'muted' }, `${s.strategyName} · ${HORIZONS.find((x) => x.key === prefs.horizon)!.label} · ${s.plan.holdText ?? s.plan.horizon}`), h('span', { class: 'spacer' }), watchBtn, h('button', { class: 'btn small', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, 'Open chart')),
+      h('div', { class: 'sp-detail-head' }, link.chip, h('h2', tickerAttr(s.symbol), s.symbol), h('span', { class: 'muted' }, `${s.strategyName} · ${HORIZONS.find((x) => x.key === prefs.horizon)!.label} · ${s.plan.holdText ?? s.plan.horizon}`), h('span', { class: 'spacer' }), watchBtn, h('button', { class: 'btn small', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, 'Open chart'),
+        canTrade(s) ? h('button', { class: 'btn small primary sp-trade', title: 'Open the order ticket filled from this plan and sized by your risk % (key t). You still preview and confirm.', 'aria-keyshortcuts': 't', onclick: () => tradeSelected() }, 'Trade this ▸') : ''),
       live,
       chartBox,
       tradeGuideBody(s, strat, onOpenChart, data?.regime.qqqAbove200 ?? null),
@@ -554,6 +555,49 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     drawChart(chartBox, s);
     if (!quoteStops.has(s.symbol)) watchQuote(s.symbol);
   }
+
+  /** The selected setup and its strategy (the detail shows it). */
+  function current(): { s: Setup; strat: StrategyInfo | undefined } | null {
+    const hr = horizon();
+    const s = hr?.setups.find((x) => idOf(x) === selected);
+    return s ? { s, strat: hr!.strategies[s.strategy as StrategyKey] } : null;
+  }
+
+  /** Trade this: the linked panels follow the symbol and the Trade page's ticket is filled from the plan. */
+  function tradeSelected() {
+    const cur = current();
+    if (!cur) return;
+    if (!canTrade(cur.s)) return toast(cur.s.trade ? `You're already in ${cur.s.symbol}.` : 'Short selling isn’t supported, so there’s no order ticket for sells.');
+    link.publish(cur.s.symbol);
+    void tradeSetup(cur.s, cur.strat, data?.regime.qqqAbove200 ?? null);
+  }
+
+  /** Keys on this page: ↑/↓ (or j/k) move through the list, t opens the ticket for the selected setup. */
+  function onKey(e: KeyboardEvent) {
+    if (frame.el.hidden || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('.modal-backdrop, .cmd-palette')) return;
+    const t = e.target instanceof HTMLElement ? e.target : document.body;
+    if (t.closest('input, select, textarea, [contenteditable="true"]')) return;
+    const key = e.key;
+    if (key === 't') {
+      e.preventDefault();
+      tradeSelected();
+      return;
+    }
+    const step = key === 'ArrowDown' || key === 'j' ? 1 : key === 'ArrowUp' || key === 'k' ? -1 : 0;
+    if (!step || (!list.contains(t) && t !== document.body && !frame.el.contains(t))) return;
+    const hr = horizon();
+    if (!hr) return;
+    const rows = visible(hr);
+    const i = rows.findIndex((x) => idOf(x) === selected);
+    const next = rows[Math.min(rows.length - 1, Math.max(0, i + step))];
+    if (!next) return;
+    e.preventDefault();
+    selected = idOf(next);
+    render();
+    link.publish(next.symbol);
+    list.querySelector<HTMLElement>(`tr[data-id="${CSS.escape(selected)}"]`)?.focus();
+  }
+  document.addEventListener('keydown', onKey);
 
   function updateLive(s: Setup) {
     const live = detail.querySelector('.sp-live');
@@ -700,6 +744,18 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
 
   return {
     el: frame.el,
+    /** Shows one setup (from Home's morning brief): `horizon:strategy:symbol:signalDate`. */
+    open(id: string) {
+      const h = id.split(':')[0] as Horizon;
+      if (HORIZONS.some((x) => x.key === h) && prefs.horizon !== h) {
+        prefs.horizon = h;
+        save(PREFS_KEY, prefs);
+      }
+      selected = id;
+      link.publish(id.split(':')[2] ?? ''); // so start() doesn't pick another symbol from the link group
+      if (data) render();
+      requestAnimationFrame(() => list.querySelector<HTMLElement>(`tr[data-id="${CSS.escape(id)}"]`)?.focus({ preventScroll: false }));
+    },
     start() {
       const wanted = link.wanted();
       if (wanted) pickSymbol(wanted);

@@ -57,7 +57,7 @@ replaces the address (`history.replaceState`), so Back doesn't bounce. Code that
 |---|---|---|---|
 | COT table for every board market (commercials, large and small specs, indexes, reading) | Futures | **Futures** (Positioning section, `#futures/cot`) | none |
 | Any CFTC market's net-position history (the list from `flow.cot_markets`) | Flow > Futures positioning (COT) tab | **Futures**: new "COT: any market or stock" panel, with its own AI summary | none |
-| A stock's related futures market: COT index and net positions | Flow > COT tab; Flow > Stock positioning (stat card and a 2-year chart) | **Futures**: the same panel, by typing the stock | **Flow** (Stock positioning), **Research** (Overview) and **Home**: one line, "COT Nasdaq-100 futures: hedgers 72 / 100, speculators 31 / 100 · CFTC date", with "See all on Futures →" |
+| A stock's related futures market: COT index and net positions | Flow > COT tab; Flow > Stock positioning (stat card and a 2-year chart) | **Futures**: the same panel, by typing the stock | **Flow** (Stock positioning) and **Research** (Overview): one line (Home dropped it for the morning brief, docs/workflows.md), "COT Nasdaq-100 futures: hedgers 72 / 100, speculators 31 / 100 · CFTC date", with "See all on Futures →" |
 | Nasdaq-100 commercials index | Setups regime line | Setups keeps it, because it feeds the grades | "See all on Futures →" link |
 
 ### Chart tools

@@ -26,6 +26,13 @@ export interface Client {
   altIds?: string[];
   /** Which report sections to include (all on by default). */
   sections?: Partial<Record<ReportSection, boolean>>;
+  /** Risk tolerance on record, 1 (conservative) to 5 (aggressive); unset = from the objective (review.ts). */
+  riskTolerance?: 1 | 2 | 3 | 4 | 5;
+  /** The model portfolio this account should match, for allocation drift. */
+  targetId?: string;
+  /** The adviser's notes on the client, and the day they last changed (YYYY-MM-DD). */
+  notes?: string;
+  notesUpdated?: string;
 }
 
 export type ReportSection = 'summary' | 'market' | 'performance' | 'risk' | 'allocation' | 'holdings' | 'income' | 'alternatives' | 'commentary';

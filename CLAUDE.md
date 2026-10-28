@@ -221,8 +221,16 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   "Alert me" is on) follow live quotes and alert with a sound/notification. Layout is basics first: a "Today" summary,
   a folded daily routine and strategy report card (evidence strength label), a simple list; the guide opens with "The
   read" (src/home/tradeRead.ts: for/against factors, conviction capped by grade, what to do) and folds the grade
-  reasons, statistics, readings and levels. Terms have an "i" tooltip (src/ui/glossary.ts TERMS / infoTip). Home shows a small teaser
-  (src/home/setupsTeaser.ts); src/home/setupsPanel.ts now only provides types and the old card helpers.
+  reasons, statistics, readings and levels. Terms have an "i" tooltip (src/ui/glossary.ts TERMS / infoTip).
+  src/home/setupsPanel.ts only provides types, takeProfit and sideRecord.
+  Workflows (docs/workflows.md, with before/after click counts): Home opens on the morning brief (src/home/morningBrief.ts,
+  maths src/home/brief.ts: overnight futures strip, my accounts value/today/movers, Needs attention = fired/near alerts,
+  A/B setups at entry, today's high-impact events; j/k + Enter). Setups "Trade this" (key t; tradeSetup in tradeGuide.ts)
+  pre-fills the ticket with the stop, Size by Risk and a SetupPlan; Trade shows the Plan card (src/trade/planCard.ts,
+  maths src/trade/plan.ts: entry/stop/target/R/size/$ and % at risk, the read, post-order checklist: entry, stop sell
+  via "Fill stop order", alerts). Clients open on a review (src/reports/clientReview.ts, maths src/reports/review.ts:
+  net/gross, risk vs Client.riskTolerance bands, drift vs Client.targetId, income, Client.notes, Report (PDF));
+  command bar `CLIENT <name>`. None of these adds an order path.
   AI summary buttons (`insightButton`) are on Home, Flow, Research, Macro, Bonds, Investments boards, fund detail
   and Backtest; not on the Chart page or Portfolios (owner's choice).
   Theme: light/dark via CSS variables (`:root[data-theme='light']`) and src/ui/theme.ts (THEME object updated in place,

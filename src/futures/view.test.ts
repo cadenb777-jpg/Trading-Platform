@@ -46,7 +46,7 @@ describe('futures view helpers', () => {
   });
 });
 
-describe('cotSummaryText (the one-line COT summary on Flow, Research and Home)', () => {
+describe('cotSummaryText (the one-line COT summary on Flow and Research)', () => {
   it('reads the latest week and flags extremes', () => {
     const rows = [
       { date: '2026-10-13', specIndex: 50, commIndex: 50 },
