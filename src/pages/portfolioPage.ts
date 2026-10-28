@@ -7,6 +7,8 @@ import { engineRequest } from '../data/schwab';
 import { deleteDoc, listDocs, saveDoc } from '../data/store';
 import { PRIVATE_FUNDS, STRATEGIES, type Strategy } from '../invest/catalog';
 import { renderDividends } from '../portfolio/dividendsView';
+import { DEFAULT_GOAL, GOALS, cleanViews, compareName, compareNote, compareRows, compareVerdict, defaultMaxWeight, figureRows, goalInfo, randomWalkLine, rowName, vsText } from '../portfolio/goals';
+import { frontierChart, riskBars, type FrontierPoint } from '../portfolio/optimiserCharts';
 import { leftOutLine, shortHistoryAdvice, standInLine, yearsBetween } from '../portfolio/optimiserText';
 import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
 import {
@@ -46,8 +48,6 @@ const STRATEGY_CLASS: Record<Strategy, AssetClass> = {
 const blank = (): Portfolio => ({ name: 'New portfolio', benchmark: 'SPY', rebalance: 'quarterly', mode: 'weight', holdings: [{ symbol: '', weight: 100, assetClass: 'US stocks', kind: 'security' }] });
 const ratio = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(2));
 const tone = (v: number | null | undefined) => (v == null ? '' : v >= 0 ? 'up' : 'down');
-const METHOD_NAMES = { current: 'Your current mix', equal: 'Equal weight', risk_parity: 'Balanced risk', min_var: 'Lower risk', growth: 'Growth (robust)', black_litterman: 'My views' } as const;
-const METHOD_TERMS = { risk_parity: 'optRiskParity', min_var: 'optMinVar', growth: 'optGrowth', black_litterman: 'optViews' } as const;
 
 export function createPortfolioPage() {
   let saved: (Portfolio & { id: string })[] = [];
@@ -600,47 +600,182 @@ export function createPortfolioPage() {
   }
 
   function optimiserForm(out: HTMLElement) {
-    const method = h(
+    const goal = h('select', { class: 'input', 'aria-label': 'Goal' }, ...GOALS.map((g) => h('option', { value: g.key, selected: g.key === DEFAULT_GOAL }, g.name))) as HTMLSelectElement;
+    const tip = h('span', {});
+    const goalLine = h('p', { class: 'opt-goal-line' });
+    const slider = (label: string, value: number, min: number, max: number, step = 0.5) => {
+      const input = h('input', { type: 'range', min, max, step, value, 'aria-label': label }) as HTMLInputElement;
+      const shown = h('b', {}, `${value}%`);
+      input.addEventListener('input', () => (shown.textContent = `${input.value}%`));
+      return { input, el: h('label', { class: 'opt-slider' }, h('span', { class: 'muted small' }, label), input, shown) };
+    };
+    const targetVol = slider('Target volatility', 10, 6, 20);
+    const volCap = slider('Volatility limit', 12, 6, 20);
+    const teBudget = slider('Tracking-error budget', 2, 0, 10, 0.5);
+    const others = saved.filter((p) => p.id && p.id !== current.id);
+    const bench = h(
       'select',
-      { class: 'input', 'aria-label': 'Method' },
-      ...(Object.keys(METHOD_TERMS) as (keyof typeof METHOD_TERMS)[]).map((k) => h('option', { value: k }, METHOD_NAMES[k])),
+      { class: 'input', 'aria-label': 'Benchmark' },
+      h('option', { value: 'SPY' }, 'SPY (US stocks)'),
+      h('option', { value: '6040' }, '60/40 (SPY + AGG)'),
+      ...others.map((p) => h('option', { value: `p:${p.id}` }, p.name)),
     ) as HTMLSelectElement;
-    const tip = h('span', {}, infoTip(METHOD_TERMS.risk_parity));
-    const maxW = h('input', { class: 'input', type: 'number', value: 25, min: 1, max: 100, step: 1, 'aria-label': 'Max per holding %' }) as HTMLInputElement;
-    const maxChange = h('input', { class: 'input', type: 'number', value: 20, min: 1, max: 100, step: 1, 'aria-label': 'Max change per holding %' }) as HTMLInputElement;
+    const benchBox = h('span', { class: 'opt-method' }, bench, teBudget.el, infoTip('trackingError'));
+    const extra = h('span', { class: 'opt-method' });
+    const syncGoal = () => {
+      const g = goalInfo(goal.value) ?? GOALS[0];
+      tip.replaceChildren(infoTip(g.term));
+      goalLine.textContent = g.line;
+      extra.replaceChildren(g.needs === 'targetVol' ? targetVol.el : g.needs === 'volCap' ? volCap.el : g.needs === 'benchmark' ? benchBox : '');
+    };
+    goal.addEventListener('change', syncGoal);
+    syncGoal();
+
+    // Advanced settings (folded): sensible defaults, so most people never open it.
+    const numIn = (label: string, value: number | '', opts: { min?: number; max?: number; step?: number; placeholder?: string } = {}) =>
+      h('input', { class: 'input', type: 'number', value, min: opts.min ?? 0, max: opts.max ?? 100, step: opts.step ?? 1, placeholder: opts.placeholder ?? '', 'aria-label': label }) as HTMLInputElement;
+    const field = (label: string, input: HTMLElement, term?: string) => h('label', { class: 'field-input compact' }, h('span', { class: 'muted small' }, label, term ? ' ' : '', term ? infoTip(term) : ''), input);
+    // Default max per holding: 2 / holdings, between 25% and 50% (the helper uses the same rule when it's blank).
+    const holdingCount = new Set(current.holdings.map(analysisSymbol).filter(Boolean)).size || 1;
+    const maxW = numIn('Max per holding %', Math.round(100 * defaultMaxWeight(holdingCount)), { min: 1 });
+    const maxChange = numIn('Max change per holding %', '', { min: 1, placeholder: 'no limit' });
+    const maxTurnover = numIn('Max total change %', '', { min: 0, placeholder: 'no limit' });
+    const hasCash = current.holdings.some((x) => x.kind === 'cash');
+    const minCash = numIn('Minimum cash %', '', { min: 0, max: 95, placeholder: hasCash ? 'none' : 'add Cash first' });
+    minCash.disabled = !hasCash;
+    const maxHoldings = numIn('Max number of holdings', '', { min: 1, max: 300, placeholder: 'no limit' });
+    const sectorCap = numIn('Max per sector %', '', { min: 5, placeholder: 'no limit' });
+    const select = (label: string, options: [string, string][], value: string) =>
+      h('select', { class: 'input', 'aria-label': label }, ...options.map(([v, t]) => h('option', { value: v, selected: v === value }, t))) as HTMLSelectElement;
+    const lookback = select('Lookback', [['1', '1 year'], ['3', '3 years'], ['5', '5 years'], ['10', '10 years']], '3');
+    const estimate = select('Return estimate', [['shrunk', 'History, pulled toward equilibrium'], ['views', 'My views (Black-Litterman)']], 'shrunk');
+    const testRebalance = select('Test rebalance', [['monthly', 'Monthly'], ['quarterly', 'Quarterly'], ['yearly', 'Yearly']], 'quarterly');
+    const cost = numIn('Cost per trade %', 0.1, { min: 0, max: 5, step: 0.05 });
     const keepCash = h('input', { type: 'checkbox', checked: true }) as HTMLInputElement;
     const keepAll = h('input', { type: 'checkbox' }) as HTMLInputElement;
     const standIns = h('input', { type: 'checkbox', checked: true }) as HTMLInputElement;
-    const hasCash = current.holdings.some((x) => x.kind === 'cash');
-    const years = h('select', { class: 'input', 'aria-label': 'History' }, ...[5, 10].map((y) => h('option', { value: y, selected: y === 10 }, `${y} years of history`))) as HTMLSelectElement;
-    const views = h('input', { class: 'input', placeholder: 'e.g. GLD 8% 60%, VTI 6% 50%', 'aria-label': 'Views', hidden: true }) as HTMLInputElement;
-    method.addEventListener('change', () => {
-      views.hidden = method.value !== 'black_litterman';
-      tip.replaceChildren(infoTip(METHOD_TERMS[method.value as keyof typeof METHOD_TERMS]));
+
+    let symbols: string[] = [];
+    try {
+      symbols = holdingsPayload(current, priceMap(prices)).map((x) => x.symbol);
+    } catch {
+      symbols = [...new Set(current.holdings.map(analysisSymbol).filter(Boolean))];
+    }
+    const limitInputs = new Map<string, { min: HTMLInputElement; max: HTMLInputElement }>();
+    const limitsTable = h(
+      'div',
+      { class: 'opt-limits' },
+      dataTable(
+        ['Holding', 'Min %', 'Max %'],
+        symbols.map((s) => {
+          const lim = { min: numIn(`${s} minimum %`, '', { placeholder: '—' }), max: numIn(`${s} maximum %`, '', { placeholder: '—' }) };
+          limitInputs.set(s, lim);
+          return [holdingCell(s), lim.min, lim.max];
+        }),
+        undefined,
+        false,
+      ),
+    );
+    const viewRows = h('div', {});
+    const addView = () => {
+      const sym = h('select', { class: 'input', 'aria-label': 'View holding' }, ...symbols.map((s) => h('option', { value: s }, holdingLabel(current, s).label))) as HTMLSelectElement;
+      const ret = numIn('Expected return per year %', '', { min: -50, max: 100, step: 0.5, placeholder: 'e.g. 8' });
+      const conf = h('input', { type: 'range', min: 10, max: 90, step: 5, value: 50, 'aria-label': 'Confidence' }) as HTMLInputElement;
+      const confShown = h('span', { class: 'muted small' }, 'confidence 50%');
+      conf.addEventListener('input', () => (confShown.textContent = `confidence ${conf.value}%`));
+      const row = h('div', { class: 'opt-view-row', 'data-view': '' }, sym, ret, h('span', { class: 'muted small' }, '% a year'), conf, confShown, h('button', { class: 'btn', type: 'button', onclick: () => row.remove(), 'aria-label': 'Remove view' }, '×'));
+      (row as HTMLElement & { read?: () => { symbol: string; ret: string; confidence: number } }).read = () => ({ symbol: sym.value, ret: ret.value, confidence: Number(conf.value) / 100 });
+      viewRows.append(row);
+    };
+    const viewsBox = h(
+      'div',
+      { hidden: true },
+      h('h4', { class: 'opt-adv-h' }, 'My views ', infoTip('optViews')),
+      h('p', { class: 'ap-note' }, 'Your expected yearly return for a few holdings, and how sure you are. Low confidence barely moves the neutral market view. Views can’t be tested on the past, so the test below runs without them.'),
+      viewRows,
+      h('button', { class: 'btn', type: 'button', onclick: addView }, '+ Add view'),
+    );
+    estimate.addEventListener('change', () => {
+      viewsBox.hidden = estimate.value !== 'views';
+      if (!viewsBox.hidden && !viewRows.children.length) addView();
     });
+    const advanced = h(
+      'details',
+      { class: 'opt-advanced' },
+      h('summary', {}, 'Advanced settings'),
+      h(
+        'div',
+        { class: 'opt-adv-grid' },
+        field('Max per holding %', maxW),
+        field('Max change per holding %', maxChange),
+        field('Max total change %', maxTurnover, 'turnover'),
+        field('Minimum cash %', minCash),
+        field('Max number of holdings', maxHoldings),
+        field('Max per sector %', sectorCap, 'sectorCap'),
+        field('Lookback', lookback, 'lookback'),
+        field('Return estimate', estimate, 'returnEstimate'),
+        field('Test: rebalance', testRebalance, 'walkForward'),
+        field('Test: cost per trade %', cost, 'tradingCosts'),
+      ),
+      h(
+        'div',
+        { class: 'ap-controls' },
+        hasCash ? h('label', { class: 'opt-check', title: 'Only the invested part is reallocated' }, keepCash, ' Keep cash as is') : null,
+        h('label', { class: 'opt-check' }, keepAll, ' Keep every holding (at least 1%)'),
+        h('label', { class: 'opt-check', title: 'For the test only: before a young holding existed, its returns are estimated from the long-running fund it moves most like' }, standIns, ' Use stand-in history for young holdings ', infoTip('standIn')),
+      ),
+      h('h4', { class: 'opt-adv-h' }, 'Limits per holding'),
+      h('p', { class: 'ap-note' }, 'Leave blank to use Max per holding. Sectors come from the SEC’s industry codes; funds count as “Fund” and cash has no sector.'),
+      limitsTable,
+      viewsBox,
+    );
+
+    const pctVal = (el: HTMLInputElement) => (el.value === '' || !Number.isFinite(parseFloat(el.value)) ? null : parseFloat(el.value) / 100);
     async function run() {
-      const progress = h('div', { class: 'muted pad' }, 'Optimising and testing every method on data it hadn’t seen (about 20 seconds)…');
+      const progress = h('div', { class: 'muted pad' }, 'Optimising and testing every goal on data it hadn’t seen (one to a few minutes, depending on your computer)…');
       out.replaceChildren(progress);
-      const parsedViews = views.value
-        .split(',')
-        .map((v) => v.trim().match(/^([A-Za-z.$^-]+)\s+(-?[\d.]+)%?(?:\s+([\d.]+)%?)?$/))
-        .filter((m): m is RegExpMatchArray => !!m)
-        .map((m) => ({ symbol: m[1].toUpperCase(), return: parseFloat(m[2]) / 100, confidence: m[3] ? parseFloat(m[3]) / 100 : 0.5 }));
       try {
+        const limits: Record<string, { min?: number; max?: number }> = {};
+        for (const [s, lim] of limitInputs) {
+          const lo = pctVal(lim.min);
+          const hi = pctVal(lim.max);
+          if (lo != null || hi != null) limits[s] = { ...(lo != null ? { min: lo } : {}), ...(hi != null ? { max: hi } : {}) };
+        }
+        let trackBenchmark: Record<string, unknown> = { kind: bench.value === '6040' ? '6040' : 'SPY' };
+        if (bench.value.startsWith('p:') && goal.value === 'track') {
+          const p = others.find((x) => `p:${x.id}` === bench.value);
+          if (p) {
+            await loadPrices(p);
+            trackBenchmark = { kind: 'portfolio', name: p.name, holdings: holdingsPayload(p, priceMap(prices)) };
+          }
+        }
+        const views = cleanViews([...viewRows.querySelectorAll<HTMLElement & { read?: () => { symbol: string; ret: string; confidence: number } }>('[data-view]')].map((x) => x.read!()));
         const r = await engineRequest<Optimisation>(
           'portfolio.optimize',
           {
             holdings: holdingsPayload(current, priceMap(prices)),
-            method: method.value,
-            maxWeight: (parseFloat(maxW.value) || 25) / 100,
+            method: goal.value,
+            maxWeight: parseFloat(maxW.value) > 0 ? parseFloat(maxW.value) / 100 : null,
             maxChange: parseFloat(maxChange.value) > 0 ? parseFloat(maxChange.value) / 100 : null,
+            maxTurnover: pctVal(maxTurnover),
+            minCash: pctVal(minCash),
+            maxHoldings: parseInt(maxHoldings.value, 10) > 0 ? parseInt(maxHoldings.value, 10) : null,
+            sectorCap: pctVal(sectorCap),
+            limits,
             keepCash: keepCash.checked,
             keepAll: keepAll.checked,
-            years: Number(years.value),
+            lookback: Number(lookback.value),
+            estimate: estimate.value,
+            views: estimate.value === 'views' ? views : [],
+            testRebalance: testRebalance.value,
+            cost: pctVal(cost) ?? 0,
+            targetVol: Number(targetVol.input.value) / 100,
+            volCap: Number(volCap.input.value) / 100,
+            teBudget: Number(teBudget.input.value) / 100,
+            trackBenchmark,
             standIns: standIns.checked,
-            views: parsedViews,
           },
-          180000,
+          300000,
           (e) => {
             if (e.type === 'status') progress.textContent = `${e.text}…`;
           },
@@ -653,24 +788,10 @@ export function createPortfolioPage() {
     return h(
       'div',
       {},
-      h(
-        'div',
-        { class: 'ap-controls' },
-        h('span', { class: 'opt-method' }, method, tip),
-        h('label', { class: 'field-input compact' }, h('span', { class: 'muted small' }, 'Max per holding %'), maxW),
-        h('label', { class: 'field-input compact' }, h('span', { class: 'muted small' }, 'Max change %'), maxChange),
-        years,
-        h('button', { class: 'btn primary', onclick: run }, 'Optimise'),
-      ),
-      h(
-        'div',
-        { class: 'ap-controls' },
-        hasCash ? h('label', { class: 'opt-check', title: 'Only the invested part is reallocated' }, keepCash, ' Keep cash as is') : null,
-        h('label', { class: 'opt-check' }, keepAll, ' Keep every holding (at least 1%)'),
-        h('label', { class: 'opt-check', title: 'For the test only: before a young holding existed, its returns are estimated from the long-running fund it moves most like' }, standIns, ' Use stand-in history for young holdings ', infoTip('standIn')),
-        views,
-      ),
-      h('p', { class: 'ap-note' }, 'Only your own holdings are used. Max change limits how far each weight moves from today, so suggestions don’t churn. Views format: symbol, expected yearly return, confidence.'),
+      h('div', { class: 'ap-controls' }, h('span', { class: 'opt-method' }, h('span', { class: 'muted small' }, 'Goal'), goal, tip), extra, h('button', { class: 'btn primary', onclick: run }, 'Optimise')),
+      goalLine,
+      advanced,
+      h('p', { class: 'ap-note' }, 'Only your own holdings are used. Every goal is worked out and tested each time, so you can compare them below.'),
     );
   }
 
@@ -685,40 +806,72 @@ export function createPortfolioPage() {
     );
   }
 
-  /** One line comparing the chosen method with the current mix in a walk-forward table. */
-  function compareLine(t: NonNullable<Optimisation['realOnly']>, key: keyof typeof METHOD_NAMES): string {
-    const m = t.rows.find((x) => x.key === key)!;
-    const c = t.rows.find((x) => x.key === 'current')!;
-    return `${METHOD_NAMES[key]} Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)} for your mix, ${pct(m.return, 1)} vs ${pct(c.return, 1)} a year`;
+  /** One line comparing a goal with the current mix in a walk-forward table. */
+  function compareLine(t: NonNullable<Optimisation['realOnly']>, key: string): string {
+    const m = t.rows.find((x) => x.key === key);
+    const c = t.rows.find((x) => x.key === 'current');
+    if (!m || !c) return 'not available';
+    return `${rowName(key)} Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)} for your mix, ${pct(m.return, 1)} vs ${pct(c.return, 1)} a year`;
   }
 
-  function verdict(r: Optimisation): string {
+  function verdict(r: Optimisation, key: string, rw: Optimisation['randomWalk']): string {
     const wf = r.walkForward;
-    const key = r.method === 'black_litterman' ? 'growth' : r.method;
-    const name = METHOD_NAMES[key];
+    const name = rowName(key);
     if (!wf) return shortHistoryAdvice(yearsBetween(r.testStart ?? r.start, r.end), 'none');
-    const m = wf.rows.find((x) => x.key === key)!;
-    const c = wf.rows.find((x) => x.key === 'current')!;
+    const m = wf.rows.find((x) => x.key === key);
+    const c = wf.rows.find((x) => x.key === 'current');
+    if (!m || !c) return '';
     const edge = (m.sharpe ?? 0) - (c.sharpe ?? 0);
-    const chance = wf.short ? ' With this little history, differences between methods are likely chance.' : '';
+    const chance = wf.short ? ' With this little history, differences between goals are likely chance.' : '';
+    if (Math.abs(edge) < 0.01) return `On data it hadn’t seen, ${name} did about the same as your current mix (Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)}). Keeping what you have is a reasonable choice.${chance}`;
     if (edge <= 0) return `On data it hadn’t seen, ${name} did not beat your current mix (Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)}). Keeping what you have is a reasonable choice.${chance}`;
     const base = `On data it hadn’t seen, ${name} beat your current mix: Sharpe ${ratio(m.sharpe)} vs ${ratio(c.sharpe)}, ${pct(m.return, 1)} vs ${pct(c.return, 1)} a year, worst drop ${pct(m.maxDrawdown, 0)} vs ${pct(c.maxDrawdown, 0)}.${chance}`;
-    const rw = r.randomWalk;
     if (!rw || !rw.runs) return base;
     return rw.p <= 0.1
-      ? `${base} Shuffled histories rarely gave an edge this big (p = ${rw.p.toFixed(2)}), so the method found something real in the order of events.`
+      ? `${base} Shuffled histories rarely gave an edge this big (p = ${rw.p.toFixed(2)}), so the goal found something real in the order of events.`
       : `${base} Shuffled histories gave an edge this big ${Math.round(rw.p * 100)} times in 100, so it doesn’t come from reading the past: it comes from how these holdings move together (spreading risk). Past results still don’t guarantee future ones.`;
   }
 
-  function renderOptimisation(out: HTMLElement, r: Optimisation) {
+  function renderOptimisation(out: HTMLElement, r: Optimisation, shown: string = r.goal ?? (r.method === 'black_litterman' ? 'growth' : r.method)) {
     const wf = r.walkForward;
-    const key = r.method === 'black_litterman' ? 'growth' : r.method;
+    const goals = r.goals ?? [];
+    const g = goals.find((x) => x.key === shown);
+    const weights = g?.weights ?? r.weights;
+    const st = g?.stability ?? r.stability;
+    const rw = g ? g.randomWalk : r.randomWalk;
+    const name = rowName(shown);
     const label = (s: string) => holdingLabel(current, s).label;
-    const st = r.stability;
-    const scale = st ? Math.max(0.05, ...st.high, ...r.weights) : 1;
+    const scale = st ? Math.max(0.05, ...st.high, ...weights) : 1;
     const history = [...(r.standIns ?? []).map((s) => standInLine(s, label(s.symbol))), ...(r.leftOut ?? []).map((s) => leftOutLine(s, label(s.symbol)))];
+    const switcher = goals.length
+      ? (h('select', { class: 'input', 'aria-label': 'Show goal' }, ...goals.map((x) => h('option', { value: x.key, selected: x.key === shown }, rowName(x.key) + (x.key === r.goal ? ' (picked)' : '')))) as HTMLSelectElement)
+      : null;
+    switcher?.addEventListener('change', () => renderOptimisation(out, r, switcher.value));
+    const show = (key: string) => {
+      renderOptimisation(out, r, key);
+      out.querySelector<HTMLElement>('.opt-verdict')?.scrollIntoView({ block: 'nearest' });
+    };
+    const figures = figureRows(r.currentFigures, g);
+    const points: FrontierPoint[] = [
+      ...goals.filter((x) => x.key !== shown).map((x) => ({ key: x.key, label: rowName(x.key), volatility: x.volatility, return: x.expectedReturn, kind: 'goal' as const })),
+      ...(r.currentFigures ? [{ key: 'current', label: 'Your mix', volatility: r.currentFigures.volatility, return: r.currentFigures.expectedReturn, kind: 'current' as const }] : []),
+      ...(g ? [{ key: g.key, label: name, volatility: g.volatility, return: g.expectedReturn, kind: 'chosen' as const }] : []),
+    ];
+    const compare = compareRows(r);
+    const goalNotes = g?.notes ?? [];
+    const changeCapped = r.settings?.maxTurnover != null || r.settings?.maxChange != null;
+    const lead = wf ? wf.rows.filter((x) => x.key === 'current' || x.key === 'equal') : [];
+    const tableRows = [
+      ...lead.map((row) => ({ row, name: rowName(row.key), p: null as number | null, goal: false, vs: '', twins: [] as string[] })),
+      ...compare.map((c) => ({ row: c.row, name: compareName(c) + (c.key === 'income' || c.twins.includes('income') ? ' †' : ''), p: c.p, goal: true, vs: vsText(c.vs), twins: c.twins })),
+    ];
+    const wfLine = wf
+      ? `Test used: each goal refit on the previous ${wf.windowYears.toFixed(0)} year${wf.windowYears >= 2 ? 's' : ''} and rebalanced every ${wf.short ? 'month' : (wf.stepDays ?? 63) >= 252 ? 'year' : (wf.stepDays ?? 63) <= 21 ? 'month' : 'quarter'}; results cover ${wf.oosStart ? `${wf.oosStart} to ${wf.oosEnd}` : 'the last'} (${(wf.days / 252).toFixed(1)} years), paying ${pctU(r.settings?.cost ?? 0, 2)} of every trade. Dividends included.`
+      : '';
     out.replaceChildren(
-      h('p', { class: 'opt-verdict' }, verdict(r)),
+      ...(switcher ? [h('div', { class: 'opt-showing' }, h('span', { class: 'muted small' }, 'Showing'), switcher, infoTip(goalInfo(shown)?.term ?? ''))] : []),
+      h('p', { class: 'opt-verdict' }, verdict(r, shown, rw)),
+      ...([...(r.notes ?? []), ...goalNotes].length ? [h('div', { class: 'opt-notes' }, ...[...(r.notes ?? []), ...goalNotes].map((n) => h('p', {}, n)))] : []),
       ...(wf?.short ? [h('p', { class: 'opt-guide' }, shortHistoryAdvice(yearsBetween(r.testStart ?? r.start, r.end), 'short'))] : []),
       ...(history.length ? [h('div', { class: 'opt-standins' }, ...history.map((x) => h('p', { class: 'ap-note' }, x)))] : []),
       h(
@@ -727,15 +880,15 @@ export function createPortfolioPage() {
         h(
           'div',
           {},
-          h('h4', {}, 'Suggested weights'),
+          h('h4', {}, `Suggested weights: ${name}`),
           h('div', { class: 'opt-weights' }, dataTable(
             ['Holding', 'Current', 'Suggested', 'Change', ...(st ? ['Likely range'] : [])],
             r.symbols.map((s, i) => [
               holdingCell(s),
               pctU(r.current[i], 1),
-              pctU(r.weights[i], 1),
-              { v: pct(r.weights[i] - r.current[i], 1), cls: tone(r.weights[i] - r.current[i]) },
-              ...(st ? [rangeCell(st.low[i], st.high[i], r.weights[i], scale, st.pinned?.[i])] : []),
+              pctU(weights[i], 1),
+              { v: pct(weights[i] - r.current[i], 1), cls: tone(weights[i] - r.current[i]) },
+              ...(st ? [rangeCell(st.low[i], st.high[i], weights[i], scale, st.pinned?.[i])] : []),
             ]),
             undefined,
             false,
@@ -746,10 +899,18 @@ export function createPortfolioPage() {
                 { class: 'ap-note' },
                 h('b', {}, 'How firm are these weights? '),
                 infoTip('weightRange'),
-                ` The method was refit on ${st.runs} reshuffled versions of your real history (1-month blocks); each bar shows where that weight landed 80% of the time. Narrow = the data or your limits pin it down; wide = the data can’t, so don’t read much into the exact number.${key === 'growth' ? ' Growth’s bars also include a little noise from its own resampling.' : ''} This checks robustness, not whether returns will be better.`,
+                ` The goal was refit on ${st.runs} reshuffled versions of your real history (1-month blocks); each bar shows where that weight landed 80% of the time. Narrow = the data or your limits pin it down; wide = the data can’t, so don’t read much into the exact number.${shown === 'growth' ? ' Growth’s bars also include a little noise from its own resampling.' : ''} This checks robustness, not whether returns will be better.`,
               )
             : null,
-          h('p', { class: 'ap-note' }, `Expected volatility ${pctU(r.volatility.suggested, 1)} (now ${pctU(r.volatility.current, 1)}).${r.keepCash ? ' Cash is kept as is; only the invested part moves.' : ''} History ${r.start} to ${r.end}.`),
+          figures.length
+            ? h(
+                'div',
+                {},
+                h('h4', {}, 'Before and after, on the history it was fitted to'),
+                dataTable(['', 'Now', name], figures.map((f) => [h('span', {}, f.label, f.term ? ' ' : '', f.term ? infoTip(f.term) : ''), f.now, h('b', {}, f.next)]), undefined, false),
+                h('p', { class: 'ap-note' }, `In-sample: these weights were chosen on this same history, so the figures flatter them; the comparison below uses data each goal hadn’t seen. Expected return comes from the return estimate (${r.settings?.estimate === 'views' ? 'your views' : 'history pulled toward equilibrium'}), not a promise. Worst drop and bad-month loss replay the last ${r.settings?.lookbackYears ?? ''} years with these weights.${r.keepCash ? ' Cash is kept as is; only the invested part moves.' : ''} History ${r.start} to ${r.end}.`),
+              )
+            : h('p', { class: 'ap-note' }, `Expected volatility ${pctU(r.volatility.suggested, 1)} (now ${pctU(r.volatility.current, 1)}).${r.keepCash ? ' Cash is kept as is; only the invested part moves.' : ''} History ${r.start} to ${r.end}.`),
           h(
             'div',
             { class: 'ap-controls' },
@@ -758,7 +919,7 @@ export function createPortfolioPage() {
               {
                 class: 'btn',
                 onclick: () => {
-                  const bySymbol = new Map(r.symbols.map((s, i) => [s, r.weights[i]]));
+                  const bySymbol = new Map(r.symbols.map((s, i) => [s, weights[i]]));
                   // Holdings sharing a stand-in (e.g. two private credit funds) split its weight.
                   const counts = new Map<string, number>();
                   for (const x of current.holdings) counts.set(analysisSymbol(x), (counts.get(analysisSymbol(x)) ?? 0) + 1);
@@ -768,32 +929,75 @@ export function createPortfolioPage() {
                   toast('Weights applied. Press Analyse to see the history, and Save to keep them.');
                 },
               },
-              'Use these weights',
+              `Use these weights (${name})`,
             ),
           ),
         ),
+        r.frontier?.length && points.length
+          ? h(
+              'div',
+              {},
+              h('h4', {}, 'Efficient frontier ', infoTip('efficientFrontier')),
+              frontierChart(r.frontier, points, show),
+              h('p', { class: 'ap-note' }, 'The line is the best expected return for each level of risk under your limits. Points below it give up expected return for something else (even risk, diversification, income, small bad months). Expected returns are estimates; click a point to show that goal.'),
+            )
+          : null,
+        g && r.currentFigures
+          ? h(
+              'div',
+              {},
+              h('h4', {}, 'Who drives the risk ', infoTip('riskContribution')),
+              riskBars(r.symbols.map((s, i) => ({ label: label(s), now: r.currentFigures!.riskContributions[i] ?? 0, next: g.riskContributions[i] ?? 0 }))),
+              h('p', { class: 'ap-note' }, 'Each holding’s share of the swings, now and with the suggested weights. A holding can carry far more risk than its weight.'),
+            )
+          : null,
         h(
           'div',
-          {},
-          h('h4', {}, 'How each method did on data it hadn’t seen ', infoTip('walkForward')),
+          { class: 'opt-compare' },
+          h('h4', {}, 'Compare goals on data they hadn’t seen ', infoTip('walkForward')),
           wf && r.estimatedShare
             ? h('p', { class: 'opt-estimated' }, `${Math.round(r.estimatedShare * 100)}% of the test period uses estimated (stand-in) history `, infoTip('standIn'), '. The estimate uses relationships measured later, which can flatter results.')
             : null,
+          wf && compare.length ? h('p', { class: 'opt-verdict' }, compareVerdict(r)) : null,
           wf
-            ? dataTable(
-                ['Method', 'Return/yr', 'Volatility', 'Worst drop', 'Sharpe', 'Traded/yr'],
-                wf.rows.map((x) => [x.key === key ? h('b', {}, METHOD_NAMES[x.key]) : METHOD_NAMES[x.key], { v: pct(x.return, 1), cls: tone(x.return) }, pctU(x.volatility, 1), { v: pct(x.maxDrawdown, 0), cls: 'down' }, ratio(x.sharpe), pctU(x.turnover, 0)]),
-                (i) => (wf.rows[i].key === key ? 'opt-chosen' : ''),
-                false,
+            ? h(
+                'div',
+                { class: 'opt-table-scroll' },
+                dataTable(
+                  ['Goal', 'Return/yr', 'Volatility', 'Worst drop', 'Sharpe', 'Vs Even risk', 'Traded/yr', 'Needs real timing? (p)', ''],
+                  tableRows.map((t) => {
+                    const x = t.row;
+                    const isShown = x.key === shown || t.twins.includes(shown);
+                    return [
+                      isShown ? h('b', {}, t.name) : t.name,
+                      { v: pct(x.return, 1), cls: tone(x.return) },
+                      pctU(x.volatility, 1),
+                      { v: pct(x.maxDrawdown, 0), cls: 'down' },
+                      ratio(x.sharpe),
+                      t.vs || '—',
+                      pctU(x.turnover, 0),
+                      t.p == null ? (t.goal ? 'no edge' : '—') : t.p.toFixed(2),
+                      t.goal && goals.length && !isShown ? h('button', { class: 'btn', onclick: () => show(x.key), 'aria-label': `Show ${rowName(x.key)}` }, 'Show') : '',
+                    ];
+                  }),
+                  (i) => (tableRows[i].row.key === shown ? 'opt-chosen' : ''),
+                  false,
+                ),
               )
             : h('p', { class: 'muted small' }, 'Not enough history for this test.'),
+          wf && compare.length ? h('p', { class: 'ap-note' }, compareNote(r)) : null,
+          wf && compare.some((c) => c.key === 'income' || c.twins.includes('income'))
+            ? h('p', { class: 'ap-note' }, '† Income’s test uses today’s dividend yields for every past year (look-ahead), which flatters it.')
+            : null,
           wf
             ? h(
                 'p',
                 { class: 'ap-note' },
                 wf.short ? h('b', {}, 'Short test: low confidence. ') : null,
-                `Refit on the previous ${wf.windowYears.toFixed(0)} year${wf.windowYears >= 2 ? 's' : ''}, held each ${wf.short ? 'month' : 'quarter'}, over ${(wf.days / 252).toFixed(1)} years. Dividends included.`,
+                wfLine,
+                changeCapped ? ' The test doesn’t apply your max-change limits (each refit starts fresh), so it may trade more than you would.' : '',
                 r.testStart && r.testStart < r.start ? ` Tested from ${r.testStart}, before the ${r.start} start of your real shared history: see the notes on young holdings above.` : '',
+                r.settings?.estimate === 'views' ? ' Your views aren’t used in the test.' : '',
               )
             : null,
           wf && r.estimatedShare
@@ -801,20 +1005,10 @@ export function createPortfolioPage() {
                 'p',
                 { class: 'ap-note' },
                 h('b', {}, 'Real prices only: '),
-                r.realOnly ? `${compareLine(r.realOnly, key)}${r.realOnly.short ? ' (short test, low confidence)' : ''}.` : 'not enough real shared history (2.5 years) for this test without stand-ins.',
+                r.realOnly ? `${compareLine(r.realOnly, shown)}${r.realOnly.short ? ' (short test, low confidence)' : ''}.` : 'not enough real shared history (2.5 years) for this test without stand-ins.',
               )
             : null,
-          r.randomWalk
-            ? h(
-                'p',
-                { class: 'ap-note' },
-                h('b', {}, 'Random-walk check '),
-                infoTip('randomWalk'),
-                r.randomWalk.runs
-                  ? ` In ${Math.round(r.randomWalk.p * (r.randomWalk.runs + 1)) - 1} of ${r.randomWalk.runs} shuffled histories ${METHOD_NAMES[r.randomWalk.method as keyof typeof METHOD_NAMES] ?? r.randomWalk.method} beat your mix by at least as much (p = ${r.randomWalk.p.toFixed(2)}).`
-                  : ' Not needed: there was no edge over your mix to explain.',
-              )
-            : null,
+          rw ? h('p', { class: 'ap-note' }, h('b', {}, `Random-walk check (${name}) `), infoTip('randomWalk'), randomWalkLine(rw, name)) : null,
         ),
       ),
     );

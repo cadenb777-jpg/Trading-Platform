@@ -195,7 +195,7 @@ export interface Analysis {
 }
 
 export interface WalkForwardRow {
-  key: 'current' | 'equal' | 'min_var' | 'risk_parity' | 'growth';
+  key: 'current' | 'equal' | GoalKey;
   return: number;
   volatility: number;
   maxDrawdown: number;
@@ -204,8 +204,64 @@ export interface WalkForwardRow {
   turnover: number;
 }
 
+/** The optimiser's goals (helper v34; v33 and before had only risk_parity, min_var and growth). */
+export type GoalKey = 'growth' | 'risk_parity' | 'min_var' | 'max_div' | 'hrp' | 'min_cvar' | 'target_vol' | 'income' | 'track';
+
+/** Before/after figures of one mix on the real history (v34+). */
+export interface MixFigures {
+  expectedReturn: number;
+  volatility: number;
+  yield: number | null;
+  maxDrawdown: number;
+  /** 95% expected shortfall of 1-month returns, as a positive loss. */
+  cvar: number;
+  trackingError: number | null;
+  /** Each holding's share of the mix's risk (adds to 1). */
+  riskContributions: number[];
+}
+
+export interface GoalResult extends MixFigures {
+  key: GoalKey;
+  weights: number[];
+  stability: { runs: number; low: number[]; high: number[]; pinned?: boolean[] };
+  /** p = share of block-shuffled histories with at least the real edge over the current mix; pAdjusted = Holm across the `family` distinct goals. */
+  randomWalk: { method: string; runs: number; edge: number; p: number; pAdjusted?: number; family?: number } | null;
+  /** Fallbacks and loosened limits met while fitting this goal. */
+  notes?: string[];
+  /** An earlier goal with the same weights (shown and counted once). */
+  sameAs?: GoalKey | null;
+  /** Out-of-sample Sharpe minus Even risk's, with a paired block-bootstrap standard error. */
+  vsEvenRisk?: { diff: number; se: number } | null;
+}
+
 export interface Optimisation {
-  method: 'risk_parity' | 'min_var' | 'growth' | 'black_litterman';
+  method: GoalKey | 'black_litterman';
+  /** The goal the owner picked (v34+). */
+  goal?: GoalKey;
+  /** Every goal's portfolio and evidence (v34+). */
+  goals?: GoalResult[];
+  currentFigures?: MixFigures;
+  /** Efficient frontier points (volatility, expected yearly return) under the same limits (v34+). */
+  frontier?: { volatility: number; return: number }[];
+  /** Forward dividend yield per holding (null = unknown). */
+  yields?: (number | null)[];
+  sectors?: (string | null)[] | null;
+  /** Plain notes about limits that were loosened or couldn't be used. */
+  notes?: string[];
+  settings?: {
+    estimate: 'shrunk' | 'views';
+    lookbackYears: number;
+    testRebalance: 'monthly' | 'quarterly' | 'yearly';
+    cost: number;
+    targetVol: number;
+    volCap: number;
+    teBudget: number;
+    benchmark: string;
+    sectorCap: number | null;
+    maxHoldings: number | null;
+    maxTurnover: number | null;
+    maxChange?: number | null;
+  };
   start: string;
   end: string;
   riskFree: number;
@@ -223,13 +279,13 @@ export interface Optimisation {
   /** Share of the walk-forward's out-of-sample days that use estimated (stand-in) history, 0-1; null without stand-ins. */
   estimatedShare?: number | null;
   /** The same walk-forward on real prices only, when real shared history alone is long enough (with stand-ins in use). */
-  realOnly?: { windowYears: number; days: number; rows: WalkForwardRow[]; stepDays?: number; short?: boolean } | null;
+  realOnly?: { windowYears: number; days: number; rows: WalkForwardRow[]; stepDays?: number; short?: boolean; oosStart?: string; oosEnd?: string } | null;
   /** Young holdings whose earlier history is estimated from a long-running ETF (v33+). */
   standIns?: { symbol: string; standIn: string; correlation: number; beta: number; realStart: string }[];
   /** Young holdings with no good stand-in: left out of the walk-forward (v33+). */
   leftOut?: { symbol: string; realStart: string }[];
   /** short = the 1-year fit / monthly hold test (2.5-4 years of history): low confidence. */
-  walkForward: { windowYears: number; days: number; rows: WalkForwardRow[]; stepDays?: number; short?: boolean } | null;
+  walkForward: { windowYears: number; days: number; rows: WalkForwardRow[]; stepDays?: number; short?: boolean; oosStart?: string; oosEnd?: string } | null;
   /** How often shuffled histories gave the method at least its real out-of-sample Sharpe edge over the current portfolio. */
   randomWalk: { method: string; runs: number; edge: number; p: number } | null;
 }

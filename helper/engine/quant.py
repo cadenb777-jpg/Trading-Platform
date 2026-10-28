@@ -2,6 +2,7 @@
 Portfolio analytics, risk and optimisation from daily prices (Schwab history), using numpy/scipy.
 """
 import asyncio
+import contextvars
 import datetime as dt
 import zlib
 
@@ -425,14 +426,51 @@ async def analyze(ctx, msg):
 
 
 # ---------- Optimisation ----------
-# Robust methods only (no raw historical means): shrunk covariance, risk-based weights and a resampled max-Sharpe on
-# returns pulled toward the market equilibrium. Each method is judged by a walk-forward test on data it hadn't seen,
-# and the chosen method's edge over the current portfolio by the same test on shuffled histories (random walk).
+# Robust methods only (no raw historical means): shrunk covariance, risk-based weights and return-seeking goals on
+# returns pulled toward the market equilibrium. Every goal is judged by a walk-forward test on data it hadn't seen,
+# and its edge over the current portfolio by the same test on shuffled histories (random walk).
 
-METHODS = ('risk_parity', 'min_var', 'growth', 'black_litterman')
+#: The goals the owner picks from (one dropdown), with their sources:
+#:   growth      best return for the risk: resampled maximum Sharpe ratio, Michaud (1998) "Efficient Asset
+#:               Management", on returns pulled toward the equilibrium of Black & Litterman (1992), FAJ 48(5).
+#:   risk_parity even risk (equal risk contribution): Maillard, Roncalli & Teiletche (2010), JPM 36(4); solved with
+#:               Spinu's (2013) convex form.
+#:   min_var     lowest volatility (minimum variance): Markowitz (1952); Clarke, de Silva & Thorley (2006), JPM 33(1).
+#:   max_div     most diversified (maximum diversification ratio): Choueifaty & Coignard (2008), JPM 35(1).
+#:   hrp         hierarchical risk parity: López de Prado (2016), "Building Diversified Portfolios that Outperform
+#:               Out of Sample", JPM 42(4). Needs no matrix inversion, so it copes with short history.
+#:   min_cvar    smallest bad months (minimum expected shortfall / CVaR at 95% on historical 1-month scenarios):
+#:               Rockafellar & Uryasev (2000), "Optimization of Conditional Value-at-Risk", Journal of Risk 2(3).
+#:   target_vol  highest expected return at a chosen volatility: a point on Markowitz's (1952) efficient frontier.
+#:   income      highest forward dividend yield (as on the Dividends view) under a volatility cap.
+#:   track       stay close to a benchmark: the highest expected return within a tracking-error budget (closest
+#:               portfolio when the budget is 0): Roll (1992), "A Mean/Variance Analysis of Tracking Error", JPM 18(4).
+GOALS = ('risk_parity', 'growth', 'min_var', 'max_div', 'hrp', 'min_cvar', 'target_vol', 'income', 'track')  # Even risk first: the baseline
+METHODS = GOALS + ('black_litterman',)  # old name (helper v33 and before): Growth with my views
+ESTIMATES = ('shrunk', 'views')  # history shrunk 70% toward equilibrium / Black-Litterman with views ('equilibrium' stays internal)
+TEST_STEPS = {'monthly': 21, 'quarterly': 63, 'yearly': 252}  # how often the walk-forward test refits and rebalances
 WINDOW, STEP, BLOCK = 3 * TRADING_DAYS, 63, 21  # fit on 3 years, hold a quarter, 1-month blocks when resampling
 HIST_SHARE = 0.3  # expected returns = 70% equilibrium (Black-Litterman prior) + 30% history
 RESAMPLES, WF_RESAMPLES, RW_RESAMPLES, RW_RUNS = 200, 10, 3, 100
+CVAR_LEVEL, CVAR_DAYS, CVAR_STRIDE = 0.95, 21, 5  # 95% expected shortfall of 1-month returns, one scenario every 5 days
+TARGET_VOL, VOL_CAP, TE_BUDGET = 0.10, 0.12, 0.02  # defaults: target volatility, income's volatility cap, tracking-error budget
+SAME_WEIGHTS = 0.005  # goals whose weights all differ by less than 0.5 points are the same portfolio
+HOLM_LEVEL = 0.10  # Holm-adjusted random-walk p at or below this: the goal's edge needed the real order of events
+SE_RUNS = 500  # paired block-bootstrap runs for the standard error of a Sharpe difference vs Even risk
+
+# Notes about fallbacks and loosened limits, collected only while a goal's suggested weights are fit (goal_job).
+_NOTES = contextvars.ContextVar('optimiser_notes', default=None)
+
+
+def _note(text):
+    notes = _NOTES.get()
+    if notes is not None and text not in notes:
+        notes.append(text)
+
+
+def default_max_weight(n):
+    """Max per holding by default: 2 / holdings, kept between 25% and 50% (room to move without one bet)."""
+    return min(max(2 / max(n, 1), 0.25), 0.5)
 
 
 def ledoit_wolf(returns):
@@ -463,16 +501,60 @@ def _block_shuffle(t, rng, block=BLOCK):
     return np.concatenate([np.arange(s, min(s + block, t)) for s in starts])
 
 
-def _solve(fun, bounds, x0, jac=True):
+def _ineq(lin):
+    """Linear limits A @ w <= b (sector caps) as SLSQP constraints."""
+    if lin is None:
+        return []
+    a, b = lin
+    return [{'type': 'ineq', 'fun': lambda w: b - a @ w, 'jac': lambda w: -a}]
+
+
+def _within(w, lin, tol=1e-6):
+    return lin is None or bool((lin[0] @ w <= lin[1] + tol).all())
+
+
+def _solve(fun, bounds, x0, jac=True, cons=()):
     lo, hi = np.array(bounds).T
-    cons = [{'type': 'eq', 'fun': lambda w: w.sum() - 1, 'jac': lambda w: np.ones_like(w)}]
-    res = minimize(fun, np.clip(x0, lo, hi), jac=jac, method='SLSQP', bounds=bounds, constraints=cons, options={'maxiter': 300, 'ftol': 1e-12})
+    eq = [{'type': 'eq', 'fun': lambda w: w.sum() - 1, 'jac': lambda w: np.ones_like(w)}]
+    res = minimize(fun, np.clip(x0, lo, hi), jac=jac, method='SLSQP', bounds=bounds, constraints=eq + list(cons), options={'maxiter': 300, 'ftol': 1e-12})
+    if not res.success:
+        _note('The optimiser didn’t fully settle on an answer, so these weights are its best attempt.')
     w = np.clip(res.x, lo, hi)
     return w / w.sum()
 
 
-def min_variance(cov, bounds):
-    return _solve(lambda w: (w @ cov @ w, 2 * cov @ w), bounds, np.full(len(cov), 1 / len(cov)))
+def project(w0, bounds, lin=None, cur=None, max_turnover=None):
+    """The weights closest to w0 (least squares) that keep every limit: bounds, adding to 1, sector caps (lin) and,
+    with cur, a total one-way change sum|w - cur| / 2 of at most max_turnover."""
+    n = len(w0)
+    lo, hi = np.array(bounds, dtype=float).T
+    zeros, eye = np.zeros(n), np.eye(n)
+    cons = [{'type': 'eq', 'fun': lambda x: x[:n].sum() - 1, 'jac': lambda x: np.r_[np.ones(n), zeros]}]
+    if lin is not None:
+        a, b = lin
+        cons.append({'type': 'ineq', 'fun': lambda x: b - a @ x[:n], 'jac': lambda x: np.hstack([-a, np.zeros_like(a)])})
+    turn = cur is not None and max_turnover is not None
+    if turn:  # x[n:] = |w - cur| (each at least both signs of the change)
+        cons += [{'type': 'ineq', 'fun': lambda x: x[n:] - (x[:n] - cur), 'jac': lambda x: np.hstack([-eye, eye])},
+                 {'type': 'ineq', 'fun': lambda x: x[n:] + (x[:n] - cur), 'jac': lambda x: np.hstack([eye, eye])},
+                 {'type': 'ineq', 'fun': lambda x: 2 * max_turnover - x[n:].sum(), 'jac': lambda x: np.r_[zeros, -np.ones(n)]}]
+    start = np.clip(w0, lo, hi)
+    x0 = np.r_[start, np.abs(start - cur) if turn else zeros]
+    res = minimize(lambda x: (((x[:n] - w0) ** 2).sum(), np.r_[2 * (x[:n] - w0), zeros]), x0, jac=True, method='SLSQP',
+                   bounds=list(zip(lo, hi)) + [(0, None)] * n, constraints=cons, options={'maxiter': 500, 'ftol': 1e-14})
+    if not res.success:
+        _note('Your limits couldn’t all be met exactly; the weights are as close as the optimiser could get.')
+    w = np.clip(res.x[:n], lo, hi)
+    return w / w.sum()
+
+
+def turnover(w, cur):
+    """One-way change between two mixes: half the sum of the absolute weight changes (0 = same, 1 = all new)."""
+    return float(np.abs(np.asarray(w) - np.asarray(cur)).sum() / 2)
+
+
+def min_variance(cov, bounds, lin=None):
+    return _solve(lambda w: (w @ cov @ w, 2 * cov @ w), bounds, np.full(len(cov), 1 / len(cov)), cons=_ineq(lin))
 
 
 def _into_bounds(w, bounds):
@@ -488,27 +570,171 @@ def _into_bounds(w, bounds):
     return w
 
 
-def risk_parity(cov, bounds):
+def _fit_limits(w, bounds, lin):
+    """A risk-budgeting answer fitted into the limits (keeping its shape), then into sector caps if needed."""
+    w = _into_bounds(w, bounds)
+    return w if _within(w, lin) else project(w, bounds, lin)
+
+
+def risk_parity(cov, bounds, lin=None):
     """Equal risk contribution (Spinu's convex form), then fitted into the limits."""
     n = len(cov)
     res = minimize(lambda y: (0.5 * y @ cov @ y - np.log(y).sum() / n, cov @ y - 1 / (n * y)), 1 / np.sqrt(np.diag(cov)),
                    jac=True, method='L-BFGS-B', bounds=[(1e-12, None)] * n)
-    return _into_bounds(res.x / res.x.sum(), bounds)
+    return _fit_limits(res.x / res.x.sum(), bounds, lin)
 
 
-def max_sharpe(excess, cov, bounds):
+def hrp_order(cov):
+    """Holdings ordered so similar ones sit together: single-linkage clustering on the correlation distance
+    sqrt((1 - correlation) / 2) (López de Prado 2016)."""
+    from scipy.cluster.hierarchy import leaves_list, linkage
+    from scipy.spatial.distance import squareform
+    sd = np.sqrt(np.diag(cov))
+    corr = np.clip(cov / np.outer(sd, sd), -1, 1)
+    dist = np.sqrt(np.clip((1 - corr) / 2, 0, None))
+    np.fill_diagonal(dist, 0)
+    return leaves_list(linkage(squareform(dist, checks=False), 'single')).tolist()
+
+
+def _cluster_variance(cov, idx):
+    c = cov[np.ix_(idx, idx)]
+    iv = 1 / np.diag(c)
+    iv /= iv.sum()
+    return float(iv @ c @ iv)
+
+
+def hrp(cov, bounds=None, lin=None):
+    """Hierarchical risk parity: order the holdings by similarity, then split the money down the tree, each half
+    getting more when its (inverse-variance) cluster swings less. No matrix inversion, so short history is fine."""
+    order = hrp_order(cov)
+    w = np.ones(len(cov))
+    clusters = [order]
+    while clusters:
+        nxt = []
+        for c in clusters:
+            if len(c) < 2:
+                continue
+            a, b = c[:len(c) // 2], c[len(c) // 2:]
+            va, vb = _cluster_variance(cov, a), _cluster_variance(cov, b)
+            alpha = 1 - va / (va + vb)
+            w[a] *= alpha
+            w[b] *= 1 - alpha
+            nxt += [a, b]
+        clusters = nxt
+    w /= w.sum()
+    return w if bounds is None else _fit_limits(w, bounds, lin)
+
+
+def max_diversification(cov, bounds, lin=None):
+    """Most diversified: the highest ratio of the weighted average volatility to the portfolio's volatility."""
+    sd = np.sqrt(np.diag(cov))
+
+    def fun(w):
+        a, s = w @ sd, np.sqrt(w @ cov @ w)
+        return -a / s, -(sd / s - a * (cov @ w) / s ** 3)
+
+    return _solve(fun, bounds, (1 / sd) / (1 / sd).sum(), cons=_ineq(lin))
+
+
+def scenarios(r, days=CVAR_DAYS, stride=CVAR_STRIDE):
+    """Historical scenarios for expected shortfall: each holding's buy-and-hold return over `days` days, starting
+    every `stride` days (overlapping). With under 2 x days of history, the daily returns themselves."""
+    t = len(r)
+    if t < 2 * days:
+        return r
+    growth = np.vstack([np.ones(r.shape[1]), np.cumprod(1 + r, axis=0)])
+    starts = np.arange(0, t - days + 1, stride)
+    return growth[starts + days] / growth[starts] - 1
+
+
+def cvar(losses, level=CVAR_LEVEL):
+    """Expected shortfall: the average loss in the worst (1 - level) of scenarios, in Rockafellar & Uryasev's form
+    (alpha + mean excess over alpha / (1 - level), alpha = the level quantile of the losses)."""
+    loss = np.sort(np.asarray(losses, dtype=float))
+    alpha = loss[max(int(np.ceil(level * len(loss))) - 1, 0)]
+    return float(alpha + np.maximum(loss - alpha, 0).sum() / ((1 - level) * len(loss)))
+
+
+def min_cvar(scen, bounds, lin=None, level=CVAR_LEVEL):
+    """Smallest expected shortfall over the scenarios: Rockafellar & Uryasev's linear programme
+    min alpha + sum(u) / ((1 - level) S) with u >= loss - alpha, u >= 0, loss = -scenario @ w."""
+    from scipy.optimize import linprog
+    s, n = scen.shape
+    lo, hi = np.array(bounds).T
+    c = np.r_[np.zeros(n), 1.0, np.full(s, 1 / ((1 - level) * s))]
+    a_ub = np.hstack([-scen, -np.ones((s, 1)), -np.eye(s)])
+    b_ub = np.zeros(s)
+    if lin is not None:
+        a_ub = np.vstack([a_ub, np.hstack([lin[0], np.zeros((len(lin[1]), 1 + s))])])
+        b_ub = np.r_[b_ub, lin[1]]
+    res = linprog(c, A_ub=a_ub, b_ub=b_ub, A_eq=np.r_[np.ones(n), 0.0, np.zeros(s)][None], b_eq=[1.0],
+                  bounds=list(zip(lo, hi)) + [(None, None)] + [(0, None)] * s, method='highs')
+    if not res.success:
+        _note('The smallest-bad-months calculation failed, so equal weights (within your limits) are shown instead.')
+        return _into_bounds(np.full(n, 1 / n), bounds)
+    w = np.clip(res.x[:n], lo, hi)
+    return w / w.sum()
+
+
+def max_sharpe(excess, cov, bounds, lin=None):
     if excess.max() <= 0:
-        return min_variance(cov, bounds)
+        return min_variance(cov, bounds, lin)
 
     def fun(w):
         a, sd = w @ excess, np.sqrt(w @ cov @ w)
         return -a / sd, -(excess / sd - a * (cov @ w) / sd ** 3)
 
-    return _solve(fun, bounds, np.full(len(cov), 1 / len(cov)))
+    return _solve(fun, bounds, np.full(len(cov), 1 / len(cov)), cons=_ineq(lin))
+
+
+def max_at_volatility(score, cov, cap, bounds, lin=None):
+    """The highest score @ w (expected return, or yield) with volatility at most `cap`; the lowest-volatility mix
+    when even that swings more than the cap."""
+    base = min_variance(cov, bounds, lin)
+    if np.sqrt(base @ cov @ base) >= cap:
+        _note(f'Even the calmest mix swings {np.sqrt(base @ cov @ base):.1%} a year, more than the {cap:.1%} volatility you set, so the lowest-volatility mix is used.')
+        return base
+    cons = [{'type': 'ineq', 'fun': lambda w: cap ** 2 - w @ cov @ w, 'jac': lambda w: -2 * cov @ w}] + _ineq(lin)
+    w = _solve(lambda w: (-(score @ w), -score), bounds, base, cons=cons)
+    if np.sqrt(w @ cov @ w) > cap * 1.005:
+        _note('No mix could be found at your volatility setting, so the lowest-volatility mix is used.')
+        return base
+    if np.sqrt(w @ cov @ w) < cap * 0.98:
+        _note(f'The best mix only swings {np.sqrt(w @ cov @ w):.1%} a year, below the {cap:.1%} you allowed: more risk wouldn’t add to the aim.')
+    return w
+
+
+def tracking_fit(sub, rest, bench, share, excess, bounds, budget, lin=None):
+    """Weights for the invested part (a `share` of the money; `rest` = daily returns of the fixed part) that stay
+    close to the benchmark: the highest expected return with tracking error at most `budget`, or the closest
+    portfolio (smallest tracking error) when the budget is 0 or can't be met."""
+    k = sub.shape[1]
+    m = np.cov(np.column_stack([sub, rest - bench]).T) * TRADING_DAYS
+    sig, g, vc = m[:k, :k], m[:k, k], m[k, k]
+
+    def te2(w):
+        return share * share * w @ sig @ w + 2 * share * w @ g + vc
+
+    def grad(w):
+        return 2 * share * share * sig @ w + 2 * share * g
+
+    closest = _solve(lambda w: (te2(w), grad(w)), bounds, np.full(k, 1 / k), cons=_ineq(lin))
+    if budget <= 0:
+        return closest
+    if te2(closest) >= budget ** 2:
+        _note(f'Your holdings can’t get within the {budget:.1%} tracking-error budget (the closest is {np.sqrt(max(te2(closest), 0)):.1%}), so the closest mix is used.')
+        return closest
+    cons = [{'type': 'ineq', 'fun': lambda w: budget ** 2 - te2(w), 'jac': lambda w: -grad(w)}] + _ineq(lin)
+    w = _solve(lambda w: (-(excess @ w), -excess), bounds, closest, cons=cons)
+    if te2(w) > budget ** 2 * 1.01:
+        _note('No mix within the tracking-error budget could be found, so the closest mix to the benchmark is used.')
+        return closest
+    return w
 
 
 def black_litterman(cov, prior_weights, views, symbols, delta=2.5, tau=0.05):
-    """Blends the market's implied (equilibrium) excess returns with your views ({symbol, return, confidence 0–1})."""
+    """Blends the market's implied (equilibrium) excess returns with your views ({symbol, return, confidence 0–1}).
+    With no views it returns the equilibrium itself."""
     pi = delta * cov @ prior_weights
     views = [v for v in views if str(v.get('symbol', '')).upper() in symbols]
     if not views:
@@ -526,28 +752,112 @@ def black_litterman(cov, prior_weights, views, symbols, delta=2.5, tau=0.05):
     return middle @ (inv(tau * cov) @ pi + P.T @ inv(omega) @ Q)
 
 
-def expected_excess(r, cov, rf, views=(), symbols=()):
-    """Yearly excess returns: the equal-weight equilibrium (plus any views), nudged 30% toward history."""
+def expected_excess(r, cov, rf, views=(), symbols=(), estimate='shrunk'):
+    """Yearly excess returns. 'shrunk' (default): the equal-weight equilibrium (plus any views) nudged 30% toward
+    history; 'equilibrium': the equilibrium alone; 'views': Black-Litterman, the equilibrium blended with the views."""
     pi = black_litterman(cov, np.full(len(cov), 1 / len(cov)), list(views), list(symbols))
+    if estimate in ('equilibrium', 'views'):
+        return pi
     return (1 - HIST_SHARE) * pi + HIST_SHARE * (r.mean(axis=0) * TRADING_DAYS - rf)
 
 
+def _feasible(lo, hi):
+    """Loosens impossible limits just enough: lows scaled down to add to at most 1, highs up to add to at least 1."""
+    if lo.sum() > 1 + 1e-9:
+        _note(f'Your minimum weights add up to {lo.sum():.0%}, more than everything, so each was scaled down.')
+        lo = lo / lo.sum()
+    if hi.sum() < 1 - 1e-9:
+        _note(f'Your maximum weights add up to only {hi.sum():.0%} (max per holding or max number of holdings too low), so each maximum was raised to fit.')
+        hi = hi / hi.sum() if hi.sum() > 0 else np.full(len(hi), 1 / len(hi))
+    return lo, np.maximum(hi, lo)
+
+
 def _bounds(n, lo, hi, cur=None, max_change=None):
-    lo, hi = min(lo, 1 / n), max(hi, 1 / n)  # impossible limits are loosened just enough
-    lo_b, hi_b = np.full(n, lo), np.full(n, min(hi, 1.0))
+    """Each holding's (low, high) weight; lo and hi are numbers or per-holding arrays."""
+    lo_b = np.clip(np.broadcast_to(np.asarray(lo, dtype=float), (n,)).astype(float), 0, 1)
+    hi_b = np.clip(np.broadcast_to(np.asarray(hi, dtype=float), (n,)).astype(float), 0, 1)
+    lo_b, hi_b = _feasible(lo_b, np.maximum(hi_b, lo_b))
     if cur is not None and max_change is not None:
-        lo_b, hi_b = np.maximum(lo_b, cur - max_change), np.minimum(hi_b, cur + max_change)
-        hi_b = np.maximum(hi_b, lo_b)
-        if lo_b.sum() > 1 or hi_b.sum() < 1:
-            return _bounds(n, lo, hi)
+        lo_c, hi_c = np.maximum(lo_b, cur - max_change), np.minimum(hi_b, cur + max_change)
+        hi_c = np.maximum(hi_c, lo_c)
+        if lo_c.sum() <= 1 and hi_c.sum() >= 1:  # otherwise the move limit is dropped
+            lo_b, hi_b = lo_c, hi_c
+        else:
+            _note('Max change per holding couldn’t be kept together with your other limits, so it was dropped.')
     return list(zip(lo_b, hi_b))
 
 
-def fit(r, method, o, rng):
-    """Weights from a window of daily returns r (days x assets) and nothing later.
+def _invested_bounds(inv, share, o):
+    """Bounds for the invested holdings `inv` as shares of the invested part: per-holding loEach/hiEach (or the
+    lo/hi numbers), dropped holdings (max holdings) at 0, and the max change from cur."""
+    m = len(inv)
+    lo = np.asarray(o['loEach'], dtype=float)[inv] if o.get('loEach') is not None else np.full(m, float(o.get('lo', 0.0)))
+    hi = np.asarray(o['hiEach'], dtype=float)[inv] if o.get('hiEach') is not None else np.full(m, float(o.get('hi', 1.0)))
+    drop = set(o.get('drop') or ())
+    for k, j in enumerate(inv):
+        if j in drop:
+            lo[k] = hi[k] = 0.0
+    cur, mc = o.get('cur'), o.get('maxChange')
+    return _bounds(m, lo / share, hi / share, None if cur is None else np.asarray(cur)[inv] / share, None if mc is None else mc / share)
 
-    o: rf, lo, hi, fixed {index: weight} (cash held as is), cur + maxChange (limit each move), views, symbols, runs."""
-    n = r.shape[1]
+
+def sector_cap(o):
+    """The sector cap actually used: the owner's, loosened just enough to place all the money when every holding
+    that can move has a sector (e.g. 30% with only 2 sectors becomes 50%). None when there is no cap."""
+    cap, sectors = o.get('sectorCap'), o.get('sectors')
+    if not cap or not sectors:
+        return None
+    fixed = o.get('fixed') or {}
+    named = {x for x in sectors if x}
+    if not named:
+        return None
+    if all(sectors[j] or j in fixed for j in range(len(sectors))):
+        loose = 1 - sum(v for j, v in fixed.items() if not sectors[j])
+        cap = max(cap, loose / len(named))
+    return float(cap)
+
+
+def sector_rows(o, idx, share=1.0, include_fixed=True):
+    """Sector caps as A @ x <= b over the holdings `idx` (x = shares of the invested part `share`): each sector's
+    total weight at most the cap (sector_cap), counting fixed holdings already in it. Holdings with no sector (cash)
+    aren't capped."""
+    cap = sector_cap(o)
+    if cap is None:
+        return None
+    sectors, fixed, idx = o['sectors'], o.get('fixed') or {}, list(idx)
+    rows, b = [], []
+    for name in sorted({sectors[j] for j in idx if sectors[j]}):
+        rows.append(np.array([1.0 if sectors[j] == name else 0.0 for j in idx]))
+        held = 0.0 if include_fixed else sum(v for j, v in fixed.items() if sectors[j] == name)
+        b.append(max(cap - held, 0.0) / share)
+    return (np.array(rows), np.array(b)) if rows else None
+
+
+def fit(r, method, o, rng):
+    """Weights from a window of daily returns r (days x assets, plus the benchmark's returns as a last column when
+    o['bench']) and nothing later.
+
+    o: rf; lo, hi (numbers) or loEach, hiEach (per holding); fixed {index: weight} (cash held as is); cur + maxChange
+    (limit each move) and maxTurnover (limit the total move); sectors + sectorCap; maxHoldings; estimate, views,
+    symbols; targetVol; volCap + yields (income); teBudget (track); runs (Growth's resamples)."""
+    assets, bench = (r[:, :-1], r[:, -1]) if o.get('bench') else (r, None)
+    w = _fit(assets, bench, method, o, rng)
+    k = o.get('maxHoldings')
+    fixed = o.get('fixed') or {}
+    free = [j for j in range(len(w)) if j not in fixed]
+    if k and sum(w[j] > 1e-4 for j in free) > k:  # keep the k biggest, refit on them
+        keep = sorted(free, key=lambda j: -w[j])[:k]
+        w = _fit(assets, bench, method, {**o, 'drop': [j for j in free if j not in keep]}, rng)
+        o = {**o, 'drop': [j for j in free if j not in keep]}
+    cur, limit = o.get('cur'), o.get('maxTurnover')
+    if cur is not None and limit is not None and turnover(w, cur) > limit + 1e-6:
+        lo, hi = weight_limits(len(w), o)
+        w = project(w, list(zip(lo, hi)), sector_rows(o, range(len(w))), np.asarray(cur, dtype=float), limit)
+    return w
+
+
+def _fit(assets, bench, method, o, rng):
+    n = assets.shape[1]
     fixed = o.get('fixed') or {}
     w = np.zeros(n)
     for j, v in fixed.items():
@@ -562,43 +872,65 @@ def fit(r, method, o, rng):
     if method == 'equal':
         w[inv] = s / len(inv)
         return w
-    cur, mc = o.get('cur'), o.get('maxChange')
-    bounds = _bounds(len(inv), o['lo'] / s, o['hi'] / s, None if cur is None else cur[inv] / s, None if mc is None else mc / s)
-    sub = r[:, inv]
+    bounds = _invested_bounds(inv, s, o)
+    lin = sector_rows(o, inv, s, include_fixed=False)
+    sub = assets[:, inv]
     cov = ledoit_wolf(sub)[0] * TRADING_DAYS
+    syms = [o['symbols'][j] for j in inv] if o.get('symbols') else []
+    views, estimate = o.get('views') or [], o.get('estimate') or 'shrunk'
     if method == 'min_var':
-        w[inv] = s * min_variance(cov, bounds)
+        x = min_variance(cov, bounds, lin)
     elif method == 'risk_parity':
-        w[inv] = s * risk_parity(cov, bounds)
-    else:  # growth / views: resampled max-Sharpe (Michaud) on equilibrium-shrunk returns
-        syms = [o['symbols'][j] for j in inv] if o.get('symbols') else []
-        views = o.get('views') or []
+        x = risk_parity(cov, bounds, lin)
+    elif method == 'hrp':
+        x = hrp(cov, bounds, lin)
+    elif method == 'max_div':
+        x = max_diversification(cov, bounds, lin)
+    elif method == 'min_cvar':
+        x = min_cvar(scenarios(sub), bounds, lin)
+    elif method == 'income':
+        yields = np.nan_to_num(np.asarray(o.get('yields') if o.get('yields') is not None else np.zeros(n), dtype=float))[inv]
+        x = max_at_volatility(yields, cov, float(o.get('volCap') or VOL_CAP) / s, bounds, lin)
+    elif method == 'target_vol':
+        x = max_at_volatility(expected_excess(sub, cov, o['rf'], views, syms, estimate), cov, float(o.get('targetVol') or TARGET_VOL) / s, bounds, lin)
+    elif method == 'track':
+        if bench is None:
+            x = min_variance(cov, bounds, lin)
+        else:
+            rest = assets[:, list(fixed)] @ np.array(list(fixed.values())) if fixed else np.zeros(len(assets))
+            x = tracking_fit(sub, rest, bench, s, expected_excess(sub, cov, o['rf'], views, syms, estimate), bounds, float(o.get('teBudget') or 0), lin)
+    else:  # growth (and the old 'black_litterman'): resampled max-Sharpe (Michaud) on equilibrium-shrunk returns
         runs = []
         for _ in range(o.get('runs', RESAMPLES)):
             b = sub[_block_sample(len(sub), rng)]
             cb = ledoit_wolf(b)[0] * TRADING_DAYS
-            runs.append(max_sharpe(expected_excess(b, cb, o['rf'], views, syms), cb, bounds))
-        w[inv] = s * np.mean(runs, axis=0)
+            runs.append(max_sharpe(expected_excess(b, cb, o['rf'], views, syms, estimate), cb, bounds, lin))
+        x = np.mean(runs, axis=0)
+    w[inv] = s * x
     return w
 
 
-def walk_forward(returns, weigh, window=WINDOW, step=STEP):
-    """Refit on the last `window` days, hold the next `step` days (weights drift), move on.
+def walk_forward(returns, weigh, window=WINDOW, step=STEP, cost=0.0):
+    """Refit on the last `window` days, hold the next `step` days (weights drift), move on. Each rebalance pays
+    `cost` x the value traded (both sides).
 
-    weigh(past) only ever sees days before its holding period. Returns (out-of-sample daily returns, weights, yearly turnover)."""
+    weigh(past) only ever sees days before its holding period. Returns (out-of-sample daily returns, weights, yearly
+    turnover). Extra columns in `returns` beyond the weights (the benchmark) are only for weigh()."""
     t = len(returns)
-    out, ws, turnover, held = [], [], 0.0, None
+    out, ws, turned, held = [], [], 0.0, None
     for s in range(window, t, step):
         w = weigh(returns[s - window:s])
-        if held is not None:
-            turnover += np.abs(w - held).sum() / 2
-        seg = np.cumprod(1 + returns[s:s + step], axis=0)
+        traded = float(np.abs(w - held).sum()) if held is not None else 0.0
+        turned += traded / 2
+        seg = np.cumprod(1 + returns[s:s + step, :len(w)], axis=0)
         value = seg @ w
-        out.append(value / np.concatenate([[1.0], value[:-1]]) - 1)
+        r = value / np.concatenate([[1.0], value[:-1]]) - 1
+        r[0] = (1 + r[0]) * (1 - cost * traded) - 1
+        out.append(r)
         held = seg[-1] * w / value[-1]
         ws.append(w)
     port = np.concatenate(out)
-    return port, ws, turnover / (len(port) / TRADING_DAYS)
+    return port, ws, turned / (len(port) / TRADING_DAYS)
 
 
 def oos_stats(port, rf):
@@ -699,19 +1031,21 @@ def extend_history(series, symbols, candidates, core=()):
     return out, used, left_out
 
 
-def test_window(t):
-    """(fit window, holding step, short) for t days of history: 3-year fit / quarterly hold with 4+ years; a short
-    1-year fit / monthly hold (low confidence) with 2.5+ years; otherwise None (no walk-forward)."""
-    if t >= WINDOW + 4 * STEP:
-        return WINDOW, STEP, False
-    if t >= SHORT_TEST_DAYS:
+
+def test_window(t, window=WINDOW, step=STEP):
+    """(fit window, holding step, short) for t days of history. With 4+ years: fit on `window` days (the lookback;
+    3 years when the lookback leaves under a year to test) and hold `step` days; with 2.5-4 years a short 1-year
+    fit / monthly hold (low confidence); otherwise None (no walk-forward)."""
+    if t < SHORT_TEST_DAYS:
+        return None
+    if t < WINDOW + 4 * STEP:
         return TRADING_DAYS, BLOCK, True
-    return None
+    return (window if t >= window + 4 * STEP else WINDOW), step, False
 
 
 def weight_limits(n, o):
-    """Each holding's lowest and highest allowed weight under the options fit() uses (cash fixed, max per holding,
-    max change)."""
+    """Each holding's lowest and highest allowed weight under the options fit() uses (cash fixed, per-holding
+    limits, dropped holdings, max change)."""
     fixed = o.get('fixed') or {}
     lo, hi = np.zeros(n), np.zeros(n)
     for j, v in fixed.items():
@@ -723,10 +1057,13 @@ def weight_limits(n, o):
     if len(inv) == 1:
         lo[inv] = hi[inv] = s
         return lo, hi
-    cur, mc = o.get('cur'), o.get('maxChange')
-    b = np.array(_bounds(len(inv), o['lo'] / s, o['hi'] / s, None if cur is None else cur[inv] / s, None if mc is None else mc / s))
+    b = np.array(_invested_bounds(inv, s, o))
     lo[inv], hi[inv] = s * b[:, 0], s * b[:, 1]
     return lo, hi
+
+
+def _assets(returns, o):
+    return returns[:, :-1] if o.get('bench') else returns
 
 
 def weight_stability(returns, method, o, seed=11, runs=None):
@@ -737,58 +1074,229 @@ def weight_stability(returns, method, o, seed=11, runs=None):
     inner = {**o, 'runs': STABILITY_INNER.get(method, 10)}
     ws = np.array([fit(returns[_block_sample(len(returns), rng)], method, inner, rng) for _ in range(runs)])
     low, high = np.percentile(ws, 10, axis=0), np.percentile(ws, 90, axis=0)
-    lim_lo, lim_hi = weight_limits(returns.shape[1], o)
+    lim_lo, lim_hi = weight_limits(_assets(returns, o).shape[1], o)
     at = lambda x, b: np.abs(x - b) <= PIN_TOL  # noqa: E731
     # A floor of 0 isn't a limit the owner set (the method simply doesn't want the holding), so it doesn't count.
     pinned = (at(low, lim_lo) & at(high, lim_lo) & (lim_lo > PIN_TOL)) | (at(low, lim_hi) & at(high, lim_hi))
     return {'runs': runs, 'low': low.round(4).tolist(), 'high': high.round(4).tolist(), 'pinned': pinned.tolist()}
 
 
-def _test_table(returns, current, o, rf, rng, plan):
+def _test_options(o):
+    """Options for fits inside the tests: fewer resamples, no views (views can't be tested on the past)."""
+    return {**o, 'runs': WF_RESAMPLES, 'views': [], 'estimate': 'shrunk' if o.get('estimate') == 'views' else o.get('estimate')}
+
+
+def wf_row(returns, key, current, o, rf, rng, plan):
+    """One row of the walk-forward table: how `key` ('current', 'equal' or a goal) did on data it hadn't seen."""
+    window, step, _ = plan
+    t_o = _test_options(o)
+    weigh = (lambda past: current) if key == 'current' else (lambda past: fit(past, key, t_o, rng))
+    port, _, turned = walk_forward(returns, weigh, window, step, float(o.get('cost') or 0))
+    return {'key': key, **oos_stats(port, rf), 'turnover': turned}, port
+
+
+def _table(rows, plan, days):
     window, step, short = plan
-    wf = {**o, 'runs': WF_RESAMPLES, 'views': []}
-    rows = []
-    for k in ('current', 'equal', 'min_var', 'risk_parity', 'growth'):
-        weigh = (lambda past: current) if k == 'current' else (lambda past, k=k: fit(past, k, wf, rng))
-        port, _, turnover = walk_forward(returns, weigh, window, step)
-        rows.append({'key': k, **oos_stats(port, rf), 'turnover': turnover})
-    return {'windowYears': window / TRADING_DAYS, 'stepDays': step, 'short': short, 'days': len(port), 'rows': rows}
+    return {'windowYears': window / TRADING_DAYS, 'stepDays': step, 'short': short, 'days': days, 'rows': rows}
 
 
-def run_optimizer(returns, current, method, o, seed=7, test=None, stability_runs=None):
-    """Suggested weights (fit on the real shared history), the weight-stability ranges, the walk-forward table and the
-    random-walk check. test = (returns, current, options) of the history to test on (stand-in extended); default the
-    real one. With a test history, the real-data-only table is added too (realOnly) when real history is long enough.
-    Pure: arrays in, plain dict out."""
-    rng = np.random.default_rng(seed)
-    test_method = 'growth' if method == 'black_litterman' else method
-    weights = fit(returns, method, {**o, 'cur': current}, rng)
-    cov = ledoit_wolf(returns)[0] * TRADING_DAYS
-    out = {'weights': weights, 'volatility': {'current': float(np.sqrt(current @ cov @ current)), 'suggested': float(np.sqrt(weights @ cov @ weights))},
-           'stability': weight_stability(returns, method, {**o, 'cur': current}, seed + 4, stability_runs), 'walkForward': None, 'randomWalk': None, 'realOnly': None}
+def _plan(returns, o):
+    if _assets(returns, o).shape[1] < 2:
+        return None
+    return test_window(len(returns), int(o.get('window') or WINDOW), int(o.get('step') or STEP))
+
+
+def random_walk(returns, current, key, o, rf, plan, edge, rng, runs=None):
+    """How often the same walk-forward on histories shuffled in 1-month blocks gave `key` at least its real Sharpe
+    edge over the current mix (p-value, add-one)."""
+    runs = RW_RUNS if runs is None else runs
+    if edge <= 0:  # no edge to explain: skip the shuffles
+        return {'method': key, 'runs': 0, 'edge': float(edge), 'p': 1.0}
+    window, step, _ = plan
+    rw = {**_test_options(o), 'runs': RW_RESAMPLES}
+    cost = float(o.get('cost') or 0)
+    beats = 0
+    for _ in range(runs):
+        shuffled = returns[_block_shuffle(len(returns), rng)]
+        a = oos_stats(walk_forward(shuffled, lambda past: fit(past, key, rw, rng), window, step, cost)[0], rf)['sharpe'] or 0
+        b = oos_stats(walk_forward(shuffled, lambda past: current, window, step, cost)[0], rf)['sharpe'] or 0
+        beats += (a - b) >= edge
+    return {'method': key, 'runs': runs, 'edge': float(edge), 'p': float((beats + 1) / (runs + 1))}
+
+
+def _goal_seed(seed, goal):
+    return seed + 101 * (GOALS.index(goal) if goal in GOALS else len(GOALS))
+
+
+def goal_job(returns, current, goal, o, seed=7, test=None, stability_runs=None):
+    """Everything for one goal (pure, so it can run in a worker process): its weights from the real history, the
+    weight ranges, its walk-forward row (and the real-prices-only row when a stand-in history is used) and the
+    random-walk check of its edge over the current mix. Seeded per goal, so results repeat in any order."""
+    rng = np.random.default_rng(_goal_seed(seed, goal))
+    fit_r = returns[-int(o['lookback']):] if o.get('lookback') else returns
+    mine = {**o, 'cur': current}
+    notes = []
+    token = _NOTES.set(notes)  # notes only from fitting the suggestion, not from the many test refits
+    try:
+        weights = fit(fit_r, goal, mine, rng)
+    finally:
+        _NOTES.reset(token)
+    out = {'key': goal, 'weights': weights, 'notes': notes, 'stability': weight_stability(fit_r, goal, mine, _goal_seed(seed, goal) + 4, stability_runs),
+           'row': None, 'realRow': None, 'randomWalk': None, 'days': 0, 'realDays': 0, 'oos': None}
     t_returns, t_current, t_o = test or (returns, current, o)
-    plan = test_window(len(t_returns)) if t_returns.shape[1] >= 2 else None
+    plan = _plan(t_returns, t_o)
     if not plan:
         return out
-    window, step, _ = plan
-    out['walkForward'] = table = _test_table(t_returns, t_current, t_o, o['rf'], rng, plan)
-    real_plan = test_window(len(returns)) if test is not None else None
+    out['row'], out['oos'] = wf_row(t_returns, goal, t_current, t_o, o['rf'], rng, plan)
+    out['days'] = len(out['oos'])
+    real_plan = _plan(returns, o) if test is not None else None
     if real_plan:  # same test on real prices only: no estimated history at all
-        out['realOnly'] = _test_table(returns, current, o, o['rf'], np.random.default_rng(seed + 8), real_plan)
-    by = {r['key']: r for r in table['rows']}
-    edge = (by[test_method]['sharpe'] or 0) - (by['current']['sharpe'] or 0)
-    if edge <= 0:  # no edge to explain: skip the shuffles
-        out['randomWalk'] = {'method': test_method, 'runs': 0, 'edge': float(edge), 'p': 1.0}
-        return out
-    rw = {**t_o, 'runs': RW_RESAMPLES, 'views': []}
-    beats = 0
-    for _ in range(RW_RUNS):
-        shuffled = t_returns[_block_shuffle(len(t_returns), rng)]
-        a = oos_stats(walk_forward(shuffled, lambda past: fit(past, test_method, rw, rng), window, step)[0], o['rf'])['sharpe'] or 0
-        b = oos_stats(walk_forward(shuffled, lambda past: t_current, window, step)[0], o['rf'])['sharpe'] or 0
-        beats += (a - b) >= edge
-    out['randomWalk'] = {'method': test_method, 'runs': RW_RUNS, 'edge': float(edge), 'p': float((beats + 1) / (RW_RUNS + 1))}
+        out['realRow'], real = wf_row(returns, goal, current, o, o['rf'], np.random.default_rng(_goal_seed(seed, goal) + 8), real_plan)
+        out['realDays'] = len(real)
+    mix, _ = wf_row(t_returns, 'current', t_current, t_o, o['rf'], rng, plan)
+    edge = (out['row']['sharpe'] or 0) - (mix['sharpe'] or 0)
+    out['randomWalk'] = random_walk(t_returns, t_current, goal, t_o, o['rf'], plan, edge, rng)
     return out
+
+
+def goal_jobs(returns, current, o, seed=7, test=None, stability_runs=None, goals=GOALS):
+    """The argument tuples for goal_job, one per goal."""
+    return [(returns, current, g, o, seed, test, stability_runs) for g in goals]
+
+
+def portfolio_figures(w, assets, cov, mu, rf, yields=None, bench=None):
+    """Before/after figures for one mix: expected return (the return estimate), volatility (shrunk covariance),
+    forward yield, and from the real history (rebalanced daily): worst drop, 95% expected shortfall of 1-month
+    returns and tracking error against the benchmark."""
+    daily = assets @ w
+    growth = np.concatenate([[1.0], np.cumprod(1 + daily)])
+    has_yield = yields is not None and not np.isnan(yields[w > 1e-6]).all()
+    return {
+        'expectedReturn': float(mu @ w + rf),
+        'volatility': float(np.sqrt(w @ cov @ w)),
+        'yield': float(np.nansum(yields * w)) if has_yield else None,
+        'maxDrawdown': float((growth / np.maximum.accumulate(growth) - 1).min()),
+        'cvar': cvar(-(scenarios(assets) @ w)),
+        'trackingError': float((daily - bench).std(ddof=1) * np.sqrt(TRADING_DAYS)) if bench is not None else None,
+    }
+
+
+def sharpe_difference(a, b, rf, rng, runs=SE_RUNS, block=BLOCK):
+    """Sharpe(a) - Sharpe(b) on the same out-of-sample days, and its standard error from a paired block bootstrap
+    (the same 1-month blocks drawn for both, so their shared market moves cancel)."""
+    sharpe = lambda x: oos_stats(x, rf)['sharpe'] or 0.0  # noqa: E731
+    diff = sharpe(a) - sharpe(b)
+    draws = []
+    for _ in range(runs):
+        idx = _block_sample(len(a), rng, block)
+        draws.append(sharpe(a[idx]) - sharpe(b[idx]))
+    return float(diff), float(np.std(draws, ddof=1))
+
+
+def holm(ps):
+    """Holm-adjusted p-values (step-down, monotone), in the input order."""
+    order = sorted(range(len(ps)), key=lambda i: ps[i])
+    out, running = [1.0] * len(ps), 0.0
+    for rank, i in enumerate(order):
+        running = max(running, min(1.0, (len(ps) - rank) * ps[i]))
+        out[i] = running
+    return out
+
+
+def same_as(results):
+    """{goal: earlier goal with the same weights} (GOALS order), so identical portfolios are shown and counted once."""
+    out, seen = {}, []
+    for g in GOALS:
+        r = next((x for x in results if x['key'] == g), None)
+        if r is None:
+            continue
+        twin = next((k for k, w in seen if np.abs(w - r['weights']).max() < SAME_WEIGHTS), None)
+        if twin:
+            out[g] = twin
+        else:
+            seen.append((g, r['weights']))
+    return out
+
+
+def efficient_frontier(mu, cov, bounds, lin=None, points=14):
+    """(volatility, expected excess return) along the efficient frontier, from the lowest-volatility mix to the
+    highest-return one, under the same limits as the goals."""
+    lo_w = min_variance(cov, bounds, lin)
+    hi_w = _solve(lambda w: (-(mu @ w), -mu), bounds, lo_w, cons=_ineq(lin))
+    v0, v1 = np.sqrt(lo_w @ cov @ lo_w), np.sqrt(hi_w @ cov @ hi_w)
+    out = []
+    for v in np.linspace(v0, max(v1, v0), points):
+        w = lo_w if v <= v0 else max_at_volatility(mu, cov, v, bounds, lin)
+        out.append((float(np.sqrt(w @ cov @ w)), float(mu @ w)))
+    return sorted(set(out))
+
+
+def assemble(returns, current, method, o, results, test=None, seed=7):
+    """The optimiser's reply from every goal's goal_job result: the chosen goal's weights and evidence, the full
+    walk-forward table (current mix, equal weight, every goal), the frontier, risk contributions and figures."""
+    by = {r['key']: r for r in results}
+    chosen = by[method]
+    fit_r = returns[-int(o['lookback']):] if o.get('lookback') else returns
+    assets = _assets(fit_r, o)
+    bench = fit_r[:, -1] if o.get('bench') else None
+    cov = ledoit_wolf(assets)[0] * TRADING_DAYS
+    estimate = o.get('estimate') or 'shrunk'
+    mu = expected_excess(assets, cov, o['rf'], o.get('views') or [], o.get('symbols') or [], estimate)
+    yields = np.asarray(o['yields'], dtype=float) if o.get('yields') is not None else None
+    figures = lambda w: portfolio_figures(w, assets, cov, mu, o['rf'], yields, bench)  # noqa: E731
+    contrib = lambda w: (w * (cov @ w) / (w @ cov @ w)).round(4).tolist() if w @ cov @ w > 0 else w.tolist()  # noqa: E731
+    lo, hi = weight_limits(assets.shape[1], {**o, 'cur': current})
+    try:
+        frontier = [{'volatility': v, 'return': r + o['rf']} for v, r in efficient_frontier(mu, cov, list(zip(lo, hi)), sector_rows(o, range(assets.shape[1])))]
+    except Exception:  # a frontier that can't be traced is left out, never a failed reply
+        frontier = []
+    w = chosen['weights']
+    twins = same_as(results)
+    # Holm across the distinct goals (a goal with no edge to explain counts with p = 1).
+    distinct = [g for g in GOALS if g in by and g not in twins and by[g]['randomWalk']]
+    adjusted = dict(zip(distinct, holm([by[g]['randomWalk']['p'] for g in distinct])))
+    for g in GOALS:
+        if g in by and by[g]['randomWalk']:
+            by[g]['randomWalk'] = {**by[g]['randomWalk'], 'pAdjusted': adjusted.get(twins.get(g, g), 1.0), 'family': len(distinct)}
+    base = by.get('risk_parity')
+    se_rng = np.random.default_rng(seed + 16)
+    versus = {}
+    for g in GOALS:
+        if g in by and base is not None and by[g]['oos'] is not None and base['oos'] is not None and g != 'risk_parity':
+            d, se = sharpe_difference(by[g]['oos'], base['oos'], o['rf'], se_rng)
+            versus[g] = {'diff': d, 'se': se}
+    out = {
+        'weights': w,
+        'volatility': {'current': float(np.sqrt(current @ cov @ current)), 'suggested': float(np.sqrt(w @ cov @ w))},
+        'stability': chosen['stability'], 'walkForward': None, 'randomWalk': by[method]['randomWalk'], 'realOnly': None,
+        'goals': [{'key': g, 'weights': by[g]['weights'].round(4).tolist(), **figures(by[g]['weights']), 'riskContributions': contrib(by[g]['weights']),
+                   'stability': by[g]['stability'], 'randomWalk': by[g]['randomWalk'], 'notes': by[g].get('notes') or [],
+                   'sameAs': twins.get(g), 'vsEvenRisk': versus.get(g)} for g in GOALS if g in by],
+        'currentFigures': {**figures(current), 'riskContributions': contrib(current)},
+        'frontier': frontier,
+    }
+    t_returns, t_current, t_o = test or (returns, current, o)
+    plan = _plan(t_returns, t_o)
+    if plan and chosen['row']:
+        rng = np.random.default_rng(seed)
+        lead = [wf_row(t_returns, k, t_current, t_o, o['rf'], rng, plan)[0] for k in ('current', 'equal')]
+        out['walkForward'] = _table(lead + [by[g]['row'] for g in GOALS if g in by and by[g]['row']], plan, chosen['days'])
+    real_plan = _plan(returns, o) if test is not None else None
+    if real_plan and chosen['realRow']:
+        rng = np.random.default_rng(seed + 8)
+        lead = [wf_row(returns, k, current, o, o['rf'], rng, real_plan)[0] for k in ('current', 'equal')]
+        out['realOnly'] = _table(lead + [by[g]['realRow'] for g in GOALS if g in by and by[g]['realRow']], real_plan, chosen['realDays'])
+    return out
+
+
+def run_optimizer(returns, current, method, o, seed=7, test=None, stability_runs=None, goals=None):
+    """Suggested weights (fit on the real shared history, its last o['lookback'] days when set), the weight ranges,
+    the walk-forward table and the random-walk check, for `method` and the other goals (all by default). test =
+    (returns, current, options) of the history to test on (stand-in extended); default the real one. Pure."""
+    method = 'growth' if method == 'black_litterman' else method
+    goals = [method] + [g for g in (goals or GOALS) if g != method]
+    results = [goal_job(*args) for args in goal_jobs(returns, current, o, seed, test, stability_runs, goals)]
+    return assemble(returns, current, method, o, results, test, seed)
 
 
 def _aligned(series, symbols):
@@ -822,6 +1330,139 @@ async def _load_stand_ins(ctx, names, emit, done, total):
     return dict(await asyncio.gather(*(one(n) for n in names)))
 
 
+# ---------- Worker processes: the goals are tested side by side, never stalling live quotes ----------
+
+USE_PROCESSES = True  # tests switch this off (threads instead)
+_executor = []
+
+
+def _worker_init():
+    import signal
+    signal.signal(signal.SIGINT, signal.SIG_IGN)  # the helper stops the workers itself (shutdown) when it exits
+
+
+def _workers():
+    import os
+    return max(1, min(4, (os.cpu_count() or 2) - 1))
+
+
+def _pool():
+    if not _executor:
+        import concurrent.futures
+        import multiprocessing
+        workers = _workers()
+        # 'spawn' on every system: a fresh interpreter, never a copy of the helper's threads and open sockets.
+        _executor.append(concurrent.futures.ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context('spawn'), initializer=_worker_init))
+    return _executor[0]
+
+
+def shutdown():
+    """Stops the optimiser's worker processes (called when the helper exits)."""
+    for p in _executor:
+        p.shutdown(wait=False, cancel_futures=True)
+    _executor.clear()
+
+
+async def _run_jobs(jobs, emit):
+    """goal_job for every job, in worker processes when possible, reporting "Tested 3 of 9 goals" as each finishes."""
+    import concurrent.futures.process
+    loop = asyncio.get_running_loop()
+    if emit:
+        workers = _workers() if USE_PROCESSES else 1
+        minutes = max(1, round(-(-len(jobs) // workers) * 15 / 60 + 0.4))
+        await emit({'type': 'status', 'text': f'Testing {len(jobs)} goals on {workers} processor core{"s" if workers > 1 else ""} (about {minutes} minute{"s" if minutes > 1 else ""})'})
+    for attempt in range(2):
+        use = USE_PROCESSES and attempt == 0
+        try:
+            futures = [loop.run_in_executor(_pool(), goal_job, *j) if use else asyncio.ensure_future(asyncio.to_thread(goal_job, *j)) for j in jobs]
+            done = 0
+            for f in asyncio.as_completed(futures):
+                await f
+                done += 1
+                if emit:
+                    await emit({'type': 'status', 'text': f'Tested {done} of {len(jobs)} goals on data they hadn’t seen'})
+            return [f.result() for f in futures]
+        except (concurrent.futures.process.BrokenProcessPool, OSError):
+            shutdown()
+            if not use:
+                raise
+    return []
+
+
+# ---------- Inputs the goals need: yields, sectors, the benchmark ----------
+
+async def forward_yields(ctx, symbols):
+    """Each symbol's forward dividend yield (last regular payment x frequency / last close, as dividends.portfolio
+    works it out), or None when there is no dividend history."""
+    from . import dividends
+    today = dt.date.today()
+
+    async def one(symbol):
+        try:
+            bars, divs = await asyncio.gather(ctx.daily_bars(symbol, 1), ctx.dividends(symbol))
+        except Exception:
+            return None
+        if divs is None or not bars:
+            return None
+        return dividends.analyse(divs, today, price=float(bars[-1]['close'])).get('yield')
+    return list(await asyncio.gather(*(one(s) for s in symbols)))
+
+
+async def holding_sectors(ctx, symbols, cash):
+    """Each holding's sector (SEC SIC code; funds as "Fund"; cash none) and the symbols whose sector couldn't be
+    found (each then counts as its own sector)."""
+    from . import invest, risk
+    try:
+        quotes = await invest.quotes(ctx, [s for s in symbols if s not in cash])
+    except Exception:
+        quotes = {}
+    out, missing = [], []
+    for s in symbols:
+        if s in cash:
+            out.append(None)
+            continue
+        try:
+            out.append((await risk.sector(ctx, s, quotes.get(s) or {}))['sector'])
+        except Exception:
+            out.append(f'{s} (sector unknown)')
+            missing.append(s)
+    return out, missing
+
+
+BENCHMARKS = {'SPY': [('SPY', 1.0)], '6040': [('SPY', 0.6), ('AGG', 0.4)]}
+
+
+def _benchmark_mix(msg):
+    """[(symbol, weight)] and a name for the tracking goal's benchmark: SPY, 60/40 (SPY + AGG) or a portfolio."""
+    b = msg.get('trackBenchmark') if isinstance(msg.get('trackBenchmark'), dict) else {}
+    if b.get('kind') == 'portfolio' and b.get('holdings'):
+        mix = [(str(h['symbol']).upper().strip(), float(h.get('weight') or 0)) for h in b['holdings'] if str(h.get('symbol', '')).strip() and float(h.get('weight') or 0) > 0]
+        total = sum(w for _, w in mix)
+        if mix and total > 0:
+            return [(s, w / total) for s, w in mix], str(b.get('name') or 'Your portfolio')
+    if b.get('kind') == '6040':
+        return BENCHMARKS['6040'], '60/40 (SPY + AGG)'
+    return BENCHMARKS['SPY'], 'SPY'
+
+
+def _mix_index(series, mix):
+    """A daily-rebalanced index {date: value} of a benchmark mix over the days all its parts have."""
+    dates, values = _aligned(series, [s for s, _ in mix])
+    if len(dates) < 2:
+        return {}
+    weights = np.array([w for _, w in mix])
+    growth = np.concatenate([[1.0], np.cumprod(1 + (values[1:] / values[:-1] - 1) @ weights)])
+    return dict(zip(dates, growth.tolist()))
+
+
+def _number(msg, key, lo, hi, default=None):
+    try:
+        v = float(msg.get(key))
+    except (TypeError, ValueError):
+        return default
+    return min(max(v, lo), hi) if np.isfinite(v) else default
+
+
 @handler('portfolio.optimize')
 async def optimize(ctx, msg):
     symbols, current = _clean_holdings(msg)
@@ -829,22 +1470,80 @@ async def optimize(ctx, msg):
         raise EngineError('Optimisation needs at least two holdings.')
     emit = msg.get('_emit')
     method = msg.get('method') if msg.get('method') in METHODS else 'risk_parity'
-    years = min(int(msg.get('years') or 10), 10)  # stand-in history goes back at most 10 years
+    estimate = msg.get('estimate') if msg.get('estimate') in ESTIMATES else 'shrunk'
+    if method == 'black_litterman':  # the old "My views" method: Growth with the views estimate
+        method, estimate = 'growth', 'views'
+    lookback = int(msg.get('lookback') or 3) if int(msg.get('lookback') or 3) in (1, 3, 5, 10) else 3
+    years = 10  # loaded for the test and the stand-ins; the goals fit on the last `lookback` years
+    n = len(symbols)
     cash = {str(h['symbol']).upper().strip() for h in msg.get('holdings') or [] if h.get('cash')}
+    cash_idx = [j for j, s in enumerate(symbols) if s in cash]
     keep_cash = msg.get('keepCash', True)
-    fixed = {j: float(current[j]) for j, s in enumerate(symbols) if s in cash} if keep_cash else {}
-    loaded, rf = await asyncio.gather(total_return_series(ctx, symbols, years), risk_free(ctx))
+    notes = []
+    fixed = {j: float(current[j]) for j in cash_idx} if keep_cash else {}
+    lo_all = 0.01 if msg.get('keepAll') else 0.0
+    hi_all = _number(msg, 'maxWeight', 0.01, 1.0, default_max_weight(n))
+    lo_each, hi_each = np.full(n, lo_all), np.full(n, hi_all)
+    for j, s in enumerate(symbols):
+        lim = (msg.get('limits') or {}).get(s) if isinstance(msg.get('limits'), dict) else None
+        if isinstance(lim, dict):
+            lo_each[j] = _number(lim, 'min', 0.0, 1.0, lo_each[j])
+            hi_each[j] = max(_number(lim, 'max', 0.0, 1.0, hi_each[j]), lo_each[j])
+    min_cash = _number(msg, 'minCash', 0.0, 0.95, 0.0)
+    if min_cash:
+        if not cash_idx:
+            notes.append('Minimum cash needs a cash holding: add Cash to the portfolio to use it.')
+        elif keep_cash:
+            held = sum(fixed.values())
+            if held < min_cash:
+                fixed = {j: v * min_cash / held for j, v in fixed.items()}
+                notes.append(f'Cash raised from {held:.0%} to the {min_cash:.0%} minimum.')
+        else:
+            for j in cash_idx:
+                lo_each[j] = max(lo_each[j], min_cash / len(cash_idx))
+                hi_each[j] = max(hi_each[j], lo_each[j])
+    mix, bench_name = _benchmark_mix(msg)
+    bench_syms = sorted({s for s, _ in mix})
+    loaded, rf, yields = await asyncio.gather(total_return_series(ctx, symbols + bench_syms, years), risk_free(ctx), forward_yields(ctx, symbols))
     for s, v in zip(symbols, loaded):
         if v is None:
             raise EngineError(f'{s}: no price history. Check the ticker.')
-    series = dict(zip(symbols, loaded))
-    dates, prices = _aligned(series, symbols)
+    series = dict(zip(symbols, loaded[:n]))
+    bench_series = dict(zip(bench_syms, loaded[n:]))
+    bench_index = _mix_index(bench_series, mix) if all(bench_series.values()) else {}
+    if not bench_index:
+        notes.append(f'No price history for the benchmark {bench_name}: "Stay close to a benchmark" tracks nothing and falls back to the lowest volatility.')
+    sectors, unknown = (await holding_sectors(ctx, symbols, cash)) if msg.get('sectorCap') else (None, [])
+    if unknown:
+        notes.append(f'Sector not found for {", ".join(unknown)}: each counts as its own sector.')
+    with_bench = bool(bench_index)
+    columns = dict(series, **({'__bench__': bench_index} if with_bench else {}))
+    keys = symbols + (['__bench__'] if with_bench else [])
+    dates, prices = _aligned(columns, keys)
     if len(dates) < 60:
         raise EngineError('Not enough shared price history for these symbols (need at least 3 months).')
     returns = prices[1:] / prices[:-1] - 1
-    views = [{**v, 'return': float(v['return']) - rf} for v in msg.get('views') or [] if 'return' in v]
-    o = {'rf': rf, 'lo': 0.01 if msg.get('keepAll') else 0.0, 'hi': float(msg.get('maxWeight') or 0.25), 'fixed': fixed,
-         'maxChange': float(msg['maxChange']) if msg.get('maxChange') else None, 'views': views if method == 'black_litterman' else [], 'symbols': symbols}
+    views = [{**v, 'return': float(v['return']) - rf} for v in msg.get('views') or [] if isinstance(v, dict) and 'return' in v]
+    y = np.array([np.nan if v is None else v for v in yields], dtype=float)
+    o = {'rf': rf, 'lo': lo_all, 'hi': hi_all, 'loEach': lo_each, 'hiEach': hi_each, 'fixed': fixed,
+         'maxChange': _number(msg, 'maxChange', 0.001, 1.0), 'maxTurnover': _number(msg, 'maxTurnover', 0.0, 1.0),
+         'maxHoldings': int(msg['maxHoldings']) if str(msg.get('maxHoldings') or '').isdigit() and int(msg['maxHoldings']) >= 1 else None,
+         'sectors': sectors, 'sectorCap': _number(msg, 'sectorCap', 0.05, 1.0), 'symbols': symbols,
+         'estimate': estimate, 'views': views if estimate == 'views' else [],
+         'targetVol': _number(msg, 'targetVol', 0.01, 0.6, TARGET_VOL), 'volCap': _number(msg, 'volCap', 0.01, 0.6, VOL_CAP),
+         'teBudget': _number(msg, 'teBudget', 0.0, 0.3, TE_BUDGET), 'yields': y, 'bench': with_bench,
+         'cost': _number(msg, 'cost', 0.0, 0.05, 0.001), 'lookback': lookback * TRADING_DAYS,
+         'window': lookback * TRADING_DAYS, 'step': TEST_STEPS.get(msg.get('testRebalance'), STEP)}
+    if np.isnan(y).all():
+        notes.append('No dividend data for these holdings, so "Income" has nothing to aim for.')
+    cap_used = sector_cap(o)
+    if cap_used and o['sectorCap'] and cap_used > o['sectorCap'] + 1e-9:
+        notes.append(f'The {o["sectorCap"]:.0%} sector cap was loosened to {cap_used:.0%}: with only {len({x for x in sectors if x})} sectors it can’t hold all the money.')
+    lim_lo, lim_hi = weight_limits(n, {**o, 'cur': current})
+    if np.all(lim_hi - lim_lo < 1e-6) or abs(lim_hi.sum() - 1) < 1e-6:
+        notes.append('Your limits leave only one possible mix (for example 4 holdings at most 25% each), so every goal gives the same weights: raise "Max per holding" or "Max change" under Advanced settings.')
+    if len(returns) < lookback * TRADING_DAYS * 0.9:
+        notes.append(f'Your holdings share {len(returns) / TRADING_DAYS:.1f} years of real history, less than the {lookback}-year lookback: the goals use all of it.')
 
     used, left_out, test, test_dates = [], [], None, dates
     young = young_holdings(series, symbols) if msg.get('standIns', True) is not False else []
@@ -859,21 +1558,34 @@ async def optimize(ctx, msg):
         extended, used, left_out = extend_history(series, symbols, candidates, core)
         dropped = {x['symbol'] for x in left_out}
         keep = [j for j, s in enumerate(symbols) if s not in dropped]
-        test_dates, values = _aligned(extended, [symbols[j] for j in keep])
+        t_keys = [symbols[j] for j in keep] + (['__bench__'] if with_bench else [])
+        test_dates, values = _aligned(dict(extended, **({'__bench__': bench_index} if with_bench else {})), t_keys)
         t_cur = current[keep] / current[keep].sum()
         index = {j: k for k, j in enumerate(keep)}
-        t_fixed = {index[j]: float(t_cur[index[j]]) for j in fixed if j in index}
-        test = (values[1:] / values[:-1] - 1, t_cur, {**o, 'fixed': t_fixed, 'symbols': [symbols[j] for j in keep]})
+        pick = lambda a: None if a is None else np.asarray(a)[keep]  # noqa: E731
+        test = (values[1:] / values[:-1] - 1, t_cur, {**o, 'fixed': {index[j]: float(v) for j, v in fixed.items() if j in index}, 'symbols': [symbols[j] for j in keep],
+                                                       'loEach': pick(lo_each), 'hiEach': pick(hi_each), 'yields': pick(y), 'sectors': None if sectors is None else [sectors[j] for j in keep]})
     if emit:
-        await emit({'type': 'status', 'text': 'Testing every method on data it hadn’t seen'})
-    r = await asyncio.to_thread(run_optimizer, returns, current, method, o, 7, test)
+        await emit({'type': 'status', 'text': 'Testing every goal on data it hadn’t seen'})
+    jobs = goal_jobs(returns, current, o, 7, test, None, [method] + [g for g in GOALS if g != method])
+    results = await _run_jobs(jobs, emit)
+    r = await asyncio.to_thread(assemble, returns, current, method, o, results, test, 7)
     estimated = None
     if test is not None and r['walkForward']:
         # Share of the test's out-of-sample days on which at least one holding's history is estimated.
         oos = test_dates[-r['walkForward']['days']:]
         estimated = round(sum(d <= dates[0] for d in oos) / len(oos), 3)
+    for table, table_dates in ((r['walkForward'], test_dates), (r['realOnly'], dates)):
+        if table:  # the test period actually used (out-of-sample days only)
+            table['oosStart'], table['oosEnd'] = table_dates[-table['days']].isoformat(), table_dates[-1].isoformat()
+    wf = r['walkForward']
+    if wf and not wf['short'] and abs(wf['windowYears'] - lookback) > 0.01:
+        notes.append(f'Your {lookback}-year lookback would leave less than a year to test on, so the test refits on {wf["windowYears"]:.0f} years instead.')
+    if o['maxTurnover'] is not None and turnover(r['weights'], current) > o['maxTurnover'] + 0.005:
+        notes.append(f'The {o["maxTurnover"]:.0%} limit on total change couldn’t be met together with your other limits.')
     return {
         'method': method,
+        'goal': method,
         'start': dates[0].isoformat(),
         'end': dates[-1].isoformat(),
         'testStart': test_dates[0].isoformat(),
@@ -891,4 +1603,14 @@ async def optimize(ctx, msg):
         'walkForward': r['walkForward'],
         'realOnly': r['realOnly'],
         'randomWalk': r['randomWalk'],
+        'goals': r['goals'],
+        'currentFigures': r['currentFigures'],
+        'frontier': r['frontier'],
+        'yields': [None if v is None else round(v, 5) for v in yields],
+        'sectors': sectors,
+        'notes': notes,
+        'settings': {'estimate': estimate, 'lookbackYears': lookback, 'testRebalance': msg.get('testRebalance') if msg.get('testRebalance') in TEST_STEPS else 'quarterly',
+                     'cost': o['cost'], 'targetVol': o['targetVol'], 'volCap': o['volCap'], 'teBudget': o['teBudget'], 'benchmark': bench_name,
+                     'sectorCap': cap_used, 'maxHoldings': o['maxHoldings'], 'maxTurnover': o['maxTurnover'], 'maxChange': o['maxChange'],
+                     'maxWeight': hi_all},
     }

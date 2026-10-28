@@ -12,6 +12,8 @@ import numpy as np  # noqa: E402
 
 from engine import quant  # noqa: E402
 
+quant.USE_PROCESSES = False  # goals run in threads here, so the patched constants apply
+
 
 def _returns(n=4, t=900, seed=3):
     rng = np.random.default_rng(seed)
@@ -211,13 +213,14 @@ class HandlerTest(unittest.TestCase):
             return 0.04
 
         msg = {'holdings': [{'symbol': 'AAA', 'weight': 50}, {'symbol': 'BBB', 'weight': 30}, {'symbol': 'BIL', 'weight': 20, 'cash': True}], 'method': 'risk_parity', 'maxWeight': 1}
-        with mock.patch.object(quant, 'risk_free', rf), mock.patch.object(quant, 'RW_RUNS', 5):
+        with mock.patch.object(quant, 'risk_free', rf), mock.patch.object(quant, 'RW_RUNS', 5), mock.patch.object(quant, 'STABILITY_RUNS', 10):
             out = asyncio.run(quant.optimize(Ctx(), msg))
         self.assertEqual(out['symbols'], ['AAA', 'BBB', 'BIL'])
         self.assertEqual(out['cash'], ['BIL'])
         self.assertAlmostEqual(out['weights'][2], 0.2, places=3)
         self.assertAlmostEqual(sum(out['weights']), 1, places=3)
-        self.assertEqual([x['key'] for x in out['walkForward']['rows']], ['current', 'equal', 'min_var', 'risk_parity', 'growth'])
+        self.assertEqual([x['key'] for x in out['walkForward']['rows']], ['current', 'equal', *quant.GOALS])
+        self.assertEqual([g['key'] for g in out['goals']], list(quant.GOALS))
         self.assertTrue(0 < out['randomWalk']['p'] <= 1)
         self.assertIn(out['randomWalk']['runs'], (0, 5))  # 0 = no edge, so no shuffles needed
 

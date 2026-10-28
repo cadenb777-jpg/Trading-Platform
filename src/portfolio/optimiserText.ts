@@ -28,5 +28,5 @@ export function shortHistoryAdvice(years: number, tested: 'none' | 'short'): str
     tested === 'none'
       ? `Your holdings share only about ${years.toFixed(1)} years of price history, too little to test any method on data it hadn’t seen (that needs 2.5 years), so there is no proof these weights would do better.`
       : `This is a short test (about ${years.toFixed(1)} years of history): low confidence.`;
-  return `${lead} With little data, simple methods are the most reliable: Equal weight, Balanced risk (uses only how much each holding swings) or Lower risk. Growth leans on past returns, which short histories can’t pin down. Check the weight ranges: wide bars mean the data can’t settle that weight. Treat the suggestion as a starting point.`;
+  return `${lead} With little data, simple goals are the most reliable: Even risk (uses only how much each holding swings), Hierarchical risk parity or Lowest volatility (or plain equal weight). Best return for the risk leans on past returns, which short histories can’t pin down. Check the weight ranges: wide bars mean the data can’t settle that weight. Treat the suggestion as a starting point.`;
 }

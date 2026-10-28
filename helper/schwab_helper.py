@@ -1276,6 +1276,9 @@ def serve_forever(args):
         scanner = sys.modules.get('engine.scanner')
         if scanner is not None:
             scanner.shutdown()  # stop the scanner's worker processes too
+        quant = sys.modules.get('engine.quant')
+        if quant is not None:
+            quant.shutdown()  # and the optimiser's
     if restart:
         restart_helper()
 
