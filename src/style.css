@@ -7791,9 +7791,6 @@ button.stat-drill:focus-visible .stat-drill-mark {
 .cot-summary-link:hover {
   text-decoration: underline;
 }
-.home > .cot-summary {
-  margin-bottom: var(--sp-3);
-}
 .tr-totals-link {
   align-self: center;
   white-space: nowrap;
