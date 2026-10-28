@@ -212,7 +212,7 @@ export function drawDividends(out: HTMLElement, r: DividendReport, { hasCash = f
       soon.length
         ? dataTable(
             ['Ex-date', 'Symbol', 'Pay date', 'Amount'],
-            soon.map((u) => [h('span', {}, day(u.exDate), ' ', est()), h('b', tickerAttr(u.symbol), u.symbol), day(u.payDate), { v: usd(u.amount), cls: 'num' }]),
+            soon.map((u) => [h('span', {}, day(u.exDate), ' ', est()), h('b', tickerAttr(u.symbol), u.symbol), h('span', {}, day(u.payDate), ' ', est()), { v: usd(u.amount), cls: 'num' }]),
             undefined,
             false,
           )

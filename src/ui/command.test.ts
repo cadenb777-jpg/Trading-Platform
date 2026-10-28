@@ -124,6 +124,9 @@ describe('ranking', () => {
     expect(top('client', two).id).toBe('fn:CLIENT'); // Enter on the code alone opens the Clients page
     expect(buildResults('client', two).find((g) => g.label === 'Clients')?.items.map((i) => i.id)).toEqual(['cl:c1', 'cl:c2']);
     expect(flatten(buildResults('client zzzz', two)).some((i) => i.id.startsWith('cl:'))).toBe(false);
+    // a code alone is never offered as an unknown ticker or futures contract (QA saw "/CLIENT contract detail")
+    for (const code of ['client', 'multi', 'ws'])
+      expect(flatten(buildResults(code, src())).some((i) => i.id.startsWith('tk:'))).toBe(false);
   });
   it('futures and indexes only offer what works for them', () => {
     expect(codesFor('/ES').map((c) => c.code)).toEqual(['GP']);

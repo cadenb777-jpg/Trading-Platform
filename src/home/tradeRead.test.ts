@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readTrade } from './tradeRead';
+import { canTrade, ownerConflict, readTrade, tradeBlock } from './tradeRead';
 import { takeProfit, type Setup } from './setupsPanel';
 
 const base = {
@@ -20,6 +20,26 @@ describe('the read', () => {
     expect(r.conviction).toBe('High');
     expect(r.factors.every((f) => f.stance !== 'against')).toBe(true);
     expect(r.action).toContain('normal size');
+  });
+
+  it("a scanner paper trade is the strategy's signal, never the owner's position", () => {
+    const r = readTrade({ ...base, status: 'in trade', trade: { entry: 100.3, filled: '2026-10-22', pnl: 0.01, daysHeld: 2 } } as Setup, strat, 1);
+    expect(r.action).toContain("The strategy's signal triggered at $100.30");
+    expect(r.action).not.toMatch(/you('|’)re (already )?in|Already triggered/i);
+  });
+
+  it('Trade this: blocked for sells and forming signals only, never by the scanner paper trade', () => {
+    expect(canTrade({ ...base, status: 'in trade', trade: { entry: 100, filled: '2026-10-22', pnl: 0, daysHeld: 1 } } as Setup)).toBe(true);
+    expect(tradeBlock({ ...base, status: 'forming' } as Setup)).toMatch(/Don.t act yet/);
+    expect(tradeBlock({ ...base, direction: -1 } as Setup)).toMatch(/Short selling/);
+    expect(tradeBlock(base)).toBeNull();
+  });
+
+  it('only the owner holding it or an open buy order of theirs stops a new ticket', () => {
+    expect(ownerConflict('NVDA', [{ symbol: 'AAPL', shares: 5 }], [])).toBeNull();
+    expect(ownerConflict('NVDA', [{ symbol: 'NVDA', shares: 0 }], [{ symbol: 'NVDA', side: 'SELL', qty: 1 }])).toBeNull();
+    expect(ownerConflict('nvda', [{ symbol: 'NVDA', shares: 3 }], [])).toContain('You already hold 3 NVDA');
+    expect(ownerConflict('NVDA', [], [{ symbol: 'NVDA', side: 'BUY', qty: 10 }])).toBe('You already have an open buy order for 10 NVDA in Webull (see Trade › Orders).');
   });
 
   it('COT is a neutral reading unless it counts in the grade', () => {

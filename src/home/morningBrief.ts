@@ -11,6 +11,7 @@ import { engineRequest, helper } from '../data/schwab';
 import { listDocs } from '../data/store';
 import { combineHoldings, myPortfolios } from '../portfolio/account';
 import { fetchPrices } from '../portfolio/prices';
+import { readPrefs, showChange } from '../portfolio/returns';
 import type { Portfolio } from '../portfolio/types';
 import { getCalendar } from '../pages/calendarPage';
 import { describeAlert, type HelperAlert } from '../ui/alertsLogic';
@@ -46,8 +47,16 @@ export interface BriefDeps {
 const money = (v: number) => `$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 const signedMoney = (v: number) => `${v >= 0 ? '+' : '−'}${money(v)}`;
 const signedPct = (v: number, d = 2) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(d)}%`;
+/** localStorage, or null when the browser blocks it (the Account %/$ choice then falls back to its default). */
+const localStore = () => {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
+};
 const tone = (v: number | null | undefined) => (v == null ? '' : v >= 0 ? 'up' : 'down');
-const clock = (unix: number) => new Date(unix * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+const clock = (unix: number) => new Date(unix * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
 export function createMorningBrief(d: BriefDeps) {
   const strip = h('div', { class: 'brief-strip', role: 'list', 'aria-label': 'Overnight: futures, rates, currencies and commodities' });
@@ -163,9 +172,13 @@ export function createMorningBrief(d: BriefDeps) {
     return count ? { total, count } : null;
   }
 
+  /** Redraws the accounts card from the last figures (after the Account page's % / $ / Both choice changed). */
+  let repaint = () => {};
   function drawAccounts(count: number, rows: ReturnType<typeof combineHoldings>, prices: Parameters<typeof accountsBrief>[1], pricing: boolean) {
+    repaint = () => drawAccounts(count, rows, prices, pricing);
     const mine = { length: count };
     const b = accountsBrief(rows, prices);
+    const show = readPrefs(localStore()).day; // the Account page's % / $ / Both choice
     // Never a bare dash: with no live prices, show the last total worked out on this device, labelled with its time.
     const lastKey = 'tp-brief-last-total';
     let last: { total: number; at: number } | null = null;
@@ -192,7 +205,7 @@ export function createMorningBrief(d: BriefDeps) {
         h('span', { class: 'muted tiny' }, `Total value · ${mine.length} account${mine.length === 1 ? '' : 's'}`),
         h('b', { class: 'num' }, totalText),
         totalNote ? h('span', { class: 'muted tiny' }, totalNote) : '',
-        h('span', { class: `num ${tone(b.today)}` }, b.today != null ? `${signedMoney(b.today)} today${b.todayPct != null ? ` (${signedPct(b.todayPct)})` : ''}` : 'Today: waiting for prices'),
+        h('span', { class: `num ${tone(b.today)}` }, b.today != null ? `${showChange(b.today, b.todayPct != null ? b.todayPct / 100 : null, show)} today` : 'Today: waiting for prices'),
       ),
       b.movers.length
         ? h(
@@ -207,8 +220,8 @@ export function createMorningBrief(d: BriefDeps) {
                   { type: 'button', class: 'brief-row brief-item', title: `Open the ${m.symbol} chart`, onclick: () => d.openChart({ provider: 'schwab', symbol: m.symbol }) },
                   h('b', tickerAttr(m.symbol), m.symbol),
                   h('span', { class: 'muted small' }, money(m.value)),
-                  h('span', { class: `num ${tone(m.today)}` }, signedMoney(m.today)),
-                  h('span', { class: `num small ${tone(m.pct)}` }, signedPct(m.pct)),
+                  show !== 'pct' ? h('span', { class: `num ${tone(m.today)}` }, signedMoney(m.today)) : '',
+                  show !== 'usd' ? h('span', { class: `num small ${tone(m.pct)}` }, signedPct(m.pct)) : '',
                 ),
               ),
             ),
@@ -281,11 +294,17 @@ export function createMorningBrief(d: BriefDeps) {
   }
 
   let loadedAt = 0;
-  async function refresh() {
+  let inflight: Promise<void> | null = null;
+  function refresh(): Promise<void> {
     if (!helper.isConnected) {
       strip.replaceChildren(h('p', { class: 'muted small' }, 'Futures, rates and currencies appear here when the helper is running.'));
-      return;
+      return Promise.resolve();
     }
+    // Shown, reconnected and the 2-minute timer can all ask at once: one load at a time.
+    inflight ??= load().finally(() => (inflight = null));
+    return inflight;
+  }
+  async function load() {
     await Promise.allSettled([
       loadStrip(),
       loadAccounts().catch((err) => accountsBody.replaceChildren(h('p', { class: 'muted small' }, (err as Error).message))),
@@ -297,7 +316,7 @@ export function createMorningBrief(d: BriefDeps) {
   }
 
   /** The overnight strip lives in Home's header (top right), not inside the brief. */
-  return { el, refresh, strip };
+  return { el, refresh, strip, loadedAt: () => loadedAt, repaint: () => repaint() };
 }
 
 /**

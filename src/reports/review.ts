@@ -99,3 +99,17 @@ export function incomeEstimate(rows: IncomeRow[], top = 3) {
     unknown: rows.filter((r) => r.yld == null && r.value > 0).map((r) => r.symbol),
   };
 }
+
+/** Since the start date: the yearly (annualised) and cumulative returns, the years covered and what the initial
+ * investment grew to at that cumulative return (the review and the PDF use the same figures). */
+export function sinceStart(a: { start: string; end: string; stats: { totalReturn: number }; trailing: { inception: { portfolio: number | null } } } | null | undefined, initial: number | null | undefined) {
+  if (!a) return null;
+  const years = (Date.parse(`${a.end}T00:00:00Z`) - Date.parse(`${a.start}T00:00:00Z`)) / (365.25 * 86400000);
+  const cumulative = Number.isFinite(a.stats.totalReturn) ? a.stats.totalReturn : null;
+  return {
+    perYear: a.trailing.inception.portfolio,
+    cumulative,
+    years: Number.isFinite(years) && years > 0 ? years : null,
+    endValue: initial && initial > 0 && cumulative != null ? initial * (1 + cumulative) : null,
+  };
+}
