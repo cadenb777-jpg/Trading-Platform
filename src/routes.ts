@@ -17,7 +17,7 @@ export const REDIRECTS: Record<string, string> = {
   accounts: 'account',
 };
 
-/** The Chart page's modes (the tabs Chart | Multi | Scripts). */
+/** The Chart page's modes (the tabs Chart | Workspace | Scripts; the Workspace keeps the old 'multi' hash). */
 export const CHART_MODES = ['chart', 'multi', 'scripts'] as const;
 export type ChartMode = (typeof CHART_MODES)[number];
 

@@ -2453,7 +2453,7 @@ button.news-item {
   }
 }
 
-/* ---------- Multi-chart ---------- */
+/* ---------- Workspace (Chart > Workspace): linked panels ---------- */
 
 .multi-page {
   display: flex;
@@ -2461,63 +2461,286 @@ button.news-item {
   min-height: 0;
 }
 
-.mc-grid {
+.ws-toolbar .ws-layouts {
+  width: auto;
+  padding: 5px 8px;
+}
+.ws-hint kbd {
+  font-size: 11px;
+}
+
+.ws-grid {
   flex: 1;
   min-height: 0;
   display: grid;
   gap: 1px;
   background: var(--border);
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
 }
-
-.mc-grid.layout-2h {
+.ws-grid[data-grid='2x1'] {
   grid-template-columns: 1fr 1fr;
 }
-
-.mc-grid.layout-2v {
-  grid-template-rows: 1fr 1fr;
-}
-
-.mc-grid.layout-4 {
+.ws-grid[data-grid='2x2'] {
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
 }
+.ws-grid[data-grid='1+2'] {
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+.ws-grid[data-grid='1+2'] > .ws-panel:first-child {
+  grid-row: span 2;
+}
+.ws-grid[data-grid='3x2'] {
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: 1fr 1fr;
+}
 
-.mc-cell {
+.ws-panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
   background: var(--bg-chart);
+  outline: none;
 }
-
-.mc-head {
+.ws-panel[hidden] {
+  display: none;
+}
+.ws-panel:focus-visible,
+.ws-panel:focus {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.ws-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 5px 8px;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
-
-.mc-symbol {
-  width: 110px;
+.ws-num {
+  min-width: 18px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.ws-symbol {
+  width: 96px;
   font-weight: 600;
   text-transform: uppercase;
   padding: 5px 8px;
 }
-
-.mc-tf {
-  width: 76px;
+.ws-type,
+.ws-tf {
+  width: auto;
   padding: 5px 6px;
 }
-
-.mc-price {
+.ws-price {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-
-.mc-cell .chart-wrap {
+.ws-slot {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ws-slot > * {
+  flex: 1;
+  min-height: 0;
+}
+.ws-body {
+  overflow-y: auto;
+  padding: 10px 12px;
+  font-size: var(--fs-sm);
+}
+.ws-news-row {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.ws-news-row:hover b {
+  color: var(--accent);
+}
+.ws-facts-head {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+.ws-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+}
+.ws-fact {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+.ws-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ws-accts {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: grid;
+  gap: 4px;
+}
+.ws-accts li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ws-panel .chart-wrap {
+  flex: 1;
+}
+.ws-save label {
+  display: grid;
+  gap: 4px;
+}
+
+/* ---------- Link chips (src/ui/linkGroups.ts) ---------- */
+
+:root {
+  --link-red: #f23645;
+  --link-green: #22ab94;
+  --link-blue: #2962ff;
+  --link-yellow: #f5c518;
+}
+.link-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 6px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.link-chip::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--link-c, transparent);
+  border: 1px dashed var(--muted);
+}
+.link-chip:not([data-color='none'])::before {
+  border-style: solid;
+  border-color: var(--link-c);
+}
+.link-chip:hover {
+  border-color: var(--accent);
+}
+.link-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+[data-color='red'] {
+  --link-c: var(--link-red);
+}
+[data-color='green'] {
+  --link-c: var(--link-green);
+}
+[data-color='blue'] {
+  --link-c: var(--link-blue);
+}
+[data-color='yellow'] {
+  --link-c: var(--link-yellow);
+}
+.link-dot {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--link-c, transparent);
+  border: 1px solid var(--link-c, var(--muted));
+}
+.link-dot[data-color='none'] {
+  border-style: dashed;
+}
+.link-menu {
+  position: fixed;
+  z-index: 70;
+  min-width: 150px;
+  display: grid;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+}
+.link-menu-head {
+  padding: 4px 8px 6px;
+}
+.link-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.link-opt:hover,
+.link-opt:focus-visible {
+  background: var(--panel-2);
+  outline: none;
+}
+.link-opt[aria-checked='true'] {
+  font-weight: 700;
+}
+.link-opt[aria-checked='true']::after {
+  content: '✓';
+  margin-left: auto;
+}
+.cmd-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+.fut-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+[data-link-panel]:focus {
+  outline: none;
+}
+[data-link-panel]:not(.ws-panel):focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
 .rail {
@@ -2525,12 +2748,17 @@ button.news-item {
 }
 
 @media (max-width: 700px) {
-  .mc-grid.layout-2h,
-  .mc-grid.layout-4 {
+  .ws-grid[data-grid] {
     grid-template-columns: 1fr;
     grid-template-rows: none;
-    grid-auto-rows: minmax(260px, 1fr);
+    grid-auto-rows: minmax(300px, auto);
     overflow-y: auto;
+  }
+  .ws-grid[data-grid='1+2'] > .ws-panel:first-child {
+    grid-row: auto;
+  }
+  .ws-hint {
+    display: none;
   }
 }
 

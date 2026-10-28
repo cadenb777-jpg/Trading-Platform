@@ -18,6 +18,7 @@ import { greeting, marketStatus } from '../ui/marketClock';
 import { THEME, chartThemeOptions, followTheme } from '../ui/theme';
 import { createWatchlist } from '../ui/watchlist';
 import { tickerAttr, tickersIn } from '../ui/tickerCard';
+import { isStockSymbol, linkPanel, links } from '../ui/linkGroups';
 
 const INDEXES: { symbol: string; name: string }[] = [
   { symbol: '$SPX', name: 'S&P 500' },
@@ -200,7 +201,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
 
   // ---------- News ----------
 
-  type NewsTab = 'top' | NewsSection | 'watchlist' | 'holdings';
+  type NewsTab = 'top' | NewsSection | 'watchlist' | 'holdings' | 'linked';
   const TABS: [NewsTab, string][] = [
     ['top', 'Top stories'],
     ['economy', 'Economy'],
@@ -221,6 +222,24 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     { class: 'tabs news-tabs', role: 'tablist' },
     ...TABS.map(([id, label]) => h('button', { class: `tab${newsTab === id ? ' active' : ''}`, role: 'tab', 'data-tab': id, onclick: () => setTab(id) }, label)),
   );
+  // The news link chip: a tab with the headlines for the linked group's stock (it changes with the Chart, Research...)
+  const linkedTab = h('button', { class: 'tab', role: 'tab', 'data-tab': 'linked', hidden: true, onclick: () => setTab('linked') });
+  tabs.append(linkedTab);
+  const linkedSymbol = () => {
+    const s = links.symbolFor('news');
+    return s && isStockSymbol(s) ? s : null;
+  };
+  function drawLinkedTab() {
+    const s = linkedSymbol();
+    linkedTab.hidden = !s;
+    linkedTab.textContent = s ? `${s} news` : '';
+    linkedTab.title = s ? `Headlines for ${s}, the symbol of this panel's link colour` : '';
+    if (!s && newsTab === 'linked') setTab('top');
+  }
+  const newsLink = linkPanel({ id: 'news', label: 'Home news', accepts: isStockSymbol, apply: () => (drawLinkedTab(), newsTab === 'linked' && !el.hidden && refreshNews(true)) });
+  links.onColorChange((id) => id === 'news' && drawLinkedTab());
+  drawLinkedTab();
+  let linkedNews: { symbol: string; items: NewsItem[]; failed: string[] } | null = null;
   const importantToggle = h('input', { type: 'checkbox', checked: importantOnly });
   importantToggle.addEventListener('change', () => {
     importantOnly = importantToggle.checked;
@@ -241,7 +260,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     tabs.querySelectorAll<HTMLElement>('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === id));
     // Holdings news is ranked by market impact (rank_news) unless you pick Latest.
     if (id === 'holdings' && !holdingsNews) setSort('impact');
-    if (id === 'watchlist' || id === 'holdings') refreshNews();
+    if (id === 'watchlist' || id === 'holdings' || id === 'linked') refreshNews();
     else showNews();
   }
 
@@ -270,7 +289,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
 
   /** Picks and orders headlines for the current tab: newest first, or by market impact. */
   function visibleNews(items: NewsItem[]): NewsItem[] {
-    let list = newsTab === 'top' || newsTab === 'watchlist' || newsTab === 'holdings' ? items : items.filter((i) => i.section === newsTab);
+    let list = newsTab === 'top' || newsTab === 'watchlist' || newsTab === 'holdings' || newsTab === 'linked' ? items : items.filter((i) => i.section === newsTab);
     if (importantOnly) list = list.filter((i) => i.impact !== 'low');
     list = [...list].sort((a, b) => (sortBy === 'latest' ? b.published - a.published : b.score - a.score || b.published - a.published));
     return list.slice(0, 50);
@@ -296,19 +315,27 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
       newsFooter.textContent = '';
       return;
     }
-    const data = newsTab === 'watchlist' ? watchNews : newsTab === 'holdings' ? holdingsNews : general;
+    const data = newsTab === 'watchlist' ? watchNews : newsTab === 'holdings' ? holdingsNews : newsTab === 'linked' ? linkedNews : general;
     if (data) renderNews(data.items, data.failed);
   }
 
   let newsRequest = 0;
   async function refreshNews(force = false) {
     const request = ++newsRequest;
-    const tab = newsTab === 'watchlist' || newsTab === 'holdings' ? newsTab : 'general';
-    const have = tab === 'watchlist' ? watchNews : tab === 'holdings' ? holdingsNews : general;
+    const tab = newsTab === 'watchlist' || newsTab === 'holdings' || newsTab === 'linked' ? newsTab : 'general';
+    const linked = linkedSymbol();
+    const have = tab === 'watchlist' ? watchNews : tab === 'holdings' ? holdingsNews : tab === 'linked' ? (linkedNews?.symbol === linked ? linkedNews : null) : general;
     if (!force && have) showNews();
     else if (!newsList.childElementCount || tab === 'holdings') newsList.replaceChildren(h('div', { class: 'muted pad' }, 'Loading headlines…'));
     const symbols = state.watchlist.filter((r) => r.provider === 'schwab' && !r.symbol.startsWith('$')).map((r) => r.symbol);
     try {
+      if (tab === 'linked') {
+        if (!linked) return;
+        const result = await loadNews([linked]);
+        linkedNews = { symbol: linked, ...result };
+        if (request === newsRequest) showNews();
+        return;
+      }
       if (tab === 'holdings') {
         const held = holdingNewsSymbols(await listDocs<Portfolio>('portfolios'));
         holdingsEmpty = !held.length;
@@ -369,6 +396,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
           'div',
           { class: 'panel-head' },
           h('h3', {}, icon('news', 20), ' Market news'),
+          newsLink.chip,
           h('span', { class: 'spacer' }),
           h('div', { class: 'segmented small' }, ...sortButtons),
           h('label', { class: 'toggle', title: 'Show only stories likely to move the market' }, importantToggle, ' Important only'),
@@ -410,7 +438,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
 
   let started = false;
   function start() {
-    if (started) return;
+    if (started) return void (newsTab === 'linked' && linkedNews?.symbol !== linkedSymbol() && refreshNews());
     started = true;
     renderClock();
     setInterval(renderClock, 30000);

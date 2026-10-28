@@ -101,10 +101,18 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Structure (docs/structure.md: every number has one home): Account = real money only (all accounts + switcher, totals,
   Import statement, Sync Webull, cards link "Order in Trade" / "Analyse in Portfolios"); Trade = the selected account's
   ordering figures ("<account> value (for ordering)") + link to Account; Portfolios = models/what-ifs (mine accounts left
-  its list; opened from Account they show "Save as a what-if copy"); Chart has modes Chart | Multi | Scripts
+  its list; opened from Account they show "Save as a what-if copy"); Chart has modes Chart | Workspace | Scripts
   (src/pages/chartWorkspace.ts, #chart/multi, #chart/scripts); COT's home is Futures (board table + "COT: any market or
   stock", src/futures/cot.ts), Flow/Research/Home show cotSummary() with "See all on Futures". Old hashes redirect via
   src/routes.ts (resolveHash, REDIRECTS: #multi, #scripts, #portfolio/webull, #flow/cot...); pages get start(sub).
+  Linked panels (browser only): src/ui/linkGroups.ts is the link bus (colours none/red/green/blue/yellow, default blue;
+  panel colour + group symbol in localStorage 'tp-link-groups', memory fallback). Pages call linkPanel({id, accepts,
+  apply, active}) and publish() only on user changes; wanted() on start() picks up changes made while hidden. Panels:
+  chart, ws1-6, research, flow, futures (detail window), setups (detail), trade (pre-fills only), news (Home tab),
+  watchlist (source). Chart > Workspace (src/pages/workspacePage.ts, #chart/multi; replaced Multi) = grid 1/2/4/1+2/6
+  of chart/quote/news/facts/position panels; layouts in src/ui/workspaceLayouts.ts ('tp-workspace'; presets Morning,
+  Trade, Research). Keys (command.ts dispatchKey): Ctrl/Cmd+[ ] or F6 cycle panels, Alt+1-6 jump, a letter on a panel
+  opens the command bar scoped to its group (data-link-keys="own" opts out: Chart, Trade).
   Gains (v33, src/portfolio/returns.ts): price gain (value − cost), dividends received, total return per account part,
   holding, account and overall (totals/% only over holdings with a cost basis); View menu = day / gain as %, $ or both
   (localStorage tp-account-display); holdings table has a Columns chooser and totals row; a symbol opens the detail.

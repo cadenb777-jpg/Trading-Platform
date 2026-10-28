@@ -21,6 +21,7 @@ import { infoTip, termLabel } from '../ui/glossary';
 import { withTableTools } from '../ui/tableTools';
 import { THEME, followTheme } from '../ui/theme';
 import { tickerAttr } from '../ui/tickerCard';
+import { isStockSymbol, linkPanel, links } from '../ui/linkGroups';
 
 type Horizon = 'short' | 'swing' | 'position';
 type StrategyKey = 'weekly_swing' | 'mean_reversion' | 'breakout';
@@ -211,6 +212,14 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   const filters = h('div', { class: 'sp-filters' });
   const list = h('div', { class: 'sp-list' });
   const detail = h('div', { class: 'sp-detail' }, h('p', { class: 'muted pad' }, 'Pick a setup from the list to see its live entry status, chart and step-by-step guide.'));
+  // The detail's link chip: picking a setup tells its colour group; a linked symbol with a setup here selects it.
+  const link = linkPanel({ id: 'setups', label: 'Setups detail', el: detail, accepts: isStockSymbol, apply: (s) => pickSymbol(s), active: () => !frame.el.hidden });
+  function pickSymbol(symbol: string) {
+    const match = horizon()?.setups.find((x) => x.symbol === symbol);
+    if (!match || idOf(match) === selected) return;
+    selected = idOf(match);
+    render();
+  }
   const alertLog = h('div', { class: 'sp-alerts' });
   frame.body.replaceChildren(status, today, filters, h('div', { class: 'sp-main' }, h('div', { class: 'sp-left' }, list, alertLog), detail), evidence, research, howTo);
 
@@ -481,7 +490,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
           all ? h('button', { class: 'btn small', onclick: () => setPref('grade', 'all') }, 'Show all grades') : ''),
       );
     }
-    if (!selected || !rows.some((s) => idOf(s) === selected)) selected = idOf(rows[0]);
+    if (!selected || !rows.some((s) => idOf(s) === selected)) selected = idOf(rows.find((s) => s.symbol === links.symbolFor('setups')) ?? rows[0]);
     // The list is rebuilt on every pick and price update: keep keyboard focus on the same setup's row.
     const focusedId = list.contains(document.activeElement) ? (document.activeElement as HTMLElement).closest<HTMLElement>('tr[data-id]')?.dataset.id : undefined;
     list.replaceChildren(
@@ -501,7 +510,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     const label = watched.has(id) ? `Stop watching ${s.symbol}` : `Watch ${s.symbol}: alert me when it's time to enter`;
     return activatable(h(
       'tr',
-      { class: `${id === selected ? 'sel' : ''}`, 'data-id': id, 'aria-current': id === selected ? 'true' : undefined, onclick: () => ((selected = id), render()) },
+      { class: `${id === selected ? 'sel' : ''}`, 'data-id': id, 'aria-current': id === selected ? 'true' : undefined, onclick: () => ((selected = id), render(), link.publish(s.symbol)) },
       h('td', {}, h('button', { class: `sp-star${watched.has(id) ? ' on' : ''}`, title: label, 'aria-label': label, 'aria-pressed': String(watched.has(id)), onclick: (e: Event) => (e.stopPropagation(), toggleWatch(s)) }, watched.has(id) ? '★' : '☆')),
       h('td', {}, h('b', tickerAttr(s.symbol), s.symbol), ' ', h('span', { class: `sp-side ${long ? 'up' : 'down'}` }, long ? 'BUY' : 'SELL'), s.new ? h('span', { class: 'new-chip' }, 'New') : '', s.conflict ? h('span', { class: 'sp-warn', title: `${s.conflict.strategy} says the opposite` }, ' ⚠') : '', h('div', { class: 'muted tiny' }, s.strategyName.split(' (')[0])),
       h('td', {}, s.tier ? h('i', { class: `tier tier-${s.tier}` }, s.tier) : ''),
@@ -536,7 +545,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     const watchBtn = h('button', { class: 'btn small', onclick: () => (toggleWatch(s), render()) });
     const strat = hr!.strategies[s.strategy as StrategyKey];
     detail.replaceChildren(
-      h('div', { class: 'sp-detail-head' }, h('h2', tickerAttr(s.symbol), s.symbol), h('span', { class: 'muted' }, `${s.strategyName} · ${HORIZONS.find((x) => x.key === prefs.horizon)!.label} · ${s.plan.holdText ?? s.plan.horizon}`), h('span', { class: 'spacer' }), watchBtn, h('button', { class: 'btn small', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, 'Open chart')),
+      h('div', { class: 'sp-detail-head' }, link.chip, h('h2', tickerAttr(s.symbol), s.symbol), h('span', { class: 'muted' }, `${s.strategyName} · ${HORIZONS.find((x) => x.key === prefs.horizon)!.label} · ${s.plan.holdText ?? s.plan.horizon}`), h('span', { class: 'spacer' }), watchBtn, h('button', { class: 'btn small', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, 'Open chart')),
       live,
       chartBox,
       tradeGuideBody(s, strat, onOpenChart, data?.regime.qqqAbove200 ?? null),
@@ -692,6 +701,8 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   return {
     el: frame.el,
     start() {
+      const wanted = link.wanted();
+      if (wanted) pickSymbol(wanted);
       refresh();
       timer ??= setInterval(() => refresh(), REFRESH_MS);
     },

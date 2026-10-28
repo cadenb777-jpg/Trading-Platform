@@ -13,6 +13,7 @@ import { activatableRows, h, openModal } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
 import { THEME } from '../ui/theme';
 import { xySvg } from '../ui/xyChart';
+import { isFuturesSymbol, linkPanel } from '../ui/linkGroups';
 
 interface Positioning {
   date: string;
@@ -338,10 +339,23 @@ export function createFuturesPage() {
     }
   }
 
-  async function openDetail(root: string) {
+  // The detail window has a link chip: opening a market tells its colour group (/ES), and while the window is open
+  // another panel choosing a futures market switches it.
+  let detail: { close: () => void } | null = null;
+  const link = linkPanel({ id: 'futures', label: 'Futures detail', accepts: isFuturesSymbol, apply: (s) => detail && void openDetail(s.slice(1), false) });
+
+  async function openDetail(root: string, publish = true) {
+    detail?.close();
+    if (publish) link.publish(`/${root}`);
     const body = h('div', { class: 'fut-detail' }, h('div', { class: 'muted pad' }, 'Loading…'));
     const row = board?.rows.find((r) => r.root === root);
-    openModal(row ? `${root} · ${row.name}` : root, body, { wide: true });
+    const mine: { close: () => void } = { close: () => {} };
+    mine.close = openModal(row ? `${root} · ${row.name}` : root, h('div', {}, h('div', { class: 'fut-link small muted' }, link.chip, 'Linked panels of this colour follow this market'), body), {
+      wide: true,
+      noAutofocus: true,
+      onClose: () => detail === mine && (detail = null),
+    });
+    detail = mine;
     try {
       const d = await engineRequest<Detail>('futures.detail', { root }, 60_000);
       renderDetail(body, d);

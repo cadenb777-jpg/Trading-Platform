@@ -107,7 +107,7 @@ const pages: PageEntry[] = [
   { route: 'macro', group: 'markets', label: 'Macro', icon: 'macro', title: 'Macro', create: async () => (await import('./pages/macroPage')).createMacroPage() },
   { route: 'calendar', group: 'markets', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', create: async () => (await import('./pages/calendarPage')).createCalendarPage() },
   // Chart | Multi | Scripts are modes of one page (#chart, #chart/multi, #chart/scripts; #multi and #scripts redirect)
-  { route: 'chart', group: 'analyse', label: 'Chart', icon: 'chart', title: '', create: async () => (await import('./pages/chartWorkspace')).createChartWorkspace(getChartPage(), openChart) },
+  { route: 'chart', group: 'analyse', label: 'Chart', icon: 'chart', title: '', create: async () => (await import('./pages/chartWorkspace')).createChartWorkspace(getChartPage(), openChart, openResearch) },
   { route: 'setups', group: 'analyse', label: 'Setups', icon: 'target', title: 'Setups', create: async () => (await import('./pages/setupsPage')).createSetupsPage(openChart) },
   { route: 'research', group: 'analyse', label: 'Research', icon: 'research', title: 'Research', create: async () => (await import('./pages/researchPage')).createResearchPage() },
   { route: 'flow', group: 'analyse', label: 'Flow', icon: 'flow', title: 'Flow', create: async () => (await import('./pages/flowPage')).createFlowPage() },
@@ -287,7 +287,7 @@ if (isAiWindow) {
     pages: [
       ...pages.map((p) => ({ route: p.route, label: p.label, group: GROUPS[p.group] })),
       // the Chart page's modes (they used to be pages)
-      { route: 'chart/multi', label: 'Multi-chart', group: 'Chart mode' },
+      { route: 'chart/multi', label: 'Workspace (linked panels)', group: 'Chart mode' },
       { route: 'chart/scripts', label: 'Scripts (indicator editor)', group: 'Chart mode' },
     ],
     currentRoute: () => currentPage().route,

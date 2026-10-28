@@ -10,6 +10,7 @@ import { withTableTools } from '../ui/tableTools';
 import { xySvg } from '../ui/xyChart';
 import { tickerAttr } from '../ui/tickerCard';
 import { cotSummary, openCotOnFutures, type CotSymbolData } from '../futures/cot';
+import { isStockSymbol, linkPanel, markPanel } from '../ui/linkGroups';
 
 interface Contract {
   type: 'call' | 'put';
@@ -112,11 +113,22 @@ export function createFlowPage() {
     { class: 'tabs', role: 'tablist' },
     ...(Object.keys(TAB_LABELS) as Tab[]).map((t) => h('button', { class: `tab${t === tab ? ' active' : ''}`, 'data-tab': t, onclick: () => setTab(t) }, TAB_LABELS[t])),
   );
-  const loadBtn = h('button', { class: 'btn primary', onclick: () => load() }, 'Load');
+  let started = false;
+  const link = linkPanel({
+    id: 'flow',
+    label: 'Flow',
+    accepts: isStockSymbol,
+    apply: (s) => ((symbolInput.value = s), load()),
+    active: () => started && !frame.el.hidden,
+  });
+  /** The user picked a symbol here: linked panels follow. */
+  const userLoad = () => (load(), link.publish(symbolInput.value));
+  const loadBtn = h('button', { class: 'btn primary', onclick: userLoad }, 'Load');
   const stamp = h('span', { class: 'muted small' });
   const ai = insightButton(() => lastInsight);
-  const frame = pageFrame('Flow', 'Where the big money is positioned: short selling, options and company insiders, with a one-line futures (COT) summary.', [tabs, symbolInput, loadBtn, ai.button, stamp]);
-  symbolInput.addEventListener('keydown', (e) => e.key === 'Enter' && load());
+  const frame = pageFrame('Flow', 'Where the big money is positioned: short selling, options and company insiders, with a one-line futures (COT) summary.', [tabs, link.chip, symbolInput, loadBtn, ai.button, stamp]);
+  markPanel(frame.el.querySelector('.ap-header')!, 'flow', 'Flow');
+  symbolInput.addEventListener('keydown', (e) => e.key === 'Enter' && userLoad());
 
   function setTab(t: Tab) {
     tab = t;
@@ -437,7 +449,6 @@ export function createFlowPage() {
     }
   }
 
-  let started = false;
   let timer: ReturnType<typeof setInterval> | undefined;
   return {
     el: frame.el,
@@ -445,6 +456,7 @@ export function createFlowPage() {
     open(symbol: string, on?: Tab | 'cot') {
       if (on === 'cot') return openCotOnFutures({ symbol });
       symbolInput.value = symbol;
+      link.publish(symbol);
       if (on && on in TAB_LABELS) {
         tab = on;
         tabs.querySelectorAll<HTMLElement>('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === on));
@@ -454,7 +466,9 @@ export function createFlowPage() {
     async start() {
       // Options and positioning change during the day: refresh quietly every minute while the page is open.
       timer ??= setInterval(() => (tab === 'options' || tab === 'positioning') && !frame.el.hidden && load(undefined, true), 60000);
-      if (started) return;
+      const wanted = link.wanted(symbolInput.value);
+      if (wanted) symbolInput.value = wanted;
+      if (started) return void (wanted && load());
       started = true;
       load();
     },

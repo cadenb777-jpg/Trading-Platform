@@ -115,6 +115,14 @@ replaces the address (`history.replaceState`), so Back doesn't bounce. Code that
   Portfolios.
 - New shortcut: `g m` goes to Multi-chart. The existing `g` shortcuts are unchanged.
 
+## Workspace and linked panels (later item)
+
+Multi mode became **Workspace** (still `#chart/multi`, code `MULTI` or `WS`, `g m`): up to six panels (chart, quote,
+news, research facts, my position) in 1, 2, 4, 1+2 or 6 layouts, with ready-made and saved layouts. Every panel that
+shows one symbol has a colour link chip (src/ui/linkGroups.ts); panels of the same colour follow each other across
+pages. Ctrl/Cmd+[ ] or F6 move between panels, Alt+1-6 jumps, typing a ticker on a panel opens the command bar for its
+group.
+
 ## Deliberately not moved
 
 - **Treasury yields** stay on both Macro and Invest > Bonds. This was design review finding O6, and they are

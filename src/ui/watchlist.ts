@@ -4,6 +4,7 @@ import { onStateChange, persist, state } from '../state';
 import { formatPrice, h, toast } from './dom';
 import { icon } from './icons';
 import { tickerAttr } from './tickerCard';
+import { linkChip, links } from './linkGroups';
 
 export const DISPLAY_NAMES: Record<string, string> = {
   $SPX: 'S&P 500',
@@ -15,6 +16,9 @@ export const DISPLAY_NAMES: Record<string, string> = {
 
 export const displaySymbol = (symbol: string) => symbol.replace(/^\$/, '');
 
+/** The watchlist's link id: it is a source only (clicking a symbol sets its colour group's symbol). */
+const LINK_ID = 'watchlist';
+
 export function createWatchlist(opts: { onSelect: (ref: MarketRef) => void; isActive?: (ref: MarketRef) => boolean; title?: string }) {
   const list = h('div', { class: 'wl-list', role: 'list' });
   const input = h('input', { class: 'input wl-input', placeholder: 'Add symbol, e.g. AMD or BTC', 'aria-label': 'Add symbol', spellcheck: false, autocomplete: 'off' });
@@ -22,7 +26,7 @@ export function createWatchlist(opts: { onSelect: (ref: MarketRef) => void; isAc
   const el = h(
     'section',
     { class: 'watchlist' },
-    h('div', { class: 'panel-head' }, h('h3', {}, opts.title ?? 'Watchlist'), h('span', { class: 'muted small wl-count' })),
+    h('div', { class: 'panel-head' }, h('h3', {}, opts.title ?? 'Watchlist'), h('span', { class: 'muted small wl-count' }), h('span', { class: 'spacer' }), linkChip(LINK_ID, 'Watchlist')),
     form,
     h('div', { class: 'wl-columns muted small' }, h('span', {}, 'Symbol'), h('span', {}, 'Last'), h('span', {}, 'Chg%')),
     list,
@@ -87,8 +91,9 @@ export function createWatchlist(opts: { onSelect: (ref: MarketRef) => void; isAc
               icon('close', 15),
             ),
           );
-          row.addEventListener('click', () => opts.onSelect(ref));
-          row.addEventListener('keydown', (e) => e.key === 'Enter' && opts.onSelect(ref));
+          const choose = () => (links.publish(LINK_ID, ref.symbol), opts.onSelect(ref));
+          row.addEventListener('click', choose);
+          row.addEventListener('keydown', (e) => e.key === 'Enter' && choose());
           updateRow(row, quotes.get(k));
           stops.push(
             subscribeQuote(ref, (q) => {

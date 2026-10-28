@@ -22,6 +22,7 @@ import { dataTable } from '../ui/charts';
 import { activatable, activatableRows, formatPrice, h, timeAgo, toast } from '../ui/dom';
 import { THEME, followTheme } from '../ui/theme';
 import { tickerAttr } from '../ui/tickerCard';
+import { isStockSymbol, linkPanel, markPanel } from '../ui/linkGroups';
 
 const WATCH_KEY = 'tp-trade-watch';
 const SYMBOL_KEY = 'tp-trade-symbol';
@@ -99,7 +100,13 @@ export function createTradePage() {
   const chartTitle = h('div', { class: 'tr-chart-title' });
   const tfEl = h('div', { class: 'segmented small', role: 'group', 'aria-label': 'Chart time frame' });
   const chartBox = h('div', { class: 'tr-chart-box' });
-  const chartPanel = h('section', { class: 'panel tr-chart' }, h('div', { class: 'tr-chart-head' }, chartTitle, h('span', { class: 'spacer' }), tfEl), chartBox);
+  // The link chip: a symbol picked here tells its colour group, and the group's symbol only PRE-FILLS the ticket
+  // (it never previews or places anything).
+  const link = linkPanel({ id: 'trade', label: 'Trade', accepts: isStockSymbol, apply: (s) => select(s), active: () => started && !el.hidden });
+  const chartPanel = h('section', { class: 'panel tr-chart', 'data-link-keys': 'own' }, h('div', { class: 'tr-chart-head' }, link.chip, chartTitle, h('span', { class: 'spacer' }), tfEl), chartBox);
+  markPanel(chartPanel, 'trade', 'Trade');
+  /** A symbol the user picked on this page: the chart, quote and ticket, and its linked panels. */
+  const userSelect = (s: string) => (select(s), link.publish(s));
 
   const protectSlot = h('div', { class: 'tr-protect-slot' });
   const ticket = createTicket({
@@ -250,7 +257,7 @@ export function createTradePage() {
     rowEls.clear();
     watchList.replaceChildren(
       ...watch.map((s) => {
-        const row = activatable(h('div', { class: `tr-wrow${s === symbol ? ' on' : ''}`, role: 'button', onclick: () => select(s) }));
+        const row = activatable(h('div', { class: `tr-wrow${s === symbol ? ' on' : ''}`, role: 'button', onclick: () => userSelect(s) }));
         rowEls.set(s, row);
         drawWatchRow(s);
         return row;
@@ -324,7 +331,7 @@ export function createTradePage() {
     search.value = '';
     results.replaceChildren();
     addWatch(s);
-    select(s);
+    userSelect(s);
   }
 
   /** Makes a symbol the page's symbol: chart, quote, ticket. */
@@ -735,7 +742,7 @@ export function createTradePage() {
       table.addEventListener('click', (e) => {
         const tr = (e.target as HTMLElement).closest('tbody tr');
         const s = tr?.querySelector('td')?.textContent?.trim();
-        if (s) select(s);
+        if (s) userSelect(s);
       });
       return listBody.replaceChildren(table);
     }
@@ -855,7 +862,9 @@ export function createTradePage() {
         if (document.visibilityState === 'visible') refresh();
       }, 5000);
       followQuotes();
-      if (!series) select(symbol, false);
+      const wanted = link.wanted(symbol);
+      if (wanted) select(wanted);
+      else if (!series) select(symbol, false);
       refresh();
       usePrefill(takePrefill());
     },

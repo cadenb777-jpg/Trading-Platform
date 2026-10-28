@@ -14,10 +14,10 @@ interface Mode {
   stop?(): void;
 }
 
-const LABELS: Record<ChartMode, string> = { chart: 'Chart', multi: 'Multi', scripts: 'Scripts' };
-const TITLES: Record<ChartMode, string> = { chart: 'One chart with indicators and drawings', multi: 'Two or four live charts side by side', scripts: 'Write your own indicators (Pine-style scripts)' };
+const LABELS: Record<ChartMode, string> = { chart: 'Chart', multi: 'Workspace', scripts: 'Scripts' };
+const TITLES: Record<ChartMode, string> = { chart: 'One chart with indicators and drawings', multi: 'Workspace: up to six linked panels (charts, quote, news, facts, my position)', scripts: 'Write your own indicators (Pine-style scripts)' };
 
-export function createChartWorkspace(chart: ReturnType<typeof createChartPage>, openChart: (ref: MarketRef) => void) {
+export function createChartWorkspace(chart: ReturnType<typeof createChartPage>, openChart: (ref: MarketRef) => void, openResearch: (symbol: string) => void) {
   const el = h('div', { class: 'chart-ws' });
   const links = CHART_MODES.map((m) =>
     h('a', { class: 'tab', href: m === 'chart' ? '#chart' : `#chart/${m}`, 'data-mode': m, title: TITLES[m] }, LABELS[m]),
@@ -33,7 +33,7 @@ export function createChartWorkspace(chart: ReturnType<typeof createChartPage>, 
     loading[m] ??= (async () => {
       const mode: Mode =
         m === 'multi'
-          ? (await import('./multiChartPage')).createMultiChartPage(openChart)
+          ? (await import('./workspacePage')).createWorkspacePage({ openChart, openResearch })
           : (await import('./scriptsPage')).createScriptsPage({
               onAddToChart: (defId) => {
                 chart.addIndicatorById(defId);
@@ -70,7 +70,7 @@ export function createChartWorkspace(chart: ReturnType<typeof createChartPage>, 
       if (on) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
     }
-    document.title = m === 'chart' ? document.title : `${m === 'multi' ? 'Multi-chart' : 'Scripts'} · Trading Platform`;
+    document.title = m === 'chart' ? document.title : `${m === 'multi' ? 'Workspace' : 'Scripts'} · Trading Platform`;
     mode.start();
   }
 

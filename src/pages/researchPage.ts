@@ -9,6 +9,7 @@ import { formatPrice, h } from '../ui/dom';
 import { termLabel } from '../ui/glossary';
 import { tickerAttr } from '../ui/tickerCard';
 import { asOfStamp } from '../ui/dataHealth';
+import { isStockSymbol, linkPanel, markPanel } from '../ui/linkGroups';
 
 type Values = Record<string, (number | null)[]>;
 
@@ -94,11 +95,22 @@ export function createResearchPage() {
       data: { profile: d.profile, quote: d.quote, valuation: d.valuation, ttm: d.ttm, fiscalYears: a.periods, annual: Object.fromEntries(['revenue', 'grossProfit', 'operatingIncome', 'netIncome', 'epsDiluted', 'freeCashFlow', 'cash', 'longTermDebt', 'equity'].map((k) => [k, a.values[k]])), ratios: d.ratios },
     };
   });
-  const frame = pageFrame('Research', 'Company financials from SEC filings, key ratios and a valuation calculator.', [tabs, symbolInput, h('button', { class: 'btn primary', onclick: () => load() }, 'Load'), ai.button]);
+  let started = false;
+  const link = linkPanel({
+    id: 'research',
+    label: 'Research',
+    accepts: isStockSymbol,
+    apply: (s) => ((symbolInput.value = s), load()),
+    active: () => started && !frame.el.hidden,
+  });
+  /** The user picked a company here: linked panels follow. */
+  const userLoad = () => (load(), link.publish(symbolInput.value));
+  const frame = pageFrame('Research', 'Company financials from SEC filings, key ratios and a valuation calculator.', [tabs, link.chip, symbolInput, h('button', { class: 'btn primary', onclick: userLoad }, 'Load'), ai.button]);
+  markPanel(frame.el.querySelector('.ap-header')!, 'research', 'Research');
   const livePrice = h('b', { class: 'big-value' });
   const liveChange = h('b', {});
   let stopQuote = () => {};
-  symbolInput.addEventListener('keydown', (e) => e.key === 'Enter' && load());
+  symbolInput.addEventListener('keydown', (e) => e.key === 'Enter' && userLoad());
 
   function setTab(t: Tab) {
     tab = t;
@@ -369,12 +381,12 @@ export function createResearchPage() {
     ];
   }
 
-  let started = false;
   return {
     el: frame.el,
     /** Opens a company, optionally on a tab (the command bar's DES / FA). */
     open(symbol: string, on?: Tab) {
       symbolInput.value = symbol;
+      link.publish(symbol);
       if (on && TABS.some(([t]) => t === on)) {
         tab = on;
         tabs.querySelectorAll<HTMLElement>('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === on));
@@ -387,6 +399,9 @@ export function createResearchPage() {
       stopQuote = () => {};
     },
     async start() {
+      const wanted = link.wanted(symbolInput.value);
+      if (wanted) symbolInput.value = wanted;
+      if (started && wanted) return load();
       if (started) {
         // Coming back to the page: resume the live price.
         if (data) {

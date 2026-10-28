@@ -16,6 +16,7 @@ import type { Portfolio } from '../portfolio/types';
 import { persist, state } from '../state';
 import { h, openModal, timeAgo, toast } from './dom';
 import { icon } from './icons';
+import { LINK_LABELS, focusPanel, focusedPanel, links } from './linkGroups';
 import { normalizeTicker, tickerPreview } from './tickerCard';
 
 // ---------- function codes ----------
@@ -45,7 +46,7 @@ export const CODES: FnCode[] = [
   { code: 'FUT', aliases: ['CTM'], label: 'Futures', keywords: 'futures contracts commodities' },
   { code: 'PORT', label: 'Portfolios (models, what-ifs, optimizer)', keywords: 'portfolio model optimizer what-if' },
   { code: 'ACCT', label: 'Account (my real money, all accounts)', keywords: 'account holdings dividends total value' },
-  { code: 'MULTI', label: 'Multi-chart (Chart mode)', keywords: 'multi chart grid side by side' },
+  { code: 'MULTI', aliases: ['WS'], label: 'Workspace: linked panels (Chart mode)', keywords: 'multi chart grid side by side workspace panels linked layout launchpad' },
   { code: 'SCRIPT', aliases: ['PINE'], label: 'Scripts (Chart mode)', keywords: 'script pine editor indicator code' },
   { code: 'COT', label: 'Futures positioning (COT)', keywords: 'cot commitment traders positioning hedgers cftc' },
   { code: 'BTST', label: 'Backtest', keywords: 'backtest strategy test' },
@@ -354,7 +355,7 @@ export const CHORDS: { keys: string; id: string; label: string }[] = [
   { keys: 'g t', id: 'page:trade', label: 'Go to Trade (nothing is placed by a key)' },
   { keys: 'g f', id: 'page:futures', label: 'Go to Futures' },
   { keys: 'g p', id: 'page:portfolio', label: 'Go to Portfolios (models)' },
-  { keys: 'g m', id: 'page:chart/multi', label: 'Go to Multi-chart' },
+  { keys: 'g m', id: 'page:chart/multi', label: 'Go to the Workspace (linked panels)' },
   { keys: 'n a', id: 'act:alert', label: 'New alert' },
 ];
 export const CHORD_MS = 1500;
@@ -364,8 +365,13 @@ export interface KeyInfo {
   ctrl?: boolean;
   meta?: boolean;
   alt?: boolean;
+  shift?: boolean;
+  /** KeyboardEvent.code ("Digit1"): Alt+digit types other characters on a Mac keyboard. */
+  code?: string;
   /** Focus is in a text field, list box or editable area. */
   inField?: boolean;
+  /** Focus is on a linked panel that takes typed tickers (not the Chart or Trade, whose letters are their own). */
+  inPanel?: boolean;
   /** A dialog is open (its keys are its own). */
   modalOpen?: boolean;
 }
@@ -374,7 +380,7 @@ export interface Pending {
   at: number;
 }
 export interface Dispatch {
-  /** 'palette', 'help', 'ai', or a command id (page:..., act:...). */
+  /** 'palette', 'help', 'ai', 'panel-type' (a letter typed on a panel), 'panel:next' / 'panel:prev' / 'panel:3', or a command id (page:..., act:...). */
   action: string | null;
   pending: Pending | null;
   /** Stop the key reaching the page (so "g s" on the Trade page doesn't also pick Sell). */
@@ -383,19 +389,27 @@ export interface Dispatch {
 
 /**
  * What a key press does. Nothing fires inside a dialog (above all the order confirm window) or a pinned ticker card;
- * single keys and chords also never fire while typing in a field (Ctrl/Cmd+K and +I do).
+ * single keys, chords and the panel keys also never fire while typing in a field (Ctrl/Cmd+K and +I do).
+ * Panels: Ctrl/Cmd+[ and ] or F6 (Shift+F6 back) move between them, Alt+1..6 jumps to one, and a letter typed on a
+ * panel opens the command bar scoped to that panel's link group.
  */
 export function dispatchKey(pending: Pending | null, k: KeyInfo, now: number): Dispatch {
   const none: Dispatch = { action: null, pending: null, consume: false };
+  const run = (action: string): Dispatch => ({ action, pending: null, consume: true });
   if (k.modalOpen) return none;
   if (k.ctrl || k.meta) {
     if (k.alt) return none;
     const key = k.key.toLowerCase();
-    if (key === 'k') return { action: 'palette', pending: null, consume: true };
-    if (key === 'i') return { action: 'ai', pending: null, consume: true };
+    if (key === 'k') return run('palette');
+    if (key === 'i') return run('ai');
+    if (!k.inField && (key === '[' || key === ']')) return run(key === ']' ? 'panel:next' : 'panel:prev');
     return none;
   }
-  if (k.alt || k.inField) return none;
+  if (k.inField) return none;
+  if (k.key === 'F6') return run(k.shift ? 'panel:prev' : 'panel:next');
+  const digit = /^Digit([1-6])$/.exec(k.code ?? '');
+  if (k.alt) return digit ? run(`panel:${digit[1]}`) : none;
+  if (k.inPanel && /^[a-z]$/i.test(k.key)) return run('panel-type');
   if (pending && now - pending.at <= CHORD_MS) {
     const chord = CHORDS.find((c) => c.keys === `${pending.key} ${k.key}`);
     if (chord) return { action: chord.id, pending: null, consume: true };
@@ -416,6 +430,15 @@ export const SHORTCUT_SHEET: { title: string; rows: [string, string][] }[] = [
       ['Ctrl/Cmd+I', 'Open or close the AI assistant'],
       ...CHORDS.map((c) => [c.keys, c.label] as [string, string]),
       ['Esc', 'Close a dialog, pop-up or ticker card'],
+    ],
+  },
+  {
+    title: 'Panels and link colours',
+    rows: [
+      ['Ctrl/Cmd+]  or  F6', 'Next panel'],
+      ['Ctrl/Cmd+[  or  Shift+F6', 'Previous panel'],
+      ['Alt+1 … Alt+6', 'Jump to panel 1-6'],
+      ['A-Z (on a panel)', 'Type a ticker: the command bar opens for that panel’s colour group'],
     ],
   },
   {
@@ -513,18 +536,24 @@ export function initCommandBar(d: CommandDeps): HTMLElement {
       const target = e.target instanceof Element ? e.target : null;
       const inField = !!target?.closest('input, select, textarea, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"]');
       // a dialog or a pinned ticker card owns the keyboard (the palette itself is neither, so Ctrl+K still closes it)
-      const modalOpen = !closePalette && !!document.querySelector('.modal-backdrop, .ticker-card.pinned');
-      const r = dispatchKey(pending, { key: e.key, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey, inField, modalOpen }, Date.now());
+      const modalOpen = !closePalette && !!document.querySelector('.modal-backdrop, .ticker-card.pinned, .link-menu');
+      const inPanel = !!target?.closest('[data-link-panel]:not([data-link-keys="own"])');
+      const r = dispatchKey(pending, { key: e.key, code: e.code, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey, shift: e.shiftKey, inField, inPanel, modalOpen }, Date.now());
       pending = r.pending;
       if (r.consume) {
         e.preventDefault();
         e.stopImmediatePropagation();
       }
       if (!r.action) return;
-      if (r.action === 'palette') return closePalette ? closePalette() : openPalette();
+      if (r.action === 'palette') return closePalette ? closePalette() : openPalette({ scope: focusedPanel() });
       if (r.action === 'help') return openShortcutSheet();
       if (r.action === 'ai') return d.toggleAssistant();
       if (closePalette) return;
+      if (r.action === 'panel-type') return openPalette({ scope: focusedPanel(), text: e.key.toUpperCase() });
+      if (r.action.startsWith('panel:')) {
+        const which = r.action.slice(6);
+        return focusPanel(which === 'next' ? { dir: 1 } : which === 'prev' ? { dir: -1 } : { index: Number(which) - 1 });
+      }
       runId(r.action);
     },
     true,
@@ -683,8 +712,13 @@ function openNews(symbol: string) {
 
 // ----- the palette -----
 
-export function openPalette() {
+/**
+ * Opens the command bar. With a scope (a focused panel), choosing a ticker changes that panel and every panel of its
+ * link colour instead of opening the Chart page; other commands work as usual.
+ */
+export function openPalette(opts: { scope?: { id: string; label: string } | null; text?: string } = {}) {
   if (closePalette) return;
+  const scope = opts.scope ?? null;
   const before = document.activeElement as HTMLElement | null;
   let recents = loadRecents();
   let search: SymbolEntry[] = [];
@@ -704,7 +738,7 @@ export function openPalette() {
     'aria-controls': 'cmd-list',
     'aria-autocomplete': 'list',
     'aria-label': 'Command: a ticker, a code like AAPL GP, or a page',
-    placeholder: 'Ticker, code (AAPL GP, WEI, ECO) or page…',
+    placeholder: scope ? 'Ticker for this panel’s group (Enter), or any command…' : 'Ticker, code (AAPL GP, WEI, ECO) or page…',
     autocomplete: 'off',
     autocapitalize: 'characters',
     spellcheck: false,
@@ -715,6 +749,7 @@ export function openPalette() {
   const box = h(
     'div',
     { class: 'cmd', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Command bar' },
+    scope ? scopeLine(scope) : '',
     h('div', { class: 'cmd-head' }, icon('search', 18), input, h('button', { type: 'button', class: 'cmd-kbd cmd-close', tabindex: -1, 'aria-label': 'Close', title: 'Close (Esc)', onclick: () => close() }, 'Esc')),
     h('div', { class: 'cmd-body' }, list, preview),
     h('div', { class: 'cmd-foot muted tiny' }, '↑↓ move · Enter run · Tab complete · Esc close · ? all shortcuts'),
@@ -793,6 +828,12 @@ export function openPalette() {
   function choose(i: number) {
     const it = items[i];
     if (!it) return;
+    const linked = scope && /^tk:(.+):GP$/.exec(it.id);
+    if (scope && linked) {
+      close(true); // back to the panel
+      links.set(scope.id, linked[1]);
+      return;
+    }
     recents = pushRecent(recents, { id: it.id, title: it.title, subtitle: it.subtitle });
     saveRecents(recents);
     close(false);
@@ -852,9 +893,22 @@ export function openPalette() {
   });
 
   document.body.append(backdrop);
+  if (opts.text) input.value = opts.text;
   render();
+  if (opts.text) queueSearch();
   input.focus();
   loadAccounts().then(() => backdrop.isConnected && render(items[active]?.id), () => {});
+}
+
+/** The palette's note when it is scoped to a panel: which group a ticker will change. */
+function scopeLine(scope: { id: string; label: string }) {
+  const c = links.colorOf(scope.id);
+  return h(
+    'div',
+    { class: 'cmd-scope small' },
+    h('i', { class: 'link-dot', 'data-color': c }),
+    c === 'none' ? `${scope.label} (not linked): a ticker changes just this panel` : `${scope.label} · ${LINK_LABELS[c]} group: a ticker changes every ${LINK_LABELS[c]} panel`,
+  );
 }
 
 // ----- the shortcut sheet -----

@@ -172,6 +172,32 @@ describe('shortcuts', () => {
   });
 });
 
+describe('panel keys', () => {
+  const t0 = 1_000_000;
+  it('Ctrl/Cmd+[ ] and F6 move between panels, Alt+1-6 jumps', () => {
+    expect(dispatchKey(null, { key: ']', ctrl: true }, t0)).toEqual({ action: 'panel:next', pending: null, consume: true });
+    expect(dispatchKey(null, { key: '[', meta: true }, t0).action).toBe('panel:prev');
+    expect(dispatchKey(null, { key: 'F6' }, t0).action).toBe('panel:next');
+    expect(dispatchKey(null, { key: 'F6', shift: true }, t0).action).toBe('panel:prev');
+    expect(dispatchKey(null, { key: '¡', code: 'Digit1', alt: true }, t0).action).toBe('panel:1'); // a Mac's Alt+1
+    expect(dispatchKey(null, { key: '6', code: 'Digit6', alt: true }, t0).action).toBe('panel:6');
+    expect(dispatchKey(null, { key: '7', code: 'Digit7', alt: true }, t0).action).toBeNull();
+  });
+  it('a letter on a panel opens the scoped command bar; elsewhere letters stay the page’s', () => {
+    expect(dispatchKey(null, { key: 'n', inPanel: true }, t0)).toEqual({ action: 'panel-type', pending: null, consume: true });
+    expect(dispatchKey(null, { key: 'A', inPanel: true }, t0).action).toBe('panel-type');
+    expect(dispatchKey(null, { key: 'f' }, t0).action).toBeNull(); // the chart's fit (the Chart opts out of typing)
+    expect(dispatchKey(null, { key: '1', inPanel: true }, t0).action).toBeNull();
+    expect(dispatchKey(null, { key: '/', inPanel: true }, t0).action).toBe('palette');
+  });
+  it('panel keys never fire in a field or a dialog', () => {
+    for (const k of [{ key: ']', ctrl: true }, { key: 'F6' }, { key: '1', code: 'Digit1', alt: true }, { key: 'a', inPanel: true }]) {
+      expect(dispatchKey(null, { ...k, inField: true }, t0).action).toBeNull();
+      expect(dispatchKey(null, { ...k, modalOpen: true }, t0).action).toBeNull();
+    }
+  });
+});
+
 describe('recent commands', () => {
   it('moves a repeat to the front and keeps at most 8', () => {
     let list = pushRecent([], { id: 'a', title: 'A' });

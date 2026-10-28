@@ -4,7 +4,6 @@ import type { Drawing } from './chart/drawings';
 import { PROVIDERS } from './data';
 import type { ProviderId } from './data/provider';
 import type { MarketRef } from './data/quotes';
-import type { MultiCell, MultiLayout } from './pages/multiChartPage';
 import type { PriceAlert } from './ui/alerts';
 import { defaultColors, defaultParams, getIndicator } from './indicators/library';
 import type { IndicatorDef, IndicatorInstance } from './indicators/types';
@@ -26,7 +25,6 @@ export interface AppState {
   /** Show pre-market and after-hours bars on intraday stock charts. */
   extendedHours: boolean;
   alerts: PriceAlert[];
-  multi: { layout: MultiLayout; cells: MultiCell[] };
   userName: string;
 }
 
@@ -55,15 +53,6 @@ function defaultState(): AppState {
     volumeProfile: false,
     extendedHours: true,
     alerts: [],
-    multi: {
-      layout: '4',
-      cells: [
-        { provider: 'schwab', symbol: 'SPY', timeframe: '5m' },
-        { provider: 'schwab', symbol: 'QQQ', timeframe: '5m' },
-        { provider: 'schwab', symbol: 'AAPL', timeframe: '15m' },
-        { provider: 'coinbase', symbol: 'BTC-USD', timeframe: '1h' },
-      ],
-    },
     userName: 'Caden',
   };
 }

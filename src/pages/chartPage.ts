@@ -5,7 +5,7 @@ import { SessionShading, isRegularHours, regularHoursOnly } from '../chart/sessi
 import { VolumeProfile } from '../chart/volumeProfile';
 import { PROVIDERS, getProvider } from '../data';
 import type { ConnectionStatus, ProviderId } from '../data/provider';
-import { refKey, type MarketRef } from '../data/quotes';
+import { guessMarket, refKey, type MarketRef } from '../data/quotes';
 import { getIndicator, indicatorLabel } from '../indicators/library';
 import type { IndicatorDef } from '../indicators/types';
 import { loadDrawings, newIndicatorInstance, onStateChange, persist, saveDrawings, state } from '../state';
@@ -18,6 +18,7 @@ import { externalError } from '../indicators/external';
 import { createTimeframePicker } from '../ui/timeframePicker';
 import { activeAlertCount, onAlertsChange, openAlertsDialog } from '../ui/alerts';
 import { createWatchlist, displaySymbol } from '../ui/watchlist';
+import { linkPanel } from '../ui/linkGroups';
 
 const SYMBOL_SUGGESTIONS: Record<ProviderId, string[]> = {
   coinbase: ['BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD', 'DOGE-USD', 'ADA-USD', 'AVAX-USD', 'LINK-USD', 'LTC-USD'],
@@ -71,6 +72,16 @@ export function createChartPage() {
   const extBtn = h('button', { class: 'btn fit-btn ext-btn', title: 'Extended hours: show pre-market (4:00-9:30 am ET) and after-hours (4-8 pm ET) trading on intraday stock charts. Shaded areas are outside regular hours.', 'aria-label': 'Extended hours' }, 'Ext');
   const fitBtn = h('button', { class: 'btn fit-btn', title: 'Fit the chart to the candles (F)', 'aria-label': 'Fit chart', onclick: () => chart?.fit() }, icon('fit', 18), ' Fit');
   const side = h('aside', { class: 'watch-side' });
+  // the chart's link chip: other panels of its colour follow its symbol, and it follows theirs
+  const link = linkPanel({
+    id: 'chart',
+    label: 'Chart',
+    el: chartWrap,
+    accepts: (s) => !s.startsWith('/') && !!guessMarket(s),
+    apply: (s) => show(guessMarket(s)!),
+    active: () => started && !el.hidden,
+  });
+  chartWrap.dataset.linkKeys = 'own'; // its letters are its own (f fits); the command bar is / here
 
   const tfPicker = createTimeframePicker({
     getCurrent: () => state.timeframe,
@@ -88,6 +99,7 @@ export function createChartPage() {
     h(
       'header',
       { class: 'toolbar' },
+      link.chip,
       marketSelect,
       symbolInput,
       symbolList,
@@ -132,6 +144,7 @@ export function createChartPage() {
     state.provider = marketSelect.value as ProviderId;
     persist();
     reload();
+    link.publish(symbol());
   });
 
   symbolInput.addEventListener('change', () => {
@@ -140,6 +153,7 @@ export function createChartPage() {
     state.symbols[state.provider] = next;
     persist();
     reload();
+    link.publish(next);
   });
   symbolInput.addEventListener('keydown', (e) => e.key === 'Enter' && symbolInput.blur());
   symbolInput.addEventListener('focus', () => symbolInput.select());
@@ -510,7 +524,9 @@ export function createChartPage() {
   const narrow = () => window.matchMedia('(max-width: 1000px)').matches;
 
   function start() {
-    if (started) return;
+    const wanted = link.wanted(symbol()); // the linked group's symbol changed while the chart was hidden
+    if (started) return void (wanted && show(guessMarket(wanted)!));
+    if (wanted) show(guessMarket(wanted)!);
     started = true;
     if (narrow()) state.watchlistOpen = false;
     chart = new ChartView(chartEl);
@@ -543,13 +559,19 @@ export function createChartPage() {
     reload();
   }
 
-  /** Shows a symbol, e.g. when clicked in a watchlist. */
-  function open(ref: MarketRef) {
+  /** Shows a symbol without telling the link group (the group told us). */
+  function show(ref: MarketRef) {
     state.provider = ref.provider;
     state.symbols[ref.provider] = ref.symbol;
-    if (narrow()) state.watchlistOpen = false;
     persist();
     if (started) reload();
+  }
+
+  /** Shows a symbol, e.g. when clicked in a watchlist; panels linked to the chart follow. */
+  function open(ref: MarketRef) {
+    if (narrow()) state.watchlistOpen = false;
+    show(ref);
+    link.publish(ref.symbol);
   }
 
   /** Adds an indicator by id, e.g. a script from the Scripts page. */
