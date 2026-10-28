@@ -31,8 +31,9 @@ export function niceTicks(lo: number, hi: number, count = 5): number[] {
 }
 
 export function frontierChart(frontier: { volatility: number; return: number }[], points: FrontierPoint[], onPick?: (key: string) => void) {
-  const W = 560;
-  const H = 300;
+  // A narrower drawing on phones, so axis text stays readable when the SVG is scaled to the screen.
+  const W = typeof window !== 'undefined' && window.innerWidth < 640 ? 360 : 560;
+  const H = W < 560 ? 260 : 300;
   const pad = { l: 48, r: 16, t: 12, b: 40 };
   const xs = [...frontier.map((p) => p.volatility), ...points.map((p) => p.volatility)];
   const ys = [...frontier.map((p) => p.return), ...points.map((p) => p.return)];

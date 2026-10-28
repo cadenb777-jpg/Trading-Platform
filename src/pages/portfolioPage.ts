@@ -940,7 +940,7 @@ export function createPortfolioPage() {
                   { v: pct(x.maxDrawdown, 0), cls: 'down' },
                   ratio(x.sharpe),
                   pctU(x.turnover, 0),
-                  p == null ? '—' : p.toFixed(2),
+                  p == null ? (isGoal ? 'no edge' : '—') : p.toFixed(2),
                   isGoal && goals.length && x.key !== shown ? h('button', { class: 'btn', onclick: () => show(x.key), 'aria-label': `Show ${rowName(x.key)}` }, 'Show') : '',
                 ]),
                 (i) => (tableRows[i].row.key === shown ? 'opt-chosen' : ''),
