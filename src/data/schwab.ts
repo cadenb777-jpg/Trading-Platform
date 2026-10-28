@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 34;
+export const LATEST_HELPER_VERSION = 35;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -471,6 +471,11 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'futures.curve': 60_000,
   'futures.detail': 5 * 60_000,
   'webull.futures_contracts': 20_000,
+  // Prospecting data changes only when a download finishes (prospect.ingest clears nothing itself: call clearEngineCache('prospect.')).
+  'prospect.status': 5_000,
+  'prospect.search': 5 * 60_000,
+  'prospect.firm': 5 * 60_000,
+  'prospect.compare': 5 * 60_000,
 };
 const engineCache = new Map<string, { at: number; value: Promise<unknown> }>();
 
