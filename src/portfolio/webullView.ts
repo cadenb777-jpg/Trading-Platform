@@ -46,7 +46,7 @@ export async function syncAccounts(id: string): Promise<Synced[]> {
  * A small read-only Webull card for the Account page: balances and buying power per account, "Sync now", and
  * "Order in Trade" (the only place with the order ticket). Draws nothing when Webull isn't set up.
  */
-export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio & { id: string }) => void, openTrade: (accountId: string) => void, only?: string, exclude: string[] = []) {
+export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio & { id: string }) => void, openTrade: (accountId: string, kind?: 'stocks' | 'futures') => void, only?: string, exclude: string[] = []) {
   let status: Snapshot;
   try {
     status = await loadSnapshot();
@@ -58,7 +58,7 @@ export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio
   for (const a of status.accounts) {
     if ((only && a.id !== only) || exclude.includes(a.id)) continue;
     if (a.futures) {
-      cards.push(await futuresCard(a.label, a.id, status.env));
+      cards.push(await futuresCard(a.label, a.id, status.env, openTrade));
       continue;
     }
     if (a.stocks === false) {
@@ -88,7 +88,7 @@ export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio
 }
 
 /** The futures account as its own card: kept out of the stock risk and tax figures, shown with its balance and open P/L. */
-async function futuresCard(label: string, id: string, env: Snapshot['env']): Promise<HTMLElement> {
+async function futuresCard(label: string, id: string, env: Snapshot['env'], openTrade: (accountId: string, kind: 'futures') => void): Promise<HTMLElement> {
   const snap = await loadSnapshot(id, 'futures').catch((err) => err as Error);
   const bal = snap instanceof Error ? snap : snap.balances ?? new Error(snap.errors?.balances ?? snap.message ?? 'Not available.');
   const open = snap instanceof Error ? 0 : (snap.positions ?? []).length;
@@ -104,6 +104,6 @@ async function futuresCard(label: string, id: string, env: Snapshot['env']): Pro
           { label: 'Buying power', value: usd(bal.buyingPower) },
         ]),
     h('p', { class: 'muted small' }, 'Futures are kept out of the stock risk and tax figures on this page.'),
-    h('div', { class: 'ap-controls' }, h('a', { class: 'btn', href: '#trade' }, 'Open Trade page')),
+    h('div', { class: 'ap-controls' }, h('button', { class: 'btn', title: 'Futures positions, orders and the futures ticket', onclick: () => openTrade(id, 'futures') }, 'Order in Trade (futures)')),
   );
 }

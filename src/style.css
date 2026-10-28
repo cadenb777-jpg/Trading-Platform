@@ -2489,6 +2489,10 @@ button.news-item {
   min-width: 0;
   background: var(--bg-chart);
 }
+/* the panel last clicked or focused (the command bar's ALRT uses its symbol) */
+.mc-cell.mc-active .mc-head {
+  box-shadow: inset 0 -2px 0 var(--link);
+}
 
 .mc-head {
   display: flex;

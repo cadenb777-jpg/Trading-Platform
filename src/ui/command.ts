@@ -637,7 +637,11 @@ async function runCode(code: string, symbol: string | null) {
   if (!c) return;
   if (!symbol) {
     if (c.code === 'HELP') return openShortcutSheet();
-    if (c.code === 'ALRT') return (await import('./alerts')).openAlertsDialog();
+    if (c.code === 'ALRT') {
+      // on Multi-chart: the panel last clicked or focused
+      const ref = location.hash === '#chart/multi' ? (await import('../pages/multiChartPage')).activeMultiRef() : null;
+      return (await import('./alerts')).openAlertsDialog(ref ?? undefined);
+    }
     if (c.code === 'BONDS') return d.openPage('invest', 'open', 'bonds');
     if (CODE_ROUTE[c.code]) location.hash = `#${CODE_ROUTE[c.code]}`;
     return;

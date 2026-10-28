@@ -21,6 +21,17 @@ export type MultiLayout = '2h' | '2v' | '4';
 
 const CELL_TIMEFRAMES = TIMEFRAMES.filter((t) => !t.endsWith('s'));
 
+/** The panel last clicked or focused (the command bar's ALRT uses its symbol). */
+let activeCell = 0;
+let shownCells = 0;
+
+/** The symbol of the Multi-chart panel last clicked or focused (null before Multi has been shown). */
+export function activeMultiRef(): MarketRef | null {
+  if (!shownCells) return null;
+  const c = state.multi.cells[Math.min(activeCell, shownCells - 1)];
+  return c ? { provider: c.provider, symbol: c.symbol } : null;
+}
+
 function createCell(index: number, onOpen: (ref: MarketRef) => void) {
   const cfg = () => state.multi.cells[index];
   const symbolInput = h('input', { class: 'input mc-symbol', spellcheck: false, 'aria-label': `Chart ${index + 1} symbol` });
@@ -44,6 +55,12 @@ function createCell(index: number, onOpen: (ref: MarketRef) => void) {
     ),
     h('div', { class: 'chart-wrap' }, chartEl, message),
   );
+  const markActive = () => {
+    activeCell = index;
+    el.parentElement?.querySelectorAll('.mc-cell').forEach((c) => c.classList.toggle('mc-active', c === el));
+  };
+  el.addEventListener('pointerdown', markActive);
+  el.addEventListener('focusin', markActive);
 
   let chart: ChartView | null = null;
   let shading: SessionShading | null = null;
@@ -157,6 +174,7 @@ export function createMultiChartPage(onOpen: (ref: MarketRef) => void) {
 
   function render() {
     const count = state.multi.layout === '4' ? 4 : 2;
+    shownCells = count;
     grid.className = `mc-grid layout-${state.multi.layout}`;
     layoutButtons.forEach((b) => b.classList.toggle('active', b.dataset.layout === state.multi.layout));
     grid.replaceChildren(...cells.slice(0, count).map((c) => c.el));
