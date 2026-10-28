@@ -2,7 +2,8 @@
 
 An in-house prospecting database, built by the helper (`helper/engine/prospect.py`) from free public data only.
 It lives in its own file, `~/.trading-platform/prospect.db`, so the main database stays small. Nothing is invented:
-a figure that is not in a filing stays empty. This stage is the data engine; the page comes next.
+a figure that is not in a filing stays empty. The Prospecting page (`#prospect`, Business > Prospects) searches, maps
+and compares it.
 
 ## Sources
 
@@ -95,6 +96,11 @@ are never more than "strong signals".
   overlap per pair (sum of the smaller weight of each shared holding), largest weight differences, shared holdings,
   sector mix, turnover (half the sum of absolute weight changes between the two quarters).
 - `prospect.export {query}`: the same filters as search, up to 5,000 rows as CSV text.
+- `prospect.geocode {address}`: a ZIP (its centre, from the loaded ZIP file) or a US street address (free Census one-line
+  geocoder) -> `{lat, lon, label, method}`, for "within N miles of an address".
+- Search rows (pages of 500 or fewer) carry `topPeople`: up to 3 names and titles, CIO / portfolio manager titles first.
+
+Saved searches and per-firm notes with outreach status are store collections `prospect_searches` and `prospect_notes`.
 
 ## Header self-check
 

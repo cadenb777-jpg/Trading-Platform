@@ -1,6 +1,6 @@
 /**
  * Requests to the helper's prospecting database (helper/engine/prospect.py): RIAs, exempt reporting advisers,
- * family offices and 13F managers built from free SEC data. The page that uses these comes in a later stage.
+ * family offices and 13F managers built from free SEC data. Used by the Prospecting page (src/pages/prospectPage.ts).
  */
 import { clearEngineCache, engineRequest, type EngineEvent } from './schwab';
 
@@ -59,6 +59,8 @@ export interface ProspectFirm {
   geo: '' | 'address' | 'zip';
   distanceMiles?: number;
   position?: number;
+  /** Search rows only: up to 3 people from filings (CIO / portfolio manager titles first). */
+  topPeople?: { name: string; title: string; source: string; keyTitle: boolean }[];
 }
 
 export interface ProspectPosition {
@@ -95,6 +97,8 @@ export interface ProspectStatus {
   /** "People and private funds as of <date>": the SEC's bulk Form ADV data ended in Dec 2024. */
   peopleAsOf: string | null;
   peopleNote: string | null;
+  /** Days before the background schedule looks for a newer file, per source. */
+  refreshDays?: Record<string, number>;
 }
 
 export const prospectStatus = () => engineRequest<ProspectStatus>('prospect.status', {}, 20000);
@@ -109,5 +113,23 @@ export async function prospectIngest(source: ProspectSource, onEvent?: (e: Engin
 export const prospectSearch = (query: ProspectQuery) => engineRequest<{ total: number; rows: ProspectFirm[]; note?: string; centre?: { lat: number; lon: number } }>('prospect.search', { ...query }, 60000);
 // 'id' is reserved in helper messages, so the firm goes as firmId.
 export const prospectFirm = (firmId: string) => engineRequest<ProspectProfile>('prospect.firm', { firmId }, 90000);
-export const prospectCompare = (ids: string[]) => engineRequest<Record<string, unknown>>('prospect.compare', { ids }, 90000);
+export interface CompareFirm {
+  id: string; name: string; type: FirmType; confidence: string; aum: number | null; discretionary: number | null; clients: number;
+  aumPerClient: number | null; employees: number | null; fees: string[]; privateFunds: number; privateFundsGav: number | null;
+  clientMix: Partial<Record<ClientType, ClientMixEntry & { share: number | null }>>; value13f: number | null; period13f: string | null;
+  positions: number; turnover: number | null; sectors: Record<string, number>;
+}
+export interface CompareResult {
+  firms: CompareFirm[];
+  pairs: { a: string; b: string; overlap: number; shared: number; differences: { cusip: string; a: number; b: number; diff: number; ticker: string | null; issuer: string | null }[] }[];
+  sharedHoldings: { cusip: string; ticker: string | null; issuer: string | null; heldBy: number; weights: number[] }[];
+}
+export const prospectCompare = (ids: string[]) => engineRequest<CompareResult>('prospect.compare', { ids }, 90000);
+/** A ZIP (its centre) or a US street address (free Census geocoder) -> a point for radius search. */
+export const prospectGeocode = (address: string) => engineRequest<{ lat: number; lon: number; label: string; method: 'zip' | 'address' }>('prospect.geocode', { address }, 40000);
+
+/** Outreach tracking for one firm, saved by the helper (store collection prospect_notes, doc id = firm id). */
+export type Outreach = 'not contacted' | 'contacted' | 'meeting' | 'client' | 'do not contact';
+export const OUTREACH: Outreach[] = ['not contacted', 'contacted', 'meeting', 'client', 'do not contact'];
+export interface ProspectNote { id: string; firmName: string; status: Outreach; notes: string; updated?: number }
 export const prospectExport = (query: ProspectQuery) => engineRequest<{ csv: string; count: number; total: number; columns: string[] }>('prospect.export', { query }, 120000);

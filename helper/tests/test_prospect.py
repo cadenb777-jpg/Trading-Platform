@@ -404,6 +404,38 @@ class Handlers(Loaded):
             exp = asyncio.run(pr.h_export(ctx, {'query': {'type': [pr.TYPE_MFO]}}))
             self.assertEqual(exp['count'], 2)
 
+    def test_geocode_zip_and_address(self):
+        reply = mock.Mock(json=lambda: {'result': {'addressMatches': [{'matchedAddress': '1 PARK AVE, NEW YORK, NY, 10016', 'coordinates': {'x': -73.98, 'y': 40.75}}]}},
+                          raise_for_status=lambda: None)
+
+        async def get(url, **kw):
+            self.assertEqual(kw['params']['format'], 'json')
+            return reply
+        ctx = mock.Mock(sec_contact='', http=mock.Mock(get=get))
+        with mock.patch.object(pr, 'DB_PATH', self.db):
+            z = asyncio.run(pr.h_geocode(ctx, {'address': '10022'}))
+            self.assertEqual((z['method'], round(z['lat'], 2)), ('zip', 40.76))
+            a = asyncio.run(pr.h_geocode(ctx, {'address': '1 Park Ave, New York NY'}))
+            self.assertEqual((a['method'], a['lat'], a['lon']), ('address', 40.75, -73.98))
+            with self.assertRaises(pr.EngineError):
+                asyncio.run(pr.h_geocode(ctx, {'address': '99999'}))  # no centre known
+            with self.assertRaises(pr.EngineError):
+                asyncio.run(pr.h_geocode(ctx, {'address': ''}))
+        self.assertIsNone(pr.parse_census_one({'result': {'addressMatches': []}}))
+
+    def test_search_rows_carry_top_people(self):
+        rows = {r['id']: r for r in pr.search(self.con, {'limit': 50})['rows']}
+        self.assertTrue(all('topPeople' in r for r in rows.values()))
+        people = [p for r in rows.values() for p in r['topPeople']]
+        self.assertTrue(people and all(set(p) == {'name', 'title', 'source', 'keyTitle'} for p in people))
+        for r in rows.values():
+            flags = [p['keyTitle'] for p in r['topPeople']]
+            self.assertEqual(flags, sorted(flags, reverse=True))  # investment titles first
+
+    def test_store_keeps_saved_searches_and_notes(self):
+        from engine import store
+        self.assertTrue({'prospect_searches', 'prospect_notes'} <= store.COLLECTIONS)
+
 
 class Ingest(unittest.TestCase):
     """The ingest jobs end to end, with the SEC pages and downloads replaced by the fixtures."""

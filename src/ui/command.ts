@@ -55,13 +55,16 @@ export const CODES: FnCode[] = [
   { code: 'MACRO', label: 'Macro', keywords: 'economy fred rates' },
   { code: 'BONDS', aliases: ['WB'], label: 'Bonds (world bonds)', keywords: 'yields treasuries bonds' },
   { code: 'INV', label: 'Investments', keywords: 'investments etfs funds alternatives' },
+  { code: 'PROS', aliases: ['PROSPECT'], label: 'Prospecting: RIAs and family offices (PROS acme)', keywords: 'prospect prospecting ria family office adviser sec form adv 13f lead' },
+  { code: 'FO', label: 'Family offices (prospecting)', keywords: 'family office single multi prospect' },
+  { code: 'RIA', label: 'Registered advisers (prospecting)', keywords: 'ria registered investment adviser advisor prospect' },
   { code: 'HELP', label: 'Keyboard shortcuts', keywords: 'help shortcuts keys' },
 ];
 
 /** Where a code without a ticker goes. */
 const CODE_ROUTE: Record<string, string> = {
   GP: 'chart', DES: 'research', FA: 'research', CN: 'home', OMON: 'flow', TRADE: 'trade', WEI: 'home', ECO: 'calendar', FUT: 'futures',
-  PORT: 'portfolio', ACCT: 'account', CLIENT: 'clients', MULTI: 'chart/multi', SCRIPT: 'chart/scripts', COT: 'futures/cot', BTST: 'backtest', SET: 'setups', MACRO: 'macro', INV: 'invest',
+  PORT: 'portfolio', ACCT: 'account', CLIENT: 'clients', PROS: 'prospect', MULTI: 'chart/multi', SCRIPT: 'chart/scripts', COT: 'futures/cot', BTST: 'backtest', SET: 'setups', MACRO: 'macro', INV: 'invest',
 };
 
 export function findCode(token: string): FnCode | null {
@@ -229,6 +232,13 @@ export function buildResults(input: string, src: Sources, recents: RecentEntry[]
       return score == null ? [] : [{ id: `cl:${c.id}`, title: c.name, subtitle: 'Client review', hint: 'CLIENT', complete: `CLIENT ${c.name}`, score: 2000 + score }];
     });
     if (items.length) return [{ label: 'Clients', items: items.sort((a, b) => b.score - a.score).slice(0, LIMIT.other) }];
+  }
+  // "FO smith", "RIA boston", "PROS acme": the Prospecting search for that text
+  const pros = /^(PROS|PROSPECT|FO|RIA)\s+(.+)$/i.exec(input.trim());
+  if (pros) {
+    const code = pros[1].toUpperCase() === 'PROSPECT' ? 'PROS' : pros[1].toUpperCase();
+    const what = code === 'FO' ? 'family offices' : code === 'RIA' ? 'registered advisers' : 'prospects';
+    return [{ label: 'Prospecting', items: [{ id: `pr:${code}:${pros[2].trim()}`, title: `Search ${what} for "${pros[2].trim()}"`, subtitle: 'Prospecting', hint: code, complete: input.trim(), score: 2000 }] }];
   }
   const symbols = mergeSymbols(src.symbols);
   const groups: ResultGroup[] = [];
@@ -639,7 +649,7 @@ function sources(search: SymbolEntry[]): Sources {
 
 const refFor = (symbol: string): MarketRef | null => (symbol.startsWith('/') ? null : guessMarket(symbol));
 
-/** Carries out a command id: page:route, fn:CODE, tk:SYMBOL:CODE, pf:id (a model), ac:id (my account), cl:id, act:name, set:section. */
+/** Carries out a command id: page:route, fn:CODE, tk:SYMBOL:CODE, pf:id (a model), ac:id (my account), cl:id, pr:CODE:text (prospect search), act:name, set:section. */
 export async function runId(id: string) {
   const d = deps;
   if (!d) return;
@@ -653,6 +663,11 @@ export async function runId(id: string) {
   } else if (kind === 'pf') d.openPage('portfolio', 'open', arg);
   else if (kind === 'ac') d.openPage('account', 'open', arg);
   else if (kind === 'cl') d.openPage('clients', 'open', arg);
+  else if (kind === 'pr') {
+    const cut = arg.indexOf(':');
+    const code = arg.slice(0, cut);
+    d.openPage('prospect', 'preset', code === 'FO' ? 'fo' : code === 'RIA' ? 'ria' : 'all', arg.slice(cut + 1));
+  }
   else if (kind === 'set') (await import('./settings')).openSettings(arg);
   else if (kind === 'act') runAction(arg);
 }
@@ -702,6 +717,7 @@ async function runCode(code: string, symbol: string | null) {
       return (await import('./alerts')).openAlertsDialog(ref ?? undefined);
     }
     if (c.code === 'BONDS') return d.openPage('invest', 'open', 'bonds');
+    if (c.code === 'FO' || c.code === 'RIA') return d.openPage('prospect', 'preset', c.code.toLowerCase());
     if (CODE_ROUTE[c.code]) location.hash = `#${CODE_ROUTE[c.code]}`;
     return;
   }

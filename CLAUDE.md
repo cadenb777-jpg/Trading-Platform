@@ -300,7 +300,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Accounts: labels from account_class (webull.account_info: "Roth IRA ••1234"; futures/crypto/unknown = listed, never
   read/synced/traded); sync = one portfolio per stock account (empty ones only when chosen), updated by account id;
   Account page switcher = all combined or one (pickAccounts); Trade page picks one account, sent with preview/cancel.
-  Prospecting (v35, engine/prospect.py, docs/prospecting.md; requests in src/data/prospect.ts, page not built yet): RIAs,
+  Prospecting (v35, engine/prospect.py, docs/prospecting.md; requests in src/data/prospect.ts): RIAs,
   ERAs, family offices and 13F managers from free SEC bulk files (monthly adviser lists, Form ADV data Schedule A/B +
   7.B.(1), 13F and Form D data sets) and the Census geocoder, in a separate ~/.trading-platform/prospect.db. Big files
   download with resume/backoff (0.2 s between SEC requests) and parse in the 'prospect' spawn worker; firms are rebuilt
@@ -309,6 +309,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   prospect.firm takes `firmId`. The schedule only refreshes sources the owner downloaded once. Every file's columns are
   checked against `EXPECTED` before saving (missing required = that source fails, nothing saved; results in
   prospect.status `headers` and the diagnostics `prospect` section). Name-only merges also need the same ZIP or city.
+  Prospecting page (src/pages/prospectPage.ts, #prospect, rail group Business; codes PROS / FO / RIA, "FO smith" searches):
+  Search (filters -> request in src/prospect/logic.ts, tested; search rows carry topPeople), Map (#prospect/map: Leaflet
+  1.9.4 bundled, OSM tiles with attribution, CSP img-src allows tile.openstreetmap.org, own grid clusters, click = radius
+  search; no tiles = plain grid + note), profile drawer (#prospect/firm/<id>, src/prospect/profile.ts, AI topic 'prospect'),
+  Compare (src/prospect/compare.ts: CSV + print via report.css), Data (per-source freshness, header checks, ingest with
+  streamed progress, 1-2 GB confirm before the first download). Address radius uses prospect.geocode (Census one-line).
+  Saved searches / notes + outreach status = store collections prospect_searches / prospect_notes (doc id = firm id).
 
 ## Conventions
 

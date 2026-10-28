@@ -51,6 +51,7 @@ INDEX_PAGES = {
     'formd': 'https://www.sec.gov/data-research/sec-markets-data/form-d-data-sets',
 }
 CENSUS_BATCH = 'https://geocoding.geo.census.gov/geocoder/locations/addressbatch'
+CENSUS_ONE = 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress'
 ZCTA_URLS = ['https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2024_Gazetteer/2024_Gaz_zcta_national.zip',
              'https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2023_Gazetteer/2023_Gaz_zcta_national.zip']
 EDGAR_COMPANY = 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}'
@@ -1274,6 +1275,18 @@ def parse_census_batch(text):
     return out
 
 
+def parse_census_one(data):
+    """The Census one-line geocoder's JSON -> (lat, lon, matched address) or None (no match)."""
+    matches = ((data or {}).get('result') or {}).get('addressMatches') or []
+    if not matches:
+        return None
+    m = matches[0]
+    c = m.get('coordinates') or {}
+    if c.get('x') is None or c.get('y') is None:
+        return None
+    return float(c['y']), float(c['x']), m.get('matchedAddress') or ''
+
+
 def parse_zcta(text):
     rows = []
     for r in text_rows(text, '\t'):
@@ -1878,11 +1891,28 @@ def search(con, q):
         rows.sort(key=key)
         page = rows[offset:offset + limit]
         return {'total': len(rows), 'centre': {'lat': centre[0], 'lon': centre[1]},
-                'rows': [_firm_row(r, {'distanceMiles': round(d, 2)}) for d, r in page]}
+                'rows': top_people(con, [_firm_row(r, {'distanceMiles': round(d, 2)}) for d, r in page])}
     total = con.execute(f'SELECT COUNT(*) FROM ({sql})', params).fetchone()[0]
     order = 'position DESC' if sort == 'position' and position_sql else SORTS.get(sort, SORTS['aum'])
     rows = con.execute(f'{sql} ORDER BY {order}, id LIMIT ? OFFSET ?', params + [limit, offset]).fetchall()
-    return {'total': total, 'rows': [_firm_row(r) for r in rows]}
+    return {'total': total, 'rows': top_people(con, [_firm_row(r) for r in rows])}
+
+
+def top_people(con, rows, per_firm=3, page_max=500):
+    """Adds `topPeople` (up to 3 per firm: CIO / portfolio manager titles first, then the newest filing) to a page
+    of search rows. Pages bigger than `page_max` (exports, the map) skip it."""
+    if not rows or len(rows) > page_max:
+        return rows
+    ids = [r['id'] for r in rows]
+    found = {}
+    for r in con.execute(f'SELECT firm_id, name, title, source, key_title FROM people WHERE firm_id IN ({",".join("?" * len(ids))}) '
+                         'ORDER BY key_title DESC, filed DESC', ids):
+        bucket = found.setdefault(r['firm_id'], [])
+        if len(bucket) < per_firm and all(p['name'].lower() != r['name'].lower() for p in bucket):
+            bucket.append({'name': r['name'], 'title': r['title'] or '', 'source': r['source'], 'keyTitle': bool(r['key_title'])})
+    for r in rows:
+        r['topPeople'] = found.get(r['id'], [])
+    return rows
 
 
 def latest_positions(con, cik, period=None):
@@ -2180,6 +2210,29 @@ async def h_compare(ctx, msg):
     if cusips and await fill_sectors(ctx, DB_PATH, cusips):
         result = await _query(compare, ids)
     return result
+
+
+@handler('prospect.geocode')
+async def h_geocode(ctx, msg):
+    """{address} -> {lat, lon, label, method}: a 5-digit ZIP uses the loaded ZIP centres; anything else goes to the
+    free Census one-line geocoder (US street addresses only, no key)."""
+    address = str(msg.get('address') or '').strip()
+    if not address:
+        raise EngineError('Type a ZIP code or a street address.')
+    if re.fullmatch(r'\d{5}(-\d{4})?', address):
+        point = await _query(zip_point, address)
+        if not point:
+            raise EngineError(f'ZIP {address[:5]} has no known location yet (run "Map locations" in the Data panel).')
+        return {'lat': point[0], 'lon': point[1], 'label': f'ZIP {address[:5]} (centre)', 'method': 'zip'}
+    try:
+        resp = await ctx.http.get(CENSUS_ONE, params={'address': address, 'benchmark': 'Public_AR_Current', 'format': 'json'}, timeout=30)
+        resp.raise_for_status()
+        hit = parse_census_one(resp.json())
+    except Exception as err:
+        raise EngineError(f'The Census geocoder could not be reached ({err}). Try a ZIP code instead.') from err
+    if not hit:
+        raise EngineError('The Census geocoder found no match for that address. Check the spelling, or use a ZIP code.')
+    return {'lat': hit[0], 'lon': hit[1], 'label': hit[2], 'method': 'address'}
 
 
 @handler('prospect.export')

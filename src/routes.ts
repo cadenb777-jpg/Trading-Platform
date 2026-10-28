@@ -15,6 +15,8 @@ export const REDIRECTS: Record<string, string> = {
   // short names people may type
   portfolios: 'portfolio',
   accounts: 'account',
+  prospects: 'prospect',
+  prospecting: 'prospect',
 };
 
 /** The Chart page's modes (the tabs Chart | Workspace | Scripts; the Workspace keeps the old 'multi' hash). */

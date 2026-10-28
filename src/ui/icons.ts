@@ -49,6 +49,7 @@ const PATHS = {
   moon: '<path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z"/>',
   trade: '<path d="M7 20V5M3.5 8.5L7 5l3.5 3.5"/><path d="M17 4v15M13.5 15.5L17 19l3.5-3.5"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/>',
+  prospect: '<path d="M4 21V7l6-3v17M10 21V9l10 3v9M2.5 21h19"/><path d="M6.5 9.5h1M6.5 13h1M6.5 16.5h1M13 14h1M16.5 14h1M13 17.5h1M16.5 17.5h1"/>',
   refresh: '<path d="M20 11a8 8 0 10-2.3 5.7"/><path d="M20 4v7h-7"/>',
 } as const;
 

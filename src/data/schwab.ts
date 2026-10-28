@@ -34,6 +34,8 @@ const FUTURES_MARKET_HELPER_VERSION = 31;
 export const ALERTS_HELPER_VERSION = 32;
 /** Cross-checking a value across free sources (the "Sources" chip) needs at least this version. */
 export const CROSSCHECK_HELPER_VERSION = 34;
+/** The Prospecting page (RIA / family-office database, its saved searches and notes) needs at least this version. */
+export const PROSPECT_HELPER_VERSION = 35;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
@@ -276,6 +278,7 @@ class HelperConnection {
     if ((type.startsWith('futures.') || (type === 'ai.insight' && msg.topic === 'futures')) && (this.version ?? 0) < FUTURES_MARKET_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('alerts.') && (this.version ?? 0) < ALERTS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('crosscheck.') && (this.version ?? 0) < CROSSCHECK_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if ((type.startsWith('prospect.') || String(msg.collection ?? '').startsWith('prospect_') || (type === 'ai.insight' && msg.topic === 'prospect')) && (this.version ?? 0) < PROSPECT_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('scanner.') || (type === 'ai.insight' && NEW_INSIGHTS.has(String(msg.topic)))) && (this.version ?? 0) < SCANNER_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {
