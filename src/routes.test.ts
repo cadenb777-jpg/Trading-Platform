@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { REDIRECTS, resolveHash } from './routes';
+import { PAGE_SUGGESTIONS } from './ai/screen';
+import { CHART_MODES, REDIRECTS, resolveHash } from './routes';
+
+describe('AI example questions per Chart mode', () => {
+  it('has questions for Chart, Multi and Scripts', () => {
+    for (const m of CHART_MODES) expect(PAGE_SUGGESTIONS[m === 'chart' ? 'chart' : `chart/${m}`]?.length).toBeGreaterThan(0);
+  });
+});
 
 const ROUTES = ['home', 'invest', 'futures', 'macro', 'calendar', 'chart', 'setups', 'research', 'flow', 'backtest', 'account', 'portfolio', 'trade', 'clients'];
 

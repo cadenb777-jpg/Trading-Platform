@@ -2512,6 +2512,10 @@ button.news-item {
 .ws-panel:focus {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
+/* the panel last clicked or focused (the command bar's ALRT uses its symbol) */
+.ws-panel.ws-active .ws-head {
+  box-shadow: inset 0 -2px 0 var(--link);
+}
 .ws-head {
   display: flex;
   align-items: center;

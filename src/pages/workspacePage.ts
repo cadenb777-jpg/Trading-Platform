@@ -297,6 +297,16 @@ const positionsBody = () =>
     }
   });
 
+// ---------- the panel last clicked or focused (the command bar's ALRT uses its symbol) ----------
+
+let activePanel: { symbol: () => string } | null = null;
+
+/** The symbol of the Workspace panel last clicked or focused (null before the Workspace has been used). */
+export function activeWorkspaceRef(): MarketRef | null {
+  const s = activePanel?.symbol();
+  return s && !s.startsWith('/') ? guessMarket(s) : null;
+}
+
 // ---------- one panel ----------
 
 function createPanel(index: number, cfg: () => PanelConfig, change: (patch: Partial<PanelConfig>) => void, deps: WorkspaceDeps, isActive: () => boolean) {
@@ -389,6 +399,12 @@ function createPanel(index: number, cfg: () => PanelConfig, change: (patch: Part
     if (ref) deps.openChart(ref);
   });
   links.onColorChange((panel, color) => panel === id && (change({ link: color }), render()));
+  const markActive = () => {
+    activePanel = { symbol };
+    el.parentElement?.querySelectorAll('.ws-panel').forEach((c) => c.classList.toggle('ws-active', c === el));
+  };
+  el.addEventListener('pointerdown', markActive);
+  el.addEventListener('focusin', markActive);
 
   return {
     id,

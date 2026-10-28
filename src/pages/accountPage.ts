@@ -113,7 +113,7 @@ function readColumns(): Set<string> {
 
 const METHOD_SHORT: Record<string, string> = { entered: 'entered', statement: 'statement', purchase: 'est.', tracked: 'est.', mixed: 'mixed', none: '' };
 
-export function createAccountPage(openPortfolio: (id: string) => void, openTrade: (accountId: string) => void) {
+export function createAccountPage(openPortfolio: (id: string) => void, openTrade: (accountId: string, kind?: 'stocks' | 'futures') => void) {
   let prefs: DisplayPrefs = readPrefs(storage());
   let columns = readColumns();
   /** Redraws the parts that follow the display choices (set by each load). */

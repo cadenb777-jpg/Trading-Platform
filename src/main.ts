@@ -112,7 +112,7 @@ const pages: PageEntry[] = [
   { route: 'research', group: 'analyse', label: 'Research', icon: 'research', title: 'Research', create: async () => (await import('./pages/researchPage')).createResearchPage() },
   { route: 'flow', group: 'analyse', label: 'Flow', icon: 'flow', title: 'Flow', create: async () => (await import('./pages/flowPage')).createFlowPage() },
   { route: 'backtest', group: 'analyse', label: 'Backtest', icon: 'backtest', title: 'Backtest', create: async () => (await import('./pages/backtestPage')).createBacktestPage() },
-  { route: 'account', group: 'money', label: 'Account', icon: 'account', title: 'Account', create: async () => (await import('./pages/accountPage')).createAccountPage(openPortfolio, (id) => openPageWith('trade', 'open', id)) },
+  { route: 'account', group: 'money', label: 'Account', icon: 'account', title: 'Account', create: async () => (await import('./pages/accountPage')).createAccountPage(openPortfolio, (id, kind) => openPageWith('trade', 'open', id, kind)) },
   { route: 'portfolio', group: 'money', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', create: async () => (await import('./pages/portfolioPage')).createPortfolioPage() },
   { route: 'trade', group: 'money', label: 'Trade', icon: 'trade', title: 'Trade', create: async () => (await import('./pages/tradePage')).createTradePage() },
   { route: 'clients', group: 'money', label: 'Clients', icon: 'clients', title: 'Clients & Reports', create: async () => (await import('./pages/clientsPage')).createClientsPage() },
@@ -122,9 +122,17 @@ const pages: PageEntry[] = [
 
 const AI_CHANNEL = 'tp-ai-actions';
 
+/** The route with its mode, e.g. 'chart/multi' (keys PAGE_SUGGESTIONS and tells the AI which Chart mode is open). */
+function routeKey() {
+  const { route, sub } = resolveHash(location.hash, ROUTES());
+  return sub && route === 'chart' ? `${route}/${sub}` : route;
+}
+const MODE_LABELS: Record<string, string> = { 'chart/multi': 'Chart (Multi-chart mode)', 'chart/scripts': 'Chart (Scripts mode: indicator editor)' };
+
 function aiContext(): Record<string, string> {
   const page = currentPage();
-  return { page: page.label, route: page.route, symbol: state.symbols[state.provider] ?? '', timeframe: state.timeframe, screen: screenText(page.page?.el) };
+  const key = routeKey();
+  return { page: MODE_LABELS[key] ?? page.label, route: key, symbol: state.symbols[state.provider] ?? '', timeframe: state.timeframe, screen: screenText(page.page?.el) };
 }
 
 /** Carries out something the AI asked for (open a chart, add an indicator, set an alert...). */
@@ -236,7 +244,7 @@ if (isAiWindow) {
   const assistant = createAssistant({
     mode: 'drawer',
     getContext: aiContext,
-    getSuggestions: () => PAGE_SUGGESTIONS[currentPage().route] ?? [],
+    getSuggestions: () => PAGE_SUGGESTIONS[routeKey()] ?? [],
     onAction: runAction,
     onClose: () => toggleAssistant(false),
     onPopOut: () => {

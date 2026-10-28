@@ -19,6 +19,8 @@ function clean(s: string) {
 /** Example questions for the page the user is on (shown when the chat is empty). */
 export const PAGE_SUGGESTIONS: Record<string, string[]> = {
   home: ['Summarize what’s on my screen in 5 bullets', 'What moved the market today and why?', 'Which news here matters most for my watchlist?'],
+  'chart/multi': ['Compare the charts on screen: which is strongest?', 'Do these markets move together right now?', 'What stands out across these timeframes?'],
+  'chart/scripts': ['Explain what this script does, line by line', 'Why does my script show an error?', 'Help me convert a TradingView script to this editor'],
   chart: ['Explain what this chart and its indicators are showing', 'Where are the key support and resistance levels?', 'Is this trend getting stronger or weaker?'],
   setups: ['Why is the average loss bigger than the average win on swing trades?', 'Why are there no A-grade setups right now?', 'Walk me through the best setup on screen step by step', 'What do the rule tests in Research tell me?'],
   invest: ['Summarize this board: what’s leading and what’s lagging?', 'What stands out in these numbers?', 'Explain this fund’s NAV and fees in plain words'],
