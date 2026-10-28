@@ -118,7 +118,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
   let columns = readColumns();
   /** Redraws the parts that follow the display choices (set by each load). */
   let paint: () => void = () => {};
-  const viewBtn = h('button', { class: 'btn', 'aria-haspopup': 'dialog', title: 'How changes and gains are shown' }, 'View') as HTMLButtonElement;
+  const viewBtn = h('button', { class: 'btn', 'aria-haspopup': 'dialog', title: 'Show daily change and gains as %, $ or both' }, '% / $ view') as HTMLButtonElement;
   viewBtn.addEventListener('click', () => openViewMenu());
   const frame = pageFrame('Account', 'Your real money only: every account of yours, added together (or one at a time), with gains, dividends, risk and allocation.', [
     viewBtn,
