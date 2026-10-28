@@ -13,7 +13,7 @@ import { clearEngineCache, loadNews, type NewsItem } from '../data/schwab';
 import { ALL_ACCOUNTS, allocation, combineHoldings, holdingNewsSymbols, dividendPayload, myPortfolios, partKey, pickAccounts, receivedPayload, todayChange, type AccountPart, type CombinedHolding } from '../portfolio/account';
 import { drawDividends, fetchDividends, openStatementImport, type DividendHolding, type DividendReport } from '../portfolio/dividendsView';
 import { fetchPrices, type PriceInfo } from '../portfolio/prices';
-import { DEFAULT_PREFS, dayTotal, gainOf, methodLabel, methodOf, readPrefs, savePrefs, showChange, sumGains, type DisplayPrefs, type Gain, type Received, type ShowAs } from '../portfolio/returns';
+import { dayTotal, gainOf, methodLabel, methodOf, readPrefs, savePrefs, showChange, sumGains, type DisplayPrefs, type Gain, type Received, type ShowAs } from '../portfolio/returns';
 import { fetchRisk, fetchTax, type RiskInput, type RiskReport, type TaxReport, type TaxType } from '../portfolio/risk';
 import { holdingGroup, riskCard, taxSection } from '../portfolio/riskView';
 import { isMine, type Holding, type Portfolio } from '../portfolio/types';
@@ -118,10 +118,25 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
   let columns = readColumns();
   /** Redraws the parts that follow the display choices (set by each load). */
   let paint: () => void = () => {};
-  const viewBtn = h('button', { class: 'btn', 'aria-haspopup': 'dialog', title: 'Show daily change and gains as %, $ or both' }, '% / $ view') as HTMLButtonElement;
-  viewBtn.addEventListener('click', () => openViewMenu());
+  // One-click switch for how changes and gains read everywhere on the page (remembered on this device).
+  const showOpts: [ShowAs, string, string][] = [['pct', '%', 'Show changes and gains in percent'], ['usd', '$', 'Show changes and gains in dollars'], ['both', 'Both', 'Show dollars and percent']];
+  const showSwitch = h('div', { class: 'segmented acct-show', role: 'group', 'aria-label': 'Show changes as' });
+  const drawSwitch = () => {
+    const current = prefs.day === prefs.gain ? prefs.day : null;
+    showSwitch.replaceChildren(
+      ...showOpts.map(([v, t, title]) =>
+        h('button', { type: 'button', class: current === v ? 'active' : '', 'aria-pressed': current === v, title, onclick: () => {
+          prefs = { day: v, gain: v };
+          savePrefs(storage(), prefs);
+          drawSwitch();
+          paint();
+        } }, t),
+      ),
+    );
+  };
+  drawSwitch();
   const frame = pageFrame('Account', 'Your real money only: every account of yours, added together (or one at a time), with gains, dividends, risk and allocation.', [
-    viewBtn,
+    showSwitch,
     h('button', { class: 'btn', title: 'Upload a positions export (CSV or Excel) from your broker; it becomes one of your accounts here', onclick: () => openStatementImport(imported) }, 'Import statement'),
     syncButton('Sync Webull', () => '', synced),
     h('button', { class: 'btn', onclick: () => (clearEngineCache('dividends.'), load()) }, 'Refresh'),
@@ -136,58 +151,6 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
   const fmtDay = (u: number | null | undefined, p: number | null | undefined) => showChange(u, p, prefs.day);
   const fmtGain = (u: number | null | undefined, p: number | null | undefined) => showChange(u, p, prefs.gain, 1);
 
-  function openViewMenu() {
-    const seg = (label: string, key: keyof DisplayPrefs) => {
-      const opts: [ShowAs, string][] = [['pct', '%'], ['usd', '$'], ['both', 'Both']];
-      const group = h('div', { class: 'segmented', role: 'group', 'aria-label': label });
-      const draw = () =>
-        group.replaceChildren(
-          ...opts.map(([v, t]) =>
-            h(
-              'button',
-              {
-                type: 'button',
-                class: prefs[key] === v ? 'active' : '',
-                'aria-pressed': prefs[key] === v,
-                onclick: () => {
-                  prefs = { ...prefs, [key]: v };
-                  savePrefs(storage(), prefs);
-                  draw();
-                  paint();
-                },
-              },
-              t,
-            ),
-          ),
-        );
-      draw();
-      return h('div', { class: 'acct-view-row' }, h('span', { class: 'small' }, label), group);
-    };
-    openPopover(
-      viewBtn,
-      h(
-        'div',
-        { class: 'acct-view-menu' },
-        seg('Daily change', 'day'),
-        seg('Gain / loss', 'gain'),
-        h(
-          'button',
-          {
-            type: 'button',
-            class: 'link-btn small',
-            onclick: () => {
-              prefs = { ...DEFAULT_PREFS };
-              savePrefs(storage(), prefs);
-              paint();
-              viewBtn.click();
-            },
-          },
-          'Reset',
-        ),
-      ),
-      { align: 'right', label: 'Display choices' },
-    );
-  }
 
   async function load() {
     const run = ++loading;

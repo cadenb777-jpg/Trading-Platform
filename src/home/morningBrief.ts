@@ -119,6 +119,20 @@ export function createMorningBrief(d: BriefDeps) {
   async function loadAccounts() {
     const mine = myPortfolios(await listDocs<Portfolio>('portfolios'));
     if (!mine.length) {
+      // Not synced into Account yet: show Webull's own totals (as the Account page does) before the set-up hint.
+      const webull = await webullTotals().catch(() => null);
+      if (webull) {
+        accountsBody.replaceChildren(
+          h(
+            'a',
+            { class: 'brief-total brief-item', href: '#account', title: 'Open Account and press Sync to add holdings, movers and gains' },
+            h('span', { class: 'muted tiny' }, `Total value · ${webull.count} Webull account${webull.count === 1 ? '' : 's'} (as Webull reports it)`),
+            h('b', { class: 'num' }, money(webull.total)),
+            h('span', { class: 'muted tiny' }, 'Press Sync on Account for holdings, today’s movers and gains'),
+          ),
+        );
+        return;
+      }
       accountsBody.replaceChildren(
         h('p', { class: 'muted small' }, 'No accounts yet. Import a statement or sync Webull on the Account page, and your value, today’s change and biggest movers show here.'),
         h('a', { class: 'btn small brief-item', href: '#account' }, 'Set up Account'),
@@ -127,14 +141,60 @@ export function createMorningBrief(d: BriefDeps) {
     }
     const rows = combineHoldings(mine);
     const symbols = rows.filter((r) => r.shares > 0).map((r) => r.symbol);
+    // Draw straight away (last known total) and again when live prices arrive, so the card never waits on Schwab.
+    drawAccounts(mine.length, rows, {}, true);
     const prices = symbols.length ? await fetchPrices(symbols) : {};
+    drawAccounts(mine.length, rows, prices, false);
+  }
+
+  /** Sum of Webull's own stock-account values (null when Webull isn't set up or nothing could be read). */
+  async function webullTotals(): Promise<{ total: number; count: number } | null> {
+    const { loadSnapshot } = await import('../trade/webull');
+    const status = await loadSnapshot();
+    if (!status.ok) return null;
+    let total = 0;
+    let count = 0;
+    for (const a of status.accounts) {
+      if (a.futures || a.stocks === false) continue;
+      const snap = a.id === status.accountId ? status : await loadSnapshot(a.id).catch(() => null);
+      const v = snap?.balances?.value;
+      if (typeof v === 'number' && Number.isFinite(v)) {
+        total += v;
+        count++;
+      }
+    }
+    return count ? { total, count } : null;
+  }
+
+  function drawAccounts(count: number, rows: ReturnType<typeof combineHoldings>, prices: Parameters<typeof accountsBrief>[1], pricing: boolean) {
+    const mine = { length: count };
     const b = accountsBrief(rows, prices);
+    // Never a bare dash: with no live prices, show the last total worked out on this device, labelled with its time.
+    const lastKey = 'tp-brief-last-total';
+    let last: { total: number; at: number } | null = null;
+    try {
+      if (b.total != null && !b.unpriced.length) localStorage.setItem(lastKey, JSON.stringify({ total: b.total, at: Date.now() }));
+      else last = JSON.parse(localStorage.getItem(lastKey) ?? 'null');
+    } catch {
+      /* a per-device convenience only */
+    }
+    const totalText =
+      b.total != null && !b.unpriced.length ? money(b.total)
+        : last && Number.isFinite(last.total) ? money(last.total)
+          : b.total != null ? money(b.total)
+            : 'No live prices yet';
+    const totalNote =
+      b.total != null && !b.unpriced.length ? ''
+        : last && Number.isFinite(last.total) ? `Last total, ${timeAgo(last.at / 1000)}${pricing ? ' · getting live prices…' : ' (live prices not in yet)'}`
+          : b.total != null ? 'Partial: some holdings have no price yet'
+            : pricing ? 'Getting live prices…' : helper.isConnected ? 'Schwab hasn’t sent prices for your holdings yet; it retries every 2 minutes' : 'Start the helper to price your holdings';
     accountsBody.replaceChildren(
       h(
         'a',
         { class: 'brief-total brief-item', href: '#account', title: 'Open Account: every account, holdings, risk, taxes and dividends' },
         h('span', { class: 'muted tiny' }, `Total value · ${mine.length} account${mine.length === 1 ? '' : 's'}`),
-        h('b', { class: 'num' }, b.total != null ? money(b.total) : '—'),
+        h('b', { class: 'num' }, totalText),
+        totalNote ? h('span', { class: 'muted tiny' }, totalNote) : '',
         h('span', { class: `num ${tone(b.today)}` }, b.today != null ? `${signedMoney(b.today)} today${b.todayPct != null ? ` (${signedPct(b.todayPct)})` : ''}` : 'Today: waiting for prices'),
       ),
       b.movers.length
