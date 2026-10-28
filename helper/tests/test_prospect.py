@@ -117,7 +117,7 @@ class Parsers(Loaded):
         self.assertEqual(self.con.execute('SELECT kind FROM adv_firms WHERE crd = 2001').fetchone()[0], 'ERA')
 
     def test_xlsx_roster(self):
-        rows = pr.xlsx_rows(xlsx([['Organization CRD#', 'Primary Business Name', '5F(2)(c)'], [42, 'Workbook Advisers', 1234.5]]))
+        rows = list(pr.xlsx_rows(xlsx([['Organization CRD#', 'Primary Business Name', '5F(2)(c)'], [42, 'Workbook Advisers', 1234.5]])))
         firm = pr.parse_adv_row(rows[0], 'RIA')
         self.assertEqual((firm['crd'], firm['business_name'], firm['aum_total']), (42, 'Workbook Advisers', 1234.5))
 
@@ -195,8 +195,11 @@ class FileLists(unittest.TestCase):
 
     def test_formd_and_adv_full(self):
         self.assertEqual(pr.pick_formd_files(['https://x/2024q2_d.zip', 'https://x/2024q3_d.zip', 'https://x/readme.zip']), ['https://x/2024q3_d.zip'])
-        full = pr.pick_adv_full_files(['https://x/adv_20240101_20240331_part1.zip', 'https://x/adv_20240101_20240331_part2.zip', 'https://x/adv_20231001_20231231.zip'])
-        self.assertEqual(len(full), 2)
+        full = pr.pick_adv_full_files(['https://x/adv_20240101_20240331_part1.zip', 'https://x/adv_20240101_20240331_part2.zip',
+                                       'https://x/adv_20231001_20231231.zip', 'https://x/adv_20230401_20230630.zip', 'https://x/adv_20221001_20221231.zip'])
+        # every release of the last 12 months (newest first), not the older one
+        self.assertEqual([u.rsplit('/', 1)[-1] for u in full], ['adv_20240101_20240331_part2.zip', 'adv_20240101_20240331_part1.zip',
+                                                                'adv_20231001_20231231.zip', 'adv_20230401_20230630.zip'])
 
 
 class Classifier(unittest.TestCase):
@@ -449,6 +452,116 @@ class Ingest(unittest.TestCase):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def make_zip(path, tables):
+    """A zip of TSV tables: {name: (header, rows)}."""
+    with zipfile.ZipFile(path, 'w') as zf:
+        for name, (header, rows) in tables.items():
+            zf.writestr(name, '\t'.join(header) + '\n' + ''.join('\t'.join(r) + '\n' for r in rows))
+    return path
+
+
+SUB_H = ['ACCESSION_NUMBER', 'FILING_DATE', 'SUBMISSIONTYPE', 'CIK', 'PERIODOFREPORT']
+COVER_H = ['ACCESSION_NUMBER', 'ISAMENDMENT', 'AMENDMENTTYPE', 'FILINGMANAGER_NAME', 'FILINGMANAGER_CITY', 'FILINGMANAGER_STATEORCOUNTRY', 'FILINGMANAGER_ZIPCODE']
+INFO_H = ['ACCESSION_NUMBER', 'NAMEOFISSUER', 'TITLEOFCLASS', 'CUSIP', 'VALUE', 'SSHPRNAMT', 'SSHPRNAMTTYPE', 'PUTCALL', 'INVESTMENTDISCRETION']
+
+
+class Fixes(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='tp-fixes-'))
+        self.db = self.tmp / 'p.db'
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_adds_only_amendment_in_a_later_data_set_keeps_the_original(self):
+        first = make_zip(self.tmp / 'a.zip', {
+            'SUBMISSION.tsv': (SUB_H, [['A1', '14-MAY-2023', '13F-HR', '9100', '31-MAR-2023']]),
+            'COVERPAGE.tsv': (COVER_H, [['A1', 'N', '', 'LATE FILER LLC', 'DOVER', 'DE', '19901']]),
+            'INFOTABLE.tsv': (INFO_H, [['A1', 'APPLE INC', 'COM', '037833100', '1000000', '100', 'SH', '', 'SOLE']])})
+        later = make_zip(self.tmp / 'b.zip', {
+            'SUBMISSION.tsv': (SUB_H, [['A2', '01-JUN-2023', '13F-HR/A', '9100', '31-MAR-2023']]),
+            'COVERPAGE.tsv': (COVER_H, [['A2', 'Y', 'NEW HOLDINGS', 'LATE FILER LLC', 'DOVER', 'DE', '19901']]),
+            'INFOTABLE.tsv': (INFO_H, [['A2', 'MICROSOFT CORP', 'COM', '594918104', '500000', '50', 'SH', '', 'SOLE']])})
+        pr.load_13f(self.db, first)
+        pr.load_13f(self.db, later)
+        pr.load_13f(self.db, later)  # loading the same data set again doesn't double it
+        con = pr.connect(self.db)
+        rows = sorted(tuple(r) for r in con.execute('SELECT cusip, value FROM holdings_13f WHERE cik = 9100'))
+        self.assertEqual(rows, [('037833100', 1_000_000), ('594918104', 500_000)])
+        filer = con.execute('SELECT total_value, entries, latest_accession FROM filers_13f WHERE cik = 9100').fetchone()
+        self.assertEqual(tuple(filer), (1_500_000, 2, 'A2'))
+        con.close()
+
+    def test_missing_required_column_fails_and_saves_nothing(self):
+        bad = make_zip(self.tmp / 'bad.zip', {
+            'SUBMISSION.tsv': (SUB_H, [['A1', '14-MAY-2023', '13F-HR', '9100', '31-MAR-2023']]),
+            'COVERPAGE.tsv': (COVER_H, [['A1', 'N', '', 'X LLC', 'DOVER', 'DE', '19901']]),
+            'INFOTABLE.tsv': ([h for h in INFO_H if h != 'CUSIP'] + ['CUSIP_NUMBER'], [['A1', 'APPLE INC', 'COM', '1', '1', 'SH', '', 'SOLE', '037833100']])})
+        with self.assertRaises(pr.HeaderError) as err:
+            pr.load_13f(self.db, bad)
+        self.assertIn('cusip', str(err.exception))
+        con = pr.connect(self.db)
+        self.assertEqual(con.execute('SELECT COUNT(*) FROM holdings_13f').fetchone()[0], 0)
+        self.assertEqual(con.execute('SELECT COUNT(*) FROM filers_13f').fetchone()[0], 0)
+        notes = pr.get_meta(con, 'headers:13f')
+        info = next(n for n in notes if n['tables'] == ['13f_INFOTABLE'])
+        self.assertEqual(info['missingRequired'], ['cusip'])
+        self.assertEqual(info['unexpected'], ['cusipnumber'])
+        st = pr.status(con, self.db)
+        self.assertTrue(st['headers']['13f'])
+        con.close()
+        with mock.patch.object(pr, 'DB_PATH', self.db):
+            section = pr.diagnostics_section()
+        self.assertEqual(section['headers']['13f'][-1]['missingRequired'], ['cusip'])
+        from engine import diagnostics
+        self.assertIs(diagnostics.SECTIONS['prospect'], pr.diagnostics_section)
+
+    def test_roster_header_check_ignores_item_codes(self):
+        rep = pr.check_headers(['organizationcrd#', 'primarybusinessname', 'mainofficestate', '5f2c', '11a1', 'oddcolumn'], 'adv_roster', 'adv_roster_ria')
+        self.assertEqual(rep['missingRequired'], [])
+        self.assertEqual(rep['unexpected'], ['oddcolumn'])
+        self.assertEqual(pr.check_headers(['organizationcrd#', 'mainofficestate'], 'adv_roster', 'adv_roster_ria')['missingRequired'],
+                         ['business name', 'regulatory AUM 5F(2)(c)'])
+
+    def test_form_d_drops_weak_family_names(self):
+        z = make_zip(self.tmp / 'd.zip', {
+            'FORMDSUBMISSION.tsv': (['ACCESSIONNUMBER', 'FILING_DATE'], [['D1', '01-MAR-2024'], ['D2', '01-MAR-2024']]),
+            'ISSUERS.tsv': (['ACCESSIONNUMBER', 'CIK', 'ENTITYNAME'], [['D1', '1', 'BLUE LAKE HOLDINGS LLC'], ['D2', '2', 'GREEN FAMILY OFFICE LLC']]),
+            'OFFERING.tsv': (['ACCESSIONNUMBER', 'INDUSTRYGROUPTYPE'], [['D1', 'Other'], ['D2', 'Other']]),
+            'RELATEDPERSONS.tsv': (['ACCESSIONNUMBER', 'FIRSTNAME', 'LASTNAME'], [['D2', 'Gail', 'Green']])})
+        self.assertEqual(pr.load_formd(self.db, z)['offerings'], 1)
+
+    def test_name_only_merge_needs_same_place(self):
+        self.assertTrue(pr.same_place({'zip': '10022-1234'}, {'zip': '10022'}))
+        self.assertTrue(pr.same_place({'city': 'Dover', 'state': 'DE'}, {'city': 'DOVER', 'state': 'de'}))
+        self.assertFalse(pr.same_place({'city': 'Dover', 'state': 'DE'}, {'city': 'Wilmington', 'state': 'DE'}))
+        roster = self.tmp / 'r.csv'
+        roster.write_text('Organization CRD#,Primary Business Name,Main Office City,Main Office State,Main Office Postal Code,5F(2)(c)\n'
+                          '77,SAME NAME CAPITAL LLC,Austin,TX,78701,100\n')
+        pr.load_adv_roster(self.db, zip_file(roster, self.tmp / 'r.zip'), 'RIA', '2025-01-01')
+        pr.load_13f(self.db, make_zip(self.tmp / 'f.zip', {
+            'SUBMISSION.tsv': (SUB_H, [['A9', '14-MAY-2023', '13F-HR', '9200', '31-MAR-2023']]),
+            'COVERPAGE.tsv': (COVER_H, [['A9', 'N', '', 'SAME NAME CAPITAL, LLC', 'Dallas', 'TX', '75201']]),
+            'INFOTABLE.tsv': (INFO_H, [['A9', 'APPLE INC', 'COM', '037833100', '1', '1', 'SH', '', 'SOLE']])}))
+        pr.build_firms(self.db)
+        con = pr.connect(self.db)
+        self.assertIsNotNone(con.execute("SELECT id FROM firms WHERE id = 'cik-9200'").fetchone())  # not merged
+        link = con.execute("SELECT status FROM links WHERE firm_id = 'crd-77' AND source = 'Form 13F'").fetchone()
+        self.assertEqual(link['status'], 'possible')
+        con.close()
+
+    def test_csv_cells_never_run_as_formulas(self):
+        self.assertEqual(pr.csv_cell('=HYPERLINK("x")'), '\'=HYPERLINK("x")')
+        self.assertEqual(pr.csv_cell('+1 212'), "'+1 212")
+        self.assertEqual(pr.csv_cell('@SUM(A1)'), "'@SUM(A1)")
+        self.assertEqual(pr.csv_cell(-5.0), -5.0)  # numbers stay numbers
+        self.assertEqual(pr.csv_cell(None), '')
+
+    def test_adv_full_note(self):
+        self.assertIn('ended in Dec 2024', pr.adv_full_note('2024-12-31'))
+        self.assertTrue(pr.adv_full_note('2024-12-31').startswith('People and private funds as of 2024-12-31'))
+
+
 class FakeResponse:
     def __init__(self, status, chunks, headers=None):
         self.status_code, self.chunks, self.headers = status, chunks, headers or {}
@@ -463,7 +576,7 @@ class FakeResponse:
         if self.status_code >= 400:
             raise RuntimeError(self.status_code)
 
-    async def aiter_bytes(self, size):
+    async def aiter_raw(self, size):
         for c in self.chunks:
             if isinstance(c, Exception):
                 raise c
@@ -492,8 +605,8 @@ class Downloads(unittest.TestCase):
         with mock.patch.object(pr.asyncio, 'sleep', no_sleep), mock.patch.object(pr, 'SEC_GAP', 0):
             path = asyncio.run(pr.download(ctx, 'https://www.sec.gov/files/x.zip', tmp / 'x.zip', client=Client()))
         self.assertEqual(path.read_bytes(), b'abcdef')
-        self.assertEqual(calls[0], {})
-        self.assertEqual(calls[2], {'Range': 'bytes=3-'})  # resumed where it stopped
+        self.assertEqual(calls[0], {'Accept-Encoding': 'identity'})  # uncompressed, so byte ranges are file bytes
+        self.assertEqual(calls[2], {'Accept-Encoding': 'identity', 'Range': 'bytes=3-'})  # resumed where it stopped
         self.assertEqual(sleeps[:2], [2, 4])  # backed off
         shutil.rmtree(tmp, ignore_errors=True)
 

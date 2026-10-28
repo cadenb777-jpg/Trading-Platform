@@ -9,9 +9,9 @@ a figure that is not in a filing stays empty. This stage is the data engine; the
 | Source | What it gives | File | Refresh |
 | --- | --- | --- | --- |
 | SEC monthly adviser lists ("Information about Registered Investment Advisers and Exempt Reporting Advisers") | Every SEC-registered adviser (RIA) and exempt reporting adviser (ERA): CRD, SEC number, legal and business name, main office address, phone, website, latest Form ADV date; for RIAs Item 5: employees, regulatory AUM (discretionary / non-discretionary / total), accounts, clients and assets by client type (5.D), how they are paid (5.E) | `ia{MMDDYY}.zip` and `ia{MMDDYY}-exempt.zip` (CSV or a workbook, Windows-1252) | Monthly. The first download also loads up to 4 older lists about a quarter apart, for the AUM history |
-| SEC Form ADV data (the fuller FOIA files) | Schedule A (direct owners and executive officers, with title) and Schedule B (indirect owners); Schedule D 7.B.(1) private funds: name, 805- ID, type, gross asset value, beneficial owners. Only each adviser's latest filing is kept | Large zip (about 1 GB), tables `IA_ADV_Base_A`, `IA_Schedule_A_B`, `IA_Schedule_D_7B1` (and `ERA_` versions) joined by `FilingID` | Checked monthly; the SEC updates it rarely (at the time of writing it ran to 31 Dec 2024) |
+| SEC Form ADV data (the fuller FOIA files) | Schedule A (direct owners and executive officers, with title) and Schedule B (indirect owners); Schedule D 7.B.(1) private funds: name, 805- ID, type, gross asset value, beneficial owners. Only each adviser's latest filing is kept | Large zip (about 1 GB), tables `IA_ADV_Base_A`, `IA_Schedule_A_B`, `IA_Schedule_D_7B1` (and `ERA_` versions) joined by `FilingID` | Checked monthly. Every release from the 12 months up to the newest is loaded (each quarterly release holds only that quarter's filings) and the latest filing per CRD across them is kept. The bulk data ended at 31 Dec 2024 when this was built, so `prospect.status` shows "People and private funds as of <date>" (`peopleAsOf`, `peopleNote`) |
 | SEC Form 13F data sets | Every manager with $100M+ in 13(f) securities: cover page (name, address, CRD and SEC file number since 2023), signature (name, title, phone), other included managers, and every position (CUSIP, issuer, class, value, shares, put/call, discretion) | Zips of TSV files: `SUBMISSION`, `COVERPAGE`, `SUMMARYPAGE`, `INFOTABLE`, `SIGNATURE`, `OTHERMANAGER2` | Quarterly (looked for monthly). The two newest data sets are loaded; each filer keeps its newest two quarters |
-| SEC Form D data sets | Private offerings of pooled investment funds (and any issuer named like a family office): amounts, investors, minimum; related persons (executive officers, directors, promoters) with the filer's own description | Zips of TSV files: `FORMDSUBMISSION`, `ISSUERS`, `OFFERING`, `RELATEDPERSONS` | Quarterly (looked for monthly) |
+| SEC Form D data sets | Private offerings of pooled investment funds (and any other issuer only when its name clearly says family office): amounts, investors, minimum; related persons (executive officers, directors, promoters) with the filer's own description | Zips of TSV files: `FORMDSUBMISSION`, `ISSUERS`, `OFFERING`, `RELATEDPERSONS` | Quarterly (looked for monthly) |
 | US Census Bureau | Batch geocoder (address -> latitude/longitude; free, no key) and ZIP (ZCTA) centre points | `geocoder/locations/addressbatch`, Gazetteer ZCTA file | After each adviser download (only new addresses) |
 
 Single Form D filings shown elsewhere in the platform still come from `alts.py` (`alts.form_d`), which now also keeps
@@ -52,7 +52,8 @@ resumed (HTTP Range) next time.
 2. A Form D fund whose name equals one adviser's Schedule D 7.B.(1) fund name is linked to that adviser (0.9).
 3. Otherwise normalized name (suffixes like LLC/LP/Inc and EDGAR's "/DE/" removed) plus address: half character
    similarity, half shared words, +0.05 for the same ZIP, +0.03 for the same city, -0.15 for a different state.
-   0.92 or more merges the records; 0.80-0.92 is shown as a "possible" match and not merged.
+   0.92 or more merges the records only when they also share a ZIP, or a city and state; anything else from 0.80 up
+   is shown as a "possible" match and not merged.
 
 Every link is stored with its method and score and shown on the firm profile.
 
@@ -95,12 +96,26 @@ are never more than "strong signals".
   sector mix, turnover (half the sum of absolute weight changes between the two quarters).
 - `prospect.export {query}`: the same filters as search, up to 5,000 rows as CSV text.
 
+## Header self-check
+
+Before anything from a download is saved, its column names are compared with the ones the parser reads
+(`EXPECTED` in prospect.py). A missing required column fails that source with a clear message and saves nothing from
+the file (with `all`, the other sources still run). Every check (missing required, missing optional and unexpected
+columns, per file) is kept in `prospect.status` (`headers`) and in the Send diagnostics file (`prospect` section), so
+the first real download says exactly what to change.
+
+## Export
+
+`prospect.export` writes CSV; a cell that starts with `=`, `+`, `-` or `@` gets a leading apostrophe so a spreadsheet
+never runs it as a formula.
+
 ## Being polite to the SEC
 
 The SEC asks automated tools to send a contact email in the User-Agent (the helper sends "TradingPlatform personal
 research <your SEC email>") and to stay under 10 requests a second. This module waits 0.2 s between its SEC requests,
-downloads one file at a time, retries 429/5xx and dropped connections with growing waits (2, 4, 8... seconds, honouring
-Retry-After), resumes partial files, and stops on a 403. The background schedule only refreshes sources you have
+downloads one file at a time uncompressed (`Accept-Encoding: identity`, so resumed byte ranges and progress are
+exact), retries 429/5xx and dropped connections with growing waits (2, 4, 8... seconds, honouring
+Retry-After), resumes partial files, and stops on a 403 (wrong SEC email, or the SEC's rate limit: wait 10 minutes). The background schedule only refreshes sources you have
 downloaded yourself, and only when the SEC page lists a newer file.
 
 ## What was not verified live
@@ -130,3 +145,6 @@ after it.
 - Brochure (Form ADV Part 2) text: it is a PDF per firm, not part of the bulk data, so multi-family-office signals here
   come from names and client mix only.
 - State-registered advisers (under ~$100M) are in state files on IAPD, not in the SEC lists used here.
+- A live per-firm refresh from IAPD (adviserinfo.sec.gov) was not added: the JSON its website uses is not a documented
+  public API, so it couldn't be relied on. Current AUM and address come from the monthly lists; the profile links to the
+  firm's IAPD page.

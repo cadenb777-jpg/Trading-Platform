@@ -90,6 +90,11 @@ export interface ProspectStatus {
   job: { running: boolean; source?: string; stage?: string; started?: number; finished?: number; error?: string | null };
   progress: { stage: string; done: number; total: number; at: number } | null;
   sizeMb: number;
+  /** Column check of each downloaded file (missing required = that source failed and nothing was saved). */
+  headers: Record<string, { file: string; tables: string[]; missingRequired: string[]; missingOptional: string[]; unexpected: string[]; unexpectedCount: number }[] | null>;
+  /** "People and private funds as of <date>": the SEC's bulk Form ADV data ended in Dec 2024. */
+  peopleAsOf: string | null;
+  peopleNote: string | null;
 }
 
 export const prospectStatus = () => engineRequest<ProspectStatus>('prospect.status', {}, 20000);

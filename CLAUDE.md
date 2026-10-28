@@ -306,7 +306,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   download with resume/backoff (0.2 s between SEC requests) and parse in the 'prospect' spawn worker; firms are rebuilt
   after each ingest (exact CRD/SEC file no./CIK, then name + address scores). Family-office types are guesses with
   reasons and a confidence word, never certain. 13F VALUE is thousands before 2023-01-03 filings, dollars after.
-  prospect.firm takes `firmId`. The schedule only refreshes sources the owner downloaded once.
+  prospect.firm takes `firmId`. The schedule only refreshes sources the owner downloaded once. Every file's columns are
+  checked against `EXPECTED` before saving (missing required = that source fails, nothing saved; results in
+  prospect.status `headers` and the diagnostics `prospect` section). Name-only merges also need the same ZIP or city.
 
 ## Conventions
 

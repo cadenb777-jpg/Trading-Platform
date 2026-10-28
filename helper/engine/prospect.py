@@ -24,6 +24,7 @@ import csv
 import datetime as dt
 import difflib
 import io
+import itertools
 import json
 import logging
 import math
@@ -119,7 +120,8 @@ CREATE TABLE IF NOT EXISTS filers_13f (cik INTEGER PRIMARY KEY, name TEXT, stree
 CREATE TABLE IF NOT EXISTS holdings_13f (cik INTEGER, period TEXT, cusip TEXT, issuer TEXT, class TEXT, value REAL,
   shares REAL, share_type TEXT, put_call TEXT, discretion TEXT, accession TEXT);
 CREATE INDEX IF NOT EXISTS holdings_filer ON holdings_13f (cik, period);
-CREATE INDEX IF NOT EXISTS holdings_cusip ON holdings_13f (cusip);
+DROP INDEX IF EXISTS holdings_cusip;
+CREATE INDEX IF NOT EXISTS holdings_cusip_filer ON holdings_13f (cusip, cik, period);
 CREATE TABLE IF NOT EXISTS other_managers_13f (cik INTEGER, period TEXT, name TEXT, crd INTEGER, sec_file TEXT, file_13f TEXT);
 CREATE TABLE IF NOT EXISTS formd_offerings (accession TEXT PRIMARY KEY, cik INTEGER, name TEXT, entity_type TEXT, industry TEXT,
   fund_type TEXT, street TEXT, city TEXT, state TEXT, zip TEXT, phone TEXT, filed TEXT, offering REAL, sold REAL,
@@ -273,37 +275,45 @@ def stream_rows(binary, delimiter='\t', encoding='utf-8'):
 
 
 def xlsx_rows(data):
-    """The first sheet of an .xlsx workbook as dict rows (standard library only: an xlsx is a zip of XML files)."""
+    """The first sheet of an .xlsx workbook as dict rows, read as a stream (standard library only: an xlsx is a zip
+    of XML files). Each row is parsed and then cleared, so a 20,000-row roster never sits in memory as a tree."""
     ns = '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         shared = []
         if 'xl/sharedStrings.xml' in zf.namelist():
-            for si in ET.fromstring(zf.read('xl/sharedStrings.xml')).iter(f'{ns}si'):
-                shared.append(''.join(t.text or '' for t in si.iter(f'{ns}t')))
+            with zf.open('xl/sharedStrings.xml') as fh:
+                for _, el in ET.iterparse(fh):
+                    if el.tag == f'{ns}si':
+                        shared.append(''.join(t.text or '' for t in el.iter(f'{ns}t')))
+                        el.clear()
         sheet = sorted(n for n in zf.namelist() if re.match(r'xl/worksheets/sheet\d+\.xml$', n))[0]
-        root = ET.fromstring(zf.read(sheet))
-    rows = []
-    for row in root.iter(f'{ns}row'):
-        cells = {}
-        for c in row.iter(f'{ns}c'):
-            ref = re.match(r'([A-Z]+)', c.get('r', 'A'))
-            col = 0
-            for ch in ref.group(1):
-                col = col * 26 + ord(ch) - 64
-            v = c.find(f'{ns}v')
-            if c.get('t') == 's' and v is not None:
-                value = shared[int(v.text)]
-            elif c.get('t') == 'inlineStr':
-                value = ''.join(t.text or '' for t in c.iter(f'{ns}t'))
-            else:
-                value = v.text if v is not None and v.text else ''
-            cells[col - 1] = value
-        if cells:
-            rows.append([cells.get(i, '') for i in range(max(cells) + 1)])
-    if not rows:
-        return []
-    keys = [norm_header(h) for h in rows[0]]
-    return [{k: str(v).strip() for k, v in zip(keys, r)} for r in rows[1:] if any(str(v).strip() for v in r)]
+        keys = None
+        with zf.open(sheet) as fh:
+            for _, row in ET.iterparse(fh):
+                if row.tag != f'{ns}row':
+                    continue
+                cells = {}
+                for c in row.iter(f'{ns}c'):
+                    ref = re.match(r'([A-Z]+)', c.get('r', 'A'))
+                    col = 0
+                    for ch in ref.group(1):
+                        col = col * 26 + ord(ch) - 64
+                    v = c.find(f'{ns}v')
+                    if c.get('t') == 's' and v is not None:
+                        value = shared[int(v.text)]
+                    elif c.get('t') == 'inlineStr':
+                        value = ''.join(t.text or '' for t in c.iter(f'{ns}t'))
+                    else:
+                        value = v.text if v is not None and v.text else ''
+                    cells[col - 1] = value
+                row.clear()
+                if not cells:
+                    continue
+                values = [str(cells.get(i, '')).strip() for i in range(max(cells) + 1)]
+                if keys is None:
+                    keys = [norm_header(h) for h in values]
+                elif any(values):
+                    yield dict(zip(keys, values))
 
 
 def table_rows(name, data):
@@ -311,7 +321,111 @@ def table_rows(name, data):
     lower = name.lower()
     if lower.endswith('.xlsx'):
         return xlsx_rows(data)
-    return list(text_rows(_decode(data), '\t' if lower.endswith(('.tsv', '.txt')) else ','))
+    return text_rows(_decode(data), '\t' if lower.endswith(('.tsv', '.txt')) else ',')
+
+
+def peek(rows):
+    """(column names of the first row, all rows) without losing that first row of a generator."""
+    rows = iter(rows)
+    first = next(rows, None)
+    if first is None:
+        return [], iter(())
+    return list(first), itertools.chain([first], rows)
+
+
+# ---------- Header self-check ----------
+# Every download is checked against the columns this parser reads before anything is saved. A missing required column
+# fails that source with a clear message (instead of loading half-empty rows); every difference is kept in
+# prospect.status and the diagnostics file, so the first real download says exactly what to fix.
+
+A_CRD = ('organizationcrd#', 'organizationcrd', 'crd#', 'crd', 'firmcrd', 'firmcrdnb', '1e1')
+A_SEC = ('sec#', 'secnumber', 'secfilenumber', '1d')
+A_LEGAL = ('legalname', '1a')
+A_BUSINESS = ('primarybusinessname', 'businessname', '1b1', '1b')
+A_STREET = ('mainofficestreetaddress1', 'mainofficestreet1', 'mainofficeaddress1', '1f1street1')
+A_CITY = ('mainofficecity', '1f1city')
+A_STATE = ('mainofficestate', '1f1state')
+A_ZIP = ('mainofficepostalcode', 'mainofficezipcode', '1f1postal', '1f1zip')
+A_COUNTRY = ('mainofficecountry', '1f1country')
+A_PHONE = ('mainofficetelephonenumber', 'mainofficetelephone', 'telephonenumber', '1f3')
+A_WEBSITE = ('websiteaddress', 'website', '1i')
+A_FILED = ('latestadvfilingdate', 'latestfilingdate', 'datesubmitted', 'filingdate')
+A_PERSON = ('fulllegalname', 'fullname', 'name', 'ownername', 'legalname')
+A_TITLE = ('titleorstatus', 'title', 'status')
+A_PERSON_KIND = ('defei', 'defeoi', 'entitytype', 'type')
+A_SCHEDULE = ('schedule', 'scheduletype', 'scheduleab')
+A_OWNERSHIP = ('ownershipcode', 'ownership')
+A_FUND = ('fundname', 'nameoffund', 'privatefundname', 'nameoftheprivatefund')
+A_FUND_ID = ('fundid', 'privatefundid', 'privatefundidentificationnumber', 'fundidentificationnumber')
+A_FUND_TYPE = ('fundtype', 'typeoffund', 'privatefundtype')
+A_GAV = ('grossassetvalue', 'currentgrossassetvalue', 'gav')
+A_OWNERS = ('numberofbeneficialowners', 'beneficialowners', 'approximatenumberofbeneficialowners')
+A_BASE_CRD = ('1e1', 'organizationcrd#', 'crd', 'crdnumber', 'firmcrd')
+A_BASE_DATE = ('datesubmitted', 'filingdate', 'datefiled')
+
+#: table -> [(what, column aliases, required)]
+EXPECTED = {
+    'adv_roster': [('CRD number', A_CRD, True), ('business name', A_BUSINESS + A_LEGAL, True), ('main office state', A_STATE, True),
+                   ('SEC number', A_SEC, False), ('legal name', A_LEGAL, False), ('main office street', A_STREET, False),
+                   ('main office city', A_CITY, False), ('main office ZIP', A_ZIP, False), ('country', A_COUNTRY, False),
+                   ('phone', A_PHONE, False), ('website', A_WEBSITE, False), ('latest filing date', A_FILED, False)],
+    'adv_roster_ria': [('regulatory AUM 5F(2)(c)', ('5f2c',), True), ('discretionary AUM 5F(2)(a)', ('5f2a',), False),
+                       ('employees 5A', ('5a', 'totalemployees'), False), ('client counts 5.D', ('5da1', '5d1a', '5db1', '5d1b'), False)],
+    'adv_base': [('FilingID', ('filingid',), True), ('CRD number', A_BASE_CRD, True), ('date submitted', A_BASE_DATE, False)],
+    'adv_people': [('FilingID', ('filingid',), True), ('full legal name', A_PERSON, True), ('title or status', A_TITLE, True),
+                   ('DE/FE/I', A_PERSON_KIND, False), ('schedule', A_SCHEDULE, False), ('ownership code', A_OWNERSHIP, False)],
+    'adv_funds': [('FilingID', ('filingid',), True), ('fund name', A_FUND, True), ('gross asset value', A_GAV, True),
+                  ('fund ID', A_FUND_ID, False), ('fund type', A_FUND_TYPE, False), ('beneficial owners', A_OWNERS, False)],
+    '13f_SUBMISSION': [(c, (c,), True) for c in ('accessionnumber', 'filingdate', 'submissiontype', 'cik', 'periodofreport')],
+    '13f_COVERPAGE': [('accessionnumber', ('accessionnumber',), True), ('filingmanagername', ('filingmanagername',), True)]
+    + [(c, (c,), False) for c in ('isamendment', 'amendmenttype', 'filingmanagerstreet1', 'filingmanagercity', 'filingmanagerstateorcountry',
+                                  'filingmanagerzipcode', 'crdnumber', 'secfilenumber', 'form13ffilenumber', 'reporttype')],
+    '13f_SUMMARYPAGE': [('accessionnumber', ('accessionnumber',), True), ('tablevaluetotal', ('tablevaluetotal',), False),
+                        ('tableentrytotal', ('tableentrytotal',), False)],
+    '13f_INFOTABLE': [(c, (c,), True) for c in ('accessionnumber', 'nameofissuer', 'cusip', 'value', 'sshprnamt')]
+    + [(c, (c,), False) for c in ('titleofclass', 'sshprnamttype', 'putcall', 'investmentdiscretion')],
+    '13f_SIGNATURE': [('accessionnumber', ('accessionnumber',), True), ('name', ('name',), True), ('title', ('title',), False), ('phone', ('phone',), False)],
+    '13f_OTHERMANAGER': [('accessionnumber', ('accessionnumber',), True), ('name', ('name',), True), ('crdnumber', ('crdnumber',), False),
+                         ('secfilenumber', ('secfilenumber',), False)],
+    'formd_FORMDSUBMISSION': [('accessionnumber', ('accessionnumber',), True), ('filingdate', ('filingdate',), True),
+                              ('submissiontype', ('submissiontype',), False)],
+    'formd_ISSUERS': [(c, (c,), True) for c in ('accessionnumber', 'cik', 'entityname')]
+    + [(c, (c,), False) for c in ('isprimaryissuerflag', 'street1', 'city', 'stateorcountry', 'zipcode', 'issuerphonenumber', 'entitytype')],
+    'formd_OFFERING': [('accessionnumber', ('accessionnumber',), True), ('industrygrouptype', ('industrygrouptype',), True)]
+    + [(c, (c,), False) for c in ('investmentfundtype', 'totalofferingamount', 'totalamountsold', 'totalnumberalreadyinvested', 'minimuminvestmentaccepted')],
+    'formd_RELATEDPERSONS': [('accessionnumber', ('accessionnumber',), True), ('lastname', ('lastname',), True)]
+    + [(c, (c,), False) for c in ('firstname', 'relationship1', 'relationshipclarification')],
+}
+
+
+class HeaderError(EngineError):
+    """A downloaded file no longer has a column the parser needs (nothing from it was saved)."""
+
+
+def check_headers(keys, *tables):
+    """{missingRequired, missingOptional, unexpected, unexpectedCount} for one file's (normalized) column names.
+    Form ADV item-code columns (they start with a digit) are not listed as unexpected: the rosters have hundreds."""
+    keys = set(keys)
+    groups = [g for t in tables for g in EXPECTED[t]]
+    known = {a for _, aliases, _ in groups for a in aliases}
+    adv = any(t.startswith('adv') for t in tables)
+    extra = sorted(k for k in keys if k and k not in known and not (adv and k[:1].isdigit()))
+    return {'missingRequired': [what for what, aliases, req in groups if req and not keys & set(aliases)],
+            'missingOptional': [what for what, aliases, req in groups if not req and not keys & set(aliases)],
+            'unexpected': extra[:60], 'unexpectedCount': len(extra)}
+
+
+def note_headers(con, source, file, keys, *tables):
+    """Records the check in meta 'headers:<source>' and raises HeaderError when a required column is missing."""
+    report = {'file': file, 'tables': list(tables), **check_headers(keys, *tables)}
+    notes = get_meta(con, f'headers:{source}', []) or []
+    notes.append(report)
+    set_meta(con, f'headers:{source}', notes)
+    con.commit()
+    if report['missingRequired']:
+        raise HeaderError(f'The SEC changed the layout of {file}: it has no {", ".join(report["missingRequired"])} column. '
+                          'Nothing from this file was saved. Send diagnostics (Settings) so the reader can be updated.')
+    return report
 
 
 # ---------- File lists on the SEC's pages ----------
@@ -371,20 +485,22 @@ def pick_adv_files(links, history=ADV_HISTORY_FILES):
     return out
 
 
-def pick_adv_full_files(links):
-    """The newest Form ADV data release (all of its parts)."""
+def pick_adv_full_files(links, days=366):
+    """Every Form ADV data release (all parts) from the 12 months up to the newest one: each quarterly release holds
+    only that quarter's filings, so a firm that last filed 9 months ago is only in an older release."""
     files = [u for u in links if _date_key(u) and not re.match(r'ia\d{6,8}', u.rsplit('/', 1)[-1], re.I)]
     if not files:
         return []
-    newest = max(_date_key(u) for u in files)
-    return sorted(u for u in files if _date_key(u) == newest)
+    newest = dt.date.fromisoformat(max(_date_key(u) for u in files))
+    cutoff = (newest - dt.timedelta(days=days)).isoformat()
+    return sorted((u for u in files if _date_key(u) > cutoff), key=lambda u: (_date_key(u), u), reverse=True)
 
 
 # ---------- Form ADV: monthly rosters ----------
 
 def parse_adv_row(row, kind, roster_date=''):
     """One adviser from a monthly roster row (column names normalized by norm_header)."""
-    crd = integer(pick(row, 'organizationcrd#', 'organizationcrd', 'crd#', 'crd', 'firmcrd', 'firmcrdnb', '1e1'))
+    crd = integer(pick(row, *A_CRD))
     if not crd:
         return None
     mix, total, approx = {}, 0, False
@@ -399,17 +515,17 @@ def parse_adv_row(row, kind, roster_date=''):
     fees = [label for n, label in FEE_TYPES.items() if yes(pick(row, f'5e{n}'))]
     return {
         'crd': crd,
-        'sec_number': pick(row, 'sec#', 'secnumber', 'secfilenumber', '1d'),
+        'sec_number': pick(row, *A_SEC),
         'kind': kind,
-        'legal_name': pick(row, 'legalname', '1a'),
-        'business_name': pick(row, 'primarybusinessname', 'businessname', '1b1', '1b'),
-        'street': pick(row, 'mainofficestreetaddress1', 'mainofficestreet1', 'mainofficeaddress1', '1f1street1'),
-        'city': pick(row, 'mainofficecity', '1f1city'),
-        'state': pick(row, 'mainofficestate', '1f1state'),
-        'zip': pick(row, 'mainofficepostalcode', 'mainofficezipcode', '1f1postal', '1f1zip'),
-        'country': pick(row, 'mainofficecountry', '1f1country'),
-        'phone': pick(row, 'mainofficetelephonenumber', 'mainofficetelephone', 'telephonenumber', '1f3'),
-        'website': pick(row, 'websiteaddress', 'website', '1i'),
+        'legal_name': pick(row, *A_LEGAL),
+        'business_name': pick(row, *A_BUSINESS),
+        'street': pick(row, *A_STREET),
+        'city': pick(row, *A_CITY),
+        'state': pick(row, *A_STATE),
+        'zip': pick(row, *A_ZIP),
+        'country': pick(row, *A_COUNTRY),
+        'phone': pick(row, *A_PHONE),
+        'website': pick(row, *A_WEBSITE),
         'aum_disc': money(pick(row, '5f2a')),
         'aum_nondisc': money(pick(row, '5f2b')),
         'aum_total': money(pick(row, '5f2c')),
@@ -420,7 +536,7 @@ def parse_adv_row(row, kind, roster_date=''):
         'clients_approx': 1 if approx else 0,
         'client_mix': json.dumps(mix) if mix else '',
         'fees': json.dumps(fees) if fees else '',
-        'filing_date': parse_date(pick(row, 'latestadvfilingdate', 'latestfilingdate', 'datesubmitted', 'filingdate')),
+        'filing_date': parse_date(pick(row, *A_FILED)),
         'roster_date': roster_date,
     }
 
@@ -444,8 +560,11 @@ def load_adv_roster(db_path, zip_path, kind, roster_date, history_only=False):
     con = connect(db_path)
     _progress(con, f'Reading the {kind} list ({roster_date})')
     firms = []
+    tables = ('adv_roster', 'adv_roster_ria') if kind == 'RIA' else ('adv_roster',)
     for name, data in roster_files(zip_path):
-        for row in table_rows(name, data):
+        keys, rows = peek(table_rows(name, data))
+        note_headers(con, 'adv', f'{Path(zip_path).name}/{name}', keys, *tables)
+        for row in rows:
             firm = parse_adv_row(row, kind, roster_date)
             if firm:
                 firms.append(firm)
@@ -477,30 +596,28 @@ def _member_kind(name):
 
 def parse_schedule_ab(row, schedule_hint=''):
     """An owner or executive officer from Schedule A (direct owners/officers) or B (indirect owners)."""
-    name = pick(row, 'fulllegalname', 'fullname', 'name', 'ownername', 'legalname')
+    name = pick(row, *A_PERSON)
     if not name:
         return None
-    kind = pick(row, 'defei', 'defeoi', 'entitytype', 'type').upper()
-    schedule = pick(row, 'schedule', 'scheduletype', 'scheduleab') or schedule_hint
-    title = pick(row, 'titleorstatus', 'title', 'status')
+    kind = pick(row, *A_PERSON_KIND).upper()
+    schedule = pick(row, *A_SCHEDULE) or schedule_hint
+    title = pick(row, *A_TITLE)
     return {'name': name, 'title': title, 'individual': kind in ('', 'I'),
             'schedule': 'B' if schedule.upper().strip().endswith('B') else 'A',
-            'ownership': pick(row, 'ownershipcode', 'ownership'), 'acquired': pick(row, 'dateacquired', 'datetitleorstatusacquired', 'statusacquired')}
+            'ownership': pick(row, *A_OWNERSHIP), 'acquired': pick(row, 'dateacquired', 'datetitleorstatusacquired', 'statusacquired')}
 
 
 def parse_private_fund(row):
     """One private fund from Schedule D Section 7.B.(1)."""
-    name = pick(row, 'fundname', 'nameoffund', 'privatefundname', 'nameoftheprivatefund')
+    name = pick(row, *A_FUND)
     if not name:
         return None
-    return {'name': name, 'fund_id': pick(row, 'fundid', 'privatefundid', 'privatefundidentificationnumber', 'fundidentificationnumber'),
-            'fund_type': pick(row, 'fundtype', 'typeoffund', 'privatefundtype'),
-            'gav': money(pick(row, 'grossassetvalue', 'currentgrossassetvalue', 'gav')),
-            'owners': integer(pick(row, 'numberofbeneficialowners', 'beneficialowners', 'approximatenumberofbeneficialowners'))}
+    return {'name': name, 'fund_id': pick(row, *A_FUND_ID), 'fund_type': pick(row, *A_FUND_TYPE),
+            'gav': money(pick(row, *A_GAV)), 'owners': integer(pick(row, *A_OWNERS))}
 
 
 def load_adv_full(db_path, zip_paths):
-    """Loads people and private funds from the latest filing of each adviser in the Form ADV data files."""
+    """Loads people and private funds from the latest filing of each adviser across the Form ADV data releases."""
     con = connect(db_path)
     members = []  # (zip path, member name, kind)
     for zp in zip_paths:
@@ -513,14 +630,18 @@ def load_adv_full(db_path, zip_paths):
         if kind != 'base':
             continue
         with zipfile.ZipFile(zp) as zf, zf.open(name) as fh:
-            for row in stream_rows(fh, ',', 'cp1252'):
-                fid, crd = pick(row, 'filingid'), integer(pick(row, '1e1', 'organizationcrd#', 'crd', 'crdnumber', 'firmcrd'))
+            keys, rows = peek(stream_rows(fh, ',', 'cp1252'))
+            note_headers(con, 'adv_full', f'{Path(zp).name}/{name}', keys, 'adv_base')
+            for row in rows:
+                fid, crd = pick(row, 'filingid'), integer(pick(row, *A_BASE_CRD))
                 if not fid or not crd:
                     continue
-                date = parse_date(pick(row, 'datesubmitted', 'filingdate', 'datefiled'))
+                date = parse_date(pick(row, *A_BASE_DATE))
                 filing_crd[fid] = crd
                 if crd not in latest or (date, fid) > latest[crd]:
                     latest[crd] = (date, fid)
+    if not any(k == 'base' for _, _, k in members):
+        raise HeaderError('The Form ADV data download has no IA_ADV_Base_A table (FilingID -> CRD). Nothing was saved.')
     keep = {fid: (crd, latest[crd][0]) for fid, crd in filing_crd.items() if latest[crd][1] == fid}
     people, funds = [], []
     for i, (zp, name, kind) in enumerate(members):
@@ -529,7 +650,9 @@ def load_adv_full(db_path, zip_paths):
         _progress(con, 'Reading Form ADV schedules', i, len(members))
         hint = 'B' if re.search(r'schedule_b', name.lower()) else ''
         with zipfile.ZipFile(zp) as zf, zf.open(name) as fh:
-            for row in stream_rows(fh, ',', 'cp1252'):
+            keys, rows = peek(stream_rows(fh, ',', 'cp1252'))
+            note_headers(con, 'adv_full', f'{Path(zp).name}/{name}', keys, 'adv_people' if kind == 'people' else 'adv_funds')
+            for row in rows:
                 fid = pick(row, 'filingid')
                 if fid not in keep:
                     continue
@@ -571,14 +694,17 @@ def choose_13f_filings(submissions, covers):
         if not s['type'].upper().startswith('13F-HR'):
             continue
         key = (s['cik'], s['period'])
-        cover = covers.get(s['accession'], {})
-        amendment = yes(cover.get('isamendment')) or s['type'].upper().endswith('/A')
-        adds = 'NEW HOLDINGS' in (cover.get('amendmenttype') or '').upper()
-        if amendment and adds and key in chosen:
+        if adds_only(s, covers.get(s['accession'], {})) and key in chosen:
             chosen[key].append(s['accession'])
         else:
             chosen[key] = [s['accession']]
     return chosen
+
+
+def adds_only(submission, cover):
+    """A "new holdings" amendment: it adds positions to the earlier report instead of replacing it."""
+    amendment = yes(cover.get('isamendment')) or submission['type'].upper().endswith('/A')
+    return amendment and 'NEW HOLDINGS' in (cover.get('amendmenttype') or '').upper()
 
 
 def parse_13f_holding(row, multiplier):
@@ -598,13 +724,23 @@ def load_13f(db_path, zip_path):
     """Loads one 13F data set: filers (from the cover pages) and the holdings of their chosen filings."""
     con = connect(db_path)
     _progress(con, 'Reading 13F cover pages')
+    label = Path(zip_path).name
     with zipfile.ZipFile(zip_path) as zf:
-        def rows(stem):
+        def rows(stem, required=True, check=None):
             name = _zip_table(zf, stem)
             if not name:
+                if required:
+                    raise HeaderError(f'The SEC 13F download {label} has no {stem} table. Nothing from it was saved.')
                 return []
             with zf.open(name) as fh:
-                return list(stream_rows(fh))
+                out = list(stream_rows(fh))
+            note_headers(con, '13f', f'{label}/{name}', list(out[0]) if out else [], f'13f_{check or stem}')
+            return out
+        info = _zip_table(zf, 'INFOTABLE')
+        if not info:
+            raise HeaderError(f'The SEC 13F download {label} has no INFOTABLE table. Nothing from it was saved.')
+        with zf.open(info) as fh:
+            note_headers(con, '13f', f'{label}/{info}', list(next(stream_rows(fh), {})), '13f_INFOTABLE')
         submissions = {}
         for r in rows('SUBMISSION'):
             cik = clean_cik(r.get('cik'))
@@ -612,17 +748,22 @@ def load_13f(db_path, zip_path):
                 submissions[r['accessionnumber']] = {'accession': r['accessionnumber'], 'cik': cik, 'type': r.get('submissiontype', ''),
                                                      'filed': parse_date(r.get('filingdate')), 'period': parse_date(r.get('periodofreport'))}
         covers = {r['accessionnumber']: r for r in rows('COVERPAGE')}
-        summary = {r['accessionnumber']: r for r in rows('SUMMARYPAGE')}
-        signatures = rows('SIGNATURE')
-        others = rows('OTHERMANAGER2') or rows('OTHERMANAGER')
+        rows('SUMMARYPAGE', False)  # only checked: totals come from the rows saved
+        signatures = rows('SIGNATURE', False)
+        others = rows('OTHERMANAGER2', False, 'OTHERMANAGER') or rows('OTHERMANAGER', False)
         chosen = choose_13f_filings(submissions, covers)
         keep = {acc: key for key, accs in chosen.items() for acc in accs}
         _progress(con, 'Reading 13F holdings')
         holdings, count = [], 0
         with con:
-            for cik, period in chosen:
-                con.execute('DELETE FROM holdings_13f WHERE cik = ? AND period = ?', (cik, period))
-            name = _zip_table(zf, 'INFOTABLE')
+            for (cik, period), accs in chosen.items():
+                if adds_only(submissions[accs[0]], covers.get(accs[0], {})):
+                    # Only "new holdings" amendments for this quarter in this data set: the original report came in an
+                    # earlier data set, so add to it (replacing just these amendments' own rows if loaded before).
+                    con.executemany('DELETE FROM holdings_13f WHERE accession = ?', [(a,) for a in accs])
+                else:
+                    con.execute('DELETE FROM holdings_13f WHERE cik = ? AND period = ?', (cik, period))
+            name = info
             if name:
                 with zf.open(name) as fh:
                     for r in stream_rows(fh):
@@ -653,14 +794,14 @@ def load_13f(db_path, zip_path):
             if old and (old['latest_period'] or '', old['latest_filed'] or '') > (s['period'], s['filed']):
                 continue
             accs = chosen.get((cik, s['period']), [])
-            sm = summary.get(accs[-1] if accs else s['accession'], {})
-            total = sum((money(summary.get(a, {}).get('tablevaluetotal')) or 0) * value_multiplier(submissions[a]['filed']) for a in accs)
+            # Totals from the rows saved (the summary page of an amendment covers only that amendment).
+            total, entries = con.execute('SELECT SUM(value), COUNT(*) FROM holdings_13f WHERE cik = ? AND period = ?', (cik, s['period'])).fetchone()
             con.execute('INSERT OR REPLACE INTO filers_13f VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (
                 cik, c.get('filingmanagername', ''), ' '.join(x for x in (c.get('filingmanagerstreet1', ''), c.get('filingmanagerstreet2', '')) if x),
                 c.get('filingmanagercity', ''), c.get('filingmanagerstateorcountry', ''), c.get('filingmanagerzipcode', ''),
                 integer(c.get('crdnumber')), c.get('secfilenumber', ''), c.get('form13ffilenumber', ''), s['period'],
                 accs[-1] if accs else s['accession'], s['filed'], total or None,
-                integer(sm.get('tableentrytotal')), c.get('reporttype', ''), ''))
+                entries or None, c.get('reporttype', ''), ''))
         sig_rows = []
         for r in signatures:
             s = submissions.get(r.get('accessionnumber'))
@@ -697,17 +838,20 @@ def prune_13f(con, keep=KEEP_13F_PERIODS):
 # ---------- Form D data sets ----------
 
 def load_formd(db_path, zip_path):
-    """Loads one Form D data set: offerings of pooled investment funds (and any issuer whose name suggests a family
+    """Loads one Form D data set: offerings of pooled investment funds (and any issuer whose name clearly says family
     office) and their related persons."""
     con = connect(db_path)
     _progress(con, 'Reading Form D filings')
+    label = Path(zip_path).name
     with zipfile.ZipFile(zip_path) as zf:
         def rows(stem):
             name = _zip_table(zf, stem)
             if not name:
-                return []
+                raise HeaderError(f'The SEC Form D download {label} has no {stem} table. Nothing from it was saved.')
             with zf.open(name) as fh:
-                return list(stream_rows(fh))
+                out = list(stream_rows(fh))
+            note_headers(con, 'formd', f'{label}/{name}', list(out[0]) if out else [], f'formd_{stem}')
+            return out
         subs = {r['accessionnumber']: r for r in rows('FORMDSUBMISSION')}
         offerings = {r['accessionnumber']: r for r in rows('OFFERING')}
         issuers = {}
@@ -720,7 +864,7 @@ def load_formd(db_path, zip_path):
         off = offerings.get(acc, {})
         industry = off.get('industrygrouptype', '')
         name = issuer.get('entityname', '')
-        if industry != 'Pooled Investment Fund' and not family_office_name(name)[0]:
+        if industry != 'Pooled Investment Fund' and family_office_name(name)[0] < 2:
             continue
         keep.add(acc)
         sub = subs.get(acc, {})
@@ -794,7 +938,16 @@ def match_score(a, b):
     return max(0.0, min(1.0, round(score, 3))), reasons
 
 
-LINK_SCORE = 0.92      # merged into one firm
+def same_place(a, b):
+    """Same ZIP, or same city and state: a name-only match needs this as well before two records are merged."""
+    za, zb = zip5(a.get('zip')), zip5(b.get('zip'))
+    if za and za == zb:
+        return True
+    ca, cb = (a.get('city') or '').strip().lower(), (b.get('city') or '').strip().lower()
+    return bool(ca) and ca == cb and (a.get('state') or '').upper() == (b.get('state') or '').upper()
+
+
+LINK_SCORE = 0.92      # merged into one firm (with same_place)
 POSSIBLE_SCORE = 0.80  # shown as a possible match, not merged
 
 
@@ -989,7 +1142,7 @@ def build_firms(db_path, tickers=None):
             target, method, score = by_sec[fl['sec_file'].strip().upper()], 'SEC file number on the 13F cover page', 1.0
         else:
             best, score, reasons = index.best(rec)
-            if best and score >= LINK_SCORE:
+            if best and score >= LINK_SCORE and same_place(rec, best):
                 target, method = best['id'], 'name and address: ' + ', '.join(reasons)
             elif best and score >= POSSIBLE_SCORE:
                 links.append((best['id'], 'Form 13F', str(fl['cik']), 'name and address: ' + ', '.join(reasons), score, 'possible', fl['name']))
@@ -1019,8 +1172,11 @@ def build_firms(db_path, tickers=None):
                 offering_counts[by_crd[next(iter(advisers))]] = offering_counts.get(by_crd[next(iter(advisers))], 0) + 1
                 continue
             best, s, reasons = index.best(o)
-            if best and s >= LINK_SCORE:
+            if best and s >= LINK_SCORE and same_place(o, best):
                 target, method, score = best['id'], 'name and address: ' + ', '.join(reasons), s
+            elif best and s >= POSSIBLE_SCORE:
+                links.append((best['id'], 'Form D', str(cik), 'name and address: ' + ', '.join(reasons), s, 'possible', o['name']))
+                continue
             elif family_office_name(o['name'])[0] == 2:
                 target = f'cik-{cik}'
                 if target not in firms:
@@ -1271,7 +1427,8 @@ async def download(ctx, url, dest, emit=None, label='', client=None, attempts=5)
     part = dest.with_name(dest.name + '.part')
     for attempt in range(attempts):
         have = part.stat().st_size if part.exists() else 0
-        headers = {'Range': f'bytes={have}-'} if have else {}
+        # identity: a compressed reply would make byte ranges and progress refer to the compressed stream
+        headers = {'Accept-Encoding': 'identity', **({'Range': f'bytes={have}-'} if have else {})}
         try:
             if sec_host:
                 await _sec_pace()
@@ -1282,7 +1439,8 @@ async def download(ctx, url, dest, emit=None, label='', client=None, attempts=5)
                         part.rename(dest)  # already complete
                         return dest
                     if response.status_code in (403,):
-                        raise EngineError('The SEC refused the download. Check the SEC email in Settings (gear icon, bottom left).')
+                        raise EngineError('The SEC refused the download. Check the SEC email in Settings (gear icon, bottom left), '
+                                          'or the SEC rate limit was hit: wait 10 minutes and try again.')
                     if response.status_code == 404:
                         raise EngineError(f'The file is no longer on the website ({url.rsplit("/", 1)[-1]}).')
                     if response.status_code == 429 or response.status_code >= 500:
@@ -1294,7 +1452,7 @@ async def download(ctx, url, dest, emit=None, label='', client=None, attempts=5)
                     total = have + int(response.headers.get('Content-Length') or 0)
                     last = 0.0
                     with open(part, 'ab' if have else 'wb') as fh:
-                        async for chunk in response.aiter_bytes(1 << 20):
+                        async for chunk in response.aiter_raw(1 << 20):
                             fh.write(chunk)
                             have += len(chunk)
                             if emit and time.monotonic() - last > 1:
@@ -1400,11 +1558,23 @@ async def ingest_adv_full(ctx, emit, db_path):
     if not files:
         raise EngineError('No Form ADV data files were found on the SEC page (its layout may have changed).')
     paths = [await download(ctx, url, DOWNLOADS / _file_name(url), emit, f'Form ADV data ({i + 1}/{len(files)})') for i, url in enumerate(files)]
-    r = await _run_worker(emit, 'load_adv_full', str(db_path), [str(p) for p in paths])
-    for p in paths:
-        p.unlink(missing_ok=True)
-    _record(db_path, 'adv_full', {'files': [u.rsplit('/', 1)[-1] for u in files], 'sourceDate': _date_key(files[0]), **r})
+    try:
+        r = await _run_worker(emit, 'load_adv_full', str(db_path), [str(p) for p in paths])
+    finally:
+        for p in paths:
+            p.unlink(missing_ok=True)
+    newest = _date_key(files[0])
+    _record(db_path, 'adv_full', {'files': [u.rsplit('/', 1)[-1] for u in files], 'sourceDate': newest, **r,
+                                  'note': adv_full_note(newest)})
     return r
+
+
+def adv_full_note(newest):
+    """What the owner should know about the age of the people and private-fund data."""
+    note = f'People and private funds as of {newest} (latest SEC Form ADV data release)'
+    if newest and newest < (dt.date.today() - dt.timedelta(days=200)).isoformat():
+        note += '; the SEC bulk data has not been updated since (it ended in Dec 2024 when this was built), so check IAPD for changes'
+    return note + '.' 
 
 
 async def ingest_13f(ctx, emit, db_path):
@@ -1528,12 +1698,24 @@ async def run_ingest(ctx, source, emit=None, db_path=None):
         JOB.update({'running': True, 'source': source, 'started': time.time(), 'stage': 'Starting', 'error': None})
         out = {}
         try:
+            failed = []
             for s in sources:
                 JOB['stage'] = f'{s}: starting'
                 if s == 'geo':
                     out[s] = await ingest_geo(ctx, emit, db_path)
                     continue
-                out[s] = await INGESTERS[s](ctx, emit, db_path)
+                con = connect(db_path)
+                with con:
+                    set_meta(con, f'headers:{s}', [])
+                con.close()
+                try:
+                    out[s] = await INGESTERS[s](ctx, emit, db_path)
+                except HeaderError as err:
+                    if source != 'all':
+                        raise
+                    out[s] = {'error': str(err)}
+                    failed.append(str(err))
+                    continue
                 tickers = None
                 try:
                     from . import sec
@@ -1541,7 +1723,8 @@ async def run_ingest(ctx, source, emit=None, db_path=None):
                 except Exception as err:
                     log.info('Ticker list unavailable for CUSIP mapping: %s', err)
                 out['build'] = await _run_worker(emit, 'build_firms', str(db_path), tickers)
-            JOB.update({'running': False, 'finished': time.time(), 'stage': 'Done', 'result': out})
+            JOB.update({'running': False, 'finished': time.time(), 'stage': 'Done' if not failed else 'Done with problems',
+                        'result': out, 'error': ' '.join(failed) or None})
             return out
         except Exception as err:
             JOB.update({'running': False, 'finished': time.time(), 'stage': 'Failed', 'error': str(err)})
@@ -1659,7 +1842,9 @@ def search(con, q):
         marks = ','.join('?' * len(cusips))
         position_sql = (f'(SELECT SUM(h.value) FROM holdings_13f h WHERE h.cik = firms.cik AND h.period = firms.period_13f '
                         f"AND h.cusip IN ({marks}) AND COALESCE(h.put_call, '') = '')")
-        where.append(f'{position_sql} >= ?')
+        # Filter with the (cusip, cik, period) index first; the position column is then worked out for matches only.
+        where.append(f"(cik, period_13f) IN (SELECT h.cik, h.period FROM holdings_13f h WHERE h.cusip IN ({marks}) "
+                     f"AND COALESCE(h.put_call, '') = '' GROUP BY h.cik, h.period HAVING SUM(h.value) >= ?)")
         args += cusips + [money(q.get('minPosition')) or 1]
     near = q.get('near') or None
     centre = None
@@ -1832,13 +2017,22 @@ EXPORT_COLUMNS = [('name', 'Name'), ('type', 'Type'), ('confidence', 'Confidence
                   ('position', 'Position ($)'), ('reasons', 'Why this type')]
 
 
+def csv_cell(value):
+    """A spreadsheet runs a cell that starts with = + - @ as a formula: those get a leading apostrophe."""
+    if value is None:
+        return ''
+    if isinstance(value, str) and value[:1] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + value
+    return value
+
+
 def export_csv(con, query):
     result = search(con, {**(query or {}), 'limit': min(int((query or {}).get('limit') or 5000), 5000), 'offset': 0})
     out = io.StringIO()
     w = csv.writer(out)
     w.writerow([label for _, label in EXPORT_COLUMNS])
     for r in result['rows']:
-        w.writerow(['; '.join(r.get(k) or []) if k == 'reasons' else ('' if r.get(k) is None else r.get(k)) for k, _ in EXPORT_COLUMNS])
+        w.writerow([csv_cell('; '.join(r.get(k) or []) if k == 'reasons' else r.get(k)) for k, _ in EXPORT_COLUMNS])
     return {'csv': out.getvalue(), 'count': len(result['rows']), 'total': result['total'], 'columns': [label for _, label in EXPORT_COLUMNS]}
 
 
@@ -1848,7 +2042,10 @@ def status(con, db_path=None):
     types = {r[0]: r[1] for r in con.execute('SELECT type, COUNT(*) FROM firms GROUP BY type')}
     sources = {s: get_meta(con, f'ingest:{s}') for s in SOURCES}
     path = Path(db_path or DB_PATH)
+    full = sources.get('adv_full') or {}
     return {'counts': counts, 'types': types, 'sources': sources, 'built': get_meta(con, 'built'),
+            'headers': {s: get_meta(con, f'headers:{s}') for s in SOURCES if s != 'geo'},
+            'peopleAsOf': full.get('sourceDate'), 'peopleNote': full.get('note'),
             'job': {k: v for k, v in JOB.items() if k != 'result'}, 'progress': get_meta(con, 'progress'),
             'sizeMb': round(path.stat().st_size / 1e6, 1) if path.exists() else 0, 'refreshDays': REFRESH_DAYS}
 
@@ -1883,6 +2080,28 @@ async def fill_sectors(ctx, db_path, cusips, limit=40):
             con.executemany('UPDATE cusip_map SET sector = ?, sic = ? WHERE cusip = ?', [(s, sic, c) for c, (s, sic) in done.items()])
         con.close()
     return len(done)
+
+
+# ---------- Diagnostics ----------
+
+def diagnostics_section():
+    """For Send diagnostics: what each download looked like (column checks), source dates and the last job."""
+    if not DB_PATH.exists():
+        return {'database': 'not created yet'}
+    con = sqlite3.connect(f'file:{DB_PATH}?mode=ro', uri=True, timeout=5)
+    try:
+        return {'headers': {s: get_meta(con, f'headers:{s}') for s in SOURCES if s != 'geo'},
+                'sources': {s: get_meta(con, f'ingest:{s}') for s in SOURCES},
+                'job': {k: v for k, v in JOB.items() if k != 'result'}}
+    finally:
+        con.close()
+
+
+try:
+    from . import diagnostics as _diagnostics
+    _diagnostics.SECTIONS['prospect'] = diagnostics_section
+except Exception:  # diagnostics is optional
+    pass
 
 
 # ---------- Handlers ----------
