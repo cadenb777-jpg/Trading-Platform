@@ -101,9 +101,11 @@ export function tradePlan(i: PlanInput): TradePlan | null {
 
 /** The post-order checklist: which steps are done, from what the account shows. */
 export interface ChecklistInput {
-  /** The entry order was placed from this page (or an open buy order / position exists for the symbol). */
+  /** This trade's entry order was placed (from this page). */
   entryPlaced: boolean;
-  /** Shares held that a stop sell could cover (position minus open sells). */
+  /** Shares of this trade's entry that have filled (0 until it fills). */
+  entryFilled: number;
+  /** Shares held that a stop sell could cover (position minus open sells), including any held before this trade. */
   canSell: number;
   /** A sell stop order is working for the symbol. */
   stopWorking: boolean;
@@ -112,11 +114,28 @@ export interface ChecklistInput {
 }
 export type StepState = 'done' | 'ready' | 'waiting';
 
-export function checklist(c: ChecklistInput): { entry: StepState; stop: StepState; alerts: StepState } {
+export interface Checklist {
+  entry: StepState;
+  stop: StepState;
+  alerts: StepState;
+  /** Shares the stop sell should cover: this trade's filled shares, never more than can be sold. */
+  stopQty: number;
+  /** Shares held besides this trade's (not covered by the plan's stop). */
+  otherHeld: number;
+}
+
+/**
+ * The post-order checklist. The entry is done only when this trade's entry has filled (shares held from before don't
+ * count); the stop covers only this trade's shares.
+ */
+export function checklist(c: ChecklistInput): Checklist {
+  const filled = Math.max(0, c.entryFilled);
+  const stopQty = Math.max(0, Math.min(c.canSell, filled));
   return {
-    entry: c.entryPlaced || c.canSell > 0 || c.stopWorking ? 'done' : 'ready',
-    // the stop sell can only be sent once the entry has filled (there is nothing to sell before)
-    stop: c.stopWorking ? 'done' : c.canSell > 0 ? 'ready' : 'waiting',
+    entry: filled > 0 ? 'done' : c.entryPlaced ? 'waiting' : 'ready',
+    stop: c.stopWorking && filled > 0 ? 'done' : stopQty > 0 ? 'ready' : 'waiting',
     alerts: c.alertsSet ? 'done' : 'ready',
+    stopQty,
+    otherHeld: Math.max(0, c.canSell - stopQty),
   };
 }

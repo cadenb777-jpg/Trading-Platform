@@ -54,10 +54,10 @@ const setup = (symbol: string, tier: 'A' | 'B' | 'C', price: number, extra: Part
   ({ symbol, tier, direction: 1, status: 'waiting', price, score: 1, plan: { entryType: 'stop', trigger: 100, stop: 95, target: 110, validUntil: '2099-01-01', atr: 2 }, ...extra }) as unknown as Setup;
 
 describe('setups ready to act on', () => {
-  it('keeps A/B setups at or near their entry, entry first, then by grade', () => {
+  it('keeps A/B buy setups at or near their entry (never a sell: long only), entry first, then by grade', () => {
     const out = readySetups(
       {
-        swing: { setups: [setup('NEAR', 'A', 99.7), setup('IN', 'B', 100.5), setup('FAR', 'A', 90), setup('C', 'C', 100.5), setup('FORM', 'A', 100.5, { status: 'forming' })] },
+        swing: { setups: [setup('NEAR', 'A', 99.7), setup('IN', 'B', 100.5), setup('FAR', 'A', 90), setup('C', 'C', 100.5), setup('FORM', 'A', 100.5, { status: 'forming' }), setup('SHORT', 'A', 94.5, { direction: -1, plan: { entryType: 'stop', trigger: 95, stop: 100, target: 85, validUntil: '2099-01-01', atr: 2 } as Setup['plan'] })] },
         position: { setups: [setup('INA', 'A', 100.2)] },
       },
       '2026-10-28',

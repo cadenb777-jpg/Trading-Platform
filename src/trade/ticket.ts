@@ -115,8 +115,9 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
     return Math.max(held - selling, 0);
   };
   const basis = () => basisPrice(type, quote()?.last ?? null, num(limit), num(stop));
-  /** The selected account's value (the risk % is taken from it); the saved size only before the account loads. */
-  const accountValue = () => host.snapshot()?.balances?.value ?? size.account;
+  /** The chosen account's value (the risk % is taken from it), or null until that account's data has loaded: the
+   * ticket and the plan card always size from the same figure, never a saved guess. */
+  const accountValue = (): number | null => (accountReady() ? (host.snapshot()?.balances?.value ?? null) : null);
 
   /** Shares the ticket would send, and a sentence on how they were worked out. */
   function shares(): { n: number; note: string } {
@@ -133,8 +134,10 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
     if (!price) return { n: 0, note: 'Waiting for a price to work out the shares.' };
     if (!s) return { n: 0, note: 'Enter the price where you would get out if the trade goes wrong.' };
     if (s >= price) return { n: 0, note: 'For a buy, your stop has to be below the entry price.' };
-    const r = riskShares(accountValue(), pct, price, s);
-    return { n: r.shares, note: `Risk ${usd(r.riskDollars)} (${pct}% of ${money(accountValue())}) ÷ ${usd(r.perShare)} a share = ${r.shares} share${r.shares === 1 ? '' : 's'}. If the stop is hit you lose about ${usd(r.shares * r.perShare)}.` };
+    const value = accountValue();
+    if (value == null) return { n: 0, note: 'Waiting for the chosen account to load before sizing by risk.' };
+    const r = riskShares(value, pct, price, s);
+    return { n: r.shares, note: `Risk ${usd(r.riskDollars)} (${pct}% of ${money(value)}) ÷ ${usd(r.perShare)} a share = ${r.shares} share${r.shares === 1 ? '' : 's'}. If the stop is hit you lose about ${usd(r.shares * r.perShare)}.` };
   }
 
   function draw() {
@@ -307,7 +310,7 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
       entry: basis(),
       stop: num(riskStop),
       riskPct: num(riskPct) ?? size.risk,
-      account: host.snapshot()?.balances?.value ?? null,
+      account: accountValue(),
       shares: shares().n,
       setup: setupPlan && setupPlan.symbol === s ? setupPlan.plan : null,
     };

@@ -107,12 +107,13 @@ export interface ReadySetup {
   label: string;
 }
 
-/** A and B setups (not forming) whose price is at the entry or getting close, best grade first; entry before approaching. */
+/** A and B buy setups (not forming, not already in) whose price is at the entry or getting close, best grade first; entry before approaching. */
 export function readySetups(byHorizon: Partial<Record<string, { setups: Setup[] }>>, today?: string, max = 4): ReadySetup[] {
   const out: ReadySetup[] = [];
   for (const [horizon, hr] of Object.entries(byHorizon)) {
     for (const s of hr?.setups ?? []) {
-      if (!(s.tier === 'A' || s.tier === 'B') || s.status === 'forming' || s.trade) continue;
+      // buys only: the platform never sells short, so a sell setup isn't something to act on here
+      if (s.direction <= 0 || !(s.tier === 'A' || s.tier === 'B') || s.status === 'forming' || s.trade) continue;
       const z = entryZone(s, s.price, today);
       if (z.zone === 'entry' || z.zone === 'approaching') out.push({ setup: s, horizon, zone: z.zone, label: z.label });
     }

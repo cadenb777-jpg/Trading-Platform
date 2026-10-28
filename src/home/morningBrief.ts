@@ -195,7 +195,7 @@ export function createMorningBrief(d: BriefDeps) {
         return row(
           'Setup',
           r.zone === 'entry' ? 'up' : 'warn',
-          h('span', {}, h('b', tickerAttr(s.symbol), s.symbol), ` BUY ${s.tier} · ${r.label}`),
+          h('span', {}, h('b', tickerAttr(s.symbol), s.symbol), ` ${s.direction > 0 ? 'BUY' : 'SELL'} ${s.tier} · ${r.label}`),
           `${s.strategyName.split(' (')[0]} · $${formatPrice(s.plan.trigger)}`,
           () => d.openPage('setups', 'open', id),
           `Open the ${s.symbol} setup: its read, chart and Trade this`,
@@ -206,7 +206,7 @@ export function createMorningBrief(d: BriefDeps) {
     attentionCount.hidden = !items.length;
     attentionCount.textContent = String(items.length);
     const watching = list.filter((a) => a.active).length;
-    const waiting = scan?.horizons ? Object.values(scan.horizons).flatMap((x) => x?.setups ?? []).filter((s) => (s.tier === 'A' || s.tier === 'B') && !s.trade && s.status !== 'forming').length : 0;
+    const waiting = scan?.horizons ? Object.values(scan.horizons).flatMap((x) => x?.setups ?? []).filter((s) => s.direction > 0 && (s.tier === 'A' || s.tier === 'B') && !s.trade && s.status !== 'forming').length : 0;
     attentionBody.replaceChildren(
       items.length ? h('ul', { class: 'brief-list' }, ...items) : h('p', { class: 'small' }, h('b', {}, 'Nothing needs you right now.')),
       h(

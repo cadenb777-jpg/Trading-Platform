@@ -52,11 +52,19 @@ describe('trade plan', () => {
 });
 
 describe('post-order checklist', () => {
-  it('starts with the entry ready and the stop waiting for a fill', () => {
-    expect(checklist({ entryPlaced: false, canSell: 0, stopWorking: false, alertsSet: false })).toEqual({ entry: 'ready', stop: 'waiting', alerts: 'ready' });
+  const base = { entryPlaced: false, entryFilled: 0, canSell: 0, stopWorking: false, alertsSet: false };
+  it('starts with the entry to do and the stop waiting for a fill', () => {
+    expect(checklist(base)).toMatchObject({ entry: 'ready', stop: 'waiting', alerts: 'ready', stopQty: 0 });
   });
-  it('offers the stop once shares are held, and ticks it when a stop sell is working', () => {
-    expect(checklist({ entryPlaced: true, canSell: 10, stopWorking: false, alertsSet: true })).toEqual({ entry: 'done', stop: 'ready', alerts: 'done' });
-    expect(checklist({ entryPlaced: false, canSell: 0, stopWorking: true, alertsSet: false })).toEqual({ entry: 'done', stop: 'done', alerts: 'ready' });
+  it('a placed entry waits for its fill; shares held from before never tick it', () => {
+    expect(checklist({ ...base, entryPlaced: true })).toMatchObject({ entry: 'waiting', stop: 'waiting' });
+    const before = checklist({ ...base, canSell: 50 });
+    expect(before).toMatchObject({ entry: 'ready', stop: 'waiting', stopQty: 0, otherHeld: 50 });
+  });
+  it('the stop covers only this trade’s filled shares, and says what else is held', () => {
+    const c = checklist({ ...base, entryPlaced: true, entryFilled: 20, canSell: 70 });
+    expect(c).toMatchObject({ entry: 'done', stop: 'ready', stopQty: 20, otherHeld: 50 });
+    expect(checklist({ ...base, entryPlaced: true, entryFilled: 20, canSell: 5 }).stopQty).toBe(5); // open sells already cover the rest
+    expect(checklist({ ...base, entryPlaced: true, entryFilled: 20, canSell: 20, stopWorking: true, alertsSet: true })).toMatchObject({ entry: 'done', stop: 'done', alerts: 'done' });
   });
 });

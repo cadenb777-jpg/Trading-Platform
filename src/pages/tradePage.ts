@@ -29,6 +29,8 @@ import { isStockSymbol, linkPanel, markPanel } from '../ui/linkGroups';
 const WATCH_KEY = 'tp-trade-watch';
 const SYMBOL_KEY = 'tp-trade-symbol';
 const PROTECT_KEY = 'tp-trade-protect';
+/** The plan's entry order per symbol (checklist: its filled shares are what the stop covers). */
+const ENTRIES_KEY = 'tp-trade-plan-entries';
 /** The last account chosen in the header (the ticket always uses exactly this one account). */
 const ACCOUNT_KEY = 'tp-trade-account';
 /** Stocks or Futures, remembered on this device. */
@@ -122,14 +124,24 @@ export function createTradePage() {
     onChange: () => planReady && drawPlan(),
   });
   const ticketPanel = h('section', { class: 'panel tr-ticket' }, protectSlot, ticket.el);
-  /** Buys placed from this page this session (checklist step 1). */
-  const placedEntries = new Set<string>();
+  /** The plan's entry per symbol: the buy placed from this page (order id, when Webull gave one, and when), so the
+   * checklist counts only that order's filled shares, never shares held from before. Kept on this device. */
+  const placedEntries: Record<string, { orderId?: string; at: number }> = load(ENTRIES_KEY, {});
+  /** Shares of this trade's entry that have filled: its order by id, else buys for the symbol placed since. */
+  function entryFilled(s: string): number {
+    const e = placedEntries[s];
+    if (!e) return 0;
+    const orders = [...(snap?.open ?? []), ...(snap?.recent ?? [])].filter((o) => o.symbol === s && o.side === 'BUY');
+    const mine = e.orderId ? orders.filter((o) => o.orderId === e.orderId) : orders.filter((o) => o.placedAt && Date.parse(o.placedAt) >= e.at - 60_000);
+    const byId = new Map(mine.map((o) => [o.orderId || `${o.placedAt}`, o.filled]));
+    return [...byId.values()].reduce((t, f) => t + Math.max(0, f || 0), 0);
+  }
   // The plan next to the ticket: entry, stop, target, R, size, $ and % at risk, the setup's read and the checklist.
   const plan = createPlanCard({
     state: () => ticket.planState(),
     snapshot: () => snap,
     canSell: (s) => canSell(s),
-    entryPlaced: (s) => placedEntries.has(s) || (snap?.open ?? []).some((o) => o.symbol === s && o.side === 'BUY' && OPEN.test(o.status)),
+    entry: (s) => ({ placed: !!placedEntries[s], filled: entryFilled(s) }),
     fillStop: (s, stop, qty) => (select(s), ticket.fill({ symbol: s, side: 'SELL', orderType: 'STOP', stopPrice: stop, qty, tif: 'GTC' }), ticket.el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })),
   });
   const planPanel = h('section', { class: 'panel tr-plan', hidden: true }, plan.el);
@@ -701,7 +713,10 @@ export function createTradePage() {
 
   // ----- protect after a buy -----
   function placed(order: PlacedOrder, protectStop: number | null, ok: boolean, orderId?: string) {
-    if (ok && order.side === 'BUY') placedEntries.add(order.symbol);
+    if (ok && order.side === 'BUY') {
+      placedEntries[order.symbol] = { orderId, at: Date.now() };
+      save(ENTRIES_KEY, placedEntries);
+    }
     if (ok && order.side === 'BUY' && protectStop && protectStop > 0) protect[order.symbol] = { stop: protectStop, orderId };
     if (ok && order.side === 'SELL' && order.orderType.startsWith('STOP')) delete protect[order.symbol];
     save(PROTECT_KEY, protect);

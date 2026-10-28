@@ -18,8 +18,8 @@ export interface PlanCardHost {
   snapshot(): Snapshot | null;
   /** Shares of the symbol a stop sell could cover. */
   canSell(symbol: string): number;
-  /** The entry for the symbol was placed from this page (or an open buy order exists). */
-  entryPlaced(symbol: string): boolean;
+  /** This trade's entry for the symbol: placed from this page, and how many of its shares have filled. */
+  entry(symbol: string): { placed: boolean; filled: number };
   /** Fills the ticket with a stop sell (the owner still previews and confirms). */
   fillStop(symbol: string, stop: number, qty: number): void;
 }
@@ -82,8 +82,10 @@ export function createPlanCard(host: PlanCardHost) {
     const cost = shares * p.entry;
     const acct = st.account;
     const key = `${p.stop}|${p.target}`;
+    const entry = host.entry(st.symbol);
     const done = checklist({
-      entryPlaced: host.entryPlaced(st.symbol),
+      entryPlaced: entry.placed,
+      entryFilled: entry.filled,
       canSell: host.canSell(st.symbol),
       stopWorking: (snap?.open ?? []).some((o) => o.symbol === st.symbol && o.side === 'SELL' && o.stopPrice != null),
       alertsSet: readAlerts()[st.symbol] === key,
@@ -111,12 +113,20 @@ export function createPlanCard(host: PlanCardHost) {
       h(
         'ol',
         { class: 'plan-check' },
-        step(done.entry, 'Place the entry', done.entry === 'done' ? 'Placed (or already held).' : 'Preview, then Place order in the confirm window.'),
+        step(
+          done.entry,
+          'Place the entry',
+          done.entry === 'done' ? `Filled: ${entry.filled} share${entry.filled === 1 ? '' : 's'}.` : done.entry === 'waiting' ? 'Placed; waiting for it to fill.' : 'Preview, then Place order in the confirm window.',
+        ),
         step(
           done.stop,
           `Set the stop order at ${usd(p.stop)}`,
-          done.stop === 'done' ? 'A stop sell is working.' : done.stop === 'ready' ? `You hold ${host.canSell(st.symbol)}: fill a stop sell (GTC), then preview and confirm.` : 'Once the entry fills (a stop sell needs shares to sell).',
-          done.stop === 'ready' ? h('button', { class: 'btn small primary', type: 'button', onclick: () => host.fillStop(st.symbol, p.stop, host.canSell(st.symbol)) }, 'Fill stop order') : null,
+          done.stop === 'done'
+            ? 'A stop sell is working.'
+            : done.stop === 'ready'
+              ? `Stop for the ${done.stopQty} share${done.stopQty === 1 ? '' : 's'} from this trade${done.otherHeld ? `; you also hold ${done.otherHeld}, which this stop doesn’t cover` : ''}. Fill a stop sell (GTC), then preview and confirm.`
+              : `Once this trade’s entry fills (the stop covers only its shares)${done.otherHeld ? `; you already hold ${done.otherHeld} from before` : ''}.`,
+          done.stop === 'ready' ? h('button', { class: 'btn small primary', type: 'button', onclick: () => host.fillStop(st.symbol, p.stop, done.stopQty) }, 'Fill stop order') : null,
         ),
         step(
           done.alerts,
