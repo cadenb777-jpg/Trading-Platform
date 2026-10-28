@@ -69,10 +69,19 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Total return (v28, dividends.total_return_stats/total_returns: dividends reinvested on the ex-date, 3y/5y annualised, None when
   history is short, cached per symbol per day): per holding + value-weighted 1y in dividends.portfolio (Account card and column),
   invest.board tr1y for dividend payers, research.company totalReturn; glossary term `totalreturn`.
-  Optimizer (v29, quant.optimize/run_optimizer): Ledoit-Wolf covariance; Balanced risk (risk parity, default), Lower risk
-  (min variance), Growth (resampled max-Sharpe, returns 70% equal-weight equilibrium + 30% history), My views (BL);
-  max per holding, max change, keep cash (payload `cash: true`, held fixed); walk-forward (3y fit, quarterly hold) table and
-  random-walk check (100 block-shuffled histories). Only the owner's own symbols; cash shows as "Cash" (holdingLabel), not BIL.
+  Optimizer (v29, quant.optimize/run_optimizer): Ledoit-Wolf covariance. Goals (v34, quant.GOALS, one dropdown; names,
+  one-liners and helpers in src/portfolio/goals.ts; sources cited at GOALS): growth (resampled max-Sharpe), risk_parity
+  (Even risk, default), min_var, max_div, hrp, min_cvar (Rockafellar-Uryasev linprog on 21-day scenarios), target_vol,
+  income (forward_yields via dividends.analyse, under volCap), track (max return within teBudget vs SPY / 60/40 / a saved
+  portfolio; benchmark rides as the returns' last column, o['bench']). Old method black_litterman = growth + estimate
+  'views'. Advanced fold: per-holding min/max (limits), maxWeight, maxChange, maxTurnover (project() at the end), minCash
+  (cash floor or raised fixed cash), maxHoldings (drop smallest, refit), sectorCap (risk.sector; funds "Fund"; loosened to
+  1/sectors when impossible, noted), lookback 1/3/5/10y (fit window = test window), estimate shrunk/equilibrium/views,
+  testRebalance, cost per trade (walk_forward cost). Every goal runs goal_job (weights, ranges, walk-forward row, random-walk
+  p; seeded per goal) in a spawn process pool (USE_PROCESSES, quant.shutdown) streaming "Tested n of 9 goals"; assemble adds
+  frontier, figures (exp. return, vol, yield, max DD, 1-month CVaR, TE) and risk contributions. UI: frontier + risk bars
+  (src/portfolio/optimiserCharts.ts, --viz-1/--viz-2), compare-goals table with "Show". Notes list loosened limits. Walk-forward
+  and random-walk check (100 block-shuffled histories) per goal. Only the owner's own symbols; cash shows as "Cash" (holdingLabel), not BIL.
   Short history (v33): weights are fit on real shared history only. For the tests, a young holding (starts 90+ days after
   the oldest) gets stand-in history (extend_history: best-correlated ETF, CORE_STAND_INS first then STAND_INS, never an
   owned holding; >= 1y overlap and corr >= 0.7; beta x stand-in + block-bootstrapped centred overlap residuals before its

@@ -50,7 +50,7 @@ from engine.core import is_safe_url  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 33
+HELPER_VERSION = 34
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -1257,6 +1257,9 @@ def serve_forever(args):
         scanner = sys.modules.get('engine.scanner')
         if scanner is not None:
             scanner.shutdown()  # stop the scanner's worker processes too
+        quant = sys.modules.get('engine.quant')
+        if quant is not None:
+            quant.shutdown()  # and the optimiser's
     if restart:
         restart_helper()
 
