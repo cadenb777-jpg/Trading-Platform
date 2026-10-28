@@ -88,7 +88,14 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   monthly hold ("low confidence"), less none. weight_stability: 200 block-bootstrap refits -> 10th-90th percentile bars,
   `pinned` = held by the owner's limit. Texts in src/portfolio/optimiserText.ts.
   Account page (src/pages/accountPage.ts, #account): portfolios with Portfolio.mine (set by Import statement; unset = live
-  Webull sync) merged by src/portfolio/account.ts, figures from dividends.portfolio + dividendsView; read-only (orders only in Webull view).
+  Webull sync) merged by src/portfolio/account.ts, figures from dividends.portfolio + dividendsView; read-only (orders on Trade).
+  Structure (docs/structure.md: every number has one home): Account = real money only (all accounts + switcher, totals,
+  Import statement, Sync Webull, cards link "Order in Trade" / "Analyse in Portfolios"); Trade = the selected account's
+  ordering figures ("<account> value (for ordering)") + link to Account; Portfolios = models/what-ifs (mine accounts left
+  its list; opened from Account they show "Save as a what-if copy"); Chart has modes Chart | Multi | Scripts
+  (src/pages/chartWorkspace.ts, #chart/multi, #chart/scripts); COT's home is Futures (board table + "COT: any market or
+  stock", src/futures/cot.ts), Flow/Research/Home show cotSummary() with "See all on Futures". Old hashes redirect via
+  src/routes.ts (resolveHash, REDIRECTS: #multi, #scripts, #portfolio/webull, #flow/cot...); pages get start(sub).
   Gains (v33, src/portfolio/returns.ts): price gain (value − cost), dividends received, total return per account part,
   holding, account and overall (totals/% only over holdings with a cost basis); View menu = day / gain as %, $ or both
   (localStorage tp-account-display); holdings table has a Columns chooser and totals row; a symbol opens the detail.
@@ -253,8 +260,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   UI: Trade page (src/pages/tradePage.ts, #trade: watchlist, chart with avg cost/open orders, ticket, positions/
   orders/fills, snapshot every 30 s while visible). Ticket = src/trade/ticket.ts (shares/dollars/risk sizing, maths in
   src/trade/sizing.ts); preview -> confirm window = src/trade/webull.ts (the only copy). Keys: B/S side, Enter
-  previews; nothing places without the confirm button. Portfolios > Webull (webullView.ts) shows balances/positions/
-  orders and Sync; the trade guide's "Open in order ticket" only pre-fills #trade (BUY, plus its stop for "Protect").
+  previews; nothing places without the confirm button. Account's Webull cards (webullView.ts) show balances and Sync
+  (the old Portfolios > Webull view is gone; #portfolio/webull -> #trade); the trade guide's "Open in order ticket" only pre-fills #trade (BUY, plus its stop for "Protect").
   Accounts: labels from account_class (webull.account_info: "Roth IRA ••1234"; futures/crypto/unknown = listed, never
   read/synced/traded); sync = one portfolio per stock account (empty ones only when chosen), updated by account id;
   Account page switcher = all combined or one (pickAccounts); Trade page picks one account, sent with preview/cancel.
