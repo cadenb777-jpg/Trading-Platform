@@ -120,8 +120,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   chart, ws1-6, research, flow, futures (detail window), setups (detail), trade (pre-fills only), news (Home tab),
   watchlist (source). Chart > Workspace (src/pages/workspacePage.ts, #chart/multi; replaced Multi) = grid 1/2/4/1+2/6
   of chart/quote/news/facts/position panels; layouts in src/ui/workspaceLayouts.ts ('tp-workspace'; presets Morning,
-  Trade, Research). Keys (command.ts dispatchKey): Ctrl/Cmd+[ ] or F6 cycle panels, Alt+1-6 jump, a letter on a panel
-  opens the command bar scoped to its group (data-link-keys="own" opts out: Chart, Trade).
+  Trade, Research). Keys (command.ts dispatchKey): Ctrl+[ ] (not Cmd: Mac Back/Forward) or F6 cycle panels, Alt+1-6 jump
+  (only with panels on screen); a letter on a panel opens the command bar scoped to its group (g/n chords still win;
+  Shift+Enter runs globally); data-link-keys="own" opts out (Chart, Trade). Trade starts Not linked (PANEL_DEFAULTS).
   Gains (v33, src/portfolio/returns.ts): price gain (value − cost), dividends received, total return per account part,
   holding, account and overall (totals/% only over holdings with a cost basis); View menu = day / gain as %, $ or both
   (localStorage tp-account-display); holdings table has a Columns chooser and totals row; a symbol opens the detail.

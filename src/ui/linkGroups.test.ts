@@ -63,6 +63,17 @@ describe('link bus', () => {
     expect(seen).toEqual(['QQQ']);
   });
 
+  it('Trade starts unlinked until the owner links it', () => {
+    const bus = createLinkBus(memory());
+    const seen: string[] = [];
+    bus.subscribe('trade', (s) => seen.push(s));
+    expect(bus.colorOf('trade')).toBe('none');
+    bus.publish('chart', 'NVDA');
+    expect(seen).toEqual([]);
+    bus.setColor('trade', 'blue'); // linking it shows the group's symbol (pre-fill only)
+    expect(seen).toEqual(['NVDA']);
+  });
+
   it('remembers colours and symbols', () => {
     const store = memory();
     const a = createLinkBus(store);

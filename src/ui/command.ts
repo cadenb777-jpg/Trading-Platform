@@ -16,7 +16,7 @@ import type { Portfolio } from '../portfolio/types';
 import { persist, state } from '../state';
 import { h, openModal, timeAgo, toast } from './dom';
 import { icon } from './icons';
-import { LINK_LABELS, focusPanel, focusedPanel, links } from './linkGroups';
+import { LINK_LABELS, focusPanel, focusedPanel, links, visiblePanels } from './linkGroups';
 import { normalizeTicker, tickerPreview } from './tickerCard';
 
 // ---------- function codes ----------
@@ -372,6 +372,8 @@ export interface KeyInfo {
   inField?: boolean;
   /** Focus is on a linked panel that takes typed tickers (not the Chart or Trade, whose letters are their own). */
   inPanel?: boolean;
+  /** Linkable panels are on screen (Ctrl+[ ], F6 and Alt+1-6 do nothing, and pass through, when there are none). */
+  hasPanels?: boolean;
   /** A dialog is open (its keys are its own). */
   modalOpen?: boolean;
 }
@@ -383,6 +385,8 @@ export interface Dispatch {
   /** 'palette', 'help', 'ai', 'panel-type' (a letter typed on a panel), 'panel:next' / 'panel:prev' / 'panel:3', or a command id (page:..., act:...). */
   action: string | null;
   pending: Pending | null;
+  /** For 'panel-type': the letters typed so far (a "g" held for a two-key shortcut that turned out to be a ticker). */
+  text?: string;
   /** Stop the key reaching the page (so "g s" on the Trade page doesn't also pick Sell). */
   consume: boolean;
 }
@@ -402,21 +406,25 @@ export function dispatchKey(pending: Pending | null, k: KeyInfo, now: number): D
     const key = k.key.toLowerCase();
     if (key === 'k') return run('palette');
     if (key === 'i') return run('ai');
-    if (!k.inField && (key === '[' || key === ']')) return run(key === ']' ? 'panel:next' : 'panel:prev');
+    // Ctrl only: Cmd+[ and ] are the Mac browser's Back and Forward
+    if (k.ctrl && !k.meta && !k.inField && k.hasPanels && (key === '[' || key === ']')) return run(key === ']' ? 'panel:next' : 'panel:prev');
     return none;
   }
   if (k.inField) return none;
-  if (k.key === 'F6') return run(k.shift ? 'panel:prev' : 'panel:next');
+  if (k.key === 'F6') return k.hasPanels ? run(k.shift ? 'panel:prev' : 'panel:next') : none;
   const digit = /^Digit([1-6])$/.exec(k.code ?? '');
-  if (k.alt) return digit ? run(`panel:${digit[1]}`) : none;
-  if (k.inPanel && /^[a-z]$/i.test(k.key)) return run('panel-type');
-  if (pending && now - pending.at <= CHORD_MS) {
-    const chord = CHORDS.find((c) => c.keys === `${pending.key} ${k.key}`);
+  if (k.alt) return digit && k.hasPanels ? run(`panel:${digit[1]}`) : none;
+  const live = pending && now - pending.at <= CHORD_MS ? pending : null;
+  if (live) {
+    const chord = CHORDS.find((c) => c.keys === `${live.key} ${k.key}`);
     if (chord) return { action: chord.id, pending: null, consume: true };
   }
   if (k.key === '/') return { action: 'palette', pending: null, consume: true };
   if (k.key === '?') return { action: 'help', pending: null, consume: true };
+  // a two-key shortcut's first key (g, n) waits, even on a panel
   if (CHORDS.some((c) => c.keys.startsWith(`${k.key} `))) return { action: null, pending: { key: k.key, at: now }, consume: false };
+  // a letter on a panel: a ticker (with the held "g" or "n" in front when that wasn't a shortcut)
+  if (k.inPanel && /^[a-z]$/i.test(k.key)) return { action: 'panel-type', pending: null, consume: true, text: `${live ? live.key : ''}${k.key}`.toUpperCase() };
   return none;
 }
 
@@ -435,10 +443,10 @@ export const SHORTCUT_SHEET: { title: string; rows: [string, string][] }[] = [
   {
     title: 'Panels and link colours',
     rows: [
-      ['Ctrl/Cmd+]  or  F6', 'Next panel'],
-      ['Ctrl/Cmd+[  or  Shift+F6', 'Previous panel'],
-      ['Alt+1 … Alt+6', 'Jump to panel 1-6'],
-      ['A-Z (on a panel)', 'Type a ticker: the command bar opens for that panel’s colour group'],
+      ['Ctrl+]  or  F6', 'Next panel (Cmd+] is left to the browser on a Mac)'],
+      ['Ctrl+[  or  Shift+F6', 'Previous panel'],
+      ['Alt+1 … Alt+6', 'Jump to panel 1-6 (in Firefox on Linux, Alt+number may switch browser tabs instead)'],
+      ['A-Z (on a panel)', 'Type a ticker: the command bar opens for that panel’s colour group (Shift+Enter opens the Chart instead)'],
     ],
   },
   {
@@ -538,7 +546,9 @@ export function initCommandBar(d: CommandDeps): HTMLElement {
       // a dialog or a pinned ticker card owns the keyboard (the palette itself is neither, so Ctrl+K still closes it)
       const modalOpen = !closePalette && !!document.querySelector('.modal-backdrop, .ticker-card.pinned, .link-menu');
       const inPanel = !!target?.closest('[data-link-panel]:not([data-link-keys="own"])');
-      const r = dispatchKey(pending, { key: e.key, code: e.code, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey, shift: e.shiftKey, inField, inPanel, modalOpen }, Date.now());
+      const panelKey = e.key === 'F6' || e.key === '[' || e.key === ']' || (e.altKey && /^Digit[1-6]$/.test(e.code));
+      const hasPanels = panelKey && visiblePanels().length > 0;
+      const r = dispatchKey(pending, { key: e.key, code: e.code, ctrl: e.ctrlKey, meta: e.metaKey, alt: e.altKey, shift: e.shiftKey, inField, inPanel, hasPanels, modalOpen }, Date.now());
       pending = r.pending;
       if (r.consume) {
         e.preventDefault();
@@ -549,7 +559,7 @@ export function initCommandBar(d: CommandDeps): HTMLElement {
       if (r.action === 'help') return openShortcutSheet();
       if (r.action === 'ai') return d.toggleAssistant();
       if (closePalette) return;
-      if (r.action === 'panel-type') return openPalette({ scope: focusedPanel(), text: e.key.toUpperCase() });
+      if (r.action === 'panel-type') return openPalette({ scope: focusedPanel(), text: r.text ?? e.key.toUpperCase() });
       if (r.action.startsWith('panel:')) {
         const which = r.action.slice(6);
         return focusPanel(which === 'next' ? { dir: 1 } : which === 'prev' ? { dir: -1 } : { index: Number(which) - 1 });
@@ -829,10 +839,11 @@ export function openPalette(opts: { scope?: { id: string; label: string } | null
     }, 200);
   }
 
-  function choose(i: number) {
+  /** global: Shift+Enter on a scoped bar runs the result as usual (a ticker opens the Chart page). */
+  function choose(i: number, global = false) {
     const it = items[i];
     if (!it) return;
-    const linked = scope && /^tk:(.+):GP$/.exec(it.id);
+    const linked = scope && !global && /^tk:(.+):GP$/.exec(it.id);
     if (scope && linked) {
       close(true); // back to the panel
       links.set(scope.id, linked[1]);
@@ -874,7 +885,7 @@ export function openPalette(opts: { scope?: { id: string; label: string } | null
     else if (e.key === 'End' && e.ctrlKey) select(items.length - 1);
     else if (e.key === 'Enter') {
       e.preventDefault();
-      choose(active);
+      choose(active, e.shiftKey);
     } else if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
@@ -911,7 +922,8 @@ function scopeLine(scope: { id: string; label: string }) {
     'div',
     { class: 'cmd-scope small' },
     h('i', { class: 'link-dot', 'data-color': c }),
-    c === 'none' ? `${scope.label} (not linked): a ticker changes just this panel` : `${scope.label} · ${LINK_LABELS[c]} group: a ticker changes every ${LINK_LABELS[c]} panel`,
+    h('span', {}, c === 'none' ? `Changes just ${scope.label} (not linked)` : h('b', {}, `Changes the ${LINK_LABELS[c]} group`), c === 'none' ? '' : ` (${scope.label} and every ${LINK_LABELS[c]} panel)`),
+    h('span', { class: 'muted' }, h('kbd', {}, 'Shift+Enter'), ' opens the Chart instead'),
   );
 }
 
