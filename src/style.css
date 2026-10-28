@@ -7801,3 +7801,13 @@ button.stat-drill:focus-visible .stat-drill-mark {
 .pf-accounts-link {
   margin-top: var(--sp-3);
 }
+
+/* Home header: greeting on the left, the overnight strip (futures, 10Y yield, gold, oil...) top right. */
+.home > .home-hero { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--sp-3) var(--sp-4); }
+.hero-left { min-width: 0; }
+.home-hero .brief-strip { flex: 1 1 520px; max-width: 760px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.home-hero .brief-chip { min-height: 44px; padding: 6px 9px; }
+.home-hero .brief-chip-value { font-size: var(--fs-md); }
+@media (max-width: 900px) {
+  .home-hero .brief-strip { flex-basis: 100%; max-width: none; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+}

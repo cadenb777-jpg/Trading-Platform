@@ -378,8 +378,8 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     h(
       'header',
       { class: 'home-hero' },
-      greetingEl,
-      h('div', { class: 'hero-sub' }, dateEl, marketPill),
+      h('div', { class: 'hero-left' }, greetingEl, h('div', { class: 'hero-sub' }, dateEl, marketPill)),
+      brief.strip,
     ),
     banner,
     brief.el,

@@ -26,8 +26,6 @@ const STRIP: [string, string, string][] = [
   ['ES', 'S&P 500 fut', 'E-mini S&P 500 futures'],
   ['NQ', 'Nasdaq fut', 'E-mini Nasdaq-100 futures'],
   ['RTY', 'Russell fut', 'E-mini Russell 2000 futures'],
-  ['ZN', '10Y note', '10-year Treasury note futures: the price falls when yields rise'],
-  ['DX', 'Dollar', 'US dollar index futures'],
   ['6E', 'Euro', 'Euro FX futures (dollars per euro)'],
   ['GC', 'Gold', 'Gold futures'],
   ['CL', 'Oil', 'WTI crude oil futures'],
@@ -73,7 +71,6 @@ export function createMorningBrief(d: BriefDeps) {
     'section',
     { class: 'brief', 'aria-label': 'Morning brief' },
     h('div', { class: 'brief-head' }, h('h2', {}, 'Morning brief'), h('span', { class: 'muted small brief-keys' }, h('kbd', {}, 'j'), ' / ', h('kbd', {}, 'k'), ' move · ', h('kbd', {}, 'Enter'), ' opens'), h('span', { class: 'spacer' }), stamp),
-    strip,
     h('div', { class: 'brief-grid' }, accounts, attention),
   );
 
@@ -299,7 +296,8 @@ export function createMorningBrief(d: BriefDeps) {
     stamp.title = `Brief built ${timeAgo(loadedAt)}`;
   }
 
-  return { el, refresh };
+  /** The overnight strip lives in Home's header (top right), not inside the brief. */
+  return { el, refresh, strip };
 }
 
 /**
