@@ -1,5 +1,5 @@
 /**
- * The order ticket (Trade page and Portfolios > Webull): Buy/Sell, order type, size by shares, dollars or risk, quick
+ * The order ticket (Trade page): Buy/Sell, order type, size by shares, dollars or risk, quick
  * buttons, price helpers and a live estimate. "Preview" hands the order to confirmOrder (src/trade/webull.ts), which
  * asks the helper to check it and shows the confirm window; nothing is sent from here.
  */

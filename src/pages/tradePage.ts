@@ -554,11 +554,14 @@ export function createTradePage() {
     const b = snap.balances;
     const today = (snap.positions ?? []).map(livePosition).reduce<number | null>((t, p) => (p.dayGain == null ? t : (t ?? 0) + p.dayGain), null);
     const stat = (label: string, value: string, cls = '', title = '') => h('div', { class: 'tr-stat', title }, h('span', { class: 'muted tiny' }, label), h('b', { class: `num ${cls}` }, value));
+    // Only this account's ordering figures: totals across every account are on the Account page.
+    const name = snap.account || 'This account';
     statsSlot.replaceChildren(
-      stat('Account value', usd(b?.value)),
-      stat('Buying power', usd(b?.buyingPower), '', 'What you can spend on new orders now'),
-      stat('Today', today == null ? '—' : `${today >= 0 ? '+' : ''}${usd(today)}`, tone(today), 'Change in your positions’ value today (Schwab prices)'),
+      stat(`${name} value (for ordering)`, usd(b?.value), '', `Webull’s value of ${name} only. All your accounts added together are on the Account page.`),
+      stat('Buying power', usd(b?.buyingPower), '', `What you can spend on new orders in ${name} now`),
+      stat('Today (this account)', today == null ? '—' : `${today >= 0 ? '+' : ''}${usd(today)}`, tone(today), `Change in ${name}’s positions today (Schwab prices)`),
       stat('Orders today', `${snap.placedToday ?? '?'} / ${snap.limits.maxPerDay}`, '', `Max ${usd(snap.limits.maxOrder)} per order (Settings)`),
+      totalsLink(),
     );
     const errs = Object.values(snap.errors ?? {});
     notice.replaceChildren(
@@ -585,11 +588,12 @@ export function createTradePage() {
     const stat = (label: string, value: string, cls = '', title = '') => h('div', { class: 'tr-stat', title }, h('span', { class: 'muted tiny' }, label), h('b', { class: `num ${cls}` }, value));
     const lim = snap.futuresLimits;
     statsSlot.replaceChildren(
-      stat('Net liquidation', usd(b?.value), '', 'What the account would be worth if every position were closed now'),
+      stat(`${snap.account || 'Futures account'} net liquidation`, usd(b?.value), '', 'What this futures account would be worth if every position were closed now'),
       stat('Buying power', usd(b?.buyingPower), '', 'What Webull lets you use for new positions now'),
       stat('Open P/L', b?.openPnl == null ? '—' : `${b.openPnl >= 0 ? '+' : ''}${usd(b.openPnl)}`, tone(b?.openPnl), 'Profit or loss on open futures positions, in dollars'),
       stat('Margin in use', usd(b?.initMargin), '', 'Initial margin Webull has set aside for open positions'),
       stat('Contracts today', `${snap.placedContractsToday ?? '?'} / ${lim?.maxPerDay ?? '?'}`, '', `Max ${lim?.maxContracts ?? '?'} per order (Settings)`),
+      totalsLink(),
     );
     const errs = Object.values(snap.errors ?? {});
     notice.replaceChildren(
@@ -600,6 +604,11 @@ export function createTradePage() {
     drawLists();
     futuresTicket().refresh();
     tickUpdated();
+  }
+
+  /** Trade shows one account; the totals for every account have one home, the Account page. */
+  function totalsLink() {
+    return h('a', { class: 'small tr-totals-link', href: '#account', title: 'Total value, gains, dividends and risk across all your accounts' }, 'All accounts & totals → Account');
   }
 
   function tickUpdated() {
@@ -825,6 +834,17 @@ export function createTradePage() {
 
   return {
     el,
+    /** Opens the page on one Webull stock account (from an Account page card). */
+    open(id: string) {
+      if (!id) return;
+      accountId = id;
+      save(ACCOUNT_KEY, accountId);
+      if (asset !== 'stocks') return setAsset('stocks');
+      if (started) {
+        ticket.refresh();
+        refresh(true);
+      }
+    },
     start() {
       started = true;
       document.addEventListener('keydown', onKey);

@@ -6923,6 +6923,8 @@ button.stat-drill:focus-visible .stat-drill-mark {
   .payout-track {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+}
 /* ---------- Command bar (src/ui/command.ts) ---------- */
 .sr-only {
   position: absolute;
@@ -7133,6 +7135,7 @@ button.stat-drill:focus-visible .stat-drill-mark {
   .cmd-foot {
     display: none;
   }
+}
 /* Send diagnostics (src/ui/diagnostics.ts) */
 .health-foot {
   padding-top: 6px;
@@ -7158,4 +7161,60 @@ button.stat-drill:focus-visible .stat-drill-mark {
 }
 .diag-upload {
   margin: 12px 0;
+}
+
+/* ---------- Structure: Chart modes, one-line COT, one-home links ---------- */
+
+.chart-ws {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.chart-ws > * {
+  flex: 1;
+  min-height: 0;
+}
+.chart-ws > [hidden] {
+  display: none;
+}
+.chart-ws-tabs {
+  flex: none;
+}
+.chart-ws-tabs .tab {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 7px; /* compact, so the chart toolbar stays on one row */
+}
+.script-toolbar .chart-ws-tabs {
+  margin-right: var(--sp-2);
+}
+.cot-summary {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: baseline;
+}
+.cot-summary[hidden] {
+  display: none;
+}
+.cot-summary-link {
+  margin-left: auto;
+  white-space: nowrap;
+}
+.tr-totals-link {
+  align-self: center;
+  white-space: nowrap;
+}
+.pf-real {
+  margin: var(--sp-2) 0;
+}
+.pf-accounts-link {
+  margin-top: var(--sp-3);
 }

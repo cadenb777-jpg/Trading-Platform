@@ -34,7 +34,7 @@ export function toIndicatorDef(id: string, compiled: CompiledScript): IndicatorD
     name: compiled.name,
     shortName: compiled.shortName,
     category: 'My scripts',
-    description: 'Your own script. Edit it on the Scripts page.',
+    description: 'Your own script. Edit it in Chart → Scripts.',
     placement: compiled.overlay ? 'overlay' : 'separate',
     inputs: compiled.inputs,
     plots: compiled.plots,
