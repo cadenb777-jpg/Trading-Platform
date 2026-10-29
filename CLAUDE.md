@@ -338,6 +338,16 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   profile `signals` (Evidence section), search `recentLiquidity`; Data tab panel src/prospect/sourcesPanel.ts. Browser gate
   PROSPECT_SOURCES_HELPER_VERSION 41 (filters hidden below it); sfo- ids = lowest member key; refused while pr.JOB runs.
 
+  engine/prospect_contacts.py (docs/prospecting.md "Contacts"): firm-website crawler (<= 10 pages, robots.txt, 1 req/s/host,
+  honest UA, public hosts only) -> people/emails/main+direct phones/focus as contact_facts with source URL + date, pending
+  in the Review tab (src/prospect/review.ts) until approved ("reviewed by you on <date>"). Email labels: published /
+  pattern + server-checked / pattern + domain accepts mail / guess / catch-all; never "verified". MX via dnspython or DoH;
+  SMTP check off by default (settings prospect_smtp_check). prospect.ai_profile drafts cited facts (quote must be in the
+  source, else dropped; cost shown first). Weekly watcher via prospect.SCHEDULE_HOOKS; do-not-contact via
+  prospect.EXPORT_FILTERS. No LinkedIn, bought lists or people-search sites. UI: src/prospect/contacts.ts in the profile.
+  Crawler UA = project URL only (never the owner's email). Browser gate PROSPECT_CONTACTS_HELPER_VERSION 41 hides the
+  contacts section, Review tab and SMTP setting on older helpers.
+
 ## Conventions
 
 - Indicators are data-driven: one `IndicatorDef` per entry in `src/indicators/library.ts`.

@@ -6,12 +6,14 @@
  * missing data says what is missing.
  */
 import { insightButton } from '../ai/insight';
+import { prospectContactsReady } from '../data/schwab';
 import { OUTREACH, prospectAdvPdf, prospectCompleteReady, prospectFirm, type ClientType, type Outreach, type ProspectNote, type ProspectPosition, type ProspectProfile } from '../data/prospect';
 import { dataTable, statCards } from '../ui/charts';
 import { h, toast } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
 import { tickerAttr } from '../ui/tickerCard';
 import { columnChart, shareBar, shareList } from './charts';
+import { contactsSection } from './contacts';
 import { CHANGE_TONE, CHANGE_WORDS, CLIENT_LABELS, confidenceLabel, confidenceTone, countText, dateText, moneyText, quarterText, TYPE_SHORT, TYPE_TERM, weightText } from './logic';
 
 export interface ProfileContext {
@@ -390,6 +392,7 @@ export function renderProfile(p: ProspectProfile, ctx: ProfileContext): HTMLElem
     why,
     evidence,
     outreach,
+    prospectContactsReady() ? contactsSection(p.id) : null,
     aum,
     clients,
     people,

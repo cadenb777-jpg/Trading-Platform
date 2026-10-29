@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 40;
+export const LATEST_HELPER_VERSION = 41;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -45,6 +45,11 @@ const SMART_MONEY_REQUESTS = new Set(['research.insider_history', 'prospect.hold
 export const PROSPECT_SOURCES_HELPER_VERSION = 41;
 /** True when the connected helper reads public records for family offices (v41+); older ones ignore recentLiquidity. */
 export const prospectSourcesReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_SOURCES_HELPER_VERSION;
+/** Prospect contacts (website crawler, review queue, change watcher, AI profile, do-not-contact) need at least this version. */
+export const PROSPECT_CONTACTS_HELPER_VERSION = 41;
+const PROSPECT_CONTACTS_REQUEST = /^prospect\.(crawl|contacts|email_check|ai_profile|watch\.|review\.|optout\.|contacts_export|contacts_settings)/;
+/** True when the connected helper has prospect contacts (v41+). */
+export const prospectContactsReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_CONTACTS_HELPER_VERSION;
 /** True when the connected helper has the complete Prospecting downloads (v38+). */
 export const prospectCompleteReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_COMPLETE_HELPER_VERSION;
 
@@ -293,6 +298,7 @@ class HelperConnection {
     if ((type === 'prospect.adv_pdf' || type === 'prospect.adv_pdf_reader' || (type === 'prospect.ingest' && (msg.source === 'failed' || msg.source === 'state'))) && (this.version ?? 0) < PROSPECT_COMPLETE_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('prospect.sources.') && (this.version ?? 0) < PROSPECT_SOURCES_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (SMART_MONEY_REQUESTS.has(type) && (this.version ?? 0) < SMART_MONEY_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if (PROSPECT_CONTACTS_REQUEST.test(type) && (this.version ?? 0) < PROSPECT_CONTACTS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('scanner.') || (type === 'ai.insight' && NEW_INSIGHTS.has(String(msg.topic)))) && (this.version ?? 0) < SCANNER_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {
