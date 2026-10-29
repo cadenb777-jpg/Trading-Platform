@@ -335,7 +335,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   ProPublica 990-PF, Wikidata founders) cached in cache.db, saved in prospect.db src_* tables; apply() (also run at the
   end of build_firms) groups and links them (same address strong, shared person + city medium, name only possible) into
   `signals` and "Possible single-family office" firms (points, never certain). Requests prospect.sources.refresh/status;
-  profile `signals` (Evidence section), search `recentLiquidity`; Data tab panel src/prospect/sourcesPanel.ts.
+  profile `signals` (Evidence section), search `recentLiquidity`; Data tab panel src/prospect/sourcesPanel.ts. Browser gate
+  PROSPECT_SOURCES_HELPER_VERSION 41 (filters hidden below it); sfo- ids = lowest member key; refused while pr.JOB runs.
 
 ## Conventions
 

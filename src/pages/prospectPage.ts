@@ -10,6 +10,7 @@ import { clearEngineCache } from '../data/schwab';
 import {
   prospectAdvPdfReader,
   prospectCompleteReady,
+  prospectSourcesReady,
   prospectExport,
   prospectGeocode,
   prospectIngest,
@@ -247,6 +248,7 @@ export function createProspectPage() {
     } catch (err) {
       statusError = (err as Error).message;
     }
+    applySourcesGate();
     drawStrip();
     drawTabs();
     if (mode === 'data') drawData();
@@ -289,6 +291,8 @@ export function createProspectPage() {
   boxFunds.onchange = () => ((form.hasPrivateFunds = boxFunds.checked), updateFilterCount());
   const boxLiquidity = h('input', { type: 'checkbox', checked: form.recentLiquidity });
   boxLiquidity.onchange = () => ((form.recentLiquidity = boxLiquidity.checked), updateFilterCount());
+  const liquidityLabel = h('label', {}, boxLiquidity, ' Recent liquidity event ', infoTip('prLiquidity'));
+  let publicPanel: ReturnType<typeof publicSourcesPanel> | null = null;
   const textBox = input('text', 'Name, person, CRD or CIK', { placeholder: 'Firm, person, CRD or CIK  (or "25 miles of 10022")', type: 'search' });
   const milesBox = input('miles', 'Radius in miles', { placeholder: '25', inputmode: 'decimal' });
   const nearBox = input('near', 'Centre: ZIP, address or lat, lon', { placeholder: 'ZIP or street address' });
@@ -305,7 +309,7 @@ export function createProspectPage() {
     h('fieldset', { class: 'pr-fieldset' }, h('legend', { class: 'muted small' }, 'Within a radius ', infoTip('prRadius')), h('div', { class: 'pr-radius-row' }, milesBox, h('span', { class: 'muted small' }, 'miles of'), nearBox)),
     h('div', { class: 'pr-row2' }, field(h('span', {}, 'AUM from ', infoTip('prAum')), input('aumMin', 'AUM minimum', { placeholder: 'e.g. 100m' })), field('AUM up to', input('aumMax', 'AUM maximum', { placeholder: 'e.g. 5b' }))),
     h('div', { class: 'pr-field' }, h('span', { class: 'muted small' }, 'Serves (Form ADV client types)'), h('div', { class: 'chip-row pr-chips' }, ...CLIENT_FILTERS.map((c) => chipToggle(c === 'hnw' ? 'High net worth' : CLIENT_LABELS[c], () => form.clientTypes.includes(c), () => (form.clientTypes = form.clientTypes.includes(c) ? form.clientTypes.filter((x) => x !== c) : [...form.clientTypes, c]))))),
-    h('div', { class: 'pr-checks' }, h('label', {}, box13f, ' Files 13F'), h('label', {}, boxFunds, ' Has private funds'), h('label', {}, boxLiquidity, ' Recent liquidity event ', infoTip('prLiquidity'))),
+    h('div', { class: 'pr-checks' }, h('label', {}, box13f, ' Files 13F'), h('label', {}, boxFunds, ' Has private funds'), liquidityLabel),
     h('div', { class: 'pr-row2' }, field(h('span', {}, 'Holds (13F) ', infoTip('pr13f')), input('holds', 'Holds ticker or CUSIP', { placeholder: 'AAPL or CUSIP' })), field('Min position', input('minPosition', 'Minimum position', { placeholder: 'e.g. 1m' }))),
     h('div', { class: 'pr-actions' }, h('button', { type: 'submit', class: 'btn primary' }, 'Search'), h('button', { type: 'button', class: 'btn ghost', onclick: () => resetForm() }, 'Reset')),
     h('div', { class: 'pr-saved' }, field('Saved searches', savedSel), h('div', { class: 'pr-inline' }, h('button', { type: 'button', class: 'btn small', onclick: () => saveSearch() }, 'Save this search'), h('button', { type: 'button', class: 'btn small ghost', onclick: () => deleteSaved() }, 'Delete'))),
@@ -325,6 +329,20 @@ export function createProspectPage() {
     runSearch();
   }
   /** Puts the form object back into the controls (after a preset, a saved search or reset). */
+  /** Public-records filters only on helpers that know them (an older helper would silently ignore recentLiquidity). */
+  let sourcesGate: boolean | null = null;
+  function applySourcesGate() {
+    const ready = prospectSourcesReady();
+    if (!ready) {
+      form.recentLiquidity = false;
+      form.types = form.types.filter((t) => t !== 'Possible single-family office');
+      boxLiquidity.checked = false;
+    }
+    liquidityLabel.hidden = !ready;
+    filters.querySelectorAll<HTMLElement>('.pr-chips .chip[title="Possible single-family office"]').forEach((b) => (b.hidden = !ready));
+    if (sourcesGate !== null && sourcesGate !== ready) publicPanel?.reload();
+    sourcesGate = ready;
+  }
   function rebuildFilters() {
     for (const [el, key] of [[textBox, 'text'], [milesBox, 'miles'], [nearBox, 'near']] as const) el.value = form[key];
     filters.querySelectorAll<HTMLInputElement>('input[type=text], input[type=search]').forEach((el) => {
@@ -336,6 +354,7 @@ export function createProspectPage() {
     box13f.checked = form.has13f;
     boxFunds.checked = form.hasPrivateFunds;
     boxLiquidity.checked = form.recentLiquidity;
+    applySourcesGate();
     filters.querySelectorAll<HTMLButtonElement>('.pr-chips .chip').forEach((b) => {
       const label = b.textContent ?? '';
       const type = (Object.keys(TYPE_SHORT) as FirmType[]).find((t) => TYPE_SHORT[t] === label);
@@ -723,7 +742,8 @@ export function createProspectPage() {
   const dataBox = h('div', { class: 'pr-data-grid' });
   const dataHead = h('div', { class: 'panel-head' });
   views.data.append(h('section', { class: 'panel' }, dataHead, h('p', { class: 'muted small' }, 'Downloads come straight from the SEC and US Census (free, public). The SEC asks for your email in Settings; downloads run one at a time, politely paced. Nothing leaves your computer.'), dataBox));
-  views.data.append(publicSourcesPanel(() => (refreshStatus(), results && runSearch())));
+  publicPanel = publicSourcesPanel(() => (refreshStatus(), results && runSearch()));
+  views.data.append(publicPanel);
 
   function confirmFirst(source: ProspectSource): Promise<boolean> {
     if (source === 'failed') return Promise.resolve(true);

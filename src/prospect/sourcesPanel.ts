@@ -3,8 +3,8 @@
  * single-family offices that never file Form ADV (helper/engine/prospect_sources.py): last refresh, what it found,
  * any error, and a Refresh button. "Refresh all" runs every source and then links the records to firms.
  */
-import { prospectSourcesRefresh, prospectSourcesStatus, type PublicSourceKey, type PublicSourcesStatus } from '../data/prospect';
-import { clearEngineCache } from '../data/schwab';
+import { prospectSourcesReady, prospectSourcesRefresh, prospectSourcesStatus, type PublicSourceKey, type PublicSourcesStatus } from '../data/prospect';
+import { clearEngineCache, HELPER_UPDATE_FOR_FEATURE } from '../data/schwab';
 import { h, openModal, toast } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { openSettings } from '../ui/settings';
@@ -34,7 +34,7 @@ export function foundText(key: PublicSourceKey, last: Record<string, unknown>): 
 }
 
 /** Builds the panel; it loads its own status and refreshes the firm list through `onChanged` after a run. */
-export function publicSourcesPanel(onChanged: () => void): HTMLElement {
+export function publicSourcesPanel(onChanged: () => void): HTMLElement & { reload: () => Promise<void> } {
   let status: PublicSourcesStatus | null = null;
   let error = '';
   const live = new Map<string, string>();
@@ -49,13 +49,18 @@ export function publicSourcesPanel(onChanged: () => void): HTMLElement {
   );
 
   async function load() {
+    if (!prospectSourcesReady()) {
+      error = HELPER_UPDATE_FOR_FEATURE;
+      draw();
+      return;
+    }
     try {
       clearEngineCache('prospect.sources.status');
       status = await prospectSourcesStatus();
       error = '';
     } catch (err) {
       const msg = (err as Error).message;
-      error = /unknown|not supported|no handler/i.test(msg) ? 'Update the helper to use public records (download the project ZIP from GitHub again and restart the helper).' : msg;
+      error = /doesn't know|needs the updated/i.test(msg) ? HELPER_UPDATE_FOR_FEATURE : msg;
     }
     draw();
   }
@@ -124,5 +129,5 @@ export function publicSourcesPanel(onChanged: () => void): HTMLElement {
 
   draw();
   load();
-  return panel;
+  return Object.assign(panel, { reload: load });
 }

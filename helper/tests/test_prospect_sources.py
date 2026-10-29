@@ -18,7 +18,7 @@ from engine import prospect_sources as ps  # noqa: E402
 FIX = Path(__file__).parent / 'fixtures' / 'prospect_sources'
 pr.USE_PROCESSES = False
 TODAY = dt.date(2025, 10, 2)
-SFO_ID = 'sfo-sec-1900001'
+SFO_ID = 'sfo-ein-61234567'  # the group's lowest member key
 
 
 def text(name):
@@ -252,6 +252,29 @@ class Matching(Base):
         self.assertEqual(con.execute("SELECT COUNT(*) FROM people WHERE source LIKE 'Public records:%'").fetchone()[0], len(prof['people']))
         con.close()
 
+    def test_firm_id_stays_the_same_when_the_group_grows(self):
+        self.refresh()
+        con = self.con()
+        with con:
+            # a new holding company at the same address with more filings than anyone (it would lead the group)
+            ps.save_entity(con, 'sec-1999999', 'sec_owners', 'SMITH FAMILY OFFICE LLC', 'entity', '100 Main St Ste 5', 'Greenwich', 'CT', '06830',
+                           url='https://www.sec.gov/x', date='2025-10-01')
+            for i in range(4):
+                ps.save_fact(con, 'sec-1999999', 'owner_13d', f'Filed Schedule 13G on CO {i}', 'SEC SC 13G', f'https://www.sec.gov/x{i}', '2025-10-01')
+            ps.apply(con)
+        firm = con.execute("SELECT id, name FROM firms WHERE id LIKE 'sfo-%'").fetchall()
+        self.assertEqual([r['id'] for r in firm], [SFO_ID])
+        self.assertEqual(firm[0]['name'], 'SMITH FAMILY OFFICE LLC')  # the name may change, the id doesn't
+        con.close()
+
+    def test_refresh_waits_for_a_prospect_download(self):
+        with mock.patch.dict(pr.JOB, {'running': True}):
+            with self.assertRaises(pr.EngineError) as caught:
+                asyncio.run(ps.run_refresh(Ctx(), ['wikidata'], None, self.db))
+            with self.assertRaises(pr.EngineError):
+                asyncio.run(ps.h_sources_refresh(Ctx(), {'sources': ['wikidata']}))
+        self.assertIn('prospect download is running', str(caught.exception))
+
     def test_same_address_links_to_an_existing_13f_filer_and_upgrades_it(self):
         con = self.con()
         with con:
@@ -290,7 +313,8 @@ class Matching(Base):
         self.refresh()
         con = self.con()
         self.assertEqual(con.execute("SELECT COUNT(*) FROM signals WHERE firm_id LIKE 'crd-%'").fetchone()[0], 0)
-        self.assertTrue(con.execute('SELECT COUNT(*) FROM firms WHERE id = ?', (SFO_ID,)).fetchone()[0])
+        # no address grouping either, so the foundation stays apart; the holding company is still found
+        self.assertTrue(con.execute("SELECT COUNT(*) FROM firms WHERE id LIKE 'sfo-%' AND cik = 1900001").fetchone()[0])
         con.close()
 
     def test_shared_person_and_city_is_a_medium_link(self):

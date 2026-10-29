@@ -3,7 +3,7 @@
  * family offices and 13F managers built from free SEC data. Used by the Prospecting page (src/pages/prospectPage.ts).
  */
 import { clearEngineCache, engineRequest, type EngineEvent } from './schwab';
-export { prospectCompleteReady } from './schwab';
+export { prospectCompleteReady, prospectSourcesReady } from './schwab';
 
 /** 'failed' retries the sources whose last run failed; 'state' = state-registered advisers (IAPD, beta). */
 export type ProspectSource = 'adv' | 'adv_full' | '13f' | 'formd' | 'state' | 'geo' | 'all' | 'failed';

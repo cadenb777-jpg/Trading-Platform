@@ -22,7 +22,7 @@ shared people + same city = medium, name only = weak, shown as "possible") and s
 A group with enough independent evidence and no Form ADV becomes a "Possible single-family office" (strong / moderate
 / weak signals, never certain) with the reasons listed.
 
-Politeness: SEC requests go through prospect's shared SEC pacer (contact email in the User-Agent, well under 10 a
+Politeness: SEC requests go through the helper's shared SEC pacer (sec.pace) (contact email in the User-Agent, well under 10 a
 second); every other site gets at most one request a second. Each run is bounded (see the MAX_ constants).
 UNVERIFIED LIVE: built in a sandbox that cannot reach sec.gov, propublica.org, gleif.org or wikidata.org; the
 parsers follow the documented formats and are tested on hand-made fixtures (helper/tests/fixtures/prospect_sources/).
@@ -38,6 +38,7 @@ import urllib.parse
 from pathlib import Path
 
 from . import prospect as pr
+from . import sec
 from .core import EngineError, background, handler
 
 log = logging.getLogger('engine.prospect_sources')
@@ -419,7 +420,7 @@ async def sec_text(ctx, url, limit=None):
     """Text of an SEC URL (None on 404). With `limit`, reads only until the end of the SEC header or `limit` bytes."""
     pr._need_contact(ctx)
     for attempt in range(3):
-        await pr._sec_pace()
+        await sec.pace()
         try:
             if limit:
                 chunks, size = [], 0
@@ -1030,7 +1031,7 @@ def apply(con):
             for e in members:
                 links.append((target, f'Public records: {SOURCE_LABEL.get(e["source"], e["source"])}', e['key'], best_method, best_score, 'linked', e['name']))
         elif qualifies:
-            target = 'sfo-' + main['key']
+            target = 'sfo-' + min(keys)  # the lowest member key: the same id on every run, so notes stay attached
             reasons = [ev[1] for ev in evidence] + ['no Form ADV found: single-family offices are exempt from adviser registration (Rule 202(a)(11)(G)-1)',
                                                     'an educated guess from public records; check before relying on it']
             other = sorted({e['name'] for e in members if e['kind'] in ('entity', 'lei') and pr.normalize_name(e['name']) != pr.normalize_name(main['name'])})[:8]
@@ -1097,6 +1098,8 @@ async def run_refresh(ctx, keys=None, emit=None, db_path=None):
         _lock = asyncio.Lock()
     if _lock.locked():
         raise EngineError('Public records are already being refreshed; watch the Data tab for progress.')
+    if pr.JOB.get('running'):
+        raise EngineError('A prospect download is running (it rebuilds the firm list). Refresh public records when it has finished.')
     async with _lock:
         JOB.clear()
         JOB.update({'running': True, 'sources': keys, 'started': time.time(), 'stage': 'Starting', 'error': None})
@@ -1173,6 +1176,8 @@ async def h_sources_refresh(ctx, msg):
         return {'result': await run_refresh(ctx, keys, msg.get('_emit'))}
     if JOB.get('running'):
         raise EngineError('Public records are already being refreshed.')
+    if pr.JOB.get('running'):
+        raise EngineError('A prospect download is running (it rebuilds the firm list). Refresh public records when it has finished.')
 
     async def go():
         try:
