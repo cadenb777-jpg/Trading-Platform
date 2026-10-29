@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { entryZone } from './entryZone';
+import { entryZone, isLive, isOver } from './entryZone';
 import type { Setup } from './setupsPanel';
 
 function setup(over: Partial<Setup> = {}, plan: Partial<Setup['plan']> = {}): Setup {
@@ -49,5 +49,15 @@ describe('entry zone', () => {
     expect(back.zone).toBe('triggered');
     expect(back.label).not.toMatch(/waiting/i);
     expect(entryZone(open, 95, today).zone).toBe('invalid');
+  });
+
+  it('stop hit, at target and expired setups are over: left out of the counts and the open risk', () => {
+    const z = (s: Setup, p: number) => entryZone(s, p, today).zone;
+    const over = [z(setup(), 95), z(setup(), 111), z(setup({}, { validUntil: '2026-10-01' }), 99)];
+    expect(over).toEqual(['invalid', 'target', 'expired']);
+    expect(over.every(isOver) && !over.some(isLive)).toBe(true);
+    const live = [z(setup(), 97), z(setup(), 99.6), z(setup(), 100.2), z(setup({ status: 'in trade', trade: { entry: 100.3, filled: '2026-10-22', pnl: 0, daysHeld: 1 } }), 98)];
+    expect(live).toEqual(['waiting', 'approaching', 'entry', 'triggered']);
+    expect(live.every(isLive) && !live.some(isOver)).toBe(true);
   });
 });

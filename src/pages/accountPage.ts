@@ -193,10 +193,11 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
       const parts = r.parts.map((part): PartView => {
         const value = part.shares ? (price != null ? part.shares * price + part.amount : null) : part.amount;
         const rec = report?.received?.[partKey(part, r.symbol)] ?? null;
-        return { part, value, today: part.shares ? todayChange(value, change) : null, gain: gainOf(r.kind === 'security' ? value : null, part.cost, rec?.amount), rec };
+        return { part, value, today: part.shares && price != null ? todayChange(part.shares * price, change) : null, gain: gainOf(r.kind === 'security' ? value : null, part.cost, rec?.amount), rec };
       });
       const value = r.shares ? (price != null ? r.shares * price + r.amount : null) : r.amount;
-      const today = r.shares ? todayChange(value, change) : null;
+      // today's move is on the shares only (a dollar amount beside them doesn't move with the quote), as on Home
+      const today = r.shares && price != null ? todayChange(r.shares * price, change) : null;
       const gain = r.kind === 'security' ? sumGains(parts.map((x) => x.gain)) : gainOf(null, null, null);
       const info = r.kind === 'security' ? infoOf(r.symbol) : null;
       return {
@@ -451,7 +452,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
         );
       // totals: today over priced holdings, gains over holdings with a cost basis (as in the headline cards)
       const all = sumGains(list.filter((x) => x.r.kind === 'security').map((x) => x.gain));
-      const d = dayTotal(list);
+      const d = dayTotal(list.map((x) => ({ value: x.price != null ? x.r.shares * x.price : null, today: x.today })));
       const income = list.reduce((s, x) => s + (x.info?.annualIncome ?? 0), 0);
       const totalCell = (key: string): HTMLElement => {
         switch (key) {
@@ -485,7 +486,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     function overview(r: DividendReport | null, sum: number, list: RowView[], one: Saved | null) {
       const cash = list.filter((x) => x.r.kind !== 'security' || !x.r.shares).reduce((s, x) => s + (x.value ?? 0), 0);
       const g = sumGains(list.filter((x) => x.r.kind === 'security').map((x) => x.gain));
-      const d = dayTotal(list);
+      const d = dayTotal(list.map((x) => ({ value: x.price != null ? x.r.shares * x.price : null, today: x.today })));
       const methods = list.flatMap((x) => x.parts.map((p) => p.rec?.method ?? 'none')).filter((m) => m !== 'none');
       const est = methods.filter((m) => m === 'tracked' || m === 'purchase').length;
       const firstSeen = list.flatMap((x) => x.parts.map((p) => (p.rec?.method === 'tracked' ? p.rec.since : null))).filter((s): s is string => !!s).sort()[0];
@@ -521,7 +522,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     function accountCard(p: Saved, list: RowView[], type: TaxType | undefined, combined: boolean) {
       const mineParts = list.flatMap((x) => x.parts.filter((pp) => pp.part.portfolioId === p.id).map((pp) => ({ x, pp })));
       const value = mineParts.reduce((s, { pp }) => s + (pp.value ?? 0), 0);
-      const d = dayTotal(mineParts.map(({ pp }) => pp));
+      const d = dayTotal(mineParts.map(({ x, pp }) => ({ value: x.price != null ? pp.part.shares * x.price : null, today: pp.today })));
       const g = sumGains(mineParts.filter(({ x }) => x.r.kind === 'security').map(({ pp }) => pp.gain));
       const cash = mineParts.filter(({ x }) => x.r.kind === 'cash').reduce((s, { pp }) => s + (pp.value ?? 0), 0);
       const n = p.holdings.filter((x) => x.symbol.trim()).length;

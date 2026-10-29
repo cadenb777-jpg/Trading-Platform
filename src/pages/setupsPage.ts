@@ -354,11 +354,16 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   }
 
   /** The plain answer first: what's worth a look on this time frame today, and how the market leans. */
-  function renderToday(hr: HorizonResult | undefined) {
-    if (!hr || hr.error) return today.replaceChildren();
+  // Today follows live prices too (a stop hit drops a setup out of the count), redrawn only when what it lists changes.
+  let todayKey = '';
+  function renderToday(hr: HorizonResult | undefined, onlyIfChanged = false) {
+    if (!hr || hr.error) return ((todayKey = ''), today.replaceChildren());
     const r = data!.regime;
     const good = visibleAll(hr).filter((s) => (s.tier === 'A' || s.tier === 'B') && s.status !== 'forming');
     const live = good.map((s) => ({ s, z: entryZone(s, prices.get(s.symbol) ?? s.price) })).filter((x) => isLive(x.z.zone)); // stop hit, at target, window closed: over, not counted
+    const key = `${prefs.horizon}|${live.map((x) => `${idOf(x.s)}:${x.z.label}`).join(',')}`;
+    if (onlyIfChanged && key === todayKey) return;
+    todayKey = key;
     const lean = r.qqqAbove200 === 1 ? 'The Nasdaq-100 is above its 200-day average: buys go with the long-term trend.' : r.qqqAbove200 === -1 ? 'The Nasdaq-100 is below its 200-day average: sells go with the long-term trend; use smaller size on buys.' : r.qqqWeekly === 1 ? 'The Nasdaq-100 is in a weekly uptrend.' : r.qqqWeekly === -1 ? 'The Nasdaq-100 is in a weekly downtrend.' : 'The Nasdaq-100 has no clear trend: be pickier and use smaller size.';
     const info = HORIZONS.find((x) => x.key === prefs.horizon)!;
     today.replaceChildren(
@@ -710,7 +715,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   function relist() {
     if (relistQueued) return;
     relistQueued = true;
-    requestAnimationFrame(() => ((relistQueued = false), renderList(horizon())));
+    requestAnimationFrame(() => ((relistQueued = false), renderList(horizon()), renderToday(horizon(), true)));
   }
 
   /** Alerts when a followed setup moves into "getting close" or "entry zone now" (once per change). */

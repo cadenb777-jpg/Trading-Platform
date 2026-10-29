@@ -397,7 +397,7 @@ export function initTickerCards(a: TickerActions) {
       const symbol = normalizeTicker(inner?.getAttribute(TICKER_ATTR));
       return inner && symbol ? { el: inner, symbol } : null;
     })();
-    if (!t) return;
+    if (!t || !t.el.getClientRects().length) return; // never for a ticker on a hidden page
     // only keyboard focus (a mouse click focuses too, and hover already handles that)
     if (!target.matches(':focus-visible')) return;
     clearTimeout(showTimer);

@@ -9,6 +9,7 @@ import { formatPrice, h, toast } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
 import { sideRecord, takeProfit, type Setup, type StrategyInfo } from './setupsPanel';
 import { canTrade, ownerConflict, readTrade, tradeBlock } from './tradeRead';
+import { CHASE_LIMIT } from './entryZone';
 
 export { canTrade, tradeBlock };
 import { readSize, saveSize } from '../trade/sizing';
@@ -93,6 +94,9 @@ export async function tradeSetup(s: Setup, strat?: StrategyInfo, marketTrend?: n
   // Once the trigger has traded (the strategy's signal triggered, or price is already through it), a buy-stop would be
   // below the market: use a limit near the current price instead.
   const through = !!s.trade || price >= p.trigger;
+  // never a limit above a fair fill: at most a quarter of the planned risk past the entry (it then fills on a pullback)
+  const entryAt = s.trade?.entry ?? p.trigger;
+  const limit = p.entryType === 'stop' ? Math.min(price, entryAt + CHASE_LIMIT * Math.abs(entryAt - p.stop)) : price;
   const tp = takeProfit(s);
   const v = verdict(s);
   const read = readTrade(s, strat, marketTrend);
@@ -100,7 +104,7 @@ export async function tradeSetup(s: Setup, strat?: StrategyInfo, marketTrend?: n
     symbol: s.symbol,
     side: 'BUY',
     guideStop: +p.stop.toFixed(2),
-    ...(p.entryType === 'stop' && !through ? { orderType: 'STOP' as const, stopPrice: +p.trigger.toFixed(2) } : { orderType: 'LIMIT' as const, limitPrice: +price.toFixed(2) }),
+    ...(p.entryType === 'stop' && !through ? { orderType: 'STOP' as const, stopPrice: +p.trigger.toFixed(2) } : { orderType: 'LIMIT' as const, limitPrice: +limit.toFixed(2) }),
     plan: {
       target: +tp.price.toFixed(2),
       targetLabel: tp.tested ? tp.label : '2R guide',

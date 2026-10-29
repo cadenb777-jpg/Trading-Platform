@@ -5810,6 +5810,8 @@ a.btn {
 .sp-table .tt-range { flex-direction: column; align-items: flex-end; }
 .sp-table .tt-filters .input { min-width: 0; width: 64px; }
 .sp-table .tt-filters .tt-range .input { width: 52px; }
+/* Account holdings: narrower min/max boxes so every column (down to Accounts) fits a 1440 px screen. */
+.acct-holdings .tt-filters .tt-range .input { min-width: 40px; width: 48px; }
 .sp-table { width: 100%; border-collapse: collapse; font-size: var(--fs-base); }
 .sp-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 6px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .sp-table td { padding: 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -7359,8 +7361,8 @@ button.stat-drill:focus-visible .stat-drill-mark {
 }
 .data-table td.acct-accounts-cell {
   white-space: normal;
-  min-width: 7rem;
-  max-width: 10rem;
+  min-width: 5rem;
+  max-width: 6.5rem;
   text-align: left;
 }
 /* the period table fits the holding window: headers wrap and cells are tighter, so no column is cut off */
