@@ -6,6 +6,7 @@ import { CATALOG } from './catalog';
 import type { Bar } from '../types';
 import { ema, highest, lowest, rma, rsi, sma, stdev, trueRange, wma } from './math';
 import { MORE_INDICATORS, QUANT_INDICATORS } from './more';
+import { sessionDay } from './session';
 import { POSITIONING_INDICATORS } from './positioning';
 import type { IndicatorDef, IndicatorInput, IndicatorInstance, IndicatorParams, PriceSource } from './types';
 
@@ -93,16 +94,16 @@ export const INDICATORS: IndicatorDef[] = [
     name: 'VWAP',
     shortName: 'VWAP',
     category: 'Volume',
-    description: 'Volume-weighted average price, resetting each day (UTC).',
+    description: 'Volume-weighted average price, resetting each trading day (New York date for stocks, UTC for crypto).',
     placement: 'overlay',
     inputs: [],
     plots: [{ key: 'vwap', title: 'VWAP', type: 'line', color: '#e91e63', lineWidth: 2 }],
-    compute: (bars) => {
+    compute: (bars, p) => {
       let day = -1;
       let pv = 0;
       let vol = 0;
       const out = bars.map((b, i) => {
-        const d = Math.floor(b.time / 86400);
+        const d = sessionDay(b.time, p);
         const newSession = d !== day;
         if (newSession) {
           day = d;
@@ -343,7 +344,13 @@ export function defaultColors(def: IndicatorDef): Record<string, string> {
 
 /** Label shown in the chart legend, e.g. "RSI 14 close" or "RSI 14 close · 1h". */
 export function indicatorLabel(def: IndicatorDef, instance: Pick<IndicatorInstance, 'params' | 'timeframe'>): string {
-  const values = def.inputs.map((i) => instance.params[i.key] ?? i.default);
+  const values = def.inputs
+    .filter((i) => i.legend !== 'hide')
+    .map((i) => {
+      const v = instance.params[i.key] ?? i.default;
+      return typeof i.legend === 'function' ? i.legend(v) : v;
+    })
+    .filter((v) => v !== '');
   const label = values.length ? `${def.shortName} ${values.join(' ')}` : def.shortName;
   return instance.timeframe ? `${label} · ${instance.timeframe}` : label;
 }

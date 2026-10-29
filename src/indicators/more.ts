@@ -4,6 +4,7 @@
  */
 import type { Bar } from '../types';
 import { ema, highest, lowest, rma, rsi, sma, stdev, trueRange, wma } from './math';
+import { sessionDay } from './session';
 import type { IndicatorDef, IndicatorInput, IndicatorParams, PriceSource } from './types';
 
 const NaNs = (n: number) => new Array<number>(n).fill(NaN);
@@ -388,13 +389,13 @@ export const MORE_INDICATORS: IndicatorDef[] = [
       { key: 's1', title: 'S1', type: 'line', color: '#80cbc4', lineWidth: 1 },
       { key: 's2', title: 'S2', type: 'line', color: '#26a69a', lineWidth: 1 },
     ],
-    compute: (bars) => {
+    compute: (bars, params) => {
       const out = { p: NaNs(bars.length), r1: NaNs(bars.length), r2: NaNs(bars.length), s1: NaNs(bars.length), s2: NaNs(bars.length) };
       let day = -1;
       let cur = { h: -Infinity, l: Infinity, c: NaN };
       let prev: typeof cur | null = null;
       bars.forEach((b, i) => {
-        const d = Math.floor(b.time / 86400);
+        const d = sessionDay(b.time, params);
         if (d !== day) {
           if (day !== -1) prev = cur;
           day = d;
@@ -748,7 +749,7 @@ export const QUANT_INDICATORS: IndicatorDef[] = [
       let pv2 = 0;
       let vol = 0;
       bars.forEach((b, i) => {
-        const d = Math.floor(b.time / 86400);
+        const d = sessionDay(b.time, p);
         const newSession = d !== day;
         if (newSession) {
           day = d;
