@@ -421,10 +421,15 @@ export function createClientsPage() {
   }
 
   async function showPreview() {
+    // the preview sits below the review: bring it into view straight away, so the click visibly does something
+    const reveal = () => preview.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
     preview.replaceChildren(h('div', { class: 'muted pad' }, 'Building report…'));
+    reveal();
     try {
       const { doc } = await build(current);
-      preview.replaceChildren(h('div', { class: 'report-preview' }, doc));
+      preview.replaceChildren(h('div', { class: 'report-preview', tabindex: -1, 'aria-label': `Report preview for ${current.name}` }, doc));
+      reveal();
+      preview.querySelector<HTMLElement>('.report-preview')?.focus({ preventScroll: true });
     } catch (err) {
       preview.replaceChildren(h('div', { class: 'ap-error' }, (err as Error).message));
     }

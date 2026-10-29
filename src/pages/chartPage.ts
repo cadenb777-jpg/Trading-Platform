@@ -57,7 +57,7 @@ export function createChartPage() {
   const chartEl = h('div', { class: 'chart' });
   const legendEl = h('div', { class: 'legend' });
   const messageEl = h('div', { class: 'chart-message', hidden: true });
-  const chartWrap = h('main', { class: 'chart-wrap' }, chartEl, legendEl, messageEl);
+  const chartWrap = h('div', { class: 'chart-wrap' }, chartEl, legendEl, messageEl);
   const drawBar = h('div', { class: 'draw-bar', role: 'toolbar', 'aria-label': 'Drawing tools' });
   const watchToggle = h('button', { class: 'icon-btn', title: 'Show or hide watchlist', 'aria-label': 'Toggle watchlist' }, icon('list', 22));
   const profileBtn = h('button', { class: 'btn fit-btn', title: 'Volume profile: volume traded at each price', 'aria-label': 'Volume profile' }, icon('profile', 18));

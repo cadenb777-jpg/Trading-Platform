@@ -56,6 +56,16 @@ describe('yearlySplit', () => {
     expect(splitRead([])).toBe('Not enough history to split the payouts yet.');
   });
 
+  it('the whole span counts the net price change, as the summary does (a fall made good later is not erosion)', () => {
+    // down $2 in the first year, then up $1.50 a year: net +$4 over 5 years, payouts $1 a year
+    const zig = series('2021-10-01', 5 * 366 + 30, (i) => (i < 366 ? 20 - (2 * i) / 366 : 18 + (1.5 * (i - 366)) / 365.25));
+    const pays: Payment[] = zig.filter(([d]) => d.endsWith('-15')).map(([d]) => [d, 1 / 12]);
+    const s = yearlySplit(zig, pays);
+    expect(s.some((y) => y.fromPrice > 0)).toBe(true); // one year on its own was paid from the price
+    expect(overall(s).fromPrice).toBe(0);
+    expect(splitRead(s)).toContain('none of them came from its price falling');
+  });
+
   it('reads covered and fully eroded cases plainly', () => {
     const rising = series('2025-01-01', 400, (i) => 10 + i / 100);
     const paid: Payment[] = [['2025-06-01', 0.5]];

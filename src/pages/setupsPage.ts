@@ -10,9 +10,9 @@ import { CandlestickSeries, ColorType, LineStyle, createChart, type IChartApi, t
 import { subscribeQuote } from '../data/quotes';
 import { engineRequest, helper, schwab } from '../data/schwab';
 import type { MarketRef } from '../data/quotes';
-import { entryZone, type Zone } from '../home/entryZone';
+import { entryZone, isLive, isOver, type Zone } from '../home/entryZone';
 import { takeProfit, type SideRecord, type Setup, type StrategyInfo } from '../home/setupsPanel';
-import { canTrade, tradeGuideBody, tradeSetup } from '../home/tradeGuide';
+import { canTrade, tradeBlock, tradeGuideBody, tradeSetup } from '../home/tradeGuide';
 import type { Timeframe } from '../types';
 import { pageFrame, pct as fmtPct } from '../ui/charts';
 import { activatable, formatPrice, h, timeAgo, toast } from '../ui/dom';
@@ -354,11 +354,16 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   }
 
   /** The plain answer first: what's worth a look on this time frame today, and how the market leans. */
-  function renderToday(hr: HorizonResult | undefined) {
-    if (!hr || hr.error) return today.replaceChildren();
+  // Today follows live prices too (a stop hit drops a setup out of the count), redrawn only when what it lists changes.
+  let todayKey = '';
+  function renderToday(hr: HorizonResult | undefined, onlyIfChanged = false) {
+    if (!hr || hr.error) return ((todayKey = ''), today.replaceChildren());
     const r = data!.regime;
     const good = visibleAll(hr).filter((s) => (s.tier === 'A' || s.tier === 'B') && s.status !== 'forming');
-    const live = good.map((s) => ({ s, z: entryZone(s, prices.get(s.symbol) ?? s.price) })).filter((x) => ['waiting', 'approaching', 'entry'].includes(x.z.zone) || x.s.trade);
+    const live = good.map((s) => ({ s, z: entryZone(s, prices.get(s.symbol) ?? s.price) })).filter((x) => isLive(x.z.zone)); // stop hit, at target, window closed: over, not counted
+    const key = `${prefs.horizon}|${live.map((x) => `${idOf(x.s)}:${x.z.label}`).join(',')}`;
+    if (onlyIfChanged && key === todayKey) return;
+    todayKey = key;
     const lean = r.qqqAbove200 === 1 ? 'The Nasdaq-100 is above its 200-day average: buys go with the long-term trend.' : r.qqqAbove200 === -1 ? 'The Nasdaq-100 is below its 200-day average: sells go with the long-term trend; use smaller size on buys.' : r.qqqWeekly === 1 ? 'The Nasdaq-100 is in a weekly uptrend.' : r.qqqWeekly === -1 ? 'The Nasdaq-100 is in a weekly downtrend.' : 'The Nasdaq-100 has no clear trend: be pickier and use smaller size.';
     const info = HORIZONS.find((x) => x.key === prefs.horizon)!;
     today.replaceChildren(
@@ -366,7 +371,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       live.length
         ? h('ul', { class: 'sp-today-list small' }, ...live.slice(0, 5).map(({ s, z }) => h('li', {}, h('a', { href: '#setups', onclick: (e: Event) => (e.preventDefault(), (selected = idOf(s)), render()) },
             h('b', tickerAttr(s.symbol), s.symbol), ' ', h('span', { class: s.direction > 0 ? 'up' : 'down' }, s.direction > 0 ? 'BUY' : 'SELL'), ' ', h('i', { class: `tier tier-${s.tier}` }, s.tier!), h('span', { class: z.tone }, ` ${z.label}`),
-            h('span', { class: 'muted' }, s.trade ? ` · in since ${s.trade.filled}` : ` · ${s.direction > 0 ? 'above' : 'below'} ${usd(s.plan.trigger)}, stop ${usd(s.plan.stop)}`)))))
+            h('span', { class: 'muted' }, s.trade ? ` · triggered ${s.trade.filled}` : ` · ${s.direction > 0 ? 'above' : 'below'} ${usd(s.plan.trigger)}, stop ${usd(s.plan.stop)}`)))))
         : h('p', { class: 'small muted' }, hr.setups.length ? 'No A or B setup is waiting for an entry. That\'s normal: good setups don\'t appear every day. Check the other time frames, or come back after the next close.' : 'No stock has every condition lined up. Sitting out is a position.'),
       h('p', { class: 'small' }, lean),
       sectorRisk(live.map((x) => x.s)),
@@ -468,7 +473,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     );
     const mc = (s: Setup) => s.monteCarlo?.profitable ?? -1;
     // Setups that are over (stop hit, target reached, entry window closed) go to the bottom whatever the sort.
-    const over = new Map(out.map((s) => [s, ['invalid', 'target', 'expired'].includes(entryZone(s, prices.get(s.symbol) ?? s.price).zone)]));
+    const over = new Map(out.map((s) => [s, isOver(entryZone(s, prices.get(s.symbol) ?? s.price).zone)]));
     return out.sort((a, b) =>
       Number(over.get(a)) - Number(over.get(b)) ||
       (prefs.sort === 'rr' ? (b.plan.riskReward ?? 0) - (a.plan.riskReward ?? 0)
@@ -492,13 +497,14 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     }
     if (!selected || !rows.some((s) => idOf(s) === selected)) selected = idOf(rows.find((s) => s.symbol === links.symbolFor('setups')) ?? rows[0]);
     // The list is rebuilt on every pick and price update: keep keyboard focus on the same setup's row.
+    const over = rows.filter((x) => isOver(entryZone(x, prices.get(x.symbol) ?? x.price).zone)).length;
     const focusedId = list.contains(document.activeElement) ? (document.activeElement as HTMLElement).closest<HTMLElement>('tr[data-id]')?.dataset.id : undefined;
     list.replaceChildren(
       withTableTools(h('table', { class: 'data-table sp-table' },
         h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'Stock'), h('th', {}, termLabel('Grade', 'grade')), h('th', {}, termLabel('Right now', 'entryzone')), h('th', { class: 'num' }, 'Entry'), h('th', { class: 'num' }, termLabel('Stop', 'stop')), h('th', { class: 'num' }, 'Target'), h('th', { class: 'num' }, 'Hold'))),
         h('tbody', {}, ...rows.map(row)),
       ) as HTMLTableElement, { id: `setups:${prefs.horizon}`, columns: { '': 'none' } }),
-      h('p', { class: 'muted tiny' }, `${rows.length} shown of ${hr.setups.length}. Signals come from finished ${HORIZONS.find((x) => x.key === prefs.horizon)!.bars.split(',')[0]}; the 5-minute scans update prices, triggers and grades.`),
+      h('p', { class: 'muted tiny' }, `${rows.length} shown of ${hr.setups.length}${over ? ` (${over} over: stop hit, at target or entry window closed; listed last and left out of Today)` : ''}. Signals come from finished ${HORIZONS.find((x) => x.key === prefs.horizon)!.bars.split(',')[0]}; the 5-minute scans update prices, triggers and grades.`),
     );
     if (focusedId) list.querySelector<HTMLElement>(`tr[data-id="${CSS.escape(focusedId)}"]`)?.focus({ preventScroll: true });
   }
@@ -546,7 +552,8 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     const strat = hr!.strategies[s.strategy as StrategyKey];
     detail.replaceChildren(
       h('div', { class: 'sp-detail-head' }, link.chip, h('h2', tickerAttr(s.symbol), s.symbol), h('span', { class: 'muted' }, `${s.strategyName} · ${HORIZONS.find((x) => x.key === prefs.horizon)!.label} · ${s.plan.holdText ?? s.plan.horizon}`), h('span', { class: 'spacer' }), watchBtn, h('button', { class: 'btn small', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, 'Open chart'),
-        canTrade(s) ? h('button', { class: 'btn small primary sp-trade', title: 'Open the order ticket filled from this plan and sized by your risk % (key t). You still preview and confirm.', 'aria-keyshortcuts': 't', onclick: () => tradeSelected() }, 'Trade this ▸') : ''),
+        s.direction > 0 ? h('button', { class: 'btn small primary sp-trade', disabled: !canTrade(s), title: tradeBlock(s) ?? 'Open the order ticket filled from this plan and sized by your risk % (key t). You still preview and confirm.', 'aria-keyshortcuts': 't', onclick: () => tradeSelected() }, 'Trade this ▸') : ''),
+      !canTrade(s) && s.direction > 0 ? h('p', { class: 'muted small sp-trade-why' }, `Trade this is off: ${tradeBlock(s)}`) : '',
       live,
       chartBox,
       tradeGuideBody(s, strat, onOpenChart, data?.regime.qqqAbove200 ?? null),
@@ -567,9 +574,10 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   function tradeSelected() {
     const cur = current();
     if (!cur) return;
-    if (!canTrade(cur.s)) return toast(cur.s.trade ? `You're already in ${cur.s.symbol}.` : 'Short selling isn’t supported, so there’s no order ticket for sells.');
+    const blocked = tradeBlock(cur.s);
+    if (blocked) return toast(blocked);
     link.publish(cur.s.symbol);
-    void tradeSetup(cur.s, cur.strat, data?.regime.qqqAbove200 ?? null);
+    void tradeSetup(cur.s, cur.strat, data?.regime.qqqAbove200 ?? null, prices.get(cur.s.symbol) ?? cur.s.price);
   }
 
   /** Keys on this page: ↑/↓ (or j/k) move through the list, t opens the ticket for the selected setup. */
@@ -707,7 +715,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   function relist() {
     if (relistQueued) return;
     relistQueued = true;
-    requestAnimationFrame(() => ((relistQueued = false), renderList(horizon())));
+    requestAnimationFrame(() => ((relistQueued = false), renderList(horizon()), renderToday(horizon(), true)));
   }
 
   /** Alerts when a followed setup moves into "getting close" or "entry zone now" (once per change). */

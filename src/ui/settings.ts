@@ -406,7 +406,7 @@ function webullRow(s: PlatformSettings, refresh: () => void): HTMLElement {
     h(
       'p',
       { class: 'muted small' },
-      'Place stock orders on the Trade page; view and sync your account under Portfolios (Webull button). Apply for API access and create an App Key and App Secret on ',
+      'Place stock orders on the Trade page; view and sync your accounts on the Account page (Sync Webull). Apply for API access and create an App Key and App Secret on ',
       h('a', { href: 'https://developer.webull.com/apis/docs/getting-started', target: '_blank', rel: 'noopener' }, 'Webull’s developer site'),
       '. Start in Test: Webull’s test environment uses shared test keys listed on its SDK page and no real money. The AI assistant can never place orders.',
     ),

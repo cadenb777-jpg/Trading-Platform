@@ -138,7 +138,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
   const frame = pageFrame('Account', 'Your real money only: every account of yours, added together (or one at a time), with gains, dividends, risk and allocation.', [
     showSwitch,
     h('button', { class: 'btn', title: 'Upload a positions export (CSV or Excel) from your broker; it becomes one of your accounts here', onclick: () => openStatementImport(imported) }, 'Import statement'),
-    syncButton('Sync Webull', () => '', synced),
+    syncButton('Sync Webull', () => '', synced, syncNote),
     h('button', { class: 'btn', onclick: () => (clearEngineCache('dividends.'), load()) }, 'Refresh'),
   ]);
   let loading = 0;
@@ -193,10 +193,11 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
       const parts = r.parts.map((part): PartView => {
         const value = part.shares ? (price != null ? part.shares * price + part.amount : null) : part.amount;
         const rec = report?.received?.[partKey(part, r.symbol)] ?? null;
-        return { part, value, today: part.shares ? todayChange(value, change) : null, gain: gainOf(r.kind === 'security' ? value : null, part.cost, rec?.amount), rec };
+        return { part, value, today: part.shares && price != null ? todayChange(part.shares * price, change) : null, gain: gainOf(r.kind === 'security' ? value : null, part.cost, rec?.amount), rec };
       });
       const value = r.shares ? (price != null ? r.shares * price + r.amount : null) : r.amount;
-      const today = r.shares ? todayChange(value, change) : null;
+      // today's move is on the shares only (a dollar amount beside them doesn't move with the quote), as on Home
+      const today = r.shares && price != null ? todayChange(r.shares * price, change) : null;
       const gain = r.kind === 'security' ? sumGains(parts.map((x) => x.gain)) : gainOf(null, null, null);
       const info = r.kind === 'security' ? infoOf(r.symbol) : null;
       return {
@@ -436,7 +437,8 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
           case 'yoc': return td(pctU(x.info?.yieldOnCost), 'num', x.info?.yieldOnCost);
           case 'income': return td(usd(x.info?.annualIncome), 'num', x.info?.annualIncome);
           case 'tr1y': return td(pct(x.info?.tr1y, 1), `num ${tone(x.info?.tr1y)}`, x.info?.tr1y);
-          case 'accounts': return h('td', { class: 'muted small' }, r.parts.length === 1 ? r.parts[0].account : `${r.parts.length} accounts`);
+          // short and allowed to wrap, so the last column isn't cut off on a laptop screen (full names on hover)
+          case 'accounts': return h('td', { class: 'muted small acct-accounts-cell', title: r.parts.map((x) => x.account).join('\n') }, r.parts.length === 1 ? r.parts[0].account.replace(/^Webull /, '').replace(/ \((Test|Live)\)$/, '') : `${r.parts.length} accounts`);
           default: return td('');
         }
       };
@@ -450,7 +452,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
         );
       // totals: today over priced holdings, gains over holdings with a cost basis (as in the headline cards)
       const all = sumGains(list.filter((x) => x.r.kind === 'security').map((x) => x.gain));
-      const d = dayTotal(list);
+      const d = dayTotal(list.map((x) => ({ value: x.price != null ? x.r.shares * x.price : null, today: x.today })));
       const income = list.reduce((s, x) => s + (x.info?.annualIncome ?? 0), 0);
       const totalCell = (key: string): HTMLElement => {
         switch (key) {
@@ -484,7 +486,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     function overview(r: DividendReport | null, sum: number, list: RowView[], one: Saved | null) {
       const cash = list.filter((x) => x.r.kind !== 'security' || !x.r.shares).reduce((s, x) => s + (x.value ?? 0), 0);
       const g = sumGains(list.filter((x) => x.r.kind === 'security').map((x) => x.gain));
-      const d = dayTotal(list);
+      const d = dayTotal(list.map((x) => ({ value: x.price != null ? x.r.shares * x.price : null, today: x.today })));
       const methods = list.flatMap((x) => x.parts.map((p) => p.rec?.method ?? 'none')).filter((m) => m !== 'none');
       const est = methods.filter((m) => m === 'tracked' || m === 'purchase').length;
       const firstSeen = list.flatMap((x) => x.parts.map((p) => (p.rec?.method === 'tracked' ? p.rec.since : null))).filter((s): s is string => !!s).sort()[0];
@@ -520,7 +522,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     function accountCard(p: Saved, list: RowView[], type: TaxType | undefined, combined: boolean) {
       const mineParts = list.flatMap((x) => x.parts.filter((pp) => pp.part.portfolioId === p.id).map((pp) => ({ x, pp })));
       const value = mineParts.reduce((s, { pp }) => s + (pp.value ?? 0), 0);
-      const d = dayTotal(mineParts.map(({ pp }) => pp));
+      const d = dayTotal(mineParts.map(({ x, pp }) => ({ value: x.price != null ? pp.part.shares * x.price : null, today: pp.today })));
       const g = sumGains(mineParts.filter(({ x }) => x.r.kind === 'security').map(({ pp }) => pp.gain));
       const cash = mineParts.filter(({ x }) => x.r.kind === 'cash').reduce((s, { pp }) => s + (pp.value ?? 0), 0);
       const n = p.holdings.filter((x) => x.symbol.trim()).length;
@@ -555,7 +557,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
           'div',
           { class: 'ap-controls' },
           combined ? h('button', { class: 'btn small', onclick: () => choose(p.id) }, 'View alone') : null,
-          p.webullAccount ? syncButton('Sync', () => p.webullAccount!, synced) : null,
+          p.webullAccount ? syncButton('Sync', () => p.webullAccount!, synced, syncNote) : null,
           p.webullAccount ? h('button', { class: 'btn small', title: 'Positions, open orders and the order ticket for this account', onclick: () => openTrade(p.webullAccount!) }, 'Order in Trade') : null,
           h('button', { class: 'btn small', title: 'Backtest, stress-test and optimise this account’s mix, or edit its holdings', onclick: () => openPortfolio(p.id) }, 'Analyse in Portfolios'),
         ),
@@ -645,7 +647,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
         h('p', {}, check.read),
         list.length
           ? dataTable(
-              ['Period', 'Price return', 'Total return', 'Paid out', 'From the price falling'],
+              ['Period', 'Price return', 'Total return', 'Paid out', 'From price fall'],
               list.map((p) => {
                 const sp = splitPeriod(p);
                 const unit = p.yearly ? '/yr' : '';
@@ -840,9 +842,14 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     load();
   }
 
-  function synced(p: Saved) {
-    if (!isMine(p)) toast('A Webull Test account isn’t counted as yours. Tick "This is my account" in Portfolios to include it.');
+  /** After a sync: always reload the cards (the toast from the sync says what was saved). */
+  function synced() {
     load();
+  }
+  /** Added to the sync's toast: synced Test accounts only count here once marked as the owner's. */
+  function syncNote(saved: Saved[]) {
+    const notMine = saved.filter((p) => !isMine(p)).length;
+    return notMine ? `${notMine === saved.length ? 'They are' : `${notMine} of them are`} Webull Test accounts, not counted here until you tick "This is my account" in Portfolios.` : '';
   }
 
   window.addEventListener('tp:data-changed', () => started && load());
