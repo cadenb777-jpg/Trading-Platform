@@ -1,5 +1,5 @@
 /**
- * A fixed OHLCV fixture for the catalog's reference tests: 300 daily bars from a seeded generator (Park-Miller
+ * A fixed OHLCV fixture for the overlay family's reference tests: 300 daily bars from a seeded generator (Park-Miller
  * LCG, seed 12345), prices rounded to cents so other tools (TA-Lib, pandas) can reproduce them exactly.
  * Bars open at 09:30 New York (14:30 UTC) starting Tuesday 2 January 2024, one per calendar day.
  */
