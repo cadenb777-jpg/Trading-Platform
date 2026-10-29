@@ -111,6 +111,16 @@ class Extraction(unittest.TestCase):
         home = pc.extract_phones(page('home.html', kind='home')['parsed'], 'home', '3125550100')
         self.assertEqual([(d, k) for d, k, _ in home], [('3125550100', 'main')])  # fax dropped
         self.assertIsNone(pc.classify_phone('', 'bio', '3125550111', '3125550100'))  # unlabelled on a bio page: could be personal
+        for label in ('C: ', 'M ', 'Mob. ', 'iPhone: ', 'Cell: ', 'm. ', 'Mobile - '):
+            self.assertIsNone(pc.classify_phone(label, 'contact', '3125550111', '3125550100'), label)
+        self.assertIsNone(pc.classify_phone('', 'home', '3125550111', '3125550100'))  # unlabelled: never the main line
+        self.assertIsNone(pc.classify_phone('Office: ', 'team', '3125550111', '3125550100'))  # team page: only "direct"
+        self.assertEqual(pc.classify_phone('Office: ', 'contact', '3125550111', '3125550100'), 'main')
+        self.assertEqual(pc.classify_phone('T: ', 'home', '3125550111', '3125550100'), 'main')
+        self.assertEqual(pc.classify_phone('Direct: ', 'bio', '3125550111', '3125550100'), 'direct')
+        self.assertEqual(pc.classify_phone('', 'bio', '3125550100', '3125550100'), 'main')  # the Form ADV number
+        about = pc.parse_html('<p>Call 312-555-0111 any time</p><p>Phone: 312-555-0122</p>', SITE + '/about-us')
+        self.assertEqual(pc.extract_phones(about, 'about', ''), [])  # about pages give no main line
 
     def test_focus(self):
         focus = pc.investment_focus([page('home.html', kind='home'), page('about.html', SITE + '/about-us', 'about')])
@@ -123,6 +133,11 @@ class Extraction(unittest.TestCase):
         self.assertEqual(pc.split_name('SMITH, JOHN ALBERT'), ('john', 'smith'))
         self.assertEqual(pc.split_name('Jane A. Doe, CFA'), ('jane', 'doe'))
         self.assertEqual(pc.split_name('Maria de la Cruz'), ('maria', 'delacruz'))
+        self.assertEqual(pc.split_name('Dr. Jane Doe'), ('jane', 'doe'))
+        self.assertEqual(pc.split_name('Mr. Robert Smith Jr.'), ('robert', 'smith'))
+        self.assertEqual(pc.split_name('Prof. Alan Wu III'), ('alan', 'wu'))
+        self.assertEqual(pc.split_name('DOE, JANE, MRS'), ('jane', 'doe'))
+        self.assertEqual(pc.local_for('flast', 'Dr. Jane Doe'), 'jdoe')
         self.assertIsNone(pc.looks_like_name('Wealth Management Group'))
         self.assertIsNone(pc.looks_like_name('Contact Us Today'))
 
@@ -173,8 +188,11 @@ class EmailLayer(unittest.TestCase):
         class Server:
             accept_all = False
 
-            def __init__(self, host, port, timeout):
+            seen = []
+
+            def __init__(self, host, port, timeout, local_hostname=None):
                 self.sent = []
+                Server.seen.append((host, local_hostname))
 
             def ehlo_or_helo_if_needed(self):
                 pass
@@ -188,8 +206,12 @@ class EmailLayer(unittest.TestCase):
 
             def quit(self):
                 pass
+        resolve = mock.patch.object(pc, 'RESOLVE', lambda host: {'mx.firm.com': '203.0.113.7'}.get(host))
+        resolve.start()
+        self.addCleanup(resolve.stop)
         with mock.patch.object(pc, 'SMTP_FACTORY', Server):
             r = pc.smtp_probe(['mx.firm.com'], 'firm.com', ['jdoe@firm.com', 'mlopez@firm.com'])
+        self.assertEqual(Server.seen[-1], ('203.0.113.7', 'localhost.localdomain'))  # the checked IP; no computer name
         self.assertFalse(r['catchAll'])
         self.assertEqual(r['results'], {'jdoe@firm.com': ('accepted', 250), 'mlopez@firm.com': ('rejected', 550)})
         Server.accept_all = True
@@ -197,6 +219,12 @@ class EmailLayer(unittest.TestCase):
             r = pc.smtp_probe(['mx.firm.com'], 'firm.com', ['jdoe@firm.com'])
         self.assertTrue(r['catchAll'])
         self.assertEqual(r['results'], {})  # a catch-all answer means nothing
+
+        with mock.patch.object(pc, 'SMTP_FACTORY', Server):
+            r = pc.smtp_probe(['mx.internal.lan'], 'firm.com', ['jdoe@firm.com'])  # resolves to nothing public
+        self.assertEqual(r['results'], {})
+        self.assertIn('not a public', r['note'])
+        self.assertFalse(any(h == 'mx.internal.lan' for h, _ in Server.seen))
 
         def blocked(*a, **k):
             raise OSError('Connection timed out')
@@ -252,11 +280,30 @@ class Crawling(DbCase):
         self.assertEqual(p.status, 0)
         self.assertIn('public', p.error)
 
-    def test_user_agent_is_honest(self):
-        ua = pc.user_agent('owner@example.org')
+    def test_user_agent_is_honest_and_private(self):
+        ua = pc.user_agent()
         self.assertIn('TradingPlatform', ua)
         self.assertIn('robots.txt', ua)
-        self.assertIn('owner@example.org', ua)
+        self.assertIn(pc.PROJECT_URL, ua)
+        self.assertNotIn('@', ua)  # never the owner's email
+        f = pc.HttpFetcher()
+        try:
+            self.assertEqual(f.client.headers['User-Agent'], ua)
+        finally:
+            run(f.close())
+        # crawl_firm builds the fetcher without the SEC contact even when one is set
+        src = Path(pc.__file__).read_text()
+        self.assertNotIn('sec_contact', src)
+
+    def test_peer_check_after_connecting(self):
+        def resp(addr):
+            stream = SimpleNamespace(get_extra_info=lambda k: addr)
+            return SimpleNamespace(extensions={'network_stream': stream})
+        self.assertFalse(pc.peer_is_public(resp(('127.0.0.1', 443))))
+        self.assertFalse(pc.peer_is_public(resp(('10.0.0.5', 443))))
+        self.assertFalse(pc.peer_is_public(resp(None)))  # unknown peer: fail closed
+        self.assertFalse(pc.peer_is_public(SimpleNamespace(extensions={})))
+        self.assertTrue(pc.peer_is_public(resp(('8.8.8.8', 443))))
 
 
 class ContactsView(DbCase):
@@ -392,6 +439,22 @@ class Watcher(DbCase):
         self.assertTrue(all(i['sourceUrl'] == 'https://adviserinfo.sec.gov/firm/summary/1' for i in items))
         self.assertEqual(pc.watch_sec(con, 'crd-1'), [])  # nothing new the next time
         con.close()
+
+    def test_do_not_contact_is_never_watched(self):
+        con = self.con()
+        pc.set_watch(con, 'crd-1', True)
+        pc.set_opt_out(con, firm_id='crd-1')
+        self.assertEqual(pc.watched_firms(con, saved=['crd-1']), [])
+        con.close()
+        fetch = FakeFetch()
+        note = run(pc.watch_firm(None, 'crd-1', db_path=self.db, fetch=fetch))
+        self.assertIn('do-not-contact', note)
+        self.assertEqual(fetch.calls, [])  # nothing fetched
+        with mock.patch.object(pc, 'note_opt_outs', return_value={'crd-1'}):
+            con = self.con()
+            pc.set_opt_out(con, firm_id='crd-1', on=False)
+            self.assertEqual(pc.watched_firms(con, saved=[]), [])  # outreach status "do not contact" counts too
+            con.close()
 
     def test_watched_firms_and_run(self):
         con = self.con()

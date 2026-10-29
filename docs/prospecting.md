@@ -156,12 +156,14 @@ kept for the AI analyst and change checks), `contact_crawls`, `contact_domains` 
   home, then team / people / about / leadership / contact / approach pages picked by link text, then bio pages linked
   from the team page. robots.txt first (403 = nothing allowed, 404 = everything, an unreadable one stops the crawl;
   a Crawl-delay over 10 s is respected by not crawling), one request a second per host, only public internet addresses
-  (every redirect hop checked), other sites skipped. User-Agent: `TradingPlatformProspecting/1.0 (TradingPlatform personal
-  research tool of an investment adviser; ... obeys robots.txt; contact <SEC email>)`.
+  (checked before each request and every redirect hop, and the connected address re-checked after connecting; no proxy
+  from the environment), other sites skipped. User-Agent: `TradingPlatformProspecting/1.0 (+https://github.com/cadenb777-jpg/trading-platform;
+  personal research tool; ... obeys robots.txt)`: never the owner's email or name.
 - **What is extracted**: people (a name with a job title in the same or next block, or schema.org Person data; a name
-  without a title is skipped), a bio snippet, emails on the firm's own domain (mailto, text, "[at]"/"[dot]"), main lines
-  (Form ADV phone, numbers labelled main/office/phone, numbers on home/contact/about pages) and direct lines (labelled
-  "direct"). Fax, mobile/cell and unlabelled numbers on team or bio pages are dropped. Investment focus: keyword tags and up
+  without a title is skipped; honorifics such as Dr/Mr/Mrs/Prof/Jr/III are dropped for email patterns), a bio snippet, emails
+  on the firm's own domain (mailto, text, "[at]"/"[dot]"), the main line (the Form ADV phone, or a number labelled
+  phone/main/office/tel on the home or contact page) and direct lines (labelled "direct", any page). Fax, mobile/cell
+  (also C:, M, Mob., iPhone:) and every unlabelled number are dropped. Investment focus: keyword tags and up
   to 3 "we specialize / our approach..." sentences, each with its page.
 - **Email labels** (never "verified" unless the firm published it): `published`; for people without one (website or
   filings), a guess from the firm's pattern (first.last, flast, firstlast, first, f.last, first_last, firstl, first-last,
@@ -170,7 +172,8 @@ kept for the AI analyst and change checks), `contact_crawls`, `contact_domains` 
   MX comes from dnspython when installed (optional, requirements-extra.txt), else free DNS-over-HTTPS (Cloudflare, then
   Google), cached 7 days. The SMTP check is OFF by default (Settings > Data sources): it connects to the MX on port 25, tests
   a random address first (accepted = catch-all), then RCPT for each guess (null sender, no message sent, 20 at most,
-  cached 30 days). Many home internet providers block port 25; the labels then fall back to the MX check.
+  cached 30 days). It connects only to an MX whose every address is public, to the very IP it checked, and greets with
+  `localhost.localdomain` (never the computer's name). Many home internet providers block port 25; the labels then fall back to the MX check.
 - **AI research analyst** (`prospect.ai_profile {firmId}` = cost estimate: pages, tokens, dollars; `{firmId, run: true}`
   = draft): the owner's Anthropic key and model (ai.py client), structured JSON output. Sources = the SEC facts (linked to
   IAPD / EDGAR) and the saved pages. Every fact must give one of those URLs and a verbatim quote; facts whose URL or quote
@@ -179,7 +182,7 @@ kept for the AI analyst and change checks), `contact_crawls`, `contact_domains` 
   days (started by `prospect.schedule_loop` through `SCHEDULE_HOOKS`) for starred firms plus firms with a saved note (60 at
   most): compares the SEC facts with the last snapshot (AUM, new Form ADV / 13F quarter / Form D, website on file, new
   people and title changes in filings) and re-crawls the website (new person, title change, person gone, page text
-  changed). The first run is a baseline. The SEC facts come from the bulk data the download schedule refreshes.
+  changed). The first run is a baseline. Do-not-contact firms are never watched or re-crawled. The SEC facts come from the bulk data the download schedule refreshes.
 - **Review queue** (`prospect.review.list {status?}`, `prospect.review.decide {fids, decision: approve|reject|undo}`):
   findings arrive pending; approved ones show "Reviewed by you on <date>"; rejected ones are hidden and stay rejected
   while a re-crawl reads the same; a material change (a new title) sends an approved item back to pending.

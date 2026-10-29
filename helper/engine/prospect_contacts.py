@@ -43,7 +43,9 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from . import prospect as pr
-from .core import EngineError, background, handler, is_safe_url
+import socket
+
+from .core import EngineError, background, handler, is_public_address, is_safe_url
 
 log = logging.getLogger('engine.prospect')
 
@@ -57,6 +59,8 @@ CHECK_DAYS = 30
 WATCH_DAYS = 7
 WATCH_MAX = 60          # firms per watcher run
 ROBOTS_TOKEN = 'TradingPlatformProspecting'
+PROJECT_URL = 'https://github.com/cadenb777-jpg/trading-platform'
+SMTP_HELO = 'localhost.localdomain'  # never the computer's own name
 DOH = ('https://cloudflare-dns.com/dns-query', 'https://dns.google/resolve')
 SMTP_FACTORY = smtplib.SMTP  # tests swap this
 LABELS = ('published', 'pattern + server-checked', 'pattern + domain accepts mail', 'guess', "catch-all (can't verify)")
@@ -145,11 +149,10 @@ def clean_url(url):
     return urllib.parse.urlunsplit((parts.scheme.lower(), (parts.netloc or '').lower(), path, parts.query, ''))
 
 
-def user_agent(contact=''):
-    """Honest: names the platform, what it does and (when set) the owner's contact email."""
-    who = f'; contact {contact}' if contact else ''
-    return (f'{ROBOTS_TOKEN}/1.0 (TradingPlatform personal research tool of an investment adviser; reads public pages only, '
-            f'1 request a second, obeys robots.txt{who})')
+def user_agent():
+    """Honest: names the platform and its project page. Never the owner's email or name (firms see this header)."""
+    return (f'{ROBOTS_TOKEN}/1.0 (+{PROJECT_URL}; personal research tool; reads public pages only, '
+            f'1 request a second, obeys robots.txt)')
 
 
 # ---------- HTML -> text blocks, links, emails, phones ----------
@@ -259,6 +262,7 @@ def page_text(parsed):
 CREDENTIALS = {'cfa', 'cfp', 'cpa', 'chfc', 'clu', 'cima', 'aif', 'aifa', 'caia', 'frm', 'phd', 'ph.d', 'mba', 'jd', 'j.d', 'esq',
                'cpwa', 'crpc', 'ricp', 'cic', 'cfs', 'cdfa', 'cep', 'cap', 'ms', 'msf', 'cpa/pfs', 'pfs', 'aams', 'crps', 'cltc',
                'jr', 'sr', 'ii', 'iii', 'iv', 'md', 'llm', 'emba', 'cmt', 'fsa', 'ea', 'acc', 'ppc', 'ce', 'ma', 'ba', 'bs'}
+HONORIFICS = {'dr', 'mr', 'mrs', 'ms', 'miss', 'mx', 'prof', 'rev', 'hon', 'sir', 'jr', 'sr', 'ii', 'iii', 'iv'}
 PARTICLES = {'de', 'van', 'von', 'der', 'la', 'del', 'di', 'da', 'le', 'du', 'st.', 'mc', 'bin', 'al', 'den', 'ter'}
 NOT_NAME = set("""our the and of team meet about contact us services service investment investments financial group llc inc
 partners partner capital management wealth advisors advisers advisory read more view bio bios home client clients login office
@@ -424,7 +428,7 @@ def split_name(name):
         last, _, rest = name.partition(',')
         if rest.strip() and len(last.split()) <= 3:
             name = f'{rest.strip()} {last.strip()}'
-    words = [w for w in re.split(r'\s+', name) if w and w.strip('.').lower() not in CREDENTIALS]
+    words = [w for w in re.split(r'\s+', name) if w and w.strip('.,').lower() not in CREDENTIALS | HONORIFICS]
     words = [w for w in words if not re.fullmatch(r'[A-Za-z]\.?', w)] or words
     if len(words) < 2:
         return None
@@ -558,18 +562,23 @@ def phone_text(digits):
     return f'({digits[:3]}) {digits[3:6]}-{digits[6:]}'
 
 
+MOBILE = re.compile(r'\b(cell|cellular|mobile|mob|iphone|text|sms|personal|home|whatsapp)\b|\b[mc]\s*[:.]|\b[mc]$')
+
+
 def classify_phone(context, page_kind, digits, adv_digits):
-    """'main', 'direct' or None (fax, mobile/cell, or an unlabelled number on a bio/team page: could be personal)."""
-    ctx = context.lower()[-40:]
-    if re.search(r'\bfax\b|\bf\s*[:.]|facsimile', ctx):
+    """'main', 'direct' or None. Direct lines only when the firm labels them "direct" (any page). Main line: the Form ADV
+    number, or a number labelled phone/main/office/tel on the home or contact page. Everything else is dropped: fax,
+    mobile/cell (also C:, M, Mob., iPhone:) and every unlabelled number (it could be someone's personal phone)."""
+    ctx = context.lower()[-40:].rstrip(' \t:-|')
+    if re.search(r'\bfax\b|\bf\s*[:.]|\bf$|facsimile', ctx):
         return None
-    if re.search(r'\b(cell|mobile|m\s*[:.]|text|sms|personal|home)\b', ctx):
+    if MOBILE.search(ctx):
         return None
-    if re.search(r'\bdirect\b|\bd\s*[:.]|\bdir\b', ctx):
+    if re.search(r'\bdirect\b|\bd\s*[:.]|\bd$|\bdir\b', ctx):
         return 'direct'
     if adv_digits and digits == adv_digits:
         return 'main'
-    if re.search(r'\b(main|office|phone|tel|telephone|t\s*[:.]|call|toll[- ]free|p\s*[:.])\b', ctx) or page_kind in ('home', 'contact', 'about'):
+    if page_kind in ('home', 'contact') and re.search(r'\b(main|office|phone|tel|telephone|call us|toll[- ]free)\b|\b[tp]\s*[:.]|\b[tp]$', ctx):
         return 'main'
     return None
 
@@ -577,10 +586,13 @@ def classify_phone(context, page_kind, digits, adv_digits):
 def extract_phones(parsed, page_kind, adv_digits):
     """[(digits, kind, block index)] for main and direct lines only."""
     out, seen = [], set()
-    candidates = [(phone_digits(num), parsed['blocks'][idx - 1]['text'] if 0 < idx <= len(parsed['blocks']) else '', idx) for num, idx in parsed['tel']]
-    for i, b in enumerate(parsed['blocks']):
+    candidates = []
+    for i, b in enumerate(parsed['blocks']):  # numbers in the text, with the words just before them as the label
         for m in PHONE_RE.finditer(b['text']):
             candidates.append((''.join(m.groups()), b['text'][:m.start()] or (parsed['blocks'][i - 1]['text'] if i else ''), i))
+    for num, idx in parsed['tel']:  # tel: links whose number isn't printed: the label is the text of their block
+        block = parsed['blocks'][idx]['text'] if idx < len(parsed['blocks']) else ''
+        candidates.append((phone_digits(num), block, idx))
     for digits, context, idx in candidates:
         if not digits or digits in seen:
             continue
@@ -651,13 +663,24 @@ class Page:
         self.status, self.url, self.ctype, self.text, self.error = status, url, ctype, text, error
 
 
+def peer_is_public(response):
+    """True when the connection behind `response` goes to a public internet address. Fails closed."""
+    try:
+        stream = response.extensions.get('network_stream')
+        addr = stream.get_extra_info('server_addr') if stream is not None else None
+    except Exception:
+        addr = None
+    return bool(addr) and is_public_address(str(addr[0]))
+
+
 class HttpFetcher:
     """GETs public pages only (every redirect hop is checked against local/private addresses), up to MAX_BYTES."""
 
-    def __init__(self, contact=''):
+    def __init__(self):
         import httpx
-        self.client = httpx.AsyncClient(timeout=httpx.Timeout(15, connect=8), follow_redirects=False,
-                                        headers={'User-Agent': user_agent(contact), 'Accept': 'text/html,application/xhtml+xml,text/plain;q=0.8'})
+        # trust_env off: no proxy from the environment, so the peer address checked below is the website itself
+        self.client = httpx.AsyncClient(timeout=httpx.Timeout(15, connect=8), follow_redirects=False, trust_env=False,
+                                        headers={'User-Agent': user_agent(), 'Accept': 'text/html,application/xhtml+xml,text/plain;q=0.8'})
 
     async def __call__(self, url):
         for _ in range(6):
@@ -665,6 +688,8 @@ class HttpFetcher:
                 return Page(0, url, error='not a public internet address')
             try:
                 async with self.client.stream('GET', url) as r:
+                    if not peer_is_public(r):  # the address actually connected to (a second DNS answer can't redirect us)
+                        return Page(0, url, error='not a public internet address (after connecting)')
                     if r.status_code in (301, 302, 303, 307, 308) and r.headers.get('location'):
                         url = urllib.parse.urljoin(url, r.headers['location'])
                         continue
@@ -1124,14 +1149,31 @@ async def check_domain(con_path, http, domain, force=False):
         con.close()
 
 
+def resolve_public(host):
+    """The first IP address of a mail server when every address it resolves to is public, else None (tests swap this)."""
+    try:
+        ips = list(dict.fromkeys(i[4][0] for i in socket.getaddrinfo(host, 25, proto=socket.IPPROTO_TCP)))
+    except (OSError, UnicodeError):
+        return None
+    return ips[0] if ips and all(is_public_address(ip) for ip in ips) else None
+
+
+RESOLVE = resolve_public
+
+
 def smtp_probe(mx_hosts, domain, addresses, timeout=10):
     """Asks the mail server (port 25) whether each address exists, after first testing a random address: if that is
     accepted the server is catch-all and no answer means anything. Never sends a message (RCPT only, then QUIT).
     Returns {catchAll, results: {email: (result, code)}, note}."""
     last = None
     for host in [h for h in mx_hosts if h and h != '.'][:2]:
+        ip = RESOLVE(host)
+        if not ip:
+            last = f'{host} is not a public internet address'
+            continue
         try:
-            s = SMTP_FACTORY(host, 25, timeout=timeout)
+            # connect to the address that was checked; HELO with a neutral name, not this computer's
+            s = SMTP_FACTORY(ip, 25, timeout=timeout, local_hostname=SMTP_HELO)
             try:
                 s.ehlo_or_helo_if_needed()
                 code, _ = s.mail('')  # null sender: no address of the owner is given out
@@ -1189,7 +1231,7 @@ async def crawl_firm(ctx, firm_id, website=None, emit=None, db_path=None, fetch=
         raise EngineError('This firm\'s website is already being read.')
     async with lock, _crawl_slots:
         own = fetch is None
-        fetcher = fetch or HttpFetcher(getattr(ctx, 'sec_contact', '') or '')
+        fetcher = fetch or HttpFetcher()
         try:
             result = await Crawler(fetcher, emit=emit).run(start)
         finally:
@@ -1515,9 +1557,10 @@ def watched_firms(con, saved=None):
             saved = [d['id'] for d in store.list_docs('prospect_notes') if d.get('status') != 'do not contact']
         except Exception:
             saved = []
+    blocked = opt_outs(con)[0]  # never watch (or crawl) a do-not-contact firm
     out = []
     for fid in starred + list(saved):
-        if fid not in out:
+        if fid not in out and fid not in blocked:
             out.append(fid)
     return out[:WATCH_MAX]
 
@@ -1543,6 +1586,11 @@ def watch_sec(con, firm_id, now=None):
 
 async def watch_firm(ctx, firm_id, emit=None, db_path=None, fetch=None):
     db_path = db_path or pr.DB_PATH
+
+    def blocked(con):
+        return firm_id in opt_outs(con)[0]
+    if await _q(blocked, db_path=db_path):
+        return 'Skipped: this firm is on the do-not-contact list'
     changes = await _q(watch_sec, firm_id, db_path=db_path)
     note = f'{len(changes)} SEC change(s)'
     try:

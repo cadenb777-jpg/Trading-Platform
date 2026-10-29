@@ -3,7 +3,7 @@
  * keys, Test/Live, order limits) and where alerts are sent (ntfy, Telegram). Values go straight to the helper,
  * which saves them on this computer; keys are never stored in the browser or shown again.
  */
-import { LATEST_HELPER_VERSION, engineRequest, helper, setAlpacaConnected } from '../data/schwab';
+import { LATEST_HELPER_VERSION, engineRequest, helper, prospectContactsReady, setAlpacaConnected } from '../data/schwab';
 import { smtpCheckRow } from '../prospect/smtpSetting';
 import { deliverySummary } from './alertsLogic';
 import { diagnosticsButton } from './diagnostics';
@@ -668,7 +668,7 @@ export async function openSettings(focus?: string) {
         render,
       ),
       alpacaRow(!!s.alpacaSet, render),
-      ...(s.prospectSmtpCheck !== undefined ? [smtpCheckRow(s.prospectSmtpCheck, (on) => save({ prospectSmtpCheck: on }))] : []),
+      ...(s.prospectSmtpCheck !== undefined && prospectContactsReady() ? [smtpCheckRow(s.prospectSmtpCheck, (on) => save({ prospectSmtpCheck: on }))] : []),
       ...(s.ntfySet !== undefined ? [h('h3', { class: 'settings-section' }, 'Alerts'), alertsRow(s, render)] : []),
       h('h3', { class: 'settings-section' }, 'Trading'),
       webullRow(s, render),

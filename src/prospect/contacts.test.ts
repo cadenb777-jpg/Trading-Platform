@@ -19,7 +19,7 @@ describe('prospect contacts helpers', () => {
     expect(estimateText({ pages: 1, costUsd: 0.004 })).toBe('About 1 page · under $0.01');
   });
   it('old helper message', () => {
-    expect(contactsError(new Error('Unknown request prospect.crawl'))).toMatch(/newest helper/);
+    expect(contactsError(new Error('This helper doesn\'t know "prospect.crawl". Download the latest helper from GitHub and restart it.'))).toMatch(/newest helper/);
     expect(contactsError(new Error('No website on file'))).toBe('No website on file');
   });
 });

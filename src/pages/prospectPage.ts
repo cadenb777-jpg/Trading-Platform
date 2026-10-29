@@ -6,7 +6,7 @@
  * prospect_notes), never in the browser. Modes: #prospect (search), #prospect/map, #prospect/compare,
  * #prospect/data, #prospect/firm/<id>.
  */
-import { clearEngineCache } from '../data/schwab';
+import { clearEngineCache, prospectContactsReady } from '../data/schwab';
 import {
   prospectAdvPdfReader,
   prospectCompleteReady,
@@ -70,6 +70,8 @@ const MODES: { id: Mode; label: string }[] = [
   { id: 'review', label: 'Review' },
   { id: 'data', label: 'Data' },
 ];
+/** The Review tab needs a helper with prospect contacts (v41+). */
+const shownModes = () => MODES.filter((m) => m.id !== 'review' || prospectContactsReady());
 const SORTS: { id: SortKey | ''; label: string }[] = [
   { id: '', label: 'Best fit (AUM)' },
   { id: 'aum', label: 'AUM, largest first' },
@@ -201,7 +203,7 @@ export function createProspectPage() {
   // ---------- tabs ----------
   function drawTabs() {
     tabs.replaceChildren(
-      ...MODES.map((m) =>
+      ...shownModes().map((m) =>
         h(
           'button',
           { class: `tab${m.id === mode ? ' active' : ''}`, role: 'tab', 'aria-selected': String(m.id === mode), onclick: () => setMode(m.id, true) },
@@ -911,7 +913,7 @@ export function createProspectPage() {
       if (m === 'firm' && rest.length) {
         setMode(mode);
         openFirm(decodeURIComponent(rest.join('/')));
-      } else if ((MODES.map((x) => x.id) as string[]).includes(m)) setMode(m as Mode);
+      } else if ((shownModes().map((x) => x.id) as string[]).includes(m)) setMode(m as Mode);
       else if (!m) setMode('search');
     },
     stop() {

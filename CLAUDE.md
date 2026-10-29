@@ -337,6 +337,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   SMTP check off by default (settings prospect_smtp_check). prospect.ai_profile drafts cited facts (quote must be in the
   source, else dropped; cost shown first). Weekly watcher via prospect.SCHEDULE_HOOKS; do-not-contact via
   prospect.EXPORT_FILTERS. No LinkedIn, bought lists or people-search sites. UI: src/prospect/contacts.ts in the profile.
+  Crawler UA = project URL only (never the owner's email). Browser gate PROSPECT_CONTACTS_HELPER_VERSION 41 hides the
+  contacts section, Review tab and SMTP setting on older helpers.
 
 ## Conventions
 

@@ -6,6 +6,7 @@
  * missing data says what is missing.
  */
 import { insightButton } from '../ai/insight';
+import { prospectContactsReady } from '../data/schwab';
 import { OUTREACH, prospectAdvPdf, prospectCompleteReady, prospectFirm, type ClientType, type Outreach, type ProspectNote, type ProspectPosition, type ProspectProfile } from '../data/prospect';
 import { dataTable, statCards } from '../ui/charts';
 import { h, toast } from '../ui/dom';
@@ -373,7 +374,7 @@ export function renderProfile(p: ProspectProfile, ctx: ProfileContext): HTMLElem
     facts,
     why,
     outreach,
-    contactsSection(p.id),
+    prospectContactsReady() ? contactsSection(p.id) : null,
     aum,
     clients,
     people,

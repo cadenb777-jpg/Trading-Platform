@@ -41,6 +41,11 @@ export const PROSPECT_COMPLETE_HELPER_VERSION = 38;
 /** The chart's Smart money indicators (insider history, 13F holders by symbol) need at least this version. */
 export const SMART_MONEY_HELPER_VERSION = 40;
 const SMART_MONEY_REQUESTS = new Set(['research.insider_history', 'prospect.holders_by_symbol']);
+/** Prospect contacts (website crawler, review queue, change watcher, AI profile, do-not-contact) need at least this version. */
+export const PROSPECT_CONTACTS_HELPER_VERSION = 41;
+const PROSPECT_CONTACTS_REQUEST = /^prospect\.(crawl|contacts|email_check|ai_profile|watch\.|review\.|optout\.|contacts_export|contacts_settings)/;
+/** True when the connected helper has prospect contacts (v41+). */
+export const prospectContactsReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_CONTACTS_HELPER_VERSION;
 /** True when the connected helper has the complete Prospecting downloads (v38+). */
 export const prospectCompleteReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_COMPLETE_HELPER_VERSION;
 
@@ -288,6 +293,7 @@ class HelperConnection {
     if ((type.startsWith('prospect.') || String(msg.collection ?? '').startsWith('prospect_') || (type === 'ai.insight' && msg.topic === 'prospect')) && (this.version ?? 0) < PROSPECT_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type === 'prospect.adv_pdf' || type === 'prospect.adv_pdf_reader' || (type === 'prospect.ingest' && (msg.source === 'failed' || msg.source === 'state'))) && (this.version ?? 0) < PROSPECT_COMPLETE_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (SMART_MONEY_REQUESTS.has(type) && (this.version ?? 0) < SMART_MONEY_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if (PROSPECT_CONTACTS_REQUEST.test(type) && (this.version ?? 0) < PROSPECT_CONTACTS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('scanner.') || (type === 'ai.insight' && NEW_INSIGHTS.has(String(msg.topic)))) && (this.version ?? 0) < SCANNER_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {

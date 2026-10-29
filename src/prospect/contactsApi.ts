@@ -152,5 +152,5 @@ export function estimateText(e: Pick<AiEstimate, 'pages' | 'costUsd'>): string {
 /** A helper without these requests answers "unknown request": say how to get them instead. */
 export function contactsError(err: unknown): string {
   const text = (err as Error)?.message ?? String(err);
-  return /unknown request|unknown engine|not supported/i.test(text) ? 'Contacts need the newest helper: download it again (Settings shows the update).' : text;
+  return /doesn['\u2019]t know "|unknown request|unknown engine/i.test(text) ? 'Contacts need the newest helper: download it again (Settings shows the update).' : text;
 }
