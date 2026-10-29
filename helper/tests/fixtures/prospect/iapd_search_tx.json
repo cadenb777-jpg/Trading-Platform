@@ -1,0 +1,11 @@
+{"hits": {"total": 4, "hits": [
+  {"_type": "_doc", "_source": {"firm_source_id": "300001", "firm_name": "LONE STAR WEALTH PLANNING LLC", "firm_other_names": ["LONE STAR WEALTH"],
+   "firm_ia_scope": "ACTIVE", "firm_ia_sec_number": "", "firm_branches_count": 1,
+   "firm_address_details": "{\"officeAddress\":{\"street1\":\"100 CONGRESS AVE\",\"street2\":\"SUITE 400\",\"city\":\"AUSTIN\",\"state\":\"TX\",\"country\":\"United States\",\"postalCode\":\"78701\"}}"}},
+  {"_type": "_doc", "_source": {"firm_source_id": "300002", "firm_name": "HILL COUNTRY ADVISORS", "firm_ia_scope": "ACTIVE",
+   "firm_address_details": {"officeAddress": {"street1": "9 MAIN ST", "city": "FREDERICKSBURG", "state": "TX", "postalCode": "78624"}}}},
+  {"_type": "_doc", "_source": {"firm_source_id": "1001", "firm_name": "BIG SEC ADVISER LLC", "firm_ia_scope": "ACTIVE",
+   "firm_ia_full_sec_number": "801-11111", "firm_address_details": "{\"officeAddress\":{\"city\":\"DALLAS\",\"state\":\"TX\"}}"}},
+  {"_type": "_doc", "_source": {"firm_source_id": "300003", "firm_name": "CLOSED SHOP ADVISERS", "firm_ia_scope": "INACTIVE",
+   "firm_address_details": "{\"officeAddress\":{\"city\":\"HOUSTON\",\"state\":\"TX\"}}"}}
+]}}

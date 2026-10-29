@@ -20,6 +20,8 @@ import {
   quarterText,
   sectorRows,
   sourceFreshness,
+  FRESHNESS_LABEL,
+  failedSources,
   toCsv,
 } from './logic';
 
@@ -157,6 +159,24 @@ describe('data panel', () => {
     expect(sourceFreshness(status, '13f', now).state).toBe('due');
     expect(sourceFreshness(status, 'formd', now)).toEqual({ state: 'missing', text: 'Not downloaded yet', date: '' });
     expect(sourceFreshness({ ...status, job: { running: true, source: 'all', stage: 'Downloading 13F 40%' } }, 'adv', now)).toEqual({ state: 'running', text: 'Downloading 13F 40%', date: '' });
+  });
+  it('shows a failed source with why and what to do, and lists it for retry', () => {
+    const now = (1_700_000_000 + 2 * 86400) * 1000;
+    const failed = {
+      ...status,
+      results: { '13f': { ok: false, reason: 'Download of x.zip failed after 5 tries', action: 'Press "Retry failed sources".', when: 1_700_000_100 }, adv: { ok: true, when: 1_700_000_000 } },
+    } as unknown as ProspectStatus;
+    expect(sourceFreshness(failed, '13f', now)).toEqual({ state: 'failed', text: 'Download of x.zip failed after 5 tries', date: '', action: 'Press "Retry failed sources".' });
+    expect(FRESHNESS_LABEL[sourceFreshness(failed, 'adv', now).state]).toBe('Done');
+    expect(FRESHNESS_LABEL[sourceFreshness(failed, 'formd', now).state]).toBe('Not downloaded');
+    expect(failedSources(failed)).toEqual(['13f']);
+    // a later successful download clears the failure
+    const fixed = { ...failed, sources: { ...failed.sources, '13f': { at: 1_700_000_200, sourceDate: '2025-05-31' } } } as unknown as ProspectStatus;
+    expect(sourceFreshness(fixed, '13f', now).state).toBe('fresh');
+    // during "Download everything" only the stage in hand shows as downloading
+    const running = { ...status, job: { running: true, source: 'all', current: 'formd', stage: 'Reading Form D' } } as unknown as ProspectStatus;
+    expect(sourceFreshness(running, 'formd', now).state).toBe('running');
+    expect(sourceFreshness(running, 'adv', now).state).toBe('fresh');
   });
   it('summarises the header self-check', () => {
     expect(headerSummary(null)).toBeNull();

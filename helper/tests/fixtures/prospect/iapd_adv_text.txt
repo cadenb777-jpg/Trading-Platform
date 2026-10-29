@@ -1,0 +1,77 @@
+FORM ADV
+UNIFORM APPLICATION FOR INVESTMENT ADVISER REGISTRATION AND REPORT BY EXEMPT REPORTING ADVISERS
+Primary Business Name: PINE STREET CAPITAL MANAGEMENT, L.P. CRD Number: 1003
+Annual Amendment - All Sections Rev. 10/2021
+3/28/2025 4:15:02 PM
+WARNING: Complete this form truthfully. False statements or omissions may result in denial of your application,
+revocation of your registration, or criminal prosecution.
+Item 1 Identifying Information
+A. Your full legal name (if you are a sole proprietor, your last, first, and middle names):
+PINE STREET CAPITAL MANAGEMENT, L.P.
+Schedule A
+Direct Owners and Executive Officers
+1. Complete Schedule A only if you are submitting an initial application or report. Schedule A asks for information
+about your direct owners and executive officers. Use Schedule C to amend this information.
+2. Direct Owners and Executive Officers. List below the names of:
+(a) each Chief Executive Officer, Chief Financial Officer, Chief Operations Officer, Chief Legal Officer, Chief
+Compliance Officer (Chief Compliance Officer is required if you are registered or applying for registration and cannot
+be more than one individual), Director, and any other individuals with similar status or functions;
+Ownership codes are: NA - less than 5% B - 10% but less than 25% D - 50% but less than 75%
+A - 5% but less than 10% C - 25% but less than 50% E - 75% or more
+FULL LEGAL NAME (Individuals: Last Name, First Name, Middle Name) DE/FE/I Title or Status Date Title or Status
+Acquired MM/YYYY Ownership Code Control Person PR CRD No. If None: S.S. No. and Date of Birth, IRS Tax No. or Employer ID No.
+PINE, JANE, ANNE I CHIEF INVESTMENT OFFICER, MANAGING PARTNER 01/2010 E Y N 1234567
+PINE STREET HOLDINGS LLC DE GENERAL PARTNER 03/2012 E Y N
+DOE, JOHN I CHIEF COMPLIANCE
+OFFICER
+06/2018 NA N N 7654321
+O'BRIEN-SMITH, MARY I CHIEF FINANCIAL OFFICER 11/2021 A N N 2223334
+Page 14 of 40
+Schedule B
+Indirect Owners
+FULL LEGAL NAME DE/FE/I Entity in Which Interest is Owned Status Date Status Acquired MM/YYYY Ownership Code
+PINE FAMILY TRUST DE PINE STREET HOLDINGS LLC TRUSTEE 03/2012 E Y N
+Schedule D
+SECTION 7.B.(1) Private Fund Reporting
+No Information Filed
+SECTION 7.B.(1) Private Fund Reporting
+A. PRIVATE FUND
+Information About the Private Fund
+1. (a) Name of the private fund:
+PINE STREET OPPORTUNITIES FUND LP
+(b) Private fund identification number:
+(include the "805-" prefix also)
+805-1234567890
+2. Under the laws of what state or country is the private fund organized:
+State: Country:
+Delaware United States
+10. What type of fund is the private fund?
+nmlkji hedge fund nmlkj liquidity fund nmlkj private equity fund nmlkj real estate fund nmlkj securitized asset fund
+nmlkj venture capital fund nmlkj Other private fund:
+NOTE: For purposes of this question, do not check "hedge fund" if the fund provides investors with the right to redeem.
+11. Current gross asset value of the private fund: $ 250,000,000
+12. Minimum investment commitment required of an investor in the private fund:
+$ 1,000,000
+13. Approximate number of the private fund's beneficial owners: 120
+SECTION 7.B.(1) Private Fund Reporting
+A. PRIVATE FUND
+Information About the Private Fund
+1. (a) Name of the private fund:
+PINE STREET REAL ESTATE PARTNERS II, L.P.
+(b) Private fund identification number:
+(include the "805-" prefix also)
+805-9876543210
+10. What type of fund is the private fund?
+nmlkj hedge fund nmlkj liquidity fund nmlkj private equity fund nmlkji real estate fund nmlkj securitized asset fund
+nmlkj venture capital fund nmlkj Other private fund:
+11. Current gross asset value of the private fund:
+$ 75,500,000
+13. Approximate number of the private fund's beneficial owners:
+1,045
+SECTION 7.B.(2) Private Fund Reporting
+1. (a) Name of the private fund:
+SOMEONE ELSES FUND LP
+(b) Private fund identification number:
+805-5555555555
+SECTION 9.C. Independent Public Accountant
+Schedule R

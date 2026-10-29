@@ -186,7 +186,9 @@ class FileLists(unittest.TestCase):
     def test_13f_picks_newest_windows(self):
         links = pr.page_links((FIX / 'index_13f.html').read_text(), pr.INDEX_PAGES['13f'])
         files = pr.pick_13f_files(links)
-        self.assertEqual([f.rsplit('/', 1)[-1] for f in files], ['01mar2025-31may2025_form13f.zip', '01dec2024-28feb2025_form13f.zip'])
+        self.assertEqual([f.rsplit('/', 1)[-1] for f in files][:2], ['01mar2025-31may2025_form13f.zip', '01dec2024-28feb2025_form13f.zip'])
+        self.assertEqual([f.rsplit('/', 1)[-1] for f in pr.pick_13f_files(links, 2)], ['01mar2025-31may2025_form13f.zip', '01dec2024-28feb2025_form13f.zip'])
+        self.assertEqual(len(files), min(pr.KEEP_13F_HISTORY, len({u for u in links if 'form13f' in u.lower()})))  # 8 quarters of filer totals
         self.assertTrue(files[0].startswith('https://www.sec.gov/files/'))
         self.assertEqual(pr._date_key('2024q3_form13f.zip'), '2024-09-30')
 
@@ -198,7 +200,11 @@ class FileLists(unittest.TestCase):
         self.assertEqual([p[0] for p in picks[2:]], ['ia070125.zip', 'ia040125.zip', 'ia100124.zip'])  # about 3, 6 and 9-12 months back
 
     def test_formd_and_adv_full(self):
-        self.assertEqual(pr.pick_formd_files(['https://x/2024q2_d.zip', 'https://x/2024q3_d.zip', 'https://x/readme.zip']), ['https://x/2024q3_d.zip'])
+        self.assertEqual(pr.pick_formd_files(['https://x/2024q2_d.zip', 'https://x/2024q3_d.zip', 'https://x/readme.zip']), ['https://x/2024q3_d.zip', 'https://x/2024q2_d.zip'])
+        quarters = [f'https://x/{y}q{q}_d.zip' for y in range(2020, 2026) for q in range(1, 5)]
+        picked = pr.pick_formd_files(quarters)
+        self.assertEqual(len(picked), 12)  # 3 years, newest first
+        self.assertEqual((picked[0].rsplit('/', 1)[-1], picked[-1].rsplit('/', 1)[-1]), ('2025q4_d.zip', '2023q1_d.zip'))
         full = pr.pick_adv_full_files(['https://x/adv_20240101_20240331_part1.zip', 'https://x/adv_20240101_20240331_part2.zip',
                                        'https://x/adv_20231001_20231231.zip', 'https://x/adv_20230401_20230630.zip', 'https://x/adv_20221001_20221231.zip'])
         # every release of the last 12 months (newest first), not the older one
