@@ -8,9 +8,7 @@ import { MOMENTUM, MOMENTUM_GUIDES } from './momentum';
 
 /**
  * Reference values come from b-refs.ts (TA-Lib 0.8.3 where it has the indicator, otherwise an independent Python
- * implementation of the published formula), checked to 1e-6 relative. One reference starts later than our
- * output because TA-Lib warms up differently, so only its values are compared (firstValid null): stochf (TA-Lib
- * STOCHF prints %K only once %D exists).
+ * implementation of the published formula), checked to 1e-6 relative, plus the first bar with a value.
  */
 const defaults = (def: IndicatorDef): IndicatorParams => Object.fromEntries(def.inputs.map((i) => [i.key, i.default]));
 
@@ -44,7 +42,31 @@ describe('momentum family definitions', () => {
     const ids = MOMENTUM.map((d) => d.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const def of MOMENTUM) expect(getIndicator(def.id), def.id).toBe(def);
-    expect(MOMENTUM.length).toBeGreaterThanOrEqual(90);
+    expect(MOMENTUM.length).toBeGreaterThanOrEqual(80);
+  });
+
+  it('adaptive lines (DyMI, ACP cycle) have no gaps once they start', () => {
+    for (const [id, key] of [['dymi', 'dymi'], ['acp', 'cycle']]) {
+      const def = MOMENTUM.find((d) => d.id === id)!;
+      const series = def.compute(FIXTURE, defaults(def))[key];
+      const start = series.findIndex((x) => !Number.isNaN(x));
+      expect(start, id).toBeGreaterThanOrEqual(0);
+      expect(series.slice(start).every(Number.isFinite), id).toBe(true);
+    }
+    const acp = MOMENTUM.find((d) => d.id === 'acp')!;
+    const cyc = acp.compute(FIXTURE, defaults(acp)).cycle.filter((x) => !Number.isNaN(x));
+    expect(Math.min(...cyc)).toBeGreaterThanOrEqual(10);
+    expect(Math.max(...cyc)).toBeLessThanOrEqual(48);
+  });
+
+  it('REI follows DeMark’s overlap rule (a bar with no overlap 5-8 bars back counts 0)', () => {
+    const rei = MOMENTUM.find((d) => d.id === 'rei')!;
+    // a steady fall: every high is below the lows 5-6 bars back and below the closes 7-8 bars back, so nothing counts
+    const falling: Bar[] = Array.from({ length: 30 }, (_, i) => {
+      const c = 100 - 10 * i;
+      return { time: i, open: c + 1, high: c + 2, low: c - 2, close: c, volume: 1 };
+    });
+    expect(rei.compute(falling, defaults(rei)).rei.at(-1)).toBe(0);
   });
 
   for (const def of MOMENTUM) {

@@ -3,7 +3,7 @@
  * Sources: StockCharts ChartSchool, TA-Lib, Achelis, the authors' articles and TradingView scripts where noted.
  */
 import { ema, highest, lowest, rma, rsi, sma, stdev, trueRange, wma } from '../math';
-import { C, change, closes, correlation, div, highs, hist, ift, int, lag, len, line, lows, n, NaNs, slope, sourceInput, src, stochK, sum, superSmoother, type Entry } from './b-util';
+import { C, change, closes, div, highs, hist, ift, int, lag, len, line, lows, n, NaNs, slope, sourceInput, src, stochK, sum, superSmoother, type Entry } from './b-util';
 
 const hlc3 = (bars: { high: number; low: number; close: number }[]) => bars.map((b) => (b.high + b.low + b.close) / 3);
 const hl2 = (bars: { high: number; low: number }[]) => bars.map((b) => (b.high + b.low) / 2);
@@ -48,28 +48,6 @@ function selfStoch(a: number[], length: number): number[] {
 }
 
 export const OSCILLATOR_ENTRIES: Entry[] = [
-  {
-    def: {
-      id: 'stochf',
-      name: 'Fast Stochastic',
-      shortName: 'Fast Stoch',
-      category: 'Oscillators',
-      description: 'Unsmoothed Stochastic: raw %K (close within the N-bar range) and a 3-bar SMA %D (TA-Lib STOCHF).',
-      placement: 'separate',
-      inputs: [len(14, '%K length'), n('d', '%D length', 3)],
-      plots: [line('k', '%K', C.blue), line('d', '%D', C.orange)],
-      levels: [80, 20],
-      compute: (bars, p) => {
-        const k = stochK(closes(bars), highs(bars), lows(bars), int(p, 'length'));
-        return { k, d: sma(k, int(p, 'd')) };
-      },
-    },
-    guide: {
-      what: 'The original, jumpy Stochastic: where today’s close sits in the recent high-low range (0 = at the low, 100 = at the high).',
-      use: ['Above 80 near the top of the range, below 20 near the bottom.', 'Best for very short-term timing; the normal (slow) Stochastic is calmer.'],
-      signals: ['%K crossing %D in the extreme zones.'],
-    },
-  },
   {
     def: {
       id: 'kdj',
@@ -507,9 +485,9 @@ export const OSCILLATOR_ENTRIES: Entry[] = [
       name: 'Range Expansion Index',
       shortName: 'REI',
       category: 'Oscillators',
-      description: 'Tom DeMark’s TD REI (common MetaStock/TradingView form): 2-bar changes of high and low, zeroed when price fails to overlap 5-8 bars back, summed over 8 bars, -100..+100.',
+      description: 'Tom DeMark’s TD REI (Day Trading Options, 1999): 2-bar changes of high and low, zeroed unless price overlaps the bars 5-8 back, summed over 5 bars, -100..+100.',
       placement: 'separate',
-      inputs: [len(8)],
+      inputs: [len(5)],
       plots: [line('rei', 'REI', C.blue)],
       levels: [60, -60],
       compute: (bars, p) => {
@@ -519,8 +497,9 @@ export const OSCILLATOR_ENTRIES: Entry[] = [
         const numA = NaNs(h.length);
         const denA = NaNs(h.length);
         for (let i = 8; i < h.length; i++) {
-          const x1 = h[i - 2] < c[i - 7] && h[i - 2] < c[i - 8] && h[i] < h[i - 5] && h[i] < h[i - 6] ? 0 : 1;
-          const x2 = l[i - 2] > c[i - 7] && l[i - 2] > c[i - 8] && l[i] > l[i - 5] && l[i] > l[i - 6] ? 0 : 1;
+          // DeMark's overlap rule: the bar counts only if price overlaps the bars 5-8 back
+          const x1 = h[i] >= l[i - 5] || h[i] >= l[i - 6] || h[i - 2] >= c[i - 7] || h[i - 2] >= c[i - 8] ? 1 : 0;
+          const x2 = l[i] <= h[i - 5] || l[i] <= h[i - 6] || l[i - 2] <= c[i - 7] || l[i - 2] <= c[i - 8] ? 1 : 0;
           const dh = h[i] - h[i - 2];
           const dl = l[i] - l[i - 2];
           numA[i] = x1 * x2 * (dh + dl);
@@ -749,28 +728,6 @@ export const OSCILLATOR_ENTRIES: Entry[] = [
       use: ['Measure the distance between DPO peaks (or troughs) to estimate the cycle length.'],
       signals: ['Cycle lows below zero often line up with buying opportunities in a range.'],
       tip: 'It is not a momentum timing tool; use it to find the rhythm of the market.',
-    },
-  },
-  {
-    def: {
-      id: 'cti',
-      name: 'Correlation Trend Indicator',
-      shortName: 'CTI',
-      category: 'Oscillators',
-      description: 'John Ehlers’ CTI (2020): Pearson correlation of the last N closes with a straight rising line, from -1 to +1.',
-      placement: 'separate',
-      inputs: [len(20), sourceInput()],
-      plots: [line('cti', 'CTI', C.blue)],
-      levels: [0.5, 0, -0.5],
-      compute: (bars, p) => {
-        const s = src(bars, p);
-        return { cti: correlation(s, s.map((_, i) => i), int(p, 'length', 2)) };
-      },
-    },
-    guide: {
-      what: 'How closely the last N closes follow a straight upward line (+1) or downward line (-1).',
-      use: ['Near +1 = clean uptrend; near -1 = clean downtrend; near 0 = no trend.'],
-      signals: ['Crossing zero = trend change.'],
     },
   },
   {

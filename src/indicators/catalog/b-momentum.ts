@@ -187,8 +187,8 @@ export const MOMENTUM_ENTRIES: Entry[] = [
         const base = num0(p, 'length');
         const out = c.map((_, i) => {
           if (Number.isNaN(avg[i])) return NaN;
-          const td = Math.max(lo, Math.min(hi, sd[i] === 0 ? hi : Math.trunc((base * avg[i]) / sd[i])));
-          if (i - td < 0) return NaN;
+          let td = Math.max(lo, Math.min(hi, sd[i] === 0 ? hi : Math.trunc((base * avg[i]) / sd[i])));
+          td = Math.min(td, i); // early bars: use what is available
           let up = 0;
           let down = 0;
           for (let j = i - td + 1; j <= i; j++) {
@@ -280,30 +280,6 @@ export const MOMENTUM_ENTRIES: Entry[] = [
       what: 'The MACD shown as a percentage of price, so a $20 stock and a $500 stock can be compared on the same scale.',
       use: ['Above zero = the short-term average is above the long-term one (bullish).', 'Use it instead of MACD when comparing stocks or long histories.'],
       signals: ['PPO crossing its signal line.', 'Zero-line crosses.', 'Divergences with price.'],
-    },
-  },
-  {
-    def: {
-      id: 'apo',
-      name: 'Absolute Price Oscillator',
-      shortName: 'APO',
-      category: 'Momentum',
-      description: 'Difference between a fast and a slow EMA in price units (TA-Lib APO).',
-      placement: 'separate',
-      inputs: [n('fast', 'Fast length', 12), n('slow', 'Slow length', 26), sourceInput()],
-      plots: [hist('apo', 'APO')],
-      levels: [0],
-      compute: (bars, p) => {
-        const s = src(bars, p);
-        const f = ema(s, int(p, 'fast'));
-        const sl = ema(s, int(p, 'slow'));
-        return { apo: f.map((v, i) => v - sl[i]) };
-      },
-    },
-    guide: {
-      what: 'How far the fast moving average is above or below the slow one, in dollars.',
-      use: ['Above zero = short-term trend up; below = down.'],
-      signals: ['Zero-line crosses (the same moment as the two averages crossing).', 'Bars shrinking = the trend is losing speed.'],
     },
   },
   {
@@ -820,29 +796,6 @@ export const MOMENTUM_ENTRIES: Entry[] = [
   },
   {
     def: {
-      id: 'kairi',
-      name: 'Kairi Relative Index',
-      shortName: 'Kairi',
-      category: 'Momentum',
-      description: 'Percent distance of price from its N-bar SMA: 100 x (close - SMA) / SMA.',
-      placement: 'separate',
-      inputs: [len(14), sourceInput()],
-      plots: [hist('kairi', 'Kairi')],
-      levels: [0],
-      compute: (bars, p) => {
-        const s = src(bars, p);
-        const m = sma(s, int(p, 'length'));
-        return { kairi: s.map((v, i) => div(100 * (v - m[i]), m[i])) };
-      },
-    },
-    guide: {
-      what: 'How stretched price is from its moving average, in percent.',
-      use: ['Compare with the stock’s own past extremes: very large readings tend to snap back.'],
-      signals: ['Extreme highs/lows = stretched; crossing zero = price crossing the average.'],
-    },
-  },
-  {
-    def: {
       id: 'rex',
       name: 'Rex Oscillator',
       shortName: 'Rex',
@@ -955,66 +908,18 @@ export const MOMENTUM_ENTRIES: Entry[] = [
   },
   {
     def: {
-      id: 'rocr',
-      name: 'Momentum Ratio (ROCR100)',
-      shortName: 'ROCR',
-      category: 'Momentum',
-      description: 'Close as a percentage of the close N bars ago: 100 x close / close[N] (TA-Lib ROCR100). 100 = unchanged.',
-      placement: 'separate',
-      inputs: [len(10), sourceInput()],
-      plots: [line('rocr', 'ROCR', C.blue)],
-      levels: [100],
-      compute: (bars, p) => {
-        const s = src(bars, p);
-        const l = int(p, 'length');
-        return { rocr: s.map((v, i) => (i < l ? NaN : div(100 * v, s[i - l], 100))) };
-      },
-    },
-    guide: {
-      what: 'Today’s price as a percentage of the price N bars ago: 105 means 5% higher.',
-      use: ['Above 100 = higher than N bars ago; below 100 = lower.'],
-      signals: ['Crossing 100 = momentum turning.', 'Divergences with price.'],
-    },
-  },
-  {
-    def: {
-      id: 'cmo_wilder',
-      name: 'Chande Momentum Oscillator (Wilder smoothing)',
-      shortName: 'CMO (W)',
-      category: 'Momentum',
-      description: 'TA-Lib’s CMO: like Chande’s CMO but gains and losses are Wilder-smoothed (it equals 2 x RSI - 100).',
-      placement: 'separate',
-      inputs: [len(14), sourceInput()],
-      plots: [line('cmo', 'CMO', C.purple)],
-      levels: [50, -50],
-      compute: (bars, p) => {
-        const s = src(bars, p);
-        const l = int(p, 'length');
-        const up = rma(gains(s), l);
-        const dn = rma(losses(s), l);
-        return { cmo: up.map((u, i) => div(100 * (u - dn[i]), u + dn[i])) };
-      },
-    },
-    guide: {
-      what: 'The CMO as TA-Lib and many platforms calculate it: smoother than Chande’s original, from -100 to +100.',
-      use: ['Above +50 = overbought, below -50 = oversold.'],
-      signals: ['Turns back from ±50.', 'Zero-line crosses.'],
-    },
-  },
-  {
-    def: {
       id: 'disparity',
       name: 'Disparity Index',
       shortName: 'Disparity',
       category: 'Momentum',
-      description: 'Steve Nison’s disparity index: percent distance of the close from its N-bar EMA, 100 x (close - EMA) / EMA.',
+      description: 'Steve Nison’s disparity index: percent distance of the close from its N-bar moving average (EMA by default, or SMA, which makes it the Kairi relative index), 100 x (close - MA) / MA.',
       placement: 'separate',
-      inputs: [len(14), sourceInput()],
+      inputs: [len(14), n('ema', 'Average type (0 = SMA, 1 = EMA)', 1, 0, 1, 1), sourceInput()],
       plots: [hist('disparity', 'Disparity')],
       levels: [0],
       compute: (bars, p) => {
         const s = src(bars, p);
-        const e = ema(s, int(p, 'length'));
+        const e = Number(p.ema) === 0 ? sma(s, int(p, 'length')) : ema(s, int(p, 'length'));
         return { disparity: s.map((v, i) => div(100 * (v - e[i]), e[i])) };
       },
     },

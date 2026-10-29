@@ -22,7 +22,7 @@ export const REFS: Record<string, Ref> = {
     rsi: { firstValid: 23, values: { 23: 67.27614976726731, 161: 94.79127085368368, 299: 29.303598625582097 } },
   } },
   dymi: { source: "Python (Chande-Kroll, simple averages)", plots: {
-    dymi: { firstValid: 14, values: { 14: 57.13755687784391, 157: 91.19248751461056, 299: 34.940260605303706 } },
+    dymi: { firstValid: 13, values: { 13: 51.01052934775651, 156: 75.32399139075883, 299: 34.940260605303706 } },
   } },
   smi: { source: "Python (Blau SMI)", plots: {
     smi: { firstValid: 13, values: { 13: -40.98782208504606, 156: 64.99244342528037, 299: -58.922244635448884 } },
@@ -35,9 +35,6 @@ export const REFS: Record<string, Ref> = {
     ppo: { firstValid: 25, values: { 25: 1.1042317112930835, 162: 3.671006058188765, 299: -0.6345460711773208 } },
     signal: { firstValid: 33, values: { 33: 1.1198926848515454, 166: 3.4539611601097033, 299: -0.3831719349009296 } },
     hist: { firstValid: 33, values: { 33: -0.3843243159856007, 166: 0.16665345299727852, 299: -0.2513741362763645 } },
-  } },
-  apo: { source: "TA-Lib APO (EMA)", plots: {
-    apo: { firstValid: 25, values: { 25: 1.1269952781395887, 162: 3.7967196513958044, 299: -0.6711764712296286 } },
   } },
   pmo: { source: "Python (DecisionPoint custom smoothing, SMA seed)", plots: {
     pmo: { firstValid: 54, values: { 54: 0.6376695035199512, 177: 3.5375745689688936, 299: -0.46435749882825944 } },
@@ -113,9 +110,6 @@ export const REFS: Record<string, Ref> = {
   pzo: { source: "Python", plots: {
     pzo: { firstValid: 14, values: { 14: 14.754228154294386, 157: 58.193164030074115, 299: -42.99702009811908 } },
   } },
-  kairi: { source: "TA-Lib SMA", plots: {
-    kairi: { firstValid: 13, values: { 13: -0.620705393710966, 156: 4.140142204905785, 299: -1.976378423297551 } },
-  } },
   rex: { source: "TA-Lib SMA", plots: {
     rex: { firstValid: 13, values: { 13: 0.038557142857147904, 156: 0.9117357142857218, 299: -0.14432857142856342 } },
     signal: { firstValid: 26, values: { 26: 0.19401938775509717, 163: 1.14319387755102, 299: -0.05996020408163015 } },
@@ -133,10 +127,6 @@ export const REFS: Record<string, Ref> = {
   cmiblau: { source: "Python", plots: {
     cmi: { firstValid: 23, values: { 23: 11.45592096381149, 161: 61.017001023675284, 299: -19.670856311766503 } },
     signal: { firstValid: 27, values: { 27: 18.44169843394143, 163: 60.36477542970459, 299: -13.0303752189934 } },
-  } },
-  stochf: { source: "TA-Lib STOCHF", plots: {
-    k: { firstValid: null, values: { 15: 40.89625537139341, 157: 91.57048101530265, 299: 9.385693633685335 } },
-    d: { firstValid: null, values: { 15: 50.599424553408824, 157: 93.7678203904353, 299: 18.450733287313454 } },
   } },
   kdj: { source: "Python (KDJ, start 50)", plots: {
     k: { firstValid: 8, values: { 8: 60.174606084058034, 154: 65.6959842291423, 299: 20.13092240742541 } },
@@ -193,8 +183,8 @@ export const REFS: Record<string, Ref> = {
   demarker: { source: "Python (DeMark)", plots: {
     dem: { firstValid: 14, values: { 14: 0.5628868047545019, 157: 0.8152751101570441, 299: 0.3760224324292864 } },
   } },
-  rei: { source: "Python (TD REI)", plots: {
-    rei: { firstValid: 15, values: { 15: -33.38438780452697, 157: 44.25699390694759, 299: -59.701441899915096 } },
+  rei: { source: "Python (TD REI, DeMark 1999 overlap rule)", plots: {
+    rei: { firstValid: 12, values: { 12: -92.21847259196231, 156: 77.717432876922, 299: -71.9237873043646 } },
   } },
   traders_di: { source: "TA-Lib RSI + Python bands", plots: {
     fast: { firstValid: 14, values: { 14: 54.29510293639251, 157: 75.45326477092058, 299: 39.12808572380855 } },
@@ -227,9 +217,6 @@ export const REFS: Record<string, Ref> = {
   } },
   dpo: { source: "TA-Lib SMA (StockCharts DPO)", plots: {
     dpo: { firstValid: 19, values: { 19: 1.1709650000000096, 159: -0.8895149999999603, 299: -0.4168399999999224 } },
-  } },
-  cti: { source: "TA-Lib CORREL against the bar index", plots: {
-    cti: { firstValid: 19, values: { 19: 0.32163153742843054, 159: 0.8968638643525524, 299: -0.41581326652376316 } },
   } },
   dso: { source: "Python (Ehlers DSO)", plots: {
     dso: { firstValid: 41, values: { 41: -0.34451570205906096, 170: 0.17489785464808463, 299: -0.898865993638612 } },
@@ -275,7 +262,7 @@ export const REFS: Record<string, Ref> = {
     wave: { firstValid: 2, values: { 2: -0.811416897938327, 151: 0.9948284926670025, 299: -0.9782307238455892 } },
   } },
   acp: { source: "Python (Ehlers ACP)", plots: {
-    cycle: { firstValid: 96, values: { 96: 37.653263418417154, 168: 30.438553744514486, 299: 10.464953691972331 } },
+    cycle: { firstValid: 96, values: { 96: 37.653263418417154, 198: 20.43812112534052, 299: 10.464953691972331 } },
   } },
   mesastoch: { source: "Python (Ehlers)", plots: {
     stoch: { firstValid: 19, values: { 19: 0.9132983497809959, 159: 0.25313005704609504, 299: 0.39331433009956424 } },
@@ -313,12 +300,6 @@ export const REFS: Record<string, Ref> = {
   } },
   rmosc: { source: "Python (Ehlers 2018)", plots: {
     rmo: { firstValid: 4, values: { 4: 0.0, 152: 0.03805326922356034, 299: -0.9128687894824852 } },
-  } },
-  rocr: { source: "TA-Lib ROCR100", plots: {
-    rocr: { firstValid: 10, values: { 10: 99.44922732469892, 155: 101.50863159533678, 299: 97.64304934089758 } },
-  } },
-  cmo_wilder: { source: "TA-Lib CMO", plots: {
-    cmo: { firstValid: 14, values: { 14: 14.27511375568783, 157: 50.41062867558935, 299: -20.835645842568102 } },
   } },
   disparity: { source: "TA-Lib EMA", plots: {
     disparity: { firstValid: 13, values: { 13: -0.620705393710966, 156: 4.536876155992524, 299: -1.6939170115873166 } },

@@ -255,7 +255,7 @@ export const CYCLE_ENTRIES: Entry[] = [
       name: 'Bandpass Filter',
       shortName: 'Bandpass',
       category: 'Cycles',
-      description: 'Ehlers’ bandpass with trigger (2016): 1-pole high-pass, then a 20-bar bandpass (bandwidth 0.3), normalised by its decaying peak; trigger = a 1-pole high-pass of that.',
+      description: 'Ehlers’ bandpass with trigger (2016): 1-pole high-pass, then a 20-bar bandpass (bandwidth 0.3), normalised by its decaying peak; trigger = a 1-pole high-pass of that. Approx.: uses the textbook (1 - alpha/2) high-pass gain where the printed code shows (1 + alpha/2).',
       placement: 'separate',
       inputs: [len(20, 'Period'), n('bw', 'Bandwidth', 0.3, 0.05, 1, 0.05), sourceInput()],
       plots: [line('signal', 'Bandpass', C.blue), line('trigger', 'Trigger', C.orange, 1)],
@@ -360,7 +360,10 @@ export const CYCLE_ENTRIES: Entry[] = [
             if (R[P - lo] > maxPwr) maxPwr = R[P - lo];
           }
           for (let P = lo; P <= hi; P++) pwr.push(maxPwr === 0 ? 0 : R[P - lo] / maxPwr);
-          out[i] = centre(pwr, lo);
+          // Ehlers keeps the previous cycle when no period has enough power (If Sp <> 0)
+          const dc = centre(pwr, lo);
+          const prev = i > need && !Number.isNaN(out[i - 1]) ? out[i - 1] : lo;
+          out[i] = Math.min(hi, Math.max(lo, Number.isNaN(dc) ? prev : dc));
         }
         return { cycle: out };
       },
