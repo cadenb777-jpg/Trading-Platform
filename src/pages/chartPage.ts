@@ -466,6 +466,7 @@ export function createChartPage() {
     document.title = `${displaySymbol(sym)} · Trading Platform`;
 
     chart.symbol = sym;
+    chart.market = p.id;
     try {
       bars = await p.loadHistory(sym, tf, controller.signal);
     } catch (err) {
