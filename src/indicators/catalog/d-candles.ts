@@ -155,12 +155,20 @@ export const CANDLE_DEFS: IndicatorDef[] = PATTERNS.map((info) => ({
   },
 }));
 
-const toggle = (key: string, label: string, def: 0 | 1): IndicatorInput => ({ key, label, type: 'number', default: def, min: 0, max: 1, step: 1 });
+const toggle = (key: string, label: string, def: 0 | 1): IndicatorInput => ({ key, label, type: 'number', default: def, min: 0, max: 1, step: 1, toggle: true, legend: 'hide' });
+
+/** Patterns that fire on many bars: left out of the combined layer unless "common" is on (each stays available on its own). */
+export const COMMON_PATTERNS = ['CDLENGULFING', 'CDLHARAMI', 'CDLBELTHOLD', 'CDLHIKKAKE', 'CDLHAMMER'];
 
 /** Patterns the combined indicator would include for these filter settings. */
 export function selectedPatterns(params: IndicatorParams): PatternInfo[] {
   const on = (k: string, def: number) => Number(params[k] ?? def) === 1;
-  return PATTERNS.filter((info) => on(info.group, info.group === 'reversal' || info.group === 'continuation' ? 1 : 0) && (info.candles > 1 || on('single', 1)));
+  return PATTERNS.filter(
+    (info) =>
+      on(info.group, info.group === 'reversal' || info.group === 'continuation' ? 1 : 0) &&
+      (info.candles > 1 || on('single', 0)) &&
+      (!COMMON_PATTERNS.includes(info.talib) || on('common', 0)),
+  );
 }
 
 export const ALL_CANDLES_DEF: IndicatorDef = {
@@ -168,14 +176,15 @@ export const ALL_CANDLES_DEF: IndicatorDef = {
   name: 'All Candlestick Patterns',
   shortName: 'Candles',
   category: 'Candlestick Patterns',
-  description: 'Every TA-Lib candlestick pattern on one layer, filtered by type. Value = how many patterns fired on the bar (bullish, bearish, indecision). Hover a single pattern indicator to see which one.',
+  description: 'TA-Lib candlestick patterns on one layer, filtered by type (by default multi-candle reversal and continuation patterns, without the very common ones). Value = how many patterns fired on the bar. Add a single pattern indicator to see which one.',
   placement: 'overlay',
   inputs: [
     toggle('reversal', 'Reversal patterns (1 on, 0 off)', 1),
     toggle('continuation', 'Continuation patterns', 1),
     toggle('indecision', 'Indecision (doji, spinning top...)', 0),
     toggle('candle', 'Candle shapes (marubozu, long/short line)', 0),
-    toggle('single', 'Include one-candle patterns', 1),
+    toggle('single', 'Include one-candle patterns', 0),
+    toggle('common', 'Include very common ones (engulfing, harami, belt-hold, hikkake, hammer)', 0),
     toggle('bullish', 'Show bullish', 1),
     toggle('bearish', 'Show bearish', 1),
   ],
@@ -193,8 +202,10 @@ export const ALL_CANDLES_DEF: IndicatorDef = {
     const showBear = Number(p.bearish ?? 1) === 1;
     for (const info of selectedPatterns(p)) {
       const values = patternValues(info, bars);
+      // Hikkake counts only once confirmed (+-200); the bare setup is too frequent for this layer.
+      const hikkake = info.talib.startsWith('CDLHIKKAKE');
       values.forEach((v, i) => {
-        if (!v) return;
+        if (!v || (hikkake && Math.abs(v) < 200)) return;
         if (info.kind === 'neutral') neutral[i]++;
         else if (v > 0 && showBull) bull[i]++;
         else if (v < 0 && showBear) bear[i]++;
@@ -227,7 +238,7 @@ export const CANDLE_GUIDES: Record<string, IndicatorGuide> = Object.fromEntries(
 
 CANDLE_GUIDES.cdl_all = {
   what: 'All 61 TA-Lib candlestick patterns on one layer: green arrows for bullish patterns, red for bearish, dots for indecision.',
-  use: ['Choose which kinds to show with the inputs (1 = on, 0 = off): reversal, continuation, indecision, candle shapes, one-candle patterns.', 'Add a single pattern indicator when you want to know exactly which pattern fired.'],
+  use: ['Choose which kinds to show with the checkboxes: reversal, continuation, indecision, candle shapes, one-candle patterns and the very common ones.', 'Add a single pattern indicator when you want to know exactly which pattern fired.'],
   signals: ['Several patterns on the same bar (higher value) = stronger evidence.', 'A bullish reversal at support after a fall, or a bearish one at resistance after a rise, is the classic setup.'],
-  tip: 'Candle shapes and indecision are off by default because they appear on many bars.',
+  tip: 'One-candle patterns, candle shapes, indecision and the very common patterns (engulfing, harami, belt-hold, hikkake, hammer) are off by default because together they would mark most bars. Hikkake counts here only when confirmed.',
 };

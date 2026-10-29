@@ -7,6 +7,7 @@ import type { Bar } from '../../types';
 import type { IndicatorGuide } from '../info';
 import { ema, highest, lowest, rma, sma, stdev } from '../math';
 import { rollingSum } from '../more';
+import { sessionDay, sessionSlot } from '../session';
 import type { IndicatorDef, IndicatorInput, IndicatorParams, PriceSource } from '../types';
 
 const UP = '#26a69a';
@@ -54,13 +55,13 @@ function obvLine(bars: Bar[]): number[] {
 }
 /** Volume-weighted average of `values` over `n` bars. */
 const vwmaOf = (values: number[], volume: number[], n: number) => div(rollingSum(values.map((v, i) => v * volume[i]), n), rollingSum(volume, n));
-/** VWAP that restarts whenever `key(bar)` changes (day, week, month...). */
-function periodicVwap(bars: Bar[], key: (time: number) => number): number[] {
+/** VWAP that restarts whenever `key(trading day)` changes (day, week, month...). */
+function periodicVwap(bars: Bar[], p: IndicatorParams, key: (day: number) => number): number[] {
   let current = NaN;
   let pv = 0;
   let v = 0;
   return bars.map((b) => {
-    const k = key(b.time);
+    const k = key(sessionDay(b.time, p));
     if (k !== current) {
       current = k;
       pv = v = 0;
@@ -70,14 +71,17 @@ function periodicVwap(bars: Bar[], key: (time: number) => number): number[] {
     return v ? pv / v : hlc3(b);
   });
 }
-const dayKey = (t: number) => Math.floor(t / 86400);
+/** Period keys from a trading day number (days since 1970 on the session calendar). */
+const dayKey = (day: number) => day;
 /** Weeks start on Monday (1970-01-01 was a Thursday). */
-const weekKey = (t: number) => Math.floor((Math.floor(t / 86400) + 3) / 7);
-const monthKey = (t: number) => {
-  const d = new Date(t * 1000);
+const weekKey = (day: number) => Math.floor((day + 3) / 7);
+const monthKey = (day: number) => {
+  const d = new Date(day * 86400000);
   return d.getUTCFullYear() * 12 + d.getUTCMonth();
 };
-const yearKey = (t: number) => new Date(t * 1000).getUTCFullYear();
+const yearKey = (day: number) => new Date(day * 86400000).getUTCFullYear();
+const PERIOD_NAMES = ['', 'Day', 'Week', 'Month', 'Year'];
+const ymd = (v: number) => `${Math.floor(v / 10000)}-${String(Math.floor(v / 100) % 100).padStart(2, '0')}-${String(v % 100).padStart(2, '0')}`;
 
 /** Wilder's swing index for each bar (NaN on the first); `limitPct` is the limit move as a % of the previous close. */
 function swingIndex(bars: Bar[], limitPct: number): number[] {
@@ -299,18 +303,24 @@ export const VOLUME_DEFS: IndicatorDef[] = [
     name: 'Anchored VWAP',
     shortName: 'AVWAP',
     category: 'Volume',
-    description: 'VWAP started from a chosen bar: N bars back, or from a date (YYYYMMDD, UTC) when one is set. Shows the average price paid since that event.',
+    description: 'VWAP started from a date (YYYYMMDD; default the start of the year), or N bars back if set. Shows the average price paid since that event.',
     placement: 'overlay',
-    inputs: [numberInput('barsBack', 'Anchor: bars back', 50, 1, 0, 100000), numberInput('date', 'Anchor date YYYYMMDD (0 = use bars back)', 0, 1, 0, 99991231)],
+    inputs: [
+      { ...numberInput('date', 'Anchor date YYYYMMDD (0 = start of the year)', 0, 1, 0, 99991231), legend: (v) => (Number(v) > 0 ? ymd(Number(v)) : '') },
+      { ...numberInput('barsBack', 'Or bars back (0 = off; moves with each new bar)', 0, 1, 0, 100000), legend: (v) => (Number(v) > 0 ? `${v} bars` : '') },
+    ],
     plots: [{ key: 'vwap', title: 'Anchored VWAP', type: 'line', color: ORANGE, lineWidth: 2 }],
     compute: (bars, p) => {
       const out = NaNs(bars.length);
       if (!bars.length) return { vwap: out };
       const date = Math.round(num(p, 'date'));
-      let anchor = Math.max(0, bars.length - 1 - Math.round(num(p, 'barsBack')));
-      if (date > 0) {
-        const t = Date.UTC(Math.floor(date / 10000), (Math.floor(date / 100) % 100) - 1, date % 100) / 1000;
-        anchor = bars.findIndex((b) => b.time >= t);
+      const back = Math.round(num(p, 'barsBack'));
+      let anchor: number;
+      if (date <= 0 && back > 0) anchor = Math.max(0, bars.length - 1 - back);
+      else {
+        // A date anchor (or the start of the last bar's year) stays put as new bars arrive: no repainting.
+        const day = date > 0 ? Date.UTC(Math.floor(date / 10000), (Math.floor(date / 100) % 100) - 1, date % 100) / 86400000 : Date.UTC(yearKey(sessionDay(bars[bars.length - 1].time, p)), 0, 1) / 86400000;
+        anchor = bars.findIndex((b) => sessionDay(b.time, p) >= day);
         if (anchor === -1) return { vwap: out };
       }
       let pv = 0;
@@ -328,13 +338,13 @@ export const VOLUME_DEFS: IndicatorDef[] = [
     name: 'VWAP (Day/Week/Month/Year)',
     shortName: 'pVWAP',
     category: 'Volume',
-    description: 'VWAP that restarts each day, week (Monday), month or year (UTC). Weekly and monthly VWAPs are levels swing traders watch.',
+    description: 'VWAP that restarts each trading day, week (Monday), month or year (New York calendar for stocks, UTC for crypto). Weekly and monthly VWAPs are levels swing traders watch.',
     placement: 'overlay',
-    inputs: [numberInput('period', 'Reset: 1 day, 2 week, 3 month, 4 year', 2, 1, 1, 4)],
+    inputs: [{ ...numberInput('period', 'Reset: 1 day, 2 week, 3 month, 4 year', 2, 1, 1, 4), legend: (v) => PERIOD_NAMES[Number(v)] ?? String(v) }],
     plots: [{ key: 'vwap', title: 'VWAP', type: 'line', color: '#f06292', lineWidth: 2 }],
     compute: (bars, p) => {
       const key = [dayKey, dayKey, weekKey, monthKey, yearKey][Math.min(4, int(p, 'period'))];
-      return { vwap: periodicVwap(bars, key) };
+      return { vwap: periodicVwap(bars, p, key) };
     },
   },
   {
@@ -347,8 +357,8 @@ export const VOLUME_DEFS: IndicatorDef[] = [
     inputs: [],
     plots: [{ key: 'dist', title: 'From VWAP %', type: 'histogram', color: UP, colorBy: 'sign', negativeColor: DOWN }],
     levels: [0],
-    compute: (bars) => {
-      const vwap = periodicVwap(bars, dayKey);
+    compute: (bars, p) => {
+      const vwap = periodicVwap(bars, p, dayKey);
       return { dist: bars.map((b, i) => (vwap[i] ? (100 * (b.close - vwap[i])) / vwap[i] : NaN)) };
     },
   },
@@ -471,16 +481,17 @@ export const VOLUME_DEFS: IndicatorDef[] = [
     name: 'Market Facilitation Index',
     shortName: 'BW MFI',
     category: 'Volume',
-    description: 'Bill Williams’ MFI: bar range per million shares traded, i.e. how much price moves per unit of volume. Squat dots = volume up but MFI down (a battle before a breakout).',
+    description: 'Bill Williams’ MFI: bar range per million shares traded, i.e. how much price moves per unit of volume. Purple squat bars = volume up but MFI down (a battle before a breakout).',
     placement: 'separate',
     inputs: [],
     plots: [
       { key: 'mfi', title: 'MFI', type: 'histogram', color: UP, colorBy: 'change', negativeColor: DOWN },
-      { key: 'squat', title: 'Squat', type: 'marker', color: '#ab47bc', marker: { shape: 'circle', position: 'aboveBar', text: 'Squat' } },
+      { key: 'squat', title: 'Squat', type: 'histogram', color: '#ab47bc' },
     ],
     compute: (bars) => {
       const mfi = bars.map((b) => (b.volume ? ((b.high - b.low) / b.volume) * 1e6 : NaN));
-      const squat = mfi.map((m, i) => (i > 0 && m < mfi[i - 1] && bars[i].volume > bars[i - 1].volume ? 1 : 0));
+      // Squat bars are redrawn in purple in the indicator's own pane (0 = not a squat).
+      const squat = mfi.map((m, i) => (i > 0 && m < mfi[i - 1] && bars[i].volume > bars[i - 1].volume ? m : 0));
       return { mfi, squat };
     },
   },
@@ -544,7 +555,7 @@ export const VOLUME_DEFS: IndicatorDef[] = [
     name: 'Relative Volume at Time of Day',
     shortName: 'RVOL ToD',
     category: 'Volume',
-    description: 'Intraday: volume compared with the same time slot on the previous N days (so the busy open is not always "high"). On daily bars it compares with the last N days.',
+    description: 'Intraday: volume compared with the same New York time slot (UTC for crypto) on the previous N days, so the busy open is not always "high". On daily bars it compares with the last N days.',
     placement: 'separate',
     inputs: [length(10, 'Days')],
     plots: [{ key: 'rvol', title: 'RVOL (time of day)', type: 'histogram', color: TEAL }],
@@ -552,9 +563,11 @@ export const VOLUME_DEFS: IndicatorDef[] = [
     compute: (bars, p) => {
       const n = int(p, 'length');
       const history = new Map<number, number[]>();
+      // Daily and longer bars have no time of day: every bar shares one slot.
+      const intraday = bars.some((b, i) => i > 0 && b.time - bars[i - 1].time < 72000);
       return {
         rvol: bars.map((b) => {
-          const slot = ((b.time % 86400) + 86400) % 86400;
+          const slot = intraday ? sessionSlot(b.time, p) : 0;
           const past = history.get(slot) ?? [];
           const avg = past.length >= n ? past.reduce((a, x) => a + x, 0) / n : NaN;
           past.push(b.volume);
@@ -685,15 +698,15 @@ export const VOLUME_DEFS: IndicatorDef[] = [
     name: 'Better Volume (approximation)',
     shortName: 'BetterVol≈',
     category: 'Volume',
-    description: 'A candle-only take on Emini-Watch’s Better Volume: marks climax bars (largest range x volume in N bars), churn (most volume per point of range) and the lowest volume.',
+    description: 'A candle-only take on Emini-Watch’s Better Volume: colours climax bars (largest range x volume in N bars; red up, green down), churn (most volume per point of range, purple) and the lowest volume (yellow).',
     placement: 'separate',
     inputs: [length(20)],
     plots: [
       { key: 'volume', title: 'Volume', type: 'histogram', color: GREY + '80' },
-      { key: 'climaxUp', title: 'Climax up', type: 'marker', color: DOWN, marker: { shape: 'circle', position: 'aboveBar', text: 'Climax' } },
-      { key: 'climaxDown', title: 'Climax down', type: 'marker', color: UP, marker: { shape: 'circle', position: 'belowBar', text: 'Climax' } },
-      { key: 'churn', title: 'Churn', type: 'marker', color: '#ab47bc', marker: { shape: 'square', position: 'aboveBar', text: 'Churn' } },
-      { key: 'low', title: 'Low volume', type: 'marker', color: '#ffb300', marker: { shape: 'circle', position: 'belowBar', text: 'Low' } },
+      { key: 'climaxUp', title: 'Climax up (red)', type: 'histogram', color: DOWN },
+      { key: 'climaxDown', title: 'Climax down (green)', type: 'histogram', color: UP },
+      { key: 'churn', title: 'Churn (purple)', type: 'histogram', color: '#ab47bc' },
+      { key: 'low', title: 'Low volume (yellow)', type: 'histogram', color: '#ffb300' },
     ],
     compute: (bars, p) => {
       const n = int(p, 'length');
@@ -703,7 +716,8 @@ export const VOLUME_DEFS: IndicatorDef[] = [
       const topRV = highest(rangeVol, n);
       const topPP = highest(perPoint.map((x) => (Number.isNaN(x) ? 0 : x)), n);
       const lowV = lowest(v, n);
-      const flag = (f: (i: number) => boolean) => bars.map((_, i) => (i >= n - 1 && f(i) ? 1 : 0));
+      // Each class redraws that bar's volume in its own colour in the indicator's pane (0 = not that class).
+      const flag = (f: (i: number) => boolean) => bars.map((_, i) => (i >= n - 1 && f(i) ? v[i] : 0));
       return {
         volume: v,
         climaxUp: flag((i) => bars[i].close > bars[i].open && rangeVol[i] > 0 && rangeVol[i] === topRV[i]),
@@ -1032,7 +1046,7 @@ export const VOLUME_GUIDES: Record<string, IndicatorGuide> = {
   },
   avwap: {
     what: 'VWAP started from a bar you choose, such as an earnings day, a big gap or a major low.',
-    use: ['Set the anchor to an important event to see the average price everyone paid since then.', 'Use a date (YYYYMMDD) for a fixed anchor, or bars back for a moving one.'],
+    use: ['Set the anchor date (YYYYMMDD) to an important event to see the average price everyone paid since then; 0 = start of the year.', 'Bars back is optional: that anchor moves forward with every new bar, so past values change (repaint). Prefer a date.'],
     signals: ['Price holding above the anchored VWAP = buyers since that event are in profit (support).', 'Losing it = the average buyer since the event is now losing (resistance).'],
     tip: 'Anchor to swing highs/lows or news days, not random bars.',
   },
@@ -1081,7 +1095,7 @@ export const VOLUME_GUIDES: Record<string, IndicatorGuide> = {
   bwmfi: {
     what: 'Bill Williams’ Market Facilitation Index: how much price moves per million shares. Bars are green when it rises and red when it falls.',
     use: ['Combine with volume: MFI up + volume up = the trend is being pushed (green bar).', '"Squat" (MFI down, volume up) = a battle; a breakout often follows.'],
-    signals: ['Squat dots near the end of a trend often mark the turning point.', 'MFI and volume both falling ("fade") = the market is losing interest.'],
+    signals: ['Purple squat bars near the end of a trend often mark the turning point.', 'MFI and volume both falling ("fade") = the market is losing interest.'],
   },
   vwmacd: {
     what: 'MACD made from volume-weighted averages, so bars with heavy volume move it more.',
@@ -1099,7 +1113,7 @@ export const VOLUME_GUIDES: Record<string, IndicatorGuide> = {
     signals: ['Breakouts with RVOL above 1.5-2 are more reliable.', 'Very low RVOL = little interest; moves are less trustworthy.'],
   },
   rvoltod: {
-    what: 'Volume compared with the same time of day on previous days, so the naturally busy open and close are judged fairly.',
+    what: 'Volume compared with the same time of day (New York time for stocks, UTC for crypto) on previous days, so the naturally busy open and close are judged fairly.',
     use: ['Intraday charts: spot unusual activity at any time of the day.'],
     signals: ['Above 2 = twice the normal volume for this time of day.', 'Rising RVOL into a breakout level = fuel for the breakout.'],
     tip: 'Needs N full days of history at the same bar size before it shows values.',
@@ -1142,7 +1156,7 @@ export const VOLUME_GUIDES: Record<string, IndicatorGuide> = {
     signals: ['Crossing above 0 (or +5) in an uptrend = buy (Khalil).', 'Falling from above +60 = overbought turn.'],
   },
   bettervol: {
-    what: 'Volume bars with marks for climax (largest range x volume), churn (most volume per point of range) and lowest-volume bars, estimated from candles.',
+    what: 'Volume bars coloured by type: climax (largest range x volume; red on up bars, green on down bars), churn (most volume per point of range, purple) and lowest volume (yellow), estimated from candles.',
     use: ['Climax bars often mark the end of a move; churn bars show heavy two-sided trading.'],
     signals: ['Climax up at the top of a rally = possible top; climax down after a fall = possible bottom.', 'Low-volume pullback in a trend = healthy pause.'],
     tip: 'The original Better Volume uses tick data and its own rules; this is a simplified version.',

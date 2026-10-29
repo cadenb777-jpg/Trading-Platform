@@ -1,9 +1,8 @@
 /**
- * The shared OHLCV fixture for the catalog's reference tests (Python reproduces it exactly):
- * mulberry32 seed 42, 300 daily bars; per bar four consecutive draws r1..r4:
- * open = previous close (first 100), close = open x (1 + (r1 - 0.5) x 0.04), high = max(open, close) x (1 + r2 x 0.01),
- * low = min(open, close) x (1 - r3 x 0.01), volume = 1e6 x (0.5 + r4), time = 1700000000 + i x 86400;
- * every value rounded to 4 decimals (high/low use the rounded open and close).
+ * The trend/volatility/statistics family's reference fixture: 300 daily bars from mulberry32 (seed 42).
+ * Per bar four consecutive draws r1..r4: open = previous close (first open 100), close = open*(1+(r1-0.5)*0.04),
+ * high = max(open, close)*(1+r2*0.01), low = min(open, close)*(1-r3*0.01), volume = 1e6*(0.5+r4),
+ * time = 1700000000 + i*86400; every value is rounded to 4 decimals (the rounded close is the next open).
  */
 import type { Bar } from '../../types';
 
@@ -18,26 +17,26 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
-const round4 = (v: number) => Math.round(v * 1e4) / 1e4;
+const round4 = (v: number) => Math.round(v * 10000) / 10000;
 
-function generate(count: number): Bar[] {
-  const rand = mulberry32(42);
+export function fixtureBars(count = 300, seed = 42): Bar[] {
+  const rand = mulberry32(seed);
   const bars: Bar[] = [];
-  let prevClose = 100;
+  let prev = 100;
   for (let i = 0; i < count; i++) {
     const r1 = rand();
     const r2 = rand();
     const r3 = rand();
     const r4 = rand();
-    const open = prevClose;
+    const open = prev;
     const close = round4(open * (1 + (r1 - 0.5) * 0.04));
     const high = round4(Math.max(open, close) * (1 + r2 * 0.01));
     const low = round4(Math.min(open, close) * (1 - r3 * 0.01));
     const volume = round4(1e6 * (0.5 + r4));
     bars.push({ time: 1700000000 + i * 86400, open, high, low, close, volume });
-    prevClose = close;
+    prev = close;
   }
   return bars;
 }
 
-export const FIXTURE_OHLCV: Bar[] = generate(300);
+export const FIXTURE: Bar[] = fixtureBars();

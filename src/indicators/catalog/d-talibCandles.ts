@@ -1,4 +1,4 @@
-/**
+/*! @license
  * GENERATED: a literal TypeScript port of TA-Lib's 61 candlestick pattern functions (ta-lib/ta_codegen/input/cdl*,
  * BSD licence, (c) 1999-2026 Mario Fortier and contributors), with the same candle settings and running totals so
  * the output matches TA-Lib exactly: +100 bullish, -100 bearish (Hikkake +-200 = confirmed), 0 none.

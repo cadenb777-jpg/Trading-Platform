@@ -143,7 +143,13 @@ export function openIndicatorSettings(
     for (const input of def.inputs) {
       const id = `in-${input.key}`;
       let field: HTMLInputElement | HTMLSelectElement;
-      if (input.type === 'number') {
+      if (input.type === 'number' && input.toggle) {
+        field = h('input', { id, type: 'checkbox', checked: Number(current.params[input.key]) === 1 }) as HTMLInputElement;
+        field.addEventListener('change', () => {
+          current.params[input.key] = (field as HTMLInputElement).checked ? 1 : 0;
+          emit();
+        });
+      } else if (input.type === 'number') {
         field = h('input', { id, class: 'input', type: 'number', value: current.params[input.key], min: input.min, max: input.max, step: input.step ?? 1 });
         field.addEventListener('change', () => {
           const value = Number(field.value);

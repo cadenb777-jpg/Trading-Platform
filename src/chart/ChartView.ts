@@ -2,6 +2,7 @@
  * Wraps TradingView's open-source Lightweight Charts library: draws the price series and
  * keeps every indicator's lines in sync with the data.
  */
+import { MARKET_PARAM } from '../indicators/session';
 import {
   AreaSeries,
   BarSeries,
@@ -74,6 +75,8 @@ export class ChartView {
   private timeframe: Timeframe = '15m';
   /** The symbol on the chart, for indicators that load outside data (e.g. COT positioning). */
   symbol = '';
+  /** The chart's market (provider id): session indicators use UTC days for crypto, New York days for stocks. */
+  market = '';
   private readonly timeIndex = new Map<number, number>();
   private readonly indicators = new Map<string, RenderedIndicator>();
   private readonly primitives: ISeriesPrimitive<Time>[] = [];
@@ -502,7 +505,7 @@ export class ChartView {
   private compute(r: RenderedIndicator): Record<string, number[]> {
     if (!this.bars.length) return {};
     // Any setting missing from a saved layout (e.g. a script gained a new input) uses its default.
-    const params = { ...defaultParams(r.def), ...r.instance.params };
+    const params = { ...defaultParams(r.def), ...r.instance.params, [MARKET_PARAM]: this.market };
     const symbol = this.symbol;
     const ext = externalData(r.def, symbol, () => {
       // Redraw when the outside data arrives, if the chart still shows the same symbol.

@@ -23,6 +23,10 @@ export interface NumberInput {
   min?: number;
   max?: number;
   step?: number;
+  /** A 0/1 switch: the settings window shows a checkbox. */
+  toggle?: boolean;
+  /** How the chart legend shows this value: hidden, or formatted (default: the raw value). */
+  legend?: InputLegend;
 }
 
 export interface SourceInput {
@@ -30,7 +34,10 @@ export interface SourceInput {
   label: string;
   type: 'source';
   default: PriceSource;
+  legend?: InputLegend;
 }
+
+export type InputLegend = 'hide' | ((value: number | string) => string);
 
 export type IndicatorInput = NumberInput | SourceInput;
 
