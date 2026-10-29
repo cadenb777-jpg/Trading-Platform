@@ -46,6 +46,16 @@ export function cappedRiskShares(
   return { ...r, shares: cap, uncapped: r.shares, capped: byPower <= byOrder ? 'buying power' : 'max order' };
 }
 
+/**
+ * A buy-stop at or below the current price would fill straight away at the market (no confirmation, no price cap):
+ * the warning for the ticket, or null.
+ */
+export function buyStopWarning(side: 'BUY' | 'SELL', type: string, stop: number | null, last: number | null | undefined): string | null {
+  if (side !== 'BUY' || (type !== 'STOP' && type !== 'STOP_LIMIT') || stop == null || last == null || !(last > 0)) return null;
+  if (stop > last) return null;
+  return `Your buy-stop $${stop.toFixed(2)} is at or below the current price $${last.toFixed(2)}: it would fill right away at the market. Use a Limit near the planned entry instead.`;
+}
+
 /** A fraction of what can be sold, in whole shares (at least 1 when anything is held). */
 export function sellFraction(available: number, fraction: number): number {
   if (!(available > 0)) return 0;

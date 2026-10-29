@@ -4,6 +4,7 @@
  * than the grade allows) and what to do. Each factor is a simple for / against / neutral call. Only things the
  * tests support count (helper v21): COT counts only when the edge study on your data passed.
  */
+import { entryZone, isOver } from './entryZone';
 import { sideRecord, takeProfit, type Setup, type StrategyInfo } from './setupsPanel';
 
 export type Stance = 'for' | 'against' | 'neutral';
@@ -98,12 +99,13 @@ export function readTrade(s: Setup, strat?: StrategyInfo, marketTrend?: number |
  * Why a setup can't go to the order ticket (null = it can): buys only (no short selling), and not while the signal is
  * still forming. The scanner's paper trade (`s.trade`) doesn't block it: that is the strategy's record, not the owner's.
  */
-export function tradeBlock(s: Pick<Setup, 'direction' | 'status'>): string | null {
+export function tradeBlock(s: Setup, price: number | null | undefined = s.price, today?: string): string | null {
   if (s.direction <= 0) return 'Short selling isn’t supported, so there’s no order ticket for sells.';
   if (s.status === 'forming') return 'Don’t act yet: the signal only counts once this bar closes.';
+  if (isOver(entryZone(s, price, today).zone)) return 'This setup is over (stop hit / target reached / window closed).';
   return null;
 }
-export const canTrade = (s: Pick<Setup, 'direction' | 'status'>) => tradeBlock(s) == null;
+export const canTrade = (s: Setup, price: number | null | undefined = s.price, today?: string) => tradeBlock(s, price, today) == null;
 
 /**
  * Why the owner shouldn't open a new ticket for `symbol` (null = fine): they already hold it in one of their accounts

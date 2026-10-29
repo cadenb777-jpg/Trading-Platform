@@ -552,11 +552,11 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     const strat = hr!.strategies[s.strategy as StrategyKey];
     detail.replaceChildren(
       h('div', { class: 'sp-detail-head' }, link.chip, h('h2', tickerAttr(s.symbol), s.symbol), h('span', { class: 'muted' }, `${s.strategyName} · ${HORIZONS.find((x) => x.key === prefs.horizon)!.label} · ${s.plan.holdText ?? s.plan.horizon}`), h('span', { class: 'spacer' }), watchBtn, h('button', { class: 'btn small', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, 'Open chart'),
-        s.direction > 0 ? h('button', { class: 'btn small primary sp-trade', disabled: !canTrade(s), title: tradeBlock(s) ?? 'Open the order ticket filled from this plan and sized by your risk % (key t). You still preview and confirm.', 'aria-keyshortcuts': 't', onclick: () => tradeSelected() }, 'Trade this ▸') : ''),
-      !canTrade(s) && s.direction > 0 ? h('p', { class: 'muted small sp-trade-why' }, `Trade this is off: ${tradeBlock(s)}`) : '',
+        s.direction > 0 ? h('button', { class: 'btn small primary sp-trade', disabled: !canTrade(s, livePrice(s)), title: tradeBlock(s, livePrice(s)) ?? 'Open the order ticket filled from this plan and sized by your risk % (key t). You still preview and confirm.', 'aria-keyshortcuts': 't', onclick: () => tradeSelected() }, 'Trade this ▸') : ''),
+      !canTrade(s, livePrice(s)) && s.direction > 0 ? h('p', { class: 'muted small sp-trade-why' }, `Trade this is off: ${tradeBlock(s, livePrice(s))}`) : '',
       live,
       chartBox,
-      tradeGuideBody(s, strat, onOpenChart, data?.regime.qqqAbove200 ?? null),
+      tradeGuideBody(s, strat, onOpenChart, data?.regime.qqqAbove200 ?? null, () => livePrice(s)),
     );
     updateLive(s);
     drawChart(chartBox, s);
@@ -571,13 +571,19 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   }
 
   /** Trade this: the linked panels follow the symbol and the Trade page's ticket is filled from the plan. */
+  /** The latest quote for a setup's stock (the scan's price until one arrives). */
+  function livePrice(s: Setup) {
+    return prices.get(s.symbol) ?? s.price;
+  }
+
   function tradeSelected() {
     const cur = current();
     if (!cur) return;
-    const blocked = tradeBlock(cur.s);
+    const price = livePrice(cur.s);
+    const blocked = tradeBlock(cur.s, price);
     if (blocked) return toast(blocked);
     link.publish(cur.s.symbol);
-    void tradeSetup(cur.s, cur.strat, data?.regime.qqqAbove200 ?? null, prices.get(cur.s.symbol) ?? cur.s.price);
+    void tradeSetup(cur.s, cur.strat, data?.regime.qqqAbove200 ?? null, price);
   }
 
   /** Keys on this page: ↑/↓ (or j/k) move through the list, t opens the ticket for the selected setup. */

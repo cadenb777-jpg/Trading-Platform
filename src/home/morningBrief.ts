@@ -206,6 +206,7 @@ export function createMorningBrief(d: BriefDeps) {
         h('b', { class: 'num' }, totalText),
         totalNote ? h('span', { class: 'muted tiny' }, totalNote) : '',
         h('span', { class: `num ${tone(b.today)}` }, b.today != null ? `${showChange(b.today, b.todayPct != null ? b.todayPct / 100 : null, show)} today` : 'Today: waiting for prices'),
+        b.today != null && show !== 'usd' && b.todayPct != null ? h('span', { class: 'muted tiny' }, '% of priced holdings (as on Account)') : '',
       ),
       b.movers.length
         ? h(

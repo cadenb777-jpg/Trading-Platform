@@ -28,11 +28,16 @@ describe('the read', () => {
     expect(r.action).not.toMatch(/you('|’)re (already )?in|Already triggered/i);
   });
 
-  it('Trade this: blocked for sells and forming signals only, never by the scanner paper trade', () => {
-    expect(canTrade({ ...base, status: 'in trade', trade: { entry: 100, filled: '2026-10-22', pnl: 0, daysHeld: 1 } } as Setup)).toBe(true);
-    expect(tradeBlock({ ...base, status: 'forming' } as Setup)).toMatch(/Don.t act yet/);
-    expect(tradeBlock({ ...base, direction: -1 } as Setup)).toMatch(/Short selling/);
-    expect(tradeBlock(base)).toBeNull();
+  it('Trade this: blocked for sells, forming signals and setups that are over, never by the scanner paper trade', () => {
+    const d = '2026-10-23';
+    expect(canTrade({ ...base, status: 'in trade', trade: { entry: 100, filled: '2026-10-22', pnl: 0, daysHeld: 1 } } as Setup, 99, d)).toBe(true);
+    expect(tradeBlock({ ...base, status: 'forming' } as Setup, 99, d)).toMatch(/Don.t act yet/);
+    expect(tradeBlock({ ...base, direction: -1 } as Setup, 99, d)).toMatch(/Short selling/);
+    expect(tradeBlock(base, 99, d)).toBeNull();
+    // judged at the live price: through the stop, at the target, or the entry window closed
+    expect(tradeBlock(base, 95.5, d)).toBe('This setup is over (stop hit / target reached / window closed).');
+    expect(tradeBlock(base, 111, d)).toMatch(/is over/);
+    expect(tradeBlock(base, 99, '2026-10-27')).toMatch(/is over/);
   });
 
   it('only the owner holding it or an open buy order of theirs stops a new ticket', () => {

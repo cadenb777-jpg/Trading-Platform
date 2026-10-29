@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountReady, basisPrice, cappedRiskShares, estimate, maxBuyShares, riskShares, sellFraction, sharesForDollars } from './sizing';
+import { accountReady, basisPrice, buyStopWarning, cappedRiskShares, estimate, maxBuyShares, riskShares, sellFraction, sharesForDollars } from './sizing';
 
 describe('order ticket sizing', () => {
   it('turns dollars into whole shares and shows the rounding', () => {
@@ -22,6 +22,15 @@ describe('order ticket sizing', () => {
     expect(r).toMatchObject({ shares: 5, uncapped: 8, capped: 'max order' });
     expect(cappedRiskShares(13020, 0.5, 172.3, 164.49, 5000, 700)).toMatchObject({ shares: 4, capped: 'buying power' });
     expect(cappedRiskShares(13020, 0.5, 172.3, 164.49, null, null)).toMatchObject({ shares: 8, capped: null });
+  });
+
+  it('warns when a buy-stop is at or below the market (it would fill at once)', () => {
+    expect(buyStopWarning('BUY', 'STOP', 150, 152.4)).toMatch(/at or below the current price \$152\.40/);
+    expect(buyStopWarning('BUY', 'STOP_LIMIT', 152.4, 152.4)).not.toBeNull();
+    expect(buyStopWarning('BUY', 'STOP', 155, 152.4)).toBeNull();
+    expect(buyStopWarning('SELL', 'STOP', 150, 152.4)).toBeNull();
+    expect(buyStopWarning('BUY', 'LIMIT', 150, 152.4)).toBeNull();
+    expect(buyStopWarning('BUY', 'STOP', 150, null)).toBeNull();
   });
 
   it('caps the max buy by the order limit and the buying power', () => {

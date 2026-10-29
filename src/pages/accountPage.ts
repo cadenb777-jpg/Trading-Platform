@@ -504,7 +504,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
         { class: 'acct-stats' },
         statCards([
           { label: one ? `${one.name} value` : 'Total value (all accounts)', value: usd(sum), hint: `${one ? `Only ${one.name}` : 'All your accounts added together'}${cash ? `; includes ${usd(cash)} cash and other amounts` : ''}` },
-          { label: one ? 'Today' : 'Today (all accounts)', value: fmtDay(d.usd, d.pct), tone: tone(d.usd), hint: 'Change since yesterday’s close on your shares' },
+          { label: one ? 'Today' : 'Today (all accounts)', value: fmtDay(d.usd, d.pct), tone: tone(d.usd), hint: 'Change since yesterday’s close on your shares; the % is of the priced holdings (cash and amounts without a quote left out)' },
           { label: 'Price gain', value: fmtGain(g.priceGain, g.priceGainPct), tone: tone(g.priceGain), hint: `Value − cost basis ${usd(g.cost)} (unrealized)${withCost < securities ? `, on ${withCost} of ${securities} holdings with a cost basis` : ''}` },
           { label: 'Dividends received', value: usd(g.dividends), hint: divHint },
           {
@@ -545,7 +545,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
         h(
           'div',
           { class: 'acct-lines' },
-          line('Today', fmtDay(d.usd, d.pct), tone(d.usd)),
+          line(h('span', { title: 'The % is of the priced holdings (cash left out)' }, 'Today (% of priced holdings)'), fmtDay(d.usd, d.pct), tone(d.usd)),
           line('Price gain', fmtGain(g.priceGain, g.priceGainPct), tone(g.priceGain)),
           line('Dividends received', usd(g.dividends)),
           line(termLabel('Total return', 'totalreturn'), fmtGain(g.total, g.totalPct), tone(g.total)),

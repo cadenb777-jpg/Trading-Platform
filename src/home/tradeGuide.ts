@@ -86,7 +86,7 @@ async function ownerHas(symbol: string): Promise<string | null> {
  * previews and confirms in the confirm window, which is the only way an order is sent.
  */
 export async function tradeSetup(s: Setup, strat?: StrategyInfo, marketTrend?: number | null, price: number = s.price) {
-  const blocked = tradeBlock(s);
+  const blocked = tradeBlock(s, price);
   if (blocked) return void toast(blocked);
   const owned = await ownerHas(s.symbol).catch(() => null);
   if (owned) return void toast(owned);
@@ -116,7 +116,10 @@ export async function tradeSetup(s: Setup, strat?: StrategyInfo, marketTrend?: n
 }
 
 /** The guide itself (also shown inline on the Setups page). */
-export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpenChart: (ref: MarketRef) => void, marketTrend?: number | null): HTMLElement {
+/**
+ * `livePrice` is the latest quote (the scan's price can be minutes old): Trade this is judged and filled at it.
+ */
+export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpenChart: (ref: MarketRef) => void, marketTrend?: number | null, livePrice: () => number = () => s.price): HTMLElement {
   const long = s.direction > 0;
   const p = s.plan;
   const entry = s.trade?.entry ?? (p.entryType === 'stop' ? p.trigger : s.price);
@@ -174,7 +177,7 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
         h('label', {}, h('span', { class: 'muted tiny' }, 'Account size ($)'), account),
         h('label', {}, h('span', { class: 'muted tiny' }, 'Risk per trade (%)'), risk),
         sizeOut,
-        h('p', { class: 'muted tiny' }, tradeBlock(s) ?? 'Trade this (top of the guide, or the t key) opens the order ticket sized from your real account at this risk %.'),
+        h('p', { class: 'muted tiny' }, tradeBlock(s, livePrice()) ?? 'Trade this (top of the guide, or the t key) opens the order ticket sized from your real account at this risk %.'),
         h('p', { class: 'muted tiny' }, 'Default 0.5% of the account per trade (the research behind the scanner suggests 0.25-1%), so a losing streak can\'t do real damage.'),
       ),
     ],
@@ -287,7 +290,7 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
     h(
       'div',
       { class: 'guide-actions' },
-      h('button', { class: 'btn primary', disabled: !canTrade(s), title: tradeBlock(s) ?? 'Opens the order ticket filled from this plan, sized by your risk %. You still preview and confirm.', onclick: () => tradeSetup(s, strat, marketTrend) }, `Trade ${s.symbol}`),
+      h('button', { class: 'btn primary', disabled: !canTrade(s, livePrice()), title: tradeBlock(s, livePrice()) ?? 'Opens the order ticket filled from this plan, sized by your risk %. You still preview and confirm.', onclick: () => tradeSetup(s, strat, marketTrend, livePrice()) }, `Trade ${s.symbol}`),
       h('button', { class: 'btn', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, `Open ${s.symbol} chart`),
     ),
     h('p', { class: 'muted tiny' }, `Education, not advice. Past results and simulations don't guarantee the future. Plan to ${side} only what you can afford to lose.`),

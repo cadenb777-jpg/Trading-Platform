@@ -5,7 +5,7 @@
  */
 import { formatPrice, h, toast } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
-import { accountReady as isAccountReady, basisPrice, cappedRiskShares, estimate, maxBuyShares, readSize, saveSize, sellFraction, sharesForDollars } from './sizing';
+import { accountReady as isAccountReady, basisPrice, buyStopWarning, cappedRiskShares, estimate, maxBuyShares, readSize, saveSize, sellFraction, sharesForDollars } from './sizing';
 import { confirmOrder, IRA_NOTE, OPEN, TYPE_LABELS, usd, type OrderType, type PlacedOrder, type SetupPlan, type Snapshot, type TicketPrefill } from './webull';
 
 export interface TicketQuote {
@@ -205,6 +205,8 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
     if (est.value != null && snap && est.value > snap.limits.maxOrder) warns.push(`Above your max order value of ${money(snap.limits.maxOrder)} (Settings).`);
     if (side === 'BUY' && est.after != null && est.after < 0) warns.push('More than your buying power.');
     if (side === 'SELL' && s.n > available()) warns.push('More than you can sell (no short selling).');
+    const stopWarn = buyStopWarning(side, type, num(stop), quote()?.last);
+    if (stopWarn) warns.push(stopWarn);
     summary.replaceChildren(
       snap?.account ? h('div', { class: 'tk-sum-row' }, h('span', { class: 'muted' }, 'Account'), h('b', {}, snap.account)) : '',
       h('div', { class: 'tk-sum-row' }, h('span', { class: 'muted' }, 'Shares'), h('b', { class: 'num' }, s.n ? s.n.toLocaleString('en-US') : '—')),
