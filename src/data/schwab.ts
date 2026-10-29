@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 34;
+export const LATEST_HELPER_VERSION = 40;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -459,6 +459,8 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'flow.cot_markets': 60 * 60_000,
   'flow.cot_for_symbol': 30 * 60_000,
   'flow.short_volume': 30 * 60_000,
+  'research.insider_history': 60 * 60_000,
+  'prospect.holders_by_symbol': 60 * 60_000,
   'research.company': 5 * 60_000,
   'alts.fund': 15 * 60_000,
   'crosscheck.value': 60_000,

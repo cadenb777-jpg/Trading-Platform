@@ -7,9 +7,10 @@ import type { IndicatorGuide } from '../info';
 import type { IndicatorDef } from '../types';
 import { MOMENTUM, MOMENTUM_GUIDES } from './momentum';
 import { OVERLAYS, OVERLAYS_GUIDES } from './overlays';
+import { SMART_MONEY, SMART_MONEY_GUIDES } from './smartMoney';
 import { TREND_STATS, TREND_STATS_GUIDES } from './trendStats';
 import { VOLUME_PATTERNS, VOLUME_PATTERNS_GUIDES } from './volumePatterns';
 
-export const CATALOG: IndicatorDef[] = [...OVERLAYS, ...MOMENTUM, ...TREND_STATS, ...VOLUME_PATTERNS];
+export const CATALOG: IndicatorDef[] = [...OVERLAYS, ...MOMENTUM, ...TREND_STATS, ...VOLUME_PATTERNS, ...SMART_MONEY];
 
-export const CATALOG_GUIDES: Record<string, IndicatorGuide> = { ...OVERLAYS_GUIDES, ...MOMENTUM_GUIDES, ...TREND_STATS_GUIDES, ...VOLUME_PATTERNS_GUIDES };
+export const CATALOG_GUIDES: Record<string, IndicatorGuide> = { ...OVERLAYS_GUIDES, ...MOMENTUM_GUIDES, ...TREND_STATS_GUIDES, ...VOLUME_PATTERNS_GUIDES, ...SMART_MONEY_GUIDES };
