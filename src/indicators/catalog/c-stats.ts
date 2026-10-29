@@ -235,7 +235,7 @@ export const C_STATS: Entry[] = [
       name: 'Fractal Dimension Index',
       shortName: 'FDI',
       category: 'Statistics',
-      description: 'Sevcik/Long: 1 + (ln L + ln 2) / ln(2(N − 1)), L = path length of the last N closes scaled to a unit box. 1 = straight line, 2 = space-filling noise.',
+      description: 'Sevcik/Long: 1 + (ln L + ln 2) / ln(2(N − 1)), L = path length of the last N closes scaled to a unit box. about 1 = straight line, 2 = space-filling noise (an approximation: on short windows even a straight line reads above 1).',
       placement: 'separate',
       inputs: [length(30, 3)],
       plots: [line('fdi', 'FDI', C.pink)],
@@ -243,7 +243,7 @@ export const C_STATS: Entry[] = [
       compute: (bars, p) => ({ fdi: rolling(closes(bars), num(p, 'length'), fractalDim) }),
     },
     guide: {
-      what: 'How jagged the recent price path is, from 1 (a straight line) to 2 (pure zig-zag).',
+      what: 'How jagged the recent price path is, from about 1 (a straight line; short windows read a little higher) to 2 (pure zig-zag).',
       use: ['Below 1.5 = trending; above 1.5 = choppy and mean-reverting.'],
       signals: ['A drop below 1.5 = a trend taking hold.'],
     },

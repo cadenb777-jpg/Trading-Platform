@@ -494,7 +494,7 @@ export const C_TREND: Entry[] = [
       what: 'How straight (efficient) the recent path of price was, with a sign for direction: +100 = a straight rise, −100 = a straight fall.',
       use: ['Above zero = efficient up-move; below zero = efficient down-move; near zero = choppy.'],
       signals: ['Turning back from beyond ±50 = the move is losing efficiency.'],
-      tip: 'The original formula uses raw price differences, so very high-priced stocks read closer to ±100.',
+      tip: 'The formula counts one time unit per bar next to raw price differences, so low-priced stocks read closer to ±100 and high-priced ones nearer the plain efficiency ratio.',
     },
   },
   {
