@@ -10,7 +10,7 @@ import { CandlestickSeries, ColorType, LineStyle, createChart, type IChartApi, t
 import { subscribeQuote } from '../data/quotes';
 import { engineRequest, helper, schwab } from '../data/schwab';
 import type { MarketRef } from '../data/quotes';
-import { entryZone, type Zone } from '../home/entryZone';
+import { entryZone, isLive, isOver, type Zone } from '../home/entryZone';
 import { takeProfit, type SideRecord, type Setup, type StrategyInfo } from '../home/setupsPanel';
 import { canTrade, tradeBlock, tradeGuideBody, tradeSetup } from '../home/tradeGuide';
 import type { Timeframe } from '../types';
@@ -108,10 +108,6 @@ const REFRESH_MS = 60_000;
 let soon: ReturnType<typeof setTimeout> | undefined;
 const WATCH_KEY = 'tp-setups-watch';
 const PREFS_KEY = 'tp-setups-prefs';
-/** Zones that still count as a live setup (counts, the Today list, open risk per sector). */
-const LIVE_ZONES: Zone[] = ['waiting', 'approaching', 'entry', 'triggered'];
-/** Zones of a setup that is over: the stop traded, the target was reached or the entry window closed. */
-const OVER_ZONES: Zone[] = ['invalid', 'target', 'expired'];
 const pct = (v: number | null | undefined, d = 1) => fmtPct(v, d);
 const usd = (v: number | null | undefined) => (v == null ? '—' : `$${formatPrice(v)}`);
 const idOf = (s: Setup) => `${s.horizon ?? 'swing'}:${s.strategy}:${s.symbol}:${s.signalDate}`;
@@ -362,7 +358,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     if (!hr || hr.error) return today.replaceChildren();
     const r = data!.regime;
     const good = visibleAll(hr).filter((s) => (s.tier === 'A' || s.tier === 'B') && s.status !== 'forming');
-    const live = good.map((s) => ({ s, z: entryZone(s, prices.get(s.symbol) ?? s.price) })).filter((x) => LIVE_ZONES.includes(x.z.zone)); // stop hit, at target, window closed: over, not counted
+    const live = good.map((s) => ({ s, z: entryZone(s, prices.get(s.symbol) ?? s.price) })).filter((x) => isLive(x.z.zone)); // stop hit, at target, window closed: over, not counted
     const lean = r.qqqAbove200 === 1 ? 'The Nasdaq-100 is above its 200-day average: buys go with the long-term trend.' : r.qqqAbove200 === -1 ? 'The Nasdaq-100 is below its 200-day average: sells go with the long-term trend; use smaller size on buys.' : r.qqqWeekly === 1 ? 'The Nasdaq-100 is in a weekly uptrend.' : r.qqqWeekly === -1 ? 'The Nasdaq-100 is in a weekly downtrend.' : 'The Nasdaq-100 has no clear trend: be pickier and use smaller size.';
     const info = HORIZONS.find((x) => x.key === prefs.horizon)!;
     today.replaceChildren(
@@ -472,7 +468,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     );
     const mc = (s: Setup) => s.monteCarlo?.profitable ?? -1;
     // Setups that are over (stop hit, target reached, entry window closed) go to the bottom whatever the sort.
-    const over = new Map(out.map((s) => [s, OVER_ZONES.includes(entryZone(s, prices.get(s.symbol) ?? s.price).zone)]));
+    const over = new Map(out.map((s) => [s, isOver(entryZone(s, prices.get(s.symbol) ?? s.price).zone)]));
     return out.sort((a, b) =>
       Number(over.get(a)) - Number(over.get(b)) ||
       (prefs.sort === 'rr' ? (b.plan.riskReward ?? 0) - (a.plan.riskReward ?? 0)
@@ -496,7 +492,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     }
     if (!selected || !rows.some((s) => idOf(s) === selected)) selected = idOf(rows.find((s) => s.symbol === links.symbolFor('setups')) ?? rows[0]);
     // The list is rebuilt on every pick and price update: keep keyboard focus on the same setup's row.
-    const over = rows.filter((x) => OVER_ZONES.includes(entryZone(x, prices.get(x.symbol) ?? x.price).zone)).length;
+    const over = rows.filter((x) => isOver(entryZone(x, prices.get(x.symbol) ?? x.price).zone)).length;
     const focusedId = list.contains(document.activeElement) ? (document.activeElement as HTMLElement).closest<HTMLElement>('tr[data-id]')?.dataset.id : undefined;
     list.replaceChildren(
       withTableTools(h('table', { class: 'data-table sp-table' },

@@ -19,6 +19,13 @@ export interface ZoneInfo {
   tone: 'up' | 'down' | 'warn' | '';
 }
 
+/** Zones of a setup that is over: the stop traded, the target was reached or the entry window closed. */
+export const OVER_ZONES: readonly Zone[] = ['invalid', 'target', 'expired'];
+/** Zones that still count as a live setup (the Setups counts, its Today list and open risk per sector). */
+export const LIVE_ZONES: readonly Zone[] = ['waiting', 'approaching', 'entry', 'triggered'];
+export const isOver = (z: Zone) => OVER_ZONES.includes(z);
+export const isLive = (z: Zone) => LIVE_ZONES.includes(z);
+
 /** How far past the entry (as a share of the planned risk) still counts as a fair fill. */
 export const CHASE_LIMIT = 0.25;
 /** How close (in ATRs) counts as "approaching" the trigger. */
