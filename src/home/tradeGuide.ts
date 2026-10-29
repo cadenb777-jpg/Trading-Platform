@@ -5,11 +5,15 @@
  */
 import type { MarketRef } from '../data/quotes';
 import { pct as fmtPct } from '../ui/charts';
-import { formatPrice, h } from '../ui/dom';
+import { formatPrice, h, toast } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
 import { sideRecord, takeProfit, type Setup, type StrategyInfo } from './setupsPanel';
-import { readTrade } from './tradeRead';
+import { canTrade, ownerConflict, readTrade, tradeBlock } from './tradeRead';
+import { CHASE_LIMIT } from './entryZone';
+
+export { canTrade, tradeBlock };
 import { readSize, saveSize } from '../trade/sizing';
+import type { Portfolio } from '../portfolio/types';
 
 const pct = (v: number | null | undefined, d = 1) => fmtPct(v, d);
 const shortDate = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -66,17 +70,33 @@ function readBox(r: ReturnType<typeof readTrade>, v: ReturnType<typeof verdict>)
   );
 }
 
-/** Whether a setup can go to the order ticket: buys only (no short selling) and not already in the trade. */
-export const canTrade = (s: Setup) => s.direction > 0 && !s.trade;
+/** The owner's holdings (Account) and Webull open orders, for ownerConflict; whatever can't be read counts as none. */
+async function ownerHas(symbol: string): Promise<string | null> {
+  const [{ listDocs }, { combineHoldings, myPortfolios }, { loadSnapshot }] = await Promise.all([import('../data/store'), import('../portfolio/account'), import('../trade/webull')]);
+  const timeout = <T>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<never>((_, no) => setTimeout(() => no(new Error('timeout')), ms))]);
+  const [docs, snap] = await Promise.allSettled([timeout(listDocs<Portfolio>('portfolios'), 5000), timeout(loadSnapshot(), 8000)]);
+  const holdings = docs.status === 'fulfilled' ? combineHoldings(myPortfolios(docs.value)) : [];
+  const open = snap.status === 'fulfilled' && snap.value.ok ? (snap.value.open ?? []) : [];
+  return ownerConflict(symbol, holdings, open);
+}
 
 /**
  * "Trade this": opens the Trade page's ticket filled from the setup (buy-stop at the trigger or a limit near the
  * price, the stop for sizing by risk, and the plan: target, the read, exit date). Pre-fills only: the owner still
  * previews and confirms in the confirm window, which is the only way an order is sent.
  */
-export async function tradeSetup(s: Setup, strat?: StrategyInfo, marketTrend?: number | null) {
-  if (!canTrade(s)) return;
+export async function tradeSetup(s: Setup, strat?: StrategyInfo, marketTrend?: number | null, price: number = s.price) {
+  const blocked = tradeBlock(s);
+  if (blocked) return void toast(blocked);
+  const owned = await ownerHas(s.symbol).catch(() => null);
+  if (owned) return void toast(owned);
   const p = s.plan;
+  // Once the trigger has traded (the strategy's signal triggered, or price is already through it), a buy-stop would be
+  // below the market: use a limit near the current price instead.
+  const through = !!s.trade || price >= p.trigger;
+  // never a limit above a fair fill: at most a quarter of the planned risk past the entry (it then fills on a pullback)
+  const entryAt = s.trade?.entry ?? p.trigger;
+  const limit = p.entryType === 'stop' ? Math.min(price, entryAt + CHASE_LIMIT * Math.abs(entryAt - p.stop)) : price;
   const tp = takeProfit(s);
   const v = verdict(s);
   const read = readTrade(s, strat, marketTrend);
@@ -84,7 +104,7 @@ export async function tradeSetup(s: Setup, strat?: StrategyInfo, marketTrend?: n
     symbol: s.symbol,
     side: 'BUY',
     guideStop: +p.stop.toFixed(2),
-    ...(p.entryType === 'stop' ? { orderType: 'STOP' as const, stopPrice: +p.trigger.toFixed(2) } : { orderType: 'LIMIT' as const, limitPrice: +s.price.toFixed(2) }),
+    ...(p.entryType === 'stop' && !through ? { orderType: 'STOP' as const, stopPrice: +p.trigger.toFixed(2) } : { orderType: 'LIMIT' as const, limitPrice: +limit.toFixed(2) }),
     plan: {
       target: +tp.price.toFixed(2),
       targetLabel: tp.tested ? tp.label : '2R guide',
@@ -130,7 +150,7 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
     [
       'When to get in',
       s.trade
-        ? `You're already in at ${usd(s.trade.entry)} (filled ${shortDate(s.trade.filled)}). It is ${pct(s.trade.pnl)} so far, ${s.unit ?? 'day'} ${s.trade.daysHeld} of ${p.maxHold}.`
+        ? `The strategy's signal triggered at ${usd(s.trade.entry)} on ${shortDate(s.trade.filled)}. The scanner follows it as a paper trade (it isn't a position of yours): ${pct(s.trade.pnl)} so far, ${s.unit ?? 'day'} ${s.trade.daysHeld} of ${p.maxHold}. To take it now, buy only while the price is within a fair fill of ${usd(s.trade.entry)} (the "Right now" box says so), with the same stop.`
         : p.entryType === 'stop'
           ? `Place a ${long ? 'buy-stop' : 'sell-stop'} order at ${usd(p.trigger)}, ${long ? 'just above' : 'just below'} the signal ${s.unit ?? 'day'}'s ${long ? 'high' : 'low'}. It only fills if the price ${long ? 'rises' : 'falls'} through that level, which shows ${long ? 'buyers' : 'sellers'} have taken over. It's good until ${shortDate(p.validUntil)}; if it hasn't filled by then, cancel it: the moment has passed.`
           : `${long ? 'Buy' : 'Sell short'} at the next ${s.unit === 'hour' ? 'hour\'s' : s.unit === 'week' ? 'week\'s (Monday\'s)' : 'day\'s'} open (around ${usd(s.price)}). This strategy doesn't wait for confirmation because snap-backs happen fast.`,
@@ -154,11 +174,7 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
         h('label', {}, h('span', { class: 'muted tiny' }, 'Account size ($)'), account),
         h('label', {}, h('span', { class: 'muted tiny' }, 'Risk per trade (%)'), risk),
         sizeOut,
-        !long && !s.trade
-          ? h('p', { class: 'muted tiny' }, 'Short selling isn’t supported, so there’s no order ticket for this setup.')
-          : canTrade(s)
-            ? h('p', { class: 'muted tiny' }, 'Trade this (top of the guide, or the t key) opens the order ticket sized from your real account at this risk %.')
-            : null,
+        h('p', { class: 'muted tiny' }, tradeBlock(s) ?? 'Trade this (top of the guide, or the t key) opens the order ticket sized from your real account at this risk %.'),
         h('p', { class: 'muted tiny' }, 'Default 0.5% of the account per trade (the research behind the scanner suggests 0.25-1%), so a losing streak can\'t do real damage.'),
       ),
     ],
@@ -271,9 +287,7 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
     h(
       'div',
       { class: 'guide-actions' },
-      canTrade(s)
-        ? h('button', { class: 'btn primary', title: 'Opens the order ticket filled from this plan, sized by your risk %. You still preview and confirm.', onclick: () => tradeSetup(s, strat, marketTrend) }, `Trade ${s.symbol}`)
-        : '',
+      h('button', { class: 'btn primary', disabled: !canTrade(s), title: tradeBlock(s) ?? 'Opens the order ticket filled from this plan, sized by your risk %. You still preview and confirm.', onclick: () => tradeSetup(s, strat, marketTrend) }, `Trade ${s.symbol}`),
       h('button', { class: 'btn', onclick: () => onOpenChart({ provider: 'schwab', symbol: s.symbol }) }, `Open ${s.symbol} chart`),
     ),
     h('p', { class: 'muted tiny' }, `Education, not advice. Past results and simulations don't guarantee the future. Plan to ${side} only what you can afford to lose.`),

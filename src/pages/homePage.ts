@@ -7,6 +7,7 @@ import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data
 import { HELPER_OUTDATED, helper, loadNews, schwab, type NewsItem, type NewsSection } from '../data/schwab';
 import { insightButton } from '../ai/insight';
 import { briefKeys, createMorningBrief } from '../home/morningBrief';
+import { briefNeedsLoad } from '../home/brief';
 import { createUpcomingPanel } from './calendarPage';
 import { openNewsSummary } from '../ui/newsSummary';
 import { listDocs } from '../data/store';
@@ -448,21 +449,34 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
   }
 
   let started = false;
+  /** Everything that needs the helper: news, events, the brief and the index sparklines. */
+  function loadAll() {
+    void pickNewsTab();
+    upcoming.refresh();
+    void brief.refresh();
+    for (const c of cards) c.loadSparkline();
+  }
   function start() {
-    if (started) return void (newsTab === 'linked' && linkedNews?.symbol !== linkedSymbol() && refreshNews());
+    if (started) {
+      // Shown again: a brief older than two minutes is reloaded (the timer below only runs while Home is open);
+      // otherwise the accounts card is redrawn, so it follows a % / $ / Both change made on Account meanwhile.
+      if (!helper.tooOld && briefNeedsLoad(brief.loadedAt(), Date.now() / 1000, helper.isConnected)) void brief.refresh();
+      else brief.repaint();
+      return void (newsTab === 'linked' && linkedNews?.symbol !== linkedSymbol() && refreshNews());
+    }
     started = true;
     renderClock();
     setInterval(renderClock, 30000);
     for (const [i, index] of INDEXES.entries()) subscribeQuote({ provider: 'schwab', symbol: index.symbol }, cards[i].onQuote);
     helper.onAvailability((up) => {
       showBanner(up);
-      if (up && !helper.tooOld) {
-        void pickNewsTab();
-        upcoming.refresh();
-        void brief.refresh();
-        for (const c of cards) c.loadSparkline();
-      }
+      if (up && !helper.tooOld) loadAll();
     });
+    // onAvailability only fires on a change: when Home isn't the first page, the helper is already connected.
+    if (helper.isConnected) {
+      showBanner(true);
+      if (!helper.tooOld) loadAll();
+    }
     setInterval(() => !el.hidden && helper.isConnected && refreshNews(true), NEWS_REFRESH_MS);
     setInterval(() => !el.hidden && helper.isConnected && upcoming.refresh(), 5 * 60 * 1000);
     setInterval(() => !el.hidden && helper.isConnected && document.visibilityState === 'visible' && void brief.refresh(), 2 * 60 * 1000);

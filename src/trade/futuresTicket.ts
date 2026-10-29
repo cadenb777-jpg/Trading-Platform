@@ -159,7 +159,7 @@ export function createFuturesTicket(host: FuturesTicketHost): FuturesTicket {
               { class: 'tk-fut-grid' },
               h('span', { class: 'muted' }, c.name),
               h('span', {}, h('span', { class: 'muted' }, 'Last '), h('b', { class: 'num' }, c.price != null ? c.price.toFixed(decimals(c.tick)) : '—')),
-              h('span', {}, h('span', { class: 'muted' }, 'Expiry '), h('b', {}, c.lastTrade), h('span', { class: 'muted' }, ` (${c.daysLeft} days)`)),
+              h('span', {}, h('span', { class: 'muted' }, 'Expiry '), h('b', {}, c.lastTrade), h('span', { class: 'muted' }, ` (${c.daysLeft} trading days left)`)),
               h('span', {}, h('span', { class: 'muted' }, 'Multiplier '), h('b', { class: 'num' }, `$${c.multiplier}`), infoTip('multiplier')),
               h('span', {}, h('span', { class: 'muted' }, 'Tick '), h('b', { class: 'num' }, `${c.tick} = ${usd(c.tickValue)}`), infoTip('tickvalue')),
             )

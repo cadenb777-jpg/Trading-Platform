@@ -5,7 +5,7 @@
  */
 import { formatPrice, h, toast } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
-import { accountReady as isAccountReady, basisPrice, estimate, maxBuyShares, readSize, riskShares, saveSize, sellFraction, sharesForDollars } from './sizing';
+import { accountReady as isAccountReady, basisPrice, cappedRiskShares, estimate, maxBuyShares, readSize, saveSize, sellFraction, sharesForDollars } from './sizing';
 import { confirmOrder, IRA_NOTE, OPEN, TYPE_LABELS, usd, type OrderType, type PlacedOrder, type SetupPlan, type Snapshot, type TicketPrefill } from './webull';
 
 export interface TicketQuote {
@@ -136,8 +136,11 @@ export function createTicket(host: TicketHost, prefill: TicketPrefill = {}): Tic
     if (s >= price) return { n: 0, note: 'For a buy, your stop has to be below the entry price.' };
     const value = accountValue();
     if (value == null) return { n: 0, note: 'Waiting for the chosen account to load before sizing by risk.' };
-    const r = riskShares(value, pct, price, s);
-    return { n: r.shares, note: `Risk ${usd(r.riskDollars)} (${pct}% of ${money(value)}) ÷ ${usd(r.perShare)} a share = ${r.shares} share${r.shares === 1 ? '' : 's'}. If the stop is hit you lose about ${usd(r.shares * r.perShare)}.` };
+    // the same cut as the plan card: never more than the max order value or the buying power allow
+    const snap = host.snapshot();
+    const r = cappedRiskShares(value, pct, price, s, snap?.limits.maxOrder, snap?.balances?.buyingPower);
+    const why = r.capped ? ` Cut to ${r.shares} by your ${r.capped === 'buying power' ? `buying power (${money(snap?.balances?.buyingPower ?? 0)})` : `max order value (${money(snap?.limits.maxOrder ?? 0)}, Settings)`}.` : '';
+    return { n: r.shares, note: `Risk ${usd(r.riskDollars)} (${pct}% of ${money(value)}) ÷ ${usd(r.perShare)} a share = ${r.uncapped} share${r.uncapped === 1 ? '' : 's'}.${why} If the stop is hit you lose about ${usd(r.shares * r.perShare)}.` };
   }
 
   function draw() {

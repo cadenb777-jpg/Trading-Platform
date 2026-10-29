@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { entryZone } from './entryZone';
+import { entryZone, isLive, isOver } from './entryZone';
 import type { Setup } from './setupsPanel';
 
 function setup(over: Partial<Setup> = {}, plan: Partial<Setup['plan']> = {}): Setup {
@@ -35,9 +35,29 @@ describe('entry zone', () => {
     expect(entryZone(setup({ status: 'forming' }), 100.2, today).zone).toBe('forming');
   });
 
-  it('judges an open trade against its actual fill', () => {
+  it('a scanner paper trade reads as triggered (never waiting or "you are in"), judged against its fill', () => {
     const open = setup({ status: 'in trade', trade: { entry: 100.3, filled: '2026-10-22', pnl: 0, daysHeld: 1 } });
-    expect(entryZone(open, 100.8, today).zone).toBe('entry');
-    expect(entryZone(open, 103, today).zone).toBe('extended');
+    const fair = entryZone(open, 100.8, today);
+    expect(fair.zone).toBe('triggered');
+    expect(fair.tone).toBe('up');
+    expect(fair.label).toBe('Triggered at $100.30');
+    expect(fair.detail).toContain("The strategy's signal triggered at $100.30");
+    expect(fair.detail).not.toMatch(/you('|’)re (already )?in/i);
+    expect(entryZone(open, 103, today).label).toBe('Triggered · too far to chase');
+    // back below the fill (the NVDA case): still triggered, not "waiting for trigger"
+    const back = entryZone(open, 98, today);
+    expect(back.zone).toBe('triggered');
+    expect(back.label).not.toMatch(/waiting/i);
+    expect(entryZone(open, 95, today).zone).toBe('invalid');
+  });
+
+  it('stop hit, at target and expired setups are over: left out of the counts and the open risk', () => {
+    const z = (s: Setup, p: number) => entryZone(s, p, today).zone;
+    const over = [z(setup(), 95), z(setup(), 111), z(setup({}, { validUntil: '2026-10-01' }), 99)];
+    expect(over).toEqual(['invalid', 'target', 'expired']);
+    expect(over.every(isOver) && !over.some(isLive)).toBe(true);
+    const live = [z(setup(), 97), z(setup(), 99.6), z(setup(), 100.2), z(setup({ status: 'in trade', trade: { entry: 100.3, filled: '2026-10-22', pnl: 0, daysHeld: 1 } }), 98)];
+    expect(live).toEqual(['waiting', 'approaching', 'entry', 'triggered']);
+    expect(live.every(isLive) && !live.some(isOver)).toBe(true);
   });
 });

@@ -14,6 +14,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from engine import prospect as pr  # noqa: E402
+from engine import sec as pr_sec  # noqa: E402
 
 FIX = Path(__file__).parent / 'fixtures' / 'prospect'
 pr.USE_PROCESSES = False
@@ -659,7 +660,7 @@ class Downloads(unittest.TestCase):
 
         async def no_sleep(s):
             sleeps.append(s)
-        with mock.patch.object(pr.asyncio, 'sleep', no_sleep), mock.patch.object(pr, 'SEC_GAP', 0):
+        with mock.patch.object(pr.asyncio, 'sleep', no_sleep), mock.patch.object(pr, 'SEC_GAP', 0), mock.patch.object(pr_sec, 'SEC_SPACING', 0):
             path = asyncio.run(pr.download(ctx, 'https://www.sec.gov/files/x.zip', tmp / 'x.zip', client=Client()))
         self.assertEqual(path.read_bytes(), b'abcdef')
         self.assertEqual(calls[0], {'Accept-Encoding': 'identity'})  # uncompressed, so byte ranges are file bytes

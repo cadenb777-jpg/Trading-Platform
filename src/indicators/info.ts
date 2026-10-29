@@ -190,13 +190,13 @@ export const INDICATOR_GUIDES: Record<string, IndicatorGuide> = {
     what: 'How big speculators (hedge funds) and commercial hedgers are positioned in the futures market this symbol moves with (NVDA → Nasdaq-100, XOM → crude oil, gold miners → gold), as a 0-100 index of the last 3 years. From the CFTC’s weekly Commitment of Traders report.',
     use: ['Speculators near 100 = very crowded long; near 0 = very crowded short.', 'Hedgers usually trade against the trend; their extremes are often the better contrarian signal.', 'Weekly data (released Fridays for the prior Tuesday), so use it on daily or weekly charts for the bigger picture.'],
     signals: ['Speculator extremes (above 80 or below 20) turning back often come before reversals.', 'Hedgers at an extreme long while price falls = possible bottom.'],
-    tip: 'COT exists only for futures; for individual stocks this uses the closest futures market.',
+    tip: 'Who is who: commercials (hedgers) = producers, banks and institutions that hedge real business; large speculators = hedge funds and other big funds; small speculators = the public. COT exists only for futures, so on a single stock this uses the futures market it moves with (NVDA → Nasdaq-100, XOM → crude oil).',
   },
   williamscot: {
     what: 'Larry Williams’ COT Index from the CFTC’s weekly Commitment of Traders report: each group’s net futures position scaled 0-100 against its own range over the look-back (26 weeks by default). Commercials are producers and big hedgers, large specs are funds, small traders are the public.',
     use: ['Williams focuses on the commercials: they are the "smart money" that buys weakness and sells strength.', 'Use it on daily or weekly charts; the data is weekly (Tuesday positions, released Friday).', 'For stocks it uses the futures market the stock moves with.'],
     signals: ['Commercials above 75 (and large specs/small traders low) = bullish setup; wait for price to confirm, e.g. a break of a recent high.', 'Commercials below 25 = bearish setup.', 'Signals work best at the extremes, against the crowd.'],
-    tip: 'Try 26 weeks for swing trades and 156 weeks (3 years) for the bigger picture.',
+    tip: 'In plain words: commercials = hedgers and institutions (the smart money), large specs = funds that follow trends, small specs = the public. On a single stock (e.g. NVDA) it reads the futures market the stock moves with (Nasdaq-100), so it shows the market’s positioning, not the stock’s. Try 26 weeks for swing trades and 156 weeks (3 years) for the bigger picture.',
   },
   wad: {
     what: 'Williams Accumulation/Distribution: a running total of buying and selling pressure based on where each bar closes versus the previous close and the true high/low. It shows whether money is flowing in or out.',

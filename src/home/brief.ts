@@ -5,6 +5,7 @@
  */
 import type { HelperAlert } from '../ui/alertsLogic';
 import { combinedValue, todayChange, type CombinedHolding } from '../portfolio/account';
+import { dayTotal } from '../portfolio/returns';
 import { entryZone } from './entryZone';
 import type { Setup } from './setupsPanel';
 
@@ -34,8 +35,7 @@ export interface AccountsBrief {
 
 export function accountsBrief(rows: CombinedHolding[], prices: Record<string, PriceLike | undefined>, max = 3): AccountsBrief {
   let total = 0;
-  let today = 0;
-  let anyToday = false;
+  const moved: { value: number; today: number }[] = [];
   const movers: Mover[] = [];
   const unpriced: string[] = [];
   for (const r of rows) {
@@ -50,16 +50,17 @@ export function accountsBrief(rows: CombinedHolding[], prices: Record<string, Pr
     const sharesValue = r.shares * (info!.price as number);
     const d = todayChange(sharesValue, info?.change);
     if (d == null) continue;
-    anyToday = true;
-    today += d;
+    moved.push({ value: sharesValue, today: d });
     movers.push({ symbol: r.symbol, value, today: d, pct: (info!.change as number) * 100 });
   }
   movers.sort((a, b) => Math.abs(b.today) - Math.abs(a.today) || a.symbol.localeCompare(b.symbol));
   const has = rows.length > unpriced.length;
+  // Same as the Account page: today's % is of yesterday's value of the holdings that have a quote (cash left out).
+  const day = dayTotal(moved);
   return {
     total: has ? total : null,
-    today: anyToday ? today : null,
-    todayPct: anyToday && total - today > 0 ? (today / (total - today)) * 100 : null,
+    today: day.usd,
+    todayPct: day.pct != null ? day.pct * 100 : null,
     movers: movers.filter((m) => m.today !== 0).slice(0, max),
     unpriced,
   };
@@ -134,4 +135,12 @@ export function todaysEvents<T extends CalEvent>(events: T[], now: Date): T[] {
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() / 1000;
   const from = now.getTime() / 1000 - 3600;
   return events.filter((e) => e.country === 'USD' && e.impact === 'high' && e.time >= from && e.time < end).sort((a, b) => a.time - b.time);
+}
+
+/** Seconds after which Home reloads its brief when it is shown again. */
+export const BRIEF_STALE_S = 120;
+
+/** Whether Home should (re)load the brief now: connected, and never loaded or older than BRIEF_STALE_S. */
+export function briefNeedsLoad(loadedAtS: number, nowS: number, connected: boolean, staleS = BRIEF_STALE_S): boolean {
+  return connected && (!loadedAtS || nowS - loadedAtS >= staleS);
 }

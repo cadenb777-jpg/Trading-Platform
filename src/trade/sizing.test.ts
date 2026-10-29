@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountReady, basisPrice, estimate, maxBuyShares, riskShares, sellFraction, sharesForDollars } from './sizing';
+import { accountReady, basisPrice, cappedRiskShares, estimate, maxBuyShares, riskShares, sellFraction, sharesForDollars } from './sizing';
 
 describe('order ticket sizing', () => {
   it('turns dollars into whole shares and shows the rounding', () => {
@@ -14,6 +14,14 @@ describe('order ticket sizing', () => {
     expect(riskShares(12000, 0.5, 230, 222)).toEqual({ shares: 7, riskDollars: 60, perShare: 8 });
     expect(riskShares(12000, 0.5, 230, 230).shares).toBe(0);
     expect(riskShares(0, 0.5, 230, 222).shares).toBe(0);
+  });
+
+  it('cuts the risk size to the max order value or buying power (the ticket and plan card agree)', () => {
+    // the QA case: $13,020 x 0.5% / $7.81 = 8 shares at $172.30, but a $1,000 max order allows 5
+    const r = cappedRiskShares(13020, 0.5, 172.3, 164.49, 1000, 1250);
+    expect(r).toMatchObject({ shares: 5, uncapped: 8, capped: 'max order' });
+    expect(cappedRiskShares(13020, 0.5, 172.3, 164.49, 5000, 700)).toMatchObject({ shares: 4, capped: 'buying power' });
+    expect(cappedRiskShares(13020, 0.5, 172.3, 164.49, null, null)).toMatchObject({ shares: 8, capped: null });
   });
 
   it('caps the max buy by the order limit and the buying power', () => {
