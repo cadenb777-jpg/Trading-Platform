@@ -4,6 +4,7 @@ import { TIMEFRAME_DEFS, TIMEFRAME_SECONDS, type Timeframe } from '../types';
 import { h, openModal, toast } from './dom';
 import { icon, type IconName } from './icons';
 import { openIndicatorInfo } from './indicatorInfo';
+import { presetRows } from './indicatorPresets';
 
 export interface IndicatorManagerOps {
   list(): IndicatorInstance[];
@@ -30,6 +31,7 @@ export function openIndicatorManager(ops: IndicatorManagerOps): { refresh: () =>
     const q = search.value.trim().toLowerCase();
     const matches = allIndicators().filter((d) => `${d.name} ${d.shortName} ${d.category} ${d.description}`.toLowerCase().includes(q));
     list.replaceChildren();
+    if (!q) list.append(...presetRows(ops.add, refresh));
     for (const category of [...new Set(matches.map((d) => d.category))]) {
       list.append(h('div', { class: 'picker-category' }, category));
       for (const def of matches.filter((d) => d.category === category)) {
