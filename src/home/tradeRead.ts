@@ -82,7 +82,7 @@ export function readTrade(s: Setup, strat?: StrategyInfo, marketTrend?: number |
   const action =
     s.status === 'forming' ? 'Wait: the signal only counts once this bar closes.'
       : conviction === 'Watch only' ? `Don't trade it. Keep it on the watch list: ${con.length ? `it would need ${con.map((x) => x.label.toLowerCase()).join(', ')} to improve` : 'the evidence is too thin'}.`
-        : s.trade ? `Already triggered at $${entry.toFixed(2)}: manage it with the stop and the exit date. ${takeProfit(s).note}`
+        : s.trade ? `The strategy's signal triggered at $${entry.toFixed(2)} on ${s.trade.filled} (the scanner's paper trade, not a position of yours). Take it only near that price (check "Right now" above), with the stop at $${s.plan.stop.toFixed(2)}, ${conviction === 'High' ? 'at your normal size' : 'at about half your normal size'}. ${takeProfit(s).note}`
           : `${side === 'buy' ? 'Buy' : 'Sell short'} only if price ${s.plan.entryType === 'stop' ? `trades ${d > 0 ? 'above' : 'below'} $${entry.toFixed(2)}` : 'is still near here at the next open'}, with the stop at $${s.plan.stop.toFixed(2)}, ${conviction === 'High' ? 'at your normal size' : 'at about half your normal size'}. ${takeProfit(s).note}`;
   return {
     headline: `${d > 0 ? 'Bullish' : 'Bearish'} setup · ${conviction === 'Watch only' ? 'watch only' : `${conviction.toLowerCase()} conviction`} · ${pro.length} for, ${con.length} against`,
@@ -92,4 +92,28 @@ export function readTrade(s: Setup, strat?: StrategyInfo, marketTrend?: number |
     againstText: con.length ? list(con) : 'nothing important',
     action,
   };
+}
+
+/**
+ * Why a setup can't go to the order ticket (null = it can): buys only (no short selling), and not while the signal is
+ * still forming. The scanner's paper trade (`s.trade`) doesn't block it: that is the strategy's record, not the owner's.
+ */
+export function tradeBlock(s: Pick<Setup, 'direction' | 'status'>): string | null {
+  if (s.direction <= 0) return 'Short selling isn’t supported, so there’s no order ticket for sells.';
+  if (s.status === 'forming') return 'Don’t act yet: the signal only counts once this bar closes.';
+  return null;
+}
+export const canTrade = (s: Pick<Setup, 'direction' | 'status'>) => tradeBlock(s) == null;
+
+/**
+ * Why the owner shouldn't open a new ticket for `symbol` (null = fine): they already hold it in one of their accounts
+ * or have an open buy order for it in Webull. Only the owner's own holdings and orders count.
+ */
+export function ownerConflict(symbol: string, holdings: { symbol: string; shares: number }[], openOrders: { symbol: string; side: string; qty: number | null }[]): string | null {
+  const sym = symbol.toUpperCase();
+  const shares = holdings.filter((x) => x.symbol.toUpperCase() === sym).reduce((t, x) => t + (x.shares || 0), 0);
+  if (shares > 0) return `You already hold ${+shares.toFixed(4)} ${sym} in your accounts (see Account). Trade it from the Trade page if you want to add.`;
+  const order = openOrders.find((o) => o.symbol.toUpperCase() === sym && /buy/i.test(o.side));
+  if (order) return `You already have an open buy order for ${order.qty != null ? `${order.qty} ` : ''}${sym} in Webull (see Trade › Orders).`;
+  return null;
 }

@@ -16,28 +16,37 @@ type Synced = Portfolio & { id: string };
  * Saves Webull holdings as portfolios (helper request webull.sync), one per account: accountId() = that account
  * (saved even when empty: the owner chose it), '' = every stock account with something in it.
  */
-export function syncButton(label: string, accountId: () => string, onSynced: (p: Synced) => void) {
+export function syncButton(label: string, accountId: () => string, onSynced: (saved: Synced[]) => void, note?: (saved: Synced[]) => string) {
   const btn = h('button', { class: 'btn', title: 'Save the holdings as a portfolio per account so analysis and Dividends work on them' }, label) as HTMLButtonElement;
   btn.addEventListener('click', async () => {
     btn.disabled = true;
-    const saved = await syncAccounts(accountId());
-    if (saved[0]) onSynced(saved[0]);
-    btn.disabled = false;
+    btn.textContent = 'Syncing…';
+    btn.setAttribute('aria-busy', 'true');
+    try {
+      // always redraw afterwards (also when nothing was saved), so the cards never show stale holdings
+      onSynced(await syncAccounts(accountId(), note));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+      btn.removeAttribute('aria-busy');
+    }
   });
   return btn;
 }
 
-/** Runs webull.sync for one account ('' = all) and says what was saved. Also used by the command bar. */
-export async function syncAccounts(id: string): Promise<Synced[]> {
+/** Runs webull.sync for one account ('' = all) and says what was saved (and why nothing was). Also used by the command bar. */
+export async function syncAccounts(id: string, note?: (saved: Synced[]) => string): Promise<Synced[]> {
   try {
     const r = await engineRequest<{ portfolio?: Synced; portfolios?: Synced[]; empty?: string[]; skipped: number }>('webull.sync', id ? { accountId: id } : {}, 120000);
     const saved = r.portfolios ?? (r.portfolio ? [r.portfolio] : []); // helpers before the account names send only portfolio
-    const names = saved.map((p) => `"${p.name}"`).join(', ');
+    const names = saved.map((p) => `"${p.name}" (${p.holdings.length} holding${p.holdings.length === 1 ? '' : 's'})`).join(', ');
     const empty = r.empty?.length ? ` Not saved (empty): ${r.empty.join(', ')}.` : '';
-    toast(`${saved.length ? `Saved ${names}` : 'Nothing saved'}${r.skipped ? ` (${r.skipped} non-stock position${r.skipped === 1 ? '' : 's'} left out)` : ''}.${empty}`);
+    const why = saved.length ? '' : r.empty?.length ? '' : ' Webull returned no stock positions for your accounts.';
+    const extra = note?.(saved) ?? '';
+    toast(`${saved.length ? `Synced ${names}` : 'Nothing synced'}${r.skipped ? ` (${r.skipped} non-stock position${r.skipped === 1 ? '' : 's'} left out)` : ''}.${empty}${why}${extra ? ` ${extra}` : ''}`);
     return saved;
   } catch (err) {
-    toast(friendly(err));
+    toast(`Sync failed: ${friendly(err)}`);
     return [];
   }
 }
@@ -80,7 +89,7 @@ export async function renderWebullCard(out: HTMLElement, onSynced: (p: Portfolio
               { label: 'Cash', value: usd(bal.cash) },
               { label: 'Buying power', value: usd(bal.buyingPower), hint: 'What you can spend on new orders in this account now' },
             ]),
-        h('div', { class: 'ap-controls' }, syncButton('Sync now', () => a.id, onSynced), h('button', { class: 'btn', title: 'Positions, open orders and the order ticket for this account', onclick: () => openTrade(a.id) }, 'Order in Trade')),
+        h('div', { class: 'ap-controls' }, syncButton('Sync now', () => a.id, (saved) => saved[0] && onSynced(saved[0])), h('button', { class: 'btn', title: 'Positions, open orders and the order ticket for this account', onclick: () => openTrade(a.id) }, 'Order in Trade')),
       ),
     );
   }

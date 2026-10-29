@@ -3,7 +3,7 @@
  * the real account, dollars at risk and the share of the account. Pure, so it can be tested (plan.test.ts). Long only:
  * the platform never sells short.
  */
-import { maxBuyShares, riskShares } from './sizing';
+import { cappedRiskShares } from './sizing';
 
 export interface PlanInput {
   entry: number | null;
@@ -57,17 +57,9 @@ export function tradePlan(i: PlanInput): TradePlan | null {
   const guideTarget = !(i.target != null && i.target > entry);
   const target = guideTarget ? twoRTarget(entry, stop) : (i.target as number);
   const account = i.account != null && i.account > 0 ? i.account : null;
-  const sized = riskShares(account ?? 0, i.riskPct, entry, stop);
-  let shares = sized.shares;
-  let capped: TradePlan['capped'] = null;
-  if (i.buyingPower != null || i.maxOrder != null) {
-    const byOrder = i.maxOrder != null && i.maxOrder > 0 ? maxBuyShares(entry, i.maxOrder, null) : Infinity;
-    const byPower = i.buyingPower != null && i.buyingPower >= 0 ? maxBuyShares(entry, 0, i.buyingPower) : Infinity;
-    if (shares > Math.min(byOrder, byPower)) {
-      capped = byPower <= byOrder ? 'buying power' : 'max order';
-      shares = Math.min(byOrder, byPower);
-    }
-  }
+  const sized = cappedRiskShares(account ?? 0, i.riskPct, entry, stop, i.maxOrder, i.buyingPower);
+  const shares = sized.shares;
+  const capped: TradePlan['capped'] = sized.capped;
   const perShare = entry - stop;
   const rewardPerShare = target - entry;
   const cost = round2(shares * entry);

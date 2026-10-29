@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { accountsBrief, alertAttention, readySetups, todaysEvents } from './brief';
+import { accountsBrief, alertAttention, briefNeedsLoad, readySetups, todaysEvents } from './brief';
 import type { CombinedHolding } from '../portfolio/account';
 import type { HelperAlert } from '../ui/alertsLogic';
 import type { Setup } from './setupsPanel';
@@ -17,7 +17,14 @@ describe('accounts brief', () => {
     expect(r.today).toBeCloseTo(100 - 7.9992, 2);
     expect(r.movers.map((m) => m.symbol)).toEqual(['AAPL', 'MSFT']); // KO didn't move
     expect(r.movers[0].pct).toBeCloseTo(10);
-    expect(r.todayPct).toBeCloseTo((r.today! / (r.total! - r.today!)) * 100);
+    // Like Account: % of yesterday's value of the quoted holdings only (cash is not in the denominator).
+    expect(r.todayPct).toBeCloseTo((r.today! / (1100 + 800 + 7000 - r.today!)) * 100);
+  });
+  it('loads the brief when connected and never loaded or older than two minutes', () => {
+    expect(briefNeedsLoad(0, 1000, true)).toBe(true);
+    expect(briefNeedsLoad(950, 1000, true)).toBe(false);
+    expect(briefNeedsLoad(800, 1000, true)).toBe(true);
+    expect(briefNeedsLoad(0, 1000, false)).toBe(false);
   });
   it('leaves unpriced holdings out and says which', () => {
     const r = accountsBrief([row('AAPL', 10), row('ZZZ', 5)], { AAPL: { price: 100, change: null } });

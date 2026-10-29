@@ -7357,6 +7357,21 @@ button.stat-drill:focus-visible .stat-drill-mark {
 .acct-yield summary {
   cursor: pointer;
 }
+.data-table td.acct-accounts-cell {
+  white-space: normal;
+  min-width: 7rem;
+  max-width: 10rem;
+  text-align: left;
+}
+/* the period table fits the holding window: headers wrap and cells are tighter, so no column is cut off */
+.acct-yield .data-table th {
+  white-space: normal;
+  vertical-align: bottom;
+}
+.acct-yield .data-table th,
+.acct-yield .data-table td {
+  padding: 6px 6px;
+}
 .acct-yield a {
   color: var(--link);
 }
@@ -7992,3 +8007,30 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .pr-page .data-table th.num, .pr-page .data-table td.num { text-align: right; }
 .pr-page .data-table th.num .tt-sort { margin-left: auto; }
 .pr-data-grid > .pr-warn { grid-column: 1 / -1; margin: 0; }
+
+/* Laptop screens (900 px tall or less): a compact menu so every item, down to the bell, fits without scrolling. */
+@media (min-width: 701px) and (max-height: 940px) {
+  .rail {
+    gap: 0;
+    padding: 4px 0;
+  }
+  .rail .nav-btn {
+    gap: 0;
+    padding: 2px 0;
+  }
+  .rail .nav-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+  .rail .brand {
+    margin-bottom: 2px;
+    font-size: 22px;
+  }
+  .rail-group {
+    margin: 3px 0;
+  }
+  .rail-bottom {
+    padding-top: 4px;
+    gap: 0;
+  }
+}

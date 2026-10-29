@@ -253,7 +253,8 @@ export function buildResults(input: string, src: Sources, recents: RecentEntry[]
 
   // a single word that is a ticker: its actions (Chart first, the Enter default)
   let shownTicker: string | null = null;
-  if (!p.pair && p.ticker && !q.includes(' ')) {
+  // (a function code typed alone, like CLIENT or MULTI, is that function, not an unknown ticker or futures root)
+  if (!p.pair && p.ticker && !q.includes(' ') && (known(p.ticker) || !p.code)) {
     const hit = known(p.ticker);
     const sym = hit?.symbol ?? p.ticker;
     shownTicker = sym;

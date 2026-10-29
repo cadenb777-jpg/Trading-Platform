@@ -26,6 +26,26 @@ export function maxBuyShares(price: number, maxOrder: number, buyingPower: numbe
   return Number.isFinite(cap) ? Math.floor(cap / price + 1e-9) : 0;
 }
 
+/**
+ * The risk size, then cut to what can actually be sent: the max order value (Settings) and the buying power. The
+ * ticket and the plan card both use this, so they always show the same number of shares.
+ */
+export function cappedRiskShares(
+  account: number,
+  riskPct: number,
+  entry: number,
+  stop: number,
+  maxOrder: number | null | undefined,
+  buyingPower: number | null | undefined,
+): { shares: number; uncapped: number; riskDollars: number; perShare: number; capped: 'max order' | 'buying power' | null } {
+  const r = riskShares(account, riskPct, entry, stop);
+  const byOrder = maxOrder != null && maxOrder > 0 ? maxBuyShares(entry, maxOrder, null) : Infinity;
+  const byPower = buyingPower != null && buyingPower >= 0 ? maxBuyShares(entry, 0, buyingPower) : Infinity;
+  const cap = Math.min(byOrder, byPower);
+  if (r.shares <= cap) return { ...r, uncapped: r.shares, capped: null };
+  return { ...r, shares: cap, uncapped: r.shares, capped: byPower <= byOrder ? 'buying power' : 'max order' };
+}
+
 /** A fraction of what can be sold, in whole shares (at least 1 when anything is held). */
 export function sellFraction(available: number, fraction: number): number {
   if (!(available > 0)) return 0;

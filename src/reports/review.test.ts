@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { allocationDrift, defaultTolerance, incomeEstimate, riskFit } from './review';
+import { allocationDrift, defaultTolerance, incomeEstimate, riskFit, sinceStart } from './review';
 
 describe('risk vs tolerance', () => {
   it('maps objectives to a default level', () => {
@@ -57,5 +57,19 @@ describe('income estimate', () => {
     expect(r.yield).toBeCloseTo(1150 / 40000);
     expect(r.top.map((x) => x.symbol)).toEqual(['BND', 'SCHD']);
     expect(r.unknown).toEqual(['ALT']);
+  });
+});
+
+describe('since start', () => {
+  it('gives the yearly and the cumulative return, and what the investment grew to', () => {
+    // the QA case: +41.2% a year from 2023-01-03 to 2026-10-28 is about +273% in all, so $100,000 grows to about $374,000
+    const years = (Date.parse('2026-10-28') - Date.parse('2023-01-03')) / (365.25 * 86400000);
+    const cum = Math.pow(1.412, years) - 1;
+    const s = sinceStart({ start: '2023-01-03', end: '2026-10-28', stats: { totalReturn: cum }, trailing: { inception: { portfolio: 0.412 } } }, 100000)!;
+    expect(s.perYear).toBe(0.412);
+    expect(s.years).toBeCloseTo(3.82, 2);
+    expect(s.cumulative).toBeCloseTo(2.74, 1);
+    expect(s.endValue! / 1000).toBeCloseTo(374, -1);
+    expect(sinceStart(null, 1000)).toBeNull();
   });
 });
