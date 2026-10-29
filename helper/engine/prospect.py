@@ -1824,7 +1824,8 @@ def search(con, q):
         like = f'%{text}%'
         where.append('(name LIKE ? OR other_names LIKE ? OR id IN (SELECT firm_id FROM people WHERE name LIKE ?) OR CAST(crd AS TEXT) = ? OR CAST(cik AS TEXT) = ?)')
         args += [like, like, like, text, text.lstrip('0')]
-    types = [t for t in (q.get('type') or []) if t in TYPES]
+    raw = q.get('types') if q.get('types') is not None else q.get('type')  # 'type' is reserved in helper messages (the kind); kept for direct calls
+    types = [t for t in (raw if isinstance(raw, (list, tuple)) else []) if t in TYPES]
     if types:
         where.append(f'type IN ({",".join("?" * len(types))})')
         args += types
@@ -2184,9 +2185,10 @@ async def h_ingest(ctx, msg):
 
 @handler('prospect.search')
 async def h_search(ctx, msg):
-    """{text, type[], state, city, zip, near:{lat,lon,miles}|{zip,miles}, aumMin, aumMax, clientTypes[], holds:{symbol|cusip},
-    minPosition, has13f, hasPrivateFunds, sort (aum|name|clients|filed|value13f|funds|distance|position), limit, offset}"""
-    return await _query(search, {k: v for k, v in msg.items() if not k.startswith('_')})
+    """{text, types[], state, city, zip, near:{lat,lon,miles}|{zip,miles}, aumMin, aumMax, clientTypes[], holds:{symbol|cusip},
+    minPosition, has13f, hasPrivateFunds, sort (aum|name|clients|filed|value13f|funds|distance|position), limit, offset}.
+    `id` and `type` are the message's own (request id, kind), so firm types come as `types`."""
+    return await _query(search, {k: v for k, v in msg.items() if not k.startswith('_') and k not in ('id', 'type')})
 
 
 @handler('prospect.firm')

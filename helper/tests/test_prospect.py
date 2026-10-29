@@ -404,6 +404,17 @@ class Handlers(Loaded):
             exp = asyncio.run(pr.h_export(ctx, {'query': {'type': [pr.TYPE_MFO]}}))
             self.assertEqual(exp['count'], 2)
 
+    def test_search_message_filters_by_types(self):
+        # a real helper message: 'id' and 'type' are the request's own, firm types come as 'types'
+        ctx = mock.Mock(sec_contact='')
+        with mock.patch.object(pr, 'DB_PATH', self.db):
+            out = asyncio.run(pr.h_search(ctx, {'id': 7, 'type': 'prospect.search', 'types': [pr.TYPE_MFO], '_emit': None}))
+            self.assertEqual(sorted(r['id'] for r in out['rows']), ['crd-1002', 'crd-1004'])
+            fo = asyncio.run(pr.h_search(ctx, {'id': 8, 'type': 'prospect.search', 'types': [pr.TYPE_FO, pr.TYPE_MFO], 'text': 'smith'}))
+            self.assertEqual([r['id'] for r in fo['rows']], ['cik-9002'])
+            every = asyncio.run(pr.h_search(ctx, {'id': 9, 'type': 'prospect.search', 'limit': 100}))
+            self.assertGreater(every['total'], 2)  # the message kind never filters
+
     def test_geocode_zip_and_address(self):
         reply = mock.Mock(json=lambda: {'result': {'addressMatches': [{'matchedAddress': '1 PARK AVE, NEW YORK, NY, 10016', 'coordinates': {'x': -73.98, 'y': 40.75}}]}},
                           raise_for_status=lambda: None)

@@ -170,7 +170,7 @@ export function formToQuery(f: SearchForm, point?: { lat: number; lon: number } 
   const q: ProspectQuery = {};
   const problems: string[] = [];
   if (f.text.trim()) q.text = f.text.trim();
-  if (f.types.length) q.type = [...f.types];
+  if (f.types.length) q.types = [...f.types];
   if (f.state.trim()) q.state = f.state.trim().toUpperCase();
   if (f.city.trim()) q.city = f.city.trim();
   if (f.zip.trim()) q.zip = f.zip.trim();

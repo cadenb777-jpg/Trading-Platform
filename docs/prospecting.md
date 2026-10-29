@@ -84,7 +84,7 @@ are never more than "strong signals".
 - `prospect.ingest {source: adv|adv_full|13f|formd|geo|all, wait?}`: runs in the background (watch `prospect.status`),
   or with `wait` streams progress as `engine_event`s and replies at the end. After each source the firm list is
   rebuilt. Needs the SEC email in Settings.
-- `prospect.search {text, type[], state, city, zip, near:{lat,lon,miles} | {zip,miles}, aumMin, aumMax, clientTypes[],
+- `prospect.search {text, types[] (not `type`: reserved), state, city, zip, near:{lat,lon,miles} | {zip,miles}, aumMin, aumMax, clientTypes[],
   holds:{symbol|cusip}, minPosition, has13f, hasPrivateFunds, sort, limit, offset}`: `text` also matches people's
   names, CRD and CIK; radius search uses a bounding box then exact great-circle distance.
 - `prospect.firm {firmId}` (`id` is reserved in helper messages): identifiers and links, AUM history, people (with

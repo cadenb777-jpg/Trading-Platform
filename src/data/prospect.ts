@@ -10,7 +10,8 @@ export type ClientType = 'individuals' | 'hnw' | 'banks' | 'investment_companies
 
 export interface ProspectQuery {
   text?: string;
-  type?: FirmType[];
+  /** Firm types ('type' is reserved in helper messages, so the list goes as 'types'). */
+  types?: FirmType[];
   state?: string;
   city?: string;
   zip?: string;

@@ -135,7 +135,7 @@ export function createProspectPage() {
   // ---------- profile drawer ----------
   const drawerBody = h('div', { class: 'pr-drawer-body' });
   const drawerClose = h('button', { class: 'icon-btn', 'aria-label': 'Close profile', title: 'Close (Esc)' }, '✕');
-  const drawer = h('aside', { class: 'pr-drawer', role: 'dialog', 'aria-label': 'Firm profile', hidden: true }, h('div', { class: 'pr-drawer-bar' }, h('span', { class: 'muted small' }, 'Firm profile'), drawerClose), drawerBody);
+  const drawer = h('aside', { class: 'pr-drawer', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Firm profile', hidden: true }, h('div', { class: 'pr-drawer-bar' }, h('span', { class: 'muted small' }, 'Firm profile'), drawerClose), drawerBody);
   const scrim = h('div', { class: 'pr-scrim', hidden: true });
   frame.el.append(scrim, drawer);
   let drawerReturn: HTMLElement | null = null;
@@ -149,6 +149,22 @@ export function createProspectPage() {
   scrim.onclick = closeDrawer;
   drawer.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !document.querySelector('.modal-backdrop, .popover')) (e.stopPropagation(), closeDrawer());
+    else if (e.key === 'Tab') {
+      // keep Tab inside the profile while it is open (it is a modal dialog)
+      const items = [...drawer.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter((el) => !(el as HTMLButtonElement).disabled && el.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const at = document.activeElement;
+      if (e.shiftKey && (at === first || !drawer.contains(at))) (e.preventDefault(), last.focus());
+      else if (!e.shiftKey && (at === last || !drawer.contains(at))) (e.preventDefault(), first.focus());
+    }
+  });
+  // focus that lands on the page behind the open profile comes back to it (other windows, like the AI or the
+  // command bar, sit outside the page and keep their focus)
+  frame.el.addEventListener('focusin', (e) => {
+    if (drawer.hidden || drawer.contains(e.target as Node)) return;
+    drawerClose.focus();
   });
   const profileCtx: ProfileContext = {
     inCompare: (id) => compare.some((c) => c.id === id),
@@ -405,9 +421,11 @@ export function createProspectPage() {
   }
 
   async function runSearch(more = false) {
-    keep(LS.form, form);
     const mine = ++searching;
-    const { query, problems } = await buildQuery();
+    // "Load more" continues the search on screen, even if the form was edited since (a new search needs Search)
+    const prev = more ? results : null;
+    if (!prev) keep(LS.form, form);
+    const { query, problems } = prev ? { query: prev.query, problems: [] as string[] } : await buildQuery();
     if (mine !== searching) return;
     if (!more) resultBody.replaceChildren(h('div', { class: 'skeleton', style: 'height:280px' }));
     resultHead.replaceChildren(h('h3', {}, 'Searching…'));

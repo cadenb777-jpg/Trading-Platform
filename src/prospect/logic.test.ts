@@ -80,7 +80,7 @@ describe('form -> prospect.search request', () => {
     const f = { ...emptyForm(), text: ' acme ', types: ['Multi-family office' as const], state: 'ny', aumMin: '100m', aumMax: '2b', clientTypes: ['hnw' as const], has13f: true, hasPrivateFunds: true, holds: 'aapl', minPosition: '1m', near: '10022', miles: '30', sort: 'distance' as const };
     const { query, problems } = formToQuery(f);
     expect(problems).toEqual([]);
-    expect(query).toEqual({ text: 'acme', type: ['Multi-family office'], state: 'NY', aumMin: 1e8, aumMax: 2e9, clientTypes: ['hnw'], has13f: true, hasPrivateFunds: true, holds: { symbol: 'AAPL' }, minPosition: 1e6, near: { zip: '10022', miles: 30 }, sort: 'distance' });
+    expect(query).toEqual({ text: 'acme', types: ['Multi-family office'], state: 'NY', aumMin: 1e8, aumMax: 2e9, clientTypes: ['hnw'], has13f: true, hasPrivateFunds: true, holds: { symbol: 'AAPL' }, minPosition: 1e6, near: { zip: '10022', miles: 30 }, sort: 'distance' });
     expect(activeFilterCount(f)).toBe(10);
   });
   it('a CUSIP goes as a CUSIP; an address needs its geocoded point; a radius defaults to 25 miles', () => {

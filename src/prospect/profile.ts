@@ -335,7 +335,6 @@ function briefData(p: ProspectProfile, ctx: ProfileContext) {
     people: p.people.slice(0, 30),
     holdings13f: { ...h13, topPositions: (positions ?? []).slice(0, 25).map((x) => ({ ticker: x.ticker, issuer: x.issuer, weight: x.weight, value: x.value, change: x.change })) },
     peopleDataAsOf: ctx.peopleNote,
-    outreach: ctx.note(p.id),
   };
 }
 
