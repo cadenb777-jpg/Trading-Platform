@@ -6,7 +6,7 @@
  * missing data says what is missing.
  */
 import { insightButton } from '../ai/insight';
-import { OUTREACH, prospectAdvPdf, prospectFirm, type ClientType, type Outreach, type ProspectNote, type ProspectPosition, type ProspectProfile } from '../data/prospect';
+import { OUTREACH, prospectAdvPdf, prospectCompleteReady, prospectFirm, type ClientType, type Outreach, type ProspectNote, type ProspectPosition, type ProspectProfile } from '../data/prospect';
 import { dataTable, statCards } from '../ui/charts';
 import { h, toast } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
@@ -163,11 +163,11 @@ export function renderProfile(p: ProspectProfile, ctx: ProfileContext): HTMLElem
           : pdf?.status === 'unreadable'
             ? `The firm's Form ADV PDF on IAPD couldn't be read (${pdf.note}). Open it from Sources below.`
             : newer
-              ? `This firm filed Form ADV on ${dateText(p.filingDate, true)}, after the SEC bulk data${pdf?.bulkDate ? ` (${dateText(pdf.bulkDate, true)})` : ''}. Its newer owners, officers and funds are read from IAPD in the background${pdf?.status === 'failed' ? ` (last try failed: ${pdf.note})` : ''}.`
+              ? `This firm filed Form ADV on ${dateText(p.filingDate, true)}, after the SEC bulk data${pdf?.bulkDate ? ` (${dateText(pdf.bulkDate, true)})` : ''}. Its newer owners, officers and funds are read from IAPD${prospectCompleteReady() ? ' (opening it puts it first in line)' : ' once the helper is updated'}${pdf?.status === 'failed' ? `; last try failed: ${pdf.note}` : ''}.`
               : '',
         msg ? h('b', {}, ` ${msg}`) : null,
       ),
-      newer && !read
+      newer && !read && prospectCompleteReady()
         ? h('button', {
             class: 'btn small ghost',
             disabled: busy,

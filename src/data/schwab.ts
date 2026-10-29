@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 37;
+export const LATEST_HELPER_VERSION = 38;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -36,6 +36,10 @@ export const ALERTS_HELPER_VERSION = 32;
 export const CROSSCHECK_HELPER_VERSION = 34;
 /** The Prospecting page (RIA / family-office database, its saved searches and notes) needs at least this version. */
 export const PROSPECT_HELPER_VERSION = 35;
+/** Complete Prospecting downloads (retry failed, state advisers, Form ADV PDFs from IAPD) need at least this version. */
+export const PROSPECT_COMPLETE_HELPER_VERSION = 38;
+/** True when the connected helper has the complete Prospecting downloads (v38+). */
+export const prospectCompleteReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_COMPLETE_HELPER_VERSION;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
@@ -279,6 +283,7 @@ class HelperConnection {
     if (type.startsWith('alerts.') && (this.version ?? 0) < ALERTS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('crosscheck.') && (this.version ?? 0) < CROSSCHECK_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('prospect.') || String(msg.collection ?? '').startsWith('prospect_') || (type === 'ai.insight' && msg.topic === 'prospect')) && (this.version ?? 0) < PROSPECT_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if ((type === 'prospect.adv_pdf' || type === 'prospect.adv_pdf_reader' || (type === 'prospect.ingest' && (msg.source === 'failed' || msg.source === 'state'))) && (this.version ?? 0) < PROSPECT_COMPLETE_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('scanner.') || (type === 'ai.insight' && NEW_INSIGHTS.has(String(msg.topic)))) && (this.version ?? 0) < SCANNER_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {

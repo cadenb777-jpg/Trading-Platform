@@ -436,6 +436,107 @@ class StateAdvisers(Temp):
         self.assertTrue(info['beta'])
 
 
+class ReviewFixes(Temp):
+    def test_new_holdings_amendment_adds_to_a_totals_only_quarter(self):
+        # the original was loaded as totals only (older data set); the amendment comes with holdings kept
+        pr.load_13f(self.db, q13f(self.tmp / 'a.zip', 'A1', 91, '31-MAR-2025', '10-MAY-2025', 1000), holdings=False)
+        later = make_zip(self.tmp / 'b.zip', {
+            'SUBMISSION.tsv': (SUB_H, [['A2', '01-JUN-2025', '13F-HR/A', '91', '31-MAR-2025']]),
+            'COVERPAGE.tsv': (COVER_H, [['A2', 'Y', 'NEW HOLDINGS', 'MANAGER 91 LLC', 'DOVER', 'DE', '19901', '13F HOLDINGS REPORT']]),
+            'INFOTABLE.tsv': (INFO_H, [['A2', 'MICROSOFT CORP', 'COM', '594918104', '500', '5', 'SH', '', 'SOLE']])})
+        pr.load_13f(self.db, later, holdings=True)
+        pr.load_13f(self.db, later, holdings=True)  # loading it again doesn't count it twice
+        con = pr.connect(self.db)
+        self.assertEqual(tuple(con.execute('SELECT total_value, entries FROM filer_history_13f WHERE cik = 91').fetchone()), (1500.0, 2))
+        con.close()
+
+    def test_pdf_backoff_and_reset_on_a_new_filing(self):
+        roster = self.tmp / 'r.csv'
+        roster.write_text('Organization CRD#,Primary Business Name,Main Office State,5F(2)(c),Latest ADV Filing Date\n1,ONE LLC,NY,10,03/01/2025\n')
+        pr.load_adv_roster(self.db, zip_file(roster, self.tmp / 'r.zip'), 'RIA', '2025-03-01')
+
+        class Http:
+            async def get(self, url, timeout=None):
+                return mock.Mock(status_code=503, content=b'')
+        ctx = mock.Mock(sec_contact='me@example.com', sec_http=Http())
+        with mock.patch.object(iapd, 'pdf_reader_available', lambda: True), mock.patch.object(iapd, 'IAPD_GAP', 0):
+            r = asyncio.run(iapd.read_firm(ctx, self.db, 1))
+        self.assertEqual((r['status'], r['code']), ('failed', 503))
+        self.assertIn('tries again in 1 h', r['note'])
+        con = pr.connect(self.db)
+        now = __import__('time').time()
+        self.assertEqual(iapd.next_candidates(con, now=now), [])  # waiting out the 1-hour backoff
+        self.assertEqual([x['crd'] for x in iapd.next_candidates(con, now=now + 3700)], [1])
+        with con:
+            con.execute("UPDATE adv_filings SET tries = 4")
+        self.assertEqual(iapd.next_candidates(con, now=now + 10 ** 6), [])  # left after 4 failures
+        with con:
+            con.execute("UPDATE adv_firms SET filing_date = '2025-06-01'")  # a newer filing starts the count again
+        self.assertEqual([x['crd'] for x in iapd.next_candidates(con, now=now)], [1])
+        con.close()
+
+    def test_full_read_is_opt_in(self):
+        roster = self.tmp / 'r.csv'
+        roster.write_text('Organization CRD#,Primary Business Name,Main Office State,5F(2)(c),Latest ADV Filing Date\n1,ONE LLC,NY,10,03/01/2025\n2,TWO LLC,NY,20,03/01/2025\n')
+        pr.load_adv_roster(self.db, zip_file(roster, self.tmp / 'r.zip'), 'RIA', '2025-03-01')
+        con = pr.connect(self.db)
+        iapd.WANTED.clear()
+        self.assertEqual(iapd.next_candidates(con, everyone=False), [])
+        self.assertEqual([x['crd'] for x in iapd.next_candidates(con, saved=[1], everyone=False)], [1])
+        con.close()
+        self.assertFalse(iapd.reader_on(self.db))
+        with mock.patch.object(pr, 'DB_PATH', self.db):
+            st = asyncio.run(HANDLERS['prospect.adv_pdf_reader'](mock.Mock(), {'action': 'start'}))
+            self.assertTrue(st['enabled'])
+            asyncio.run(HANDLERS['prospect.adv_pdf_reader'](mock.Mock(), {'action': 'pause'}))
+        self.assertFalse(iapd.reader_on(self.db))
+
+    def test_state_paging_and_short_reads(self):
+        def page(n, total, start=0, st='TX'):
+            return {'hits': {**({'total': total} if total is not None else {}),
+                             'hits': [{'_source': {'firm_source_id': str(400000 + start + k), 'firm_name': f'F{start + k}', 'firm_ia_scope': 'ACTIVE',
+                                                   'firm_address_details': {'officeAddress': {'state': st}}}} for k in range(n)]}}
+        asked = []
+
+        async def search(ctx, st, start):
+            asked.append(start)
+            return page(100 if start < 200 else 30, None, start) if st == 'TX' else page(0, 0)
+        with mock.patch.object(iapd, 'search_page', search), mock.patch.object(iapd, 'STATES', ['TX']):
+            out = asyncio.run(iapd.ingest_state(mock.Mock(), None, self.db))
+        self.assertEqual(asked, [0, 100, 200])  # no total: stops on the short page
+        self.assertEqual(out, {'advisers': 230})
+
+        async def cut_short(ctx, st, start):
+            return page(100, 500, start, st) if start < 200 else page(0, 500, start, st)
+        with mock.patch.object(iapd, 'search_page', cut_short), mock.patch.object(iapd, 'STATES', ['NY']):
+            with self.assertRaises(pr.EngineError) as err:
+                asyncio.run(iapd.ingest_state(mock.Mock(), None, self.db))
+        self.assertIn('reported 500 advisers for NY but only 200', str(err.exception))
+        self.assertFalse(iapd.is_state_registered({'crd': 1, 'scope': '', 'sec_number': ''}))
+
+    def test_kept_download_is_checked_against_the_server(self):
+        dl = self.tmp / 'dl'
+        dl.mkdir()
+        (dl / 'x.zip').write_bytes(b'12345')
+
+        class Http:
+            def __init__(self, size):
+                self.size = size
+
+            async def head(self, url, timeout=None, follow_redirects=None):
+                return mock.Mock(status_code=200, headers={'Content-Length': self.size})
+        got = []
+
+        async def fake_download(ctx, url, dest, emit=None, label=''):
+            got.append(url)
+            return dest
+        with mock.patch.object(pr, 'DOWNLOADS', dl), mock.patch.object(pr, 'download', fake_download), mock.patch.object(pr, 'SEC_GAP', 0):
+            asyncio.run(pr.fetch(mock.Mock(http=Http('5')), 'https://example.com/x.zip', None, 'x'))
+            self.assertEqual(got, [])  # same size: reused
+            asyncio.run(pr.fetch(mock.Mock(http=Http('9')), 'https://example.com/x.zip', None, 'x'))
+            self.assertEqual(got, ['https://example.com/x.zip'])  # different size: downloaded again
+
+
 class Handlers(Temp):
     def test_ingest_accepts_failed_and_state(self):
         ctx = mock.Mock(sec_contact='me@example.com')

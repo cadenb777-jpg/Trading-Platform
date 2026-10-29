@@ -158,7 +158,8 @@ CREATE TABLE IF NOT EXISTS adv_filings (crd INTEGER PRIMARY KEY, bulk_date TEXT,
 """
 
 #: columns added after the first release (old databases get them on connect)
-MIGRATIONS = (('other_managers_13f', 'role', "TEXT DEFAULT ''"), ('private_funds', 'source', "TEXT DEFAULT ''"))
+MIGRATIONS = (('other_managers_13f', 'role', "TEXT DEFAULT ''"), ('private_funds', 'source', "TEXT DEFAULT ''"),
+              ('adv_filings', 'tried_for', "TEXT DEFAULT ''"))
 
 
 def connect(path=None):
@@ -890,7 +891,7 @@ def load_13f(db_path, zip_path, holdings=True):
             positions.loaded += len(batch)
     _progress(con, 'Saving 13F filers')
     with con:
-        _save_13f_history(con, submissions, covers, chosen, sums, holdings)
+        _save_13f_history(con, submissions, covers, chosen, sums)
         # Filers: the newest filing per CIK sets the name and address.
         newest = {}
         for s in submissions.values():
@@ -942,26 +943,25 @@ def is_notice(report_type):
     return 'NOTICE' in text or text.startswith('13F-NT')
 
 
-def _save_13f_history(con, submissions, covers, chosen, sums, holdings):
+def _save_13f_history(con, submissions, covers, chosen, sums):
     """One row per filer-quarter: total value and positions (kept for KEEP_13F_HISTORY quarters)."""
     for (cik, period), accs in chosen.items():
         c = covers.get(accs[-1], {})
         name, report = c.get('filingmanagername', ''), c.get('reporttype', '') or submissions[accs[-1]]['type']
         filed = submissions[accs[-1]]['filed']
-        if holdings:
-            total, entries = con.execute('SELECT SUM(value), COUNT(*) FROM holdings_13f WHERE cik = ? AND period = ?', (cik, period)).fetchone()
-            done = list(accs)
-        else:
-            total, entries = sum(sums.get(a, [0, 0])[0] for a in accs), sum(sums.get(a, [0, 0])[1] for a in accs)
-            done = list(accs)
-            if adds_only(submissions[accs[0]], covers.get(accs[0], {})):
-                old = con.execute('SELECT total_value, entries, accessions FROM filer_history_13f WHERE cik = ? AND period = ?', (cik, period)).fetchone()
-                if old:
-                    seen = json.loads(old['accessions'] or '[]')
-                    new = [a for a in accs if a not in seen]
-                    total = (old['total_value'] or 0) + sum(sums.get(a, [0, 0])[0] for a in new)
-                    entries = (old['entries'] or 0) + sum(sums.get(a, [0, 0])[1] for a in new)
-                    done = seen + new
+        # Totals from the rows read in this data set. A "new holdings" amendment whose original came in an earlier data
+        # set adds to the total already saved (each accession once), in both modes: the original's positions may not
+        # be in holdings_13f (it may have been loaded as totals only), so a sum of the table would undercount.
+        total, entries = sum(sums.get(a, [0, 0])[0] for a in accs), sum(sums.get(a, [0, 0])[1] for a in accs)
+        done = list(accs)
+        if adds_only(submissions[accs[0]], covers.get(accs[0], {})):
+            old = con.execute('SELECT total_value, entries, accessions FROM filer_history_13f WHERE cik = ? AND period = ?', (cik, period)).fetchone()
+            if old:
+                seen = json.loads(old['accessions'] or '[]')
+                new = [a for a in accs if a not in seen]
+                total = (old['total_value'] or 0) + sum(sums.get(a, [0, 0])[0] for a in new)
+                entries = (old['entries'] or 0) + sum(sums.get(a, [0, 0])[1] for a in new)
+                done = seen + new
         con.execute('INSERT OR REPLACE INTO filer_history_13f VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                     (cik, period, name, total or None, entries or None, report, filed, json.dumps(done)))
     for s in submissions.values():  # notices: the quarter is on record; its holdings are in another manager's report
@@ -1774,8 +1774,37 @@ async def fetch(ctx, url, emit, label):
     """The local copy of `url`: reused when a finished download is already on disk, else downloaded (resuming)."""
     dest = DOWNLOADS / _file_name(url)
     if dest.exists() and dest.stat().st_size > 0 and not dest.with_name(dest.name + '.part').exists():
-        return dest
+        if await _still_current(ctx, url, dest):
+            return dest
+        dest.unlink(missing_ok=True)
     return await download(ctx, url, dest, emit, label)
+
+
+async def _still_current(ctx, url, dest):
+    """A file kept on disk is reused only if the server's size (Content-Length) matches and the server copy isn't
+    newer (Last-Modified), when the server says; if it can't be asked, the file is reused."""
+    try:
+        sec_host = 'sec.gov' in urllib.parse.urlparse(url).netloc
+        if sec_host:
+            await _sec_pace()
+        resp = await (ctx.sec_http if sec_host else ctx.http).head(url, timeout=30, follow_redirects=True)
+        if resp.status_code >= 400:
+            return True
+        size = resp.headers.get('Content-Length')
+        if size and size.isdigit() and int(size) != dest.stat().st_size:
+            log.info('Kept download %s has %s bytes, the server %s: downloading again', dest.name, dest.stat().st_size, size)
+            return False
+        modified = resp.headers.get('Last-Modified')
+        if modified:
+            import email.utils
+            when = email.utils.parsedate_to_datetime(modified).timestamp()
+            if when > dest.stat().st_mtime:
+                log.info('The server has a newer %s: downloading again', dest.name)
+                return False
+        return True
+    except Exception as err:
+        log.info('Could not check kept download %s (%s): reusing it', dest.name, err)
+        return True
 
 
 async def ingest_adv(ctx, emit, db_path):

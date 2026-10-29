@@ -5,8 +5,8 @@ Prospecting gaps filled one adviser at a time from IAPD (adviserinfo.sec.gov), t
    A owners/officers, Schedule D 7.B.(1) private funds) ended in Dec 2024. For every SEC-registered adviser whose
    roster shows a newer filing than its bulk filing (or that is missing from the bulk data), this reads the public
    PDF https://reports.adviserinfo.sec.gov/reports/ADV/{crd}/PDF/{crd}.pdf and parses Schedule A and Section
-   7.B.(1). It runs in the background, one request every 2 seconds, saved firms first, then firms the owner opens,
-   then by AUM. Needs the optional `pypdf` package (requirements-extra.txt); without it the reader says so.
+   7.B.(1). Saved firms and firms the owner opens are read on their own; every other firm (by AUM) only after the
+   owner turns the full read on in the Data tab (about 8 hours, Pause/Resume). One request every 2 seconds. Needs the optional `pypdf` package (requirements-extra.txt); without it the reader says so.
    UNVERIFIED LIVE: the parser was written from the documented Form ADV layout and IAPD's PDF text (the sandbox it was
    built in cannot reach the site). Every firm it can't read is reported ("couldn't read Schedule A"), never silent.
 
@@ -34,7 +34,7 @@ IAPD_PDF = pr.IAPD_PDF
 IAPD_SEARCH = 'https://api.adviserinfo.sec.gov/search/firm'
 IAPD_GAP = 2.0  # seconds between IAPD requests
 PDF_SOURCE = 'Form ADV Part 1 (IAPD PDF)'
-PDF_TRIES = 3  # a PDF that can't be fetched is tried again on later passes, then left
+
 PAGE_ROWS = 100
 MAX_PAGES = 100  # per state (10,000 firms; no state has that many state-registered advisers)
 STATES = ('AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR '
@@ -227,10 +227,17 @@ def _note(con, crd, **fields):
                 f'ON CONFLICT(crd) DO UPDATE SET {", ".join(f"{k} = excluded.{k}" for k in fields)}', (crd, *fields.values()))
 
 
-CANDIDATES = """SELECT a.crd, a.filing_date, a.aum_total, f.bulk_date, f.pdf_date, f.pdf_status, COALESCE(f.tries, 0) AS tries
+CANDIDATES = """SELECT a.crd, a.filing_date, a.aum_total, f.bulk_date, f.pdf_date, f.pdf_status, COALESCE(f.tries, 0) AS tries,
+  f.at, f.tried_for
 FROM adv_firms a LEFT JOIN adv_filings f ON f.crd = a.crd
 WHERE a.kind = 'RIA' AND (f.bulk_date IS NULL OR COALESCE(a.filing_date, '') > f.bulk_date)
   AND (f.pdf_date IS NULL OR f.pdf_date < COALESCE(a.filing_date, ''))"""
+
+#: wait after the 1st, 2nd and 3rd failed fetch of a firm's PDF; after PDF_TRIES failures it is left until it files again
+BACKOFF = (3600, 6 * 3600, 24 * 3600)
+PDF_TRIES = len(BACKOFF) + 1
+#: the whole reader pauses this long when a batch fails entirely or IAPD answers 403/429
+LOOP_PAUSE = 1800
 
 WANTED = []  # CRDs the owner opened (read next)
 
@@ -251,16 +258,37 @@ def saved_crds():
         return []
 
 
-def next_candidates(con, limit=20, saved=()):
-    """The queue: saved firms, then firms the owner opened, then by AUM (largest first)."""
-    rows = {r['crd']: dict(r) for r in con.execute(CANDIDATES + ' AND COALESCE(f.tries, 0) < ?', (PDF_TRIES,))}
+def _tries(row):
+    """Failed fetches for the adviser's current filing (a newer roster filing starts the count again)."""
+    return row['tries'] if (row.get('tried_for') or '') == (row.get('filing_date') or '') else 0
+
+
+def due(row, now=None):
+    """Whether a firm can be fetched now: never failed, or its backoff after the last failure has passed."""
+    n = _tries(row)
+    if n == 0:
+        return True
+    if n >= PDF_TRIES:
+        return False
+    return (now or time.time()) - (row.get('at') or 0) >= BACKOFF[n - 1]
+
+
+def _pending(con):
+    return {r['crd']: dict(r) for r in con.execute(CANDIDATES)}
+
+
+def next_candidates(con, limit=20, saved=(), everyone=True, now=None):
+    """The queue: saved firms, then firms the owner opened, then (only when the owner turned the full read on) the
+    rest by AUM, largest first. Firms waiting out a backoff are left for later."""
+    rows = {c: r for c, r in _pending(con).items() if due(r, now)}
     first = [c for c in list(saved) + WANTED if c in rows]
-    rest = sorted((c for c in rows if c not in first), key=lambda c: -(rows[c]['aum_total'] or 0))
+    rest = sorted((c for c in rows if c not in first), key=lambda c: -(rows[c]['aum_total'] or 0)) if everyone else []
     return [rows[c] for c in list(dict.fromkeys(first + rest))[:limit]]
 
 
 async def read_firm(ctx, db_path, crd, roster_date=None):
-    """Fetches, parses and saves one adviser's Form ADV Part 1 PDF. Returns {status, note, people, funds}."""
+    """Fetches, parses and saves one adviser's Form ADV Part 1 PDF. Returns {status, note, people, funds}
+    (a failed fetch also carries `code`, the HTTP status when there was one)."""
     url = IAPD_PDF.format(crd=crd)
     if not pdf_reader_available():
         return {'status': 'unavailable', 'note': PDF_MISSING}
@@ -269,18 +297,25 @@ async def read_firm(ctx, db_path, crd, roster_date=None):
         if roster_date is None:
             row = con.execute('SELECT filing_date FROM adv_firms WHERE crd = ?', (crd,)).fetchone()
             roster_date = row['filing_date'] if row else ''
+        code = None
         try:
             await _pace()
             resp = await _http(ctx).get(url, timeout=60)
-            if resp.status_code == 404:
+            code = resp.status_code
+            if code == 404:
                 raise EngineError('IAPD has no Form ADV PDF for this firm')
-            resp.raise_for_status()
+            if code >= 400:
+                raise EngineError(f'IAPD answered HTTP {code}')
             text = await asyncio.to_thread(pdf_text, resp.content)
         except Exception as err:
             with con:
-                tries = (con.execute('SELECT tries FROM adv_filings WHERE crd = ?', (crd,)).fetchone() or [0])[0] or 0
-                _note(con, crd, pdf_status='failed', pdf_note=f'could not fetch the PDF: {err}', tries=tries + 1, at=time.time())
-            return {'status': 'failed', 'note': f'could not fetch the PDF: {err}'}
+                old = con.execute('SELECT tries, tried_for FROM adv_filings WHERE crd = ?', (crd,)).fetchone()
+                tries = (old['tries'] or 0) if old and (old['tried_for'] or '') == (roster_date or '') else 0
+                tries += 1
+                wait = f'tries again in {BACKOFF[tries - 1] // 3600} h' if tries < PDF_TRIES else 'left until the firm files again'
+                note = f'could not fetch the PDF ({err}); {wait}'
+                _note(con, crd, pdf_status='failed', pdf_note=note, tries=tries, tried_for=roster_date or '', at=time.time())
+            return {'status': 'failed', 'note': note, 'code': code}
         parsed = parse_adv_pdf(text)
         filed = parsed['filed'] or roster_date or ''
         if parsed['people']:
@@ -298,35 +333,56 @@ async def read_firm(ctx, db_path, crd, roster_date=None):
         con.close()
 
 
-STATE = {'running': False, 'current': None, 'lastError': None}
+STATE = {'running': False, 'current': None, 'lastError': None, 'pausedUntil': 0}
+
+
+def reader_on(db_path):
+    """The owner's choice: read every firm's current Form ADV in the background (off until turned on)."""
+    con = pr.connect(db_path)
+    try:
+        return bool((pr.get_meta(con, 'pdf_reader') or {}).get('on'))
+    finally:
+        con.close()
 
 
 async def pdf_loop(ctx, db_path):
-    """Reads the queue in the background, forever (resumable: progress is in adv_filings). Starts only once the
-    Form ADV data has been downloaded (the owner asked for it), and waits while a big download runs."""
+    """Reads the queue in the background, forever (resumable: progress is in adv_filings). Saved firms and firms the
+    owner opens are read on their own; everyone else only after the owner turns the full read on in the Data tab.
+    It waits while a big download runs and pauses 30 minutes when IAPD refuses (403/429) or a whole batch fails."""
     db_path = Path(db_path)
-    await asyncio.sleep(120)
+    await asyncio.sleep(60)
     while True:
         try:
-            ready = db_path.exists() and pr._loaded(db_path, 'adv_full') and pr._loaded(db_path, 'adv') and ctx.sec_contact and pdf_reader_available()
-            if not ready or pr.JOB.get('running'):
-                await asyncio.sleep(600)
+            ready = db_path.exists() and pr._loaded(db_path, 'adv') and ctx.sec_contact and pdf_reader_available()
+            if not ready or pr.JOB.get('running') or time.time() < STATE['pausedUntil']:
+                await asyncio.sleep(60)
                 continue
+            everyone = reader_on(db_path)
             con = pr.connect(db_path)
-            batch = next_candidates(con, 20, await asyncio.to_thread(saved_crds))
+            batch = next_candidates(con, 20, await asyncio.to_thread(saved_crds), everyone)
             con.close()
             if not batch:
                 STATE.update({'running': False, 'current': None})
-                await asyncio.sleep(6 * 3600)
+                await asyncio.sleep(60)
                 continue
             STATE['running'] = True
+            failures = 0
             for row in batch:
-                if pr.JOB.get('running'):
+                if pr.JOB.get('running') or (everyone and not reader_on(db_path) and row['crd'] not in WANTED):
                     break
                 STATE['current'] = row['crd']
-                await read_firm(ctx, db_path, row['crd'], row['filing_date'])
+                r = await read_firm(ctx, db_path, row['crd'], row['filing_date'])
                 if row['crd'] in WANTED:
                     WANTED.remove(row['crd'])
+                if r.get('code') in (403, 429):
+                    failures = len(batch)
+                    break
+                failures += r['status'] == 'failed'
+            if failures >= len(batch):
+                STATE['pausedUntil'] = time.time() + LOOP_PAUSE
+                STATE['lastError'] = 'IAPD refused or did not answer; paused for 30 minutes'
+                log.info('Form ADV PDF reader paused 30 minutes (IAPD refused or a whole batch failed)')
+            STATE.update({'running': False, 'current': None})
         except asyncio.CancelledError:
             raise
         except Exception as err:
@@ -337,14 +393,36 @@ async def pdf_loop(ctx, db_path):
 
 def pdf_status(con):
     """For the Data tab: how far the per-firm PDF reader has got."""
-    todo = con.execute(f'SELECT COUNT(*) FROM ({CANDIDATES} AND COALESCE(f.tries, 0) < ?)', (PDF_TRIES,)).fetchone()[0]
+    pending = list(_pending(con).values())
+    todo = sum(1 for r in pending if _tries(r) < PDF_TRIES)
+    later = sum(1 for r in pending if 0 < _tries(r) < PDF_TRIES and not due(r))
     counts = {r[0]: r[1] for r in con.execute('SELECT pdf_status, COUNT(*) FROM adv_filings WHERE pdf_status IS NOT NULL GROUP BY pdf_status')}
     problems = [dict(r) for r in con.execute(
         "SELECT a.crd, f.pdf_note AS note, COALESCE(a.business_name, a.legal_name) AS name FROM adv_filings f "
         "LEFT JOIN adv_firms a ON a.crd = f.crd WHERE f.pdf_status IN ('unreadable', 'failed') ORDER BY f.at DESC LIMIT 20")]
     return {'available': pdf_reader_available(), 'note': '' if pdf_reader_available() else PDF_MISSING, 'waiting': todo,
+            'retryLater': later, 'hours': round(todo * (IAPD_GAP + 1) / 3600, 1),
+            'enabled': bool((pr.get_meta(con, 'pdf_reader') or {}).get('on')),
+            'pausedUntil': STATE['pausedUntil'] if STATE['pausedUntil'] > time.time() else None,
             'read': counts.get('ok', 0), 'unreadable': counts.get('unreadable', 0), 'failed': counts.get('failed', 0),
             'running': STATE['running'], 'current': STATE['current'], 'problems': problems, 'verified': False}
+
+
+@handler('prospect.adv_pdf_reader')
+async def h_adv_pdf_reader(ctx, msg):
+    """{action: start|pause|resume} -> turns the background read of every firm's current Form ADV on or off."""
+    action = str(msg.get('action') or '')
+    if action not in ('start', 'pause', 'resume'):
+        raise EngineError('Use start, pause or resume.')
+    con = pr.connect(pr.DB_PATH)
+    try:
+        with con:
+            pr.set_meta(con, 'pdf_reader', {'on': action != 'pause', 'at': time.time()})
+        if action != 'pause':
+            STATE['pausedUntil'] = 0
+        return pdf_status(con)
+    finally:
+        con.close()
 
 
 @handler('prospect.adv_pdf')
@@ -374,7 +452,7 @@ def _field(src, *names):
 
 
 def parse_firm_search(data):
-    """(total, firms) from one page of the IAPD firm search. Raises ShapeError on an unknown shape. Each firm:
+    """(total or None, firms) from one page of the IAPD firm search. Raises ShapeError on an unknown shape. Each firm:
     crd, name, sec_number, scope, street, city, state, zip, country."""
     hits = (data or {}).get('hits') if isinstance(data, dict) else None
     if not isinstance(hits, dict) or not isinstance(hits.get('hits'), list):
@@ -403,13 +481,13 @@ def parse_firm_search(data):
                       'country': office.get('country') or ''})
     if hits['hits'] and not firms:
         raise ShapeError('The IAPD firm search reply has no firm CRD or name fields this reader knows. Nothing was saved (beta source).')
-    return pr.integer(total) or 0, firms
+    return pr.integer(total), firms  # total None = not reported (unknown)
 
 
 def is_state_registered(firm):
     """An active adviser with no SEC (801-) or exempt (802-) file number is registered with its state."""
     sec = firm.get('sec_number') or ''
-    return bool(firm.get('crd')) and firm.get('scope', 'ACTIVE') in ('ACTIVE', '') and not re.match(r'80[12]-', sec)
+    return bool(firm.get('crd')) and firm.get('scope') == 'ACTIVE' and not re.match(r'80[12]-', sec)
 
 
 def load_state_firms(db_path, firms, run_date):
@@ -479,7 +557,9 @@ async def ingest_state(ctx, emit, db_path):
         for _ in range(MAX_PAGES):
             if emit:
                 await emit({'type': 'status', 'text': f'State-registered advisers: {st} ({i + 1}/{len(STATES)}), {len(firms):,} so far (IAPD, beta)'})
-            total, page = parse_firm_search(await search_page(ctx, st, start))
+            data = await search_page(ctx, st, start)
+            total, page = parse_firm_search(data)
+            rows = len(data['hits']['hits'])  # rows on this page (a few may lack a CRD and be left out of `page`)
             if not checked_shape:
                 checked_shape = True
                 con = pr.connect(db_path)
@@ -492,9 +572,12 @@ async def ingest_state(ctx, emit, db_path):
                 raise ShapeError(f'The IAPD firm search did not filter by state (the {st} page lists firms from other states). '
                                  'Nothing more was asked; this source is beta, so send diagnostics (Settings) and the reader can be updated.')
             firms += page
-            start += PAGE_ROWS
-            if not page or start >= total:
-                break
+            start += rows
+            if rows < PAGE_ROWS or (total is not None and start >= total):
+                break  # a short page is the last one (also when no total is reported)
+        if total is not None and start < total:
+            raise EngineError(f'The IAPD firm search reported {total:,} advisers for {st} but only {start:,} could be read '
+                              '(it stopped returning pages). Nothing is missing silently: press "Retry failed sources" later.')
         check = await asyncio.to_thread(load_state_firms, db_path, [f for f in firms if (f['state'] or st).upper() == st], run_date)
         checks.append(check)
         pr.mark_loaded(db_path, 'state', st, {'check': check})

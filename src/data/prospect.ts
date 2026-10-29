@@ -3,6 +3,7 @@
  * family offices and 13F managers built from free SEC data. Used by the Prospecting page (src/pages/prospectPage.ts).
  */
 import { clearEngineCache, engineRequest, type EngineEvent } from './schwab';
+export { prospectCompleteReady } from './schwab';
 
 /** 'failed' retries the sources whose last run failed; 'state' = state-registered advisers (IAPD, beta). */
 export type ProspectSource = 'adv' | 'adv_full' | '13f' | 'formd' | 'state' | 'geo' | 'all' | 'failed';
@@ -106,7 +107,7 @@ export interface ProspectStatus {
   /** How firms got their map point. */
   geo?: { total: number; address: number; zip: number; none: number; retrying: number; gaveUp: number; text: string };
   /** The per-firm Form ADV PDF reader (people and funds filed after the SEC bulk data ended). */
-  advPdf?: { available?: boolean; note?: string; waiting?: number; read?: number; unreadable?: number; failed?: number; running?: boolean; problems?: { crd: number; name: string | null; note: string }[]; verified?: boolean; error?: string };
+  advPdf?: { available?: boolean; note?: string; waiting?: number; retryLater?: number; hours?: number; enabled?: boolean; pausedUntil?: number | null; read?: number; unreadable?: number; failed?: number; running?: boolean; problems?: { crd: number; name: string | null; note: string }[]; verified?: boolean; error?: string };
   progress: { stage: string; done: number; total: number; at: number } | null;
   sizeMb: number;
   /** Column check of each downloaded file (missing required = that source failed and nothing was saved). */
@@ -156,6 +157,12 @@ export interface ProspectNote { id: string; firmName: string; status: Outreach; 
 export async function prospectAdvPdf(firmId: string) {
   const reply = await engineRequest<{ status: 'ok' | 'unreadable' | 'failed' | 'unavailable'; note: string; people?: number; funds?: number }>('prospect.adv_pdf', { firmId }, 120000);
   clearEngineCache('prospect.');
+  return reply;
+}
+/** Turns the background read of every firm's current Form ADV (IAPD PDFs) on or off. */
+export async function prospectAdvPdfReader(action: 'start' | 'pause' | 'resume') {
+  const reply = await engineRequest<NonNullable<ProspectStatus['advPdf']>>('prospect.adv_pdf_reader', { action }, 20000);
+  clearEngineCache('prospect.status');
   return reply;
 }
 export const prospectExport = (query: ProspectQuery) => engineRequest<{ csv: string; count: number; total: number; columns: string[] }>('prospect.export', { query }, 120000);
