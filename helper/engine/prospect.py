@@ -657,10 +657,12 @@ def load_adv_roster(db_path, zip_path, kind, roster_date, history_only=False):
 # ---------- Form ADV: the fuller data (Schedule A/B people, Schedule D 7.B.(1) private funds) ----------
 
 def _member_kind(name):
-    n = name.lower()
-    if 'schedule_a_b' in n or 'schedule_a' in n or 'schedule a' in n:
+    n = name.lower().rsplit('/', 1)[-1]
+    # Exact table names only: the release also holds side tables such as IA_Schedule_D_7B1A17b (one row per
+    # answer to a fund question) that share the prefix but have no fund name or gross asset value.
+    if re.search(r'schedule[ _-]?a(?:[ _-]?b)?(?![a-z0-9])', n):
         return 'people'
-    if '7b1' in n or '7_b_1' in n or '7b_1' in n:
+    if re.search(r'7[ _-]?b[ _-]?1(?![a-z0-9])', n):
         return 'funds'
     # Only Base A maps FilingID -> CRD; Base B (and any later Base C, D...) holds more items without a CRD.
     if re.search(r'base[ _-]?a(?![a-z])', n):
@@ -721,6 +723,7 @@ def load_adv_full(db_path, zip_paths):
     from_pdf = {r[0]: r[1] for r in con.execute("SELECT crd, pdf_date FROM adv_filings WHERE pdf_status = 'ok'")}
     people, funds = [], []
     checks = {'people': Check('people (Schedule A/B)'), 'funds': Check('private funds (7.B.(1))')}
+    unreadable, readable = {'people': [], 'funds': []}, set()
     for i, (zp, name, kind) in enumerate(members):
         if kind == 'base':
             continue
@@ -728,7 +731,12 @@ def load_adv_full(db_path, zip_paths):
         hint = 'B' if re.search(r'schedule_b', name.lower()) else ''
         with zipfile.ZipFile(zp) as zf, zf.open(name) as fh:
             keys, rows = peek(stream_rows(fh, ',', 'cp1252'))
-            note_headers(con, 'adv_full', f'{Path(zp).name}/{name}', keys, 'adv_people' if kind == 'people' else 'adv_funds')
+            try:
+                note_headers(con, 'adv_full', f'{Path(zp).name}/{name}', keys, 'adv_people' if kind == 'people' else 'adv_funds')
+            except HeaderError as err:
+                unreadable[kind].append(str(err))  # a look-alike table: skip it; fail only if no table of this kind reads
+                continue
+            readable.add(kind)
             check = checks[kind]
             for row in rows:
                 check.row()
@@ -755,6 +763,9 @@ def load_adv_full(db_path, zip_paths):
                         funds.append((crd, f['fund_id'], f['name'], f['fund_type'], f['gav'], f['owners'], date, 'bulk'))
                     else:
                         check.skip('no fund name')
+    for kind, errors in unreadable.items():
+        if errors and kind not in readable:
+            raise HeaderError(errors[0])
     checks['people'].loaded, checks['funds'].loaded = len(people), len(funds)
     with con:
         con.execute("DELETE FROM people WHERE source LIKE 'ADV Schedule%'")

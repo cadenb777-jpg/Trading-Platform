@@ -134,6 +134,10 @@ class Parsers(Loaded):
     def test_adv_base_b_is_not_the_crd_table(self):
         self.assertEqual(pr._member_kind('adv-part1/IA_ADV_Base_A_20111105_20241231.csv'), 'base')
         self.assertIsNone(pr._member_kind('adv-part1/IA_ADV_Base_B_20111105_20241231.csv'))
+        self.assertEqual(pr._member_kind('p2/IA_Schedule_D_7B1_20111105_20241231.csv'), 'funds')
+        self.assertIsNone(pr._member_kind('p2/IA_Schedule_D_7B1A17b_20111105_20241231.csv'))  # a side table, not the funds
+        self.assertIsNone(pr._member_kind('p2/IA_Schedule_D_7B1A18_20111105_20241231.csv'))
+        self.assertEqual(pr._member_kind('p1/IA_Schedule_A_B_20111105_20241231.csv'), 'people')
 
     def test_13f_value_units_before_and_after_2023(self):
         self.assertEqual(pr.value_multiplier('2022-11-14'), 1000)
