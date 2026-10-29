@@ -1,6 +1,19 @@
 import type { Bar, Timeframe } from '../types';
 
-export type IndicatorCategory = 'Moving Averages' | 'Bands & Channels' | 'Trend' | 'Momentum' | 'Volatility' | 'Volume' | 'Positioning' | 'My scripts';
+export type IndicatorCategory =
+  | 'Moving Averages'
+  | 'Bands & Channels'
+  | 'Trend'
+  | 'Momentum'
+  | 'Oscillators'
+  | 'Volatility'
+  | 'Volume'
+  | 'Statistics'
+  | 'Cycles'
+  | 'Support & Resistance'
+  | 'Candlestick Patterns'
+  | 'Positioning'
+  | 'My scripts';
 
 export interface NumberInput {
   key: string;

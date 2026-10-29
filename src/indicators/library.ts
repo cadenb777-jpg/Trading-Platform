@@ -2,6 +2,7 @@
  * The built-in indicator library. To add a new indicator, append a definition to INDICATORS:
  * describe its inputs and plots, and write a `compute` function that returns one array per plot.
  */
+import { CATALOG } from './catalog';
 import type { Bar } from '../types';
 import { ema, highest, lowest, rma, rsi, sma, stdev, trueRange, wma } from './math';
 import { MORE_INDICATORS, QUANT_INDICATORS } from './more';
@@ -309,6 +310,9 @@ export const INDICATORS: IndicatorDef[] = [
 ];
 
 INDICATORS.push(...MORE_INDICATORS, ...QUANT_INDICATORS, ...POSITIONING_INDICATORS);
+// the expanded catalog; ids already defined above win, so nothing existing changes
+const known = new Set(INDICATORS.map((d) => d.id));
+INDICATORS.push(...CATALOG.filter((d) => !known.has(d.id) && known.add(d.id)));
 
 /** Indicators the user wrote in the script editor, registered at runtime. */
 const custom = new Map<string, IndicatorDef>();
