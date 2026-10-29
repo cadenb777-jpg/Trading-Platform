@@ -26,7 +26,7 @@ const pivotGuide = (what: string, tip?: string): IndicatorGuide => ({
   what,
   use: ['Levels are fixed for the whole day (or week/month); set the period in settings.', 'R levels above price are resistance, S levels below are support; P is the balance point.'],
   signals: ['Opening above P = a bullish tilt; below = bearish.', 'Bounces at S1/R1 in quiet markets; breaks through R2/S2 often mean a trend day.'],
-  tip: tip ?? 'On intraday charts the day is the New York date; on daily or longer charts it uses each bar’s own date.',
+  tip: tip ?? 'On intraday stock charts the levels come from regular hours (09:30-16:00 New York) unless you switch that off in settings; crypto uses UTC days.',
 });
 
 export const OVERLAY_GUIDES: Record<string, IndicatorGuide> = {
@@ -43,9 +43,7 @@ export const OVERLAY_GUIDES: Record<string, IndicatorGuide> = {
   frama: maGuide("Ehlers' Fractal Adaptive Moving Average: it measures how jagged price is and follows closely in trends but flattens in chop.", 'A flat FRAMA = range; a steep one = trend.'),
   vidya: maGuide("Tushar Chande's VIDYA: an EMA that speeds up when momentum (the Chande Momentum Oscillator) is strong and slows when it fades."),
   mcginley: maGuide('The McGinley Dynamic: a self-adjusting average that hugs price better than an EMA and avoids whipsaws.', 'It catches up faster in falling markets, which is when it matters most.'),
-  evwma: maGuide('An average where each bar pulls the line by its share of recent volume, so busy bars count more.', 'Compare with the plain VWMA: EVWMA reacts to volume surges sooner.'),
   vwema: maGuide('An EMA weighted by volume: EMA of price × volume divided by EMA of volume.'),
-  tsf: maGuide('Time Series Forecast: where the recent best-fit straight line points one bar ahead.', 'It leads price in steady trends and overshoots at turns.'),
   jma: maGuide("An approximation of Mark Jurik's JMA (the real one is a paid product). Very smooth with little lag.", 'Phase above 0 makes it overshoot less in trends; below 0, follow more slowly.', 'Labelled "≈" because it is an approximation, not the original.'),
   laguerre: maGuide("Ehlers' Laguerre filter: heavy smoothing using only a few bars of memory.", 'Gamma is the damping: 0.5 is fast, 0.8 is standard, 0.9 is slow.'),
   supersmoother: maGuide("Ehlers' Super Smoother: removes wiggles shorter than the period while adding very little lag.", 'Use it in place of an SMA of the same length for a cleaner line.'),
@@ -118,15 +116,18 @@ export const OVERLAY_GUIDES: Record<string, IndicatorGuide> = {
     signals: ['Breakouts work only some of the time but the winners are large; keep losses small.'],
   },
   chandelier: stopGuide("Chuck LeBeau's Chandelier Exit: the highest high minus 3 ATRs (for longs) hangs from the top like a chandelier.", 'Use the green line to exit longs and the red line to exit shorts.'),
-  volstop: stopGuide('Volatility Stop: trails the best close since the trend began by a multiple of ATR.'),
-  atrtrail: stopGuide('ATR Trailing Stop: a close-based stop a multiple of ATR away that only moves in your favour.'),
   kasedev: {
     what: "An approximation of Cynthia Kase's DevStops: three trailing stops at 1, 2.2 and 3.6 standard deviations of the two-bar range.",
     use: ['The trend direction comes from a fast and slow SMA; the stops trail behind price.', 'Tight line = warning, middle = normal stop, wide = room for big swings.'],
     signals: ['A close through the middle line = a likely trend change.'],
     tip: 'This is an approximation (Kase’s exact formula is proprietary).',
   },
-  cksp: stopGuide('Chande Kroll Stop: ATR-based stops built from the recent highest high and lowest low.', 'When the two lines cross, the trend is changing.'),
+  cksp: {
+    what: "Tushar Chande and Stanley Kroll's stop: two lines built from ATR. The green line starts from the recent highest high minus ATR and usually sits under price; the red line starts from the recent lowest low plus ATR and usually sits above it.",
+    use: ['Long trades: use the green line (from the highs) as the stop.', 'Short trades: use the red line (from the lows) as the stop.'],
+    signals: ['Price closing under the green line = the up-move is in trouble; closing over the red line = the down-move is.', 'The lines crossing each other shows the trend changing.'],
+    tip: 'Defaults are Chande and Kroll’s 10-bar ATR, 1 × ATR and a 9-bar look-back; widen the multiplier for volatile stocks.',
+  },
   psarext: stopGuide('Parabolic SAR with separate settings for long and short trends: dots that accelerate towards price.', 'Use slower settings for the side you trust less.'),
   safezone: stopGuide("Elder's SafeZone: places the stop beyond the previous bar by a multiple of the average recent penetration, so normal noise doesn't hit it.", 'Elder suggests coefficients between 2 and 3.'),
   hilo: stopGuide('Gann HiLo Activator: an average of recent lows under price in up-trends, of recent highs over price in down-trends.'),
@@ -149,7 +150,6 @@ export const OVERLAY_GUIDES: Record<string, IndicatorGuide> = {
   medprice: maGuide('The median price, (high + low) / 2: the middle of each bar.'),
   wclprice: maGuide('The weighted close, (high + low + 2 × close) / 4: like the typical price but the close counts double.'),
   avgprice: maGuide('The average of open, high, low and close of each bar.'),
-  pivotsclassic: pivotGuide('Classic floor-trader pivot points from the previous period: the pivot P with resistance R1-R3 and support S1-S3.'),
   pivotsfib: pivotGuide('Fibonacci pivots: levels 38.2%, 61.8% and 100% of the previous range away from the pivot.'),
   pivotswoodie: pivotGuide("Woodie's pivots: the pivot uses the current period's open, which weights how the new period started."),
   pivotscamarilla: pivotGuide('Camarilla levels: tight bands around the previous close. R3/S3 are fade levels; R4/S4 breakouts.', 'Camarilla traders fade moves to R3/S3 and follow breaks of R4/S4.'),
@@ -158,10 +158,10 @@ export const OVERLAY_GUIDES: Record<string, IndicatorGuide> = {
   prevhlc: pivotGuide("The previous day's (week's, month's) high, low and close: levels that often act as support and resistance."),
   periodhl: pivotGuide("This period's open with the running high and low so far.", 'Price holding above the open = buyers in control today.'),
   fractals: {
-    what: "Bill Williams' fractals: a bar whose high is above two bars on each side (arrow above) or whose low is below two on each side (arrow below).",
+    what: "Bill Williams' fractals: a bar whose high is above the two bars on each side (arrow above it) or whose low is below the two bars on each side (arrow below it).",
     use: ['Fractal highs are resistance and breakout points; fractal lows are support and stop points.'],
     signals: ['A break above the latest up-fractal = buy signal in Williams’ method (with the Alligator open).'],
-    tip: 'A fractal needs two later bars, so it appears two bars after the swing.',
+    tip: 'A fractal needs two more bars after the swing bar, so the marker appears on the swing bar once those 2 bars have formed (it can’t be seen live on the swing bar itself).',
   },
   pivothl: {
     what: 'Swing highs and lows: a bar higher (or lower) than N bars on each side.',
@@ -199,17 +199,6 @@ export const OVERLAY_GUIDES: Record<string, IndicatorGuide> = {
     what: "Tirone's mean method: an adjusted mean of the range and close with regular and extreme highs and lows.",
     use: ['The regular high/low are normal targets; the extreme ones are rare stretches.'],
     signals: ['Price reaching an extreme line often stalls or reverses.'],
-  },
-  vwapanchor: {
-    what: 'VWAP that restarts each New York session, week, month, quarter or year, with standard-deviation bands.',
-    use: ['Price above VWAP = buyers in control for that period; below = sellers.', 'Weekly and monthly VWAPs are levels big funds watch.'],
-    signals: ['Pullbacks to VWAP in a trend are common entries; the ±2 bands are stretched.'],
-    tip: 'Session VWAP is meant for intraday charts.',
-  },
-  avwap: {
-    what: 'VWAP anchored a set number of bars ago: the average price paid by everyone who bought since then.',
-    use: ['Anchor it at an important bar (earnings, a breakout, a major low) by setting the bars back.'],
-    signals: ['Holding above the anchored VWAP = buyers since that event are in profit and tend to defend it.'],
   },
   openingrange: {
     what: 'The high and low of the first 30 minutes (adjustable) of the New York session, held until the next session’s range is set.',

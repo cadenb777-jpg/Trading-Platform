@@ -23,6 +23,11 @@ describe('indicator picker search', () => {
     expect(ids('heiken')).toContain('heikinashi');
   });
 
+  it('"moving average" lists the simple, exponential and weighted averages first', () => {
+    expect(ids('moving average').slice(0, 3).sort()).toEqual(['ema', 'sma', 'wma']);
+    expect(ids('bollinger')[0]).toBe('bb');
+  });
+
   it('names starting with the query rank above matches in descriptions', () => {
     const r = ids('bollinger');
     expect(r.indexOf('bb')).toBeLessThan(r.indexOf('zchannel') === -1 ? Infinity : r.indexOf('zchannel'));

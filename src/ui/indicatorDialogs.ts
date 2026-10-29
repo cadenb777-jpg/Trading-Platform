@@ -157,7 +157,11 @@ export function openIndicatorManager(ops: IndicatorManagerOps): { refresh: () =>
     const target = e.target as HTMLElement;
     const nav = target.dataset.nav;
     if (!nav) return;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+    if (e.key === 'Escape') {
+      e.stopPropagation(); // back to the search box; a second Escape there closes the window
+      e.preventDefault();
+      search.focus();
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
       const items = navTargets(nav);
       const at = items.indexOf(target);
       const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : at + (e.key === 'ArrowDown' ? 1 : -1);

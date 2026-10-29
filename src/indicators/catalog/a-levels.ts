@@ -1,13 +1,14 @@
 /**
- * Support and resistance levels for the overlay family: pivot points (floor/classic, Woodie, Camarilla, Fibonacci,
+ * Support and resistance levels for the overlay family: pivot points (Woodie, Camarilla, Fibonacci,
  * DeMark, Central Pivot Range) on day/week/month anchors, previous and current period levels, swing points
- * (Williams fractals, pivots, ZigZag), Fibonacci retracements, Tirone levels (Achelis), anchored VWAPs, the opening
+ * (Williams fractals, pivots, ZigZag), Fibonacci retracements, Tirone levels (Achelis), the opening
  * range and round numbers. Day anchors use the New York date for intraday bars and the bar's own date otherwise.
  */
 import { highest, lowest } from '../math';
+import { sessionDay, sessionSlot } from '../session';
 import type { Bar } from '../../types';
 import type { IndicatorDef, PlotDef } from '../types';
-import { NaNs, anchorIn, atrOf, barSpacing, closesOf, gapAtStarts, highsOf, intParam, isNum, lengthIn, lowsOf, numIn, numParam, nyDate, periodKeys, previousPeriod } from './a-math';
+import { NaNs, anchorIn, atrOf, countsForLevels, rthIn, barSpacing, closesOf, gapAtStarts, highsOf, intParam, isNum, lengthIn, lowsOf, numIn, numParam, periodKeys, previousPeriod } from './a-math';
 
 const R = ['#ef9a9a', '#ef5350', '#b71c1c', '#880e4f'];
 const S = ['#80cbc4', '#26a69a', '#00695c', '#004d40'];
@@ -31,16 +32,6 @@ type Prev = { h: number; l: number; c: number; o: number; openNow: number };
 type PivotFormula = (x: Prev) => Record<string, number>;
 
 const PIVOT_TYPES: Record<string, { name: string; short: string; description: string; keys: string[]; f: PivotFormula }> = {
-  pivotsclassic: {
-    name: 'Pivot Points (Classic / Floor)',
-    short: 'Floor Pivots',
-    description: "Floor-trader pivots from the previous period's high, low and close: P, R1-R3 and S1-S3.",
-    keys: ['r3', 'r2', 'r1', 'p', 's1', 's2', 's3'],
-    f: ({ h, l, c }) => {
-      const p = (h + l + c) / 3;
-      return { p, r1: 2 * p - l, s1: 2 * p - h, r2: p + (h - l), s2: p - (h - l), r3: h + 2 * (p - l), s3: l - 2 * (h - p) };
-    },
-  },
   pivotsfib: {
     name: 'Pivot Points (Fibonacci)',
     short: 'Fib Pivots',
@@ -109,10 +100,10 @@ function pivotDef(id: string): IndicatorDef {
     t.name,
     t.short,
     t.description,
-    [anchorIn(1)],
+    [anchorIn(1), rthIn],
     t.keys.map((k) => line(k, k.toUpperCase(), pivotColor(k), k === 'p' ? 2 : 1)),
     (bars, p) => {
-      const prev = previousPeriod(bars, intParam(p, 'anchor', 1));
+      const prev = previousPeriod(bars, intParam(p, 'anchor', 1), p, numParam(p, 'rth', 1) === 1);
       const out: Record<string, number[]> = Object.fromEntries(t.keys.map((k) => [k, NaNs(bars.length)]));
       for (let i = 0; i < bars.length; i++) {
         if (!isNum(prev.h[i])) continue;
@@ -198,40 +189,6 @@ export function zigzag(bars: Bar[], threshold: (i: number, ext: number) => numbe
   return out;
 }
 
-// ---------- VWAP ----------
-
-/** Volume-weighted average of the typical price from each reset, with standard-deviation bands. */
-export function anchoredVwap(bars: Bar[], resets: boolean[], k1: number, k2: number): Record<string, number[]> {
-  const n = bars.length;
-  const out = { vwap: NaNs(n), u1: NaNs(n), l1: NaNs(n), u2: NaNs(n), l2: NaNs(n) };
-  let pv = 0;
-  let pv2 = 0;
-  let vol = 0;
-  let started = false;
-  for (let i = 0; i < n; i++) {
-    if (resets[i]) (pv = 0), (pv2 = 0), (vol = 0), (started = true);
-    if (!started) continue;
-    const b = bars[i];
-    const tp = (b.high + b.low + b.close) / 3;
-    const v = b.volume > 0 ? b.volume : 0;
-    pv += tp * v;
-    pv2 += tp * tp * v;
-    vol += v;
-    if (vol <= 0) continue;
-    const w = pv / vol;
-    const sd = Math.sqrt(Math.max(0, pv2 / vol - w * w));
-    out.vwap[i] = w;
-    out.u1[i] = w + k1 * sd;
-    out.l1[i] = w - k1 * sd;
-    out.u2[i] = w + k2 * sd;
-    out.l2[i] = w - k2 * sd;
-  }
-  return out;
-}
-
-const vwapPlots: PlotDef[] = [line('u2', 'Upper 2', '#ef9a9a'), line('u1', 'Upper 1', '#f48fb1'), line('vwap', 'VWAP', '#e91e63', 2), line('l1', 'Lower 1', '#f48fb1'), line('l2', 'Lower 2', '#ef9a9a')];
-const bandInputs = [numIn('k1', 'Band 1 (std dev)', 1, 0.1, 0, 10), numIn('k2', 'Band 2 (std dev)', 2, 0.1, 0, 10)];
-
 /** Most recent value of `flags` up to each bar (for levels from confirmed swing points). */
 function lastTwo(n: number, at: { confirm: number; v: number }[]): [number[], number[]] {
   const a = NaNs(n);
@@ -254,10 +211,10 @@ export const LEVELS: IndicatorDef[] = [
     'Previous Period High/Low/Close',
     'Prev HLC',
     "Yesterday's (or last week's / month's) high, low and close: levels traders watch for a reaction.",
-    [anchorIn(1)],
+    [anchorIn(1), rthIn],
     [line('ph', 'Prev high', R[1]), line('pc', 'Prev close', P), line('pl', 'Prev low', S[1])],
     (bars, p) => {
-      const prev = previousPeriod(bars, intParam(p, 'anchor', 1));
+      const prev = previousPeriod(bars, intParam(p, 'anchor', 1), p, numParam(p, 'rth', 1) === 1);
       return gapAtStarts({ ph: prev.h, pl: prev.l, pc: prev.c }, prev.first);
     },
   ),
@@ -266,27 +223,42 @@ export const LEVELS: IndicatorDef[] = [
     'Current Period Open/High/Low',
     'Period HL',
     "Today's (or this week's / month's) open with the running high and low so far.",
-    [anchorIn(1)],
+    [anchorIn(1), rthIn],
     [line('hi', 'High so far', R[1]), line('open', 'Open', P), line('lo', 'Low so far', S[1])],
     (bars, p) => {
-      const keys = periodKeys(bars, intParam(p, 'anchor', 1));
+      const keys = periodKeys(bars, intParam(p, 'anchor', 1), p);
+      const counts = countsForLevels(bars, p, numParam(p, 'rth', 1) === 1);
       const hi = NaNs(bars.length);
       const lo = NaNs(bars.length);
       const open = NaNs(bars.length);
       const first = keys.map((k, i) => i === 0 || k !== keys[i - 1]);
+      const firstShown = new Array<boolean>(bars.length).fill(false);
+      let started = false;
       bars.forEach((b, i) => {
-        hi[i] = first[i] ? b.high : Math.max(hi[i - 1], b.high);
-        lo[i] = first[i] ? b.low : Math.min(lo[i - 1], b.low);
-        open[i] = first[i] ? b.open : open[i - 1];
+        // values carry forward; a new period starts on its first counted bar, so pre-market bars keep showing the
+        // previous session until the regular session opens
+        if (first[i]) started = false;
+        hi[i] = i > 0 ? hi[i - 1] : NaN;
+        lo[i] = i > 0 ? lo[i - 1] : NaN;
+        open[i] = i > 0 ? open[i - 1] : NaN;
+        if (!counts(i)) return;
+        if (!started) {
+          started = true;
+          [hi[i], lo[i], open[i]] = [b.high, b.low, b.open];
+          firstShown[i] = true;
+          return;
+        }
+        hi[i] = Math.max(hi[i], b.high);
+        lo[i] = Math.min(lo[i], b.low);
       });
-      return gapAtStarts({ hi, lo, open }, first);
+      return gapAtStarts({ hi, lo, open }, firstShown);
     },
   ),
   level(
     'fractals',
     'Williams Fractals',
     'Fractals',
-    "Bill Williams' fractals: a high with two lower highs each side (or a low with two higher lows). Shown 2 bars late, when confirmed.",
+    "Bill Williams' fractals: a high with two lower highs each side (or a low with two higher lows). The marker appears on the swing bar once 2 more bars have formed.",
     [],
     [marker('up', 'Up fractal (high)', '#ef5350', true), marker('down', 'Down fractal (low)', '#26a69a', false)],
     (bars) => {
@@ -414,31 +386,6 @@ export const LEVELS: IndicatorDef[] = [
     },
   ),
   level(
-    'vwapanchor',
-    'VWAP (Session / Week / Month) with Bands',
-    'VWAP+',
-    'Volume-weighted average price restarting each New York session, week, month, quarter or year, with standard-deviation bands.',
-    [anchorIn(1, 5), ...bandInputs],
-    vwapPlots,
-    (bars, p) => {
-      const keys = periodKeys(bars, intParam(p, 'anchor', 1));
-      const first = keys.map((k, i) => i === 0 || k !== keys[i - 1]);
-      return gapAtStarts(anchoredVwap(bars, first, numParam(p, 'k1', 1), numParam(p, 'k2', 2)), first);
-    },
-  ),
-  level(
-    'avwap',
-    'Anchored VWAP (bars back)',
-    'AVWAP',
-    'VWAP measured from a chosen number of bars ago (for example from a big earnings bar), with standard-deviation bands.',
-    [lengthIn(50, 'Anchor (bars back)', 'length', 1, 5000), ...bandInputs],
-    vwapPlots,
-    (bars, p) => {
-      const start = Math.max(0, bars.length - intParam(p, 'length', 50));
-      return anchoredVwap(bars, bars.map((_, i) => i === start), numParam(p, 'k1', 1), numParam(p, 'k2', 2));
-    },
-  ),
-  level(
     'openingrange',
     'Opening Range',
     'ORB',
@@ -453,15 +400,14 @@ export const LEVELS: IndicatorDef[] = [
       if (!(spacing > 0 && spacing < 86400)) return { high, low };
       const end = 570 + intParam(p, 'minutes', 30);
       // the range being built (today) and the latest finished one, shown until the next day's range is complete
-      let day = '';
+      let day = NaN;
       let hi = NaN;
       let lo = NaN;
       let shownHi = NaN;
       let shownLo = NaN;
       for (let i = 0; i < n; i++) {
-        const d = nyDate(bars[i].time);
-        const key = `${d.y}-${d.m}-${d.d}`;
-        const minute = d.h * 60 + d.minute;
+        const key = sessionDay(bars[i].time); // New York date and time: the US session, whatever the market
+        const minute = Math.floor(sessionSlot(bars[i].time) / 60);
         // a bar counts when any part of it falls inside the window (an hourly 9:00 bar covers 9:30-10:00)
         if (minute < end && minute + spacing / 60 > 570) {
           if (key !== day) (day = key), (hi = bars[i].high), (lo = bars[i].low);

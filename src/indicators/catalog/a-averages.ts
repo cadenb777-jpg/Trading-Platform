@@ -1,8 +1,8 @@
 /**
  * Moving averages and smoothing filters for the overlay family. References: TA-Lib (TRIMA, RMA, ZLEMA, T3, MAMA,
- * FRAMA, VIDYA, MCGD, TSF, MIDPOINT, HT_TRENDLINE), John Ehlers' papers and books (Laguerre, Super Smoother,
+ * FRAMA, VIDYA, MCGD, MIDPOINT, HT_TRENDLINE), John Ehlers' papers and books (Laguerre, Super Smoother,
  * Ultimate Smoother, Instantaneous Trendline, Gaussian and Butterworth filters, Decycler, DSMA), Guppy, Widner,
- * Fries (EVWMA), Pine built-ins (ta.swma) and the common TradingView definitions for the rest.
+ * Pine built-ins (ta.swma) and the common TradingView definitions for the rest.
  */
 import type { Bar } from '../../types';
 import { wma } from '../math';
@@ -20,7 +20,6 @@ import {
   lowsOf,
   numIn,
   numParam,
-  regression,
   rma,
   rolling,
   rollingPercentile,
@@ -362,22 +361,6 @@ export function jurikApprox(x: number[], length: number, phase: number, power: n
   });
 }
 
-/** Elastic Volume-Weighted MA (Christian Fries): each bar moves the average by its share of the window's volume. */
-export function evwma(x: number[], volume: number[], n: number): number[] {
-  const out = NaNs(x.length);
-  let prev = NaN;
-  let sum = 0;
-  for (let i = 0; i < x.length; i++) {
-    sum += volume[i];
-    if (i >= n) sum -= volume[i - n];
-    if (i < n - 1) continue;
-    if (!isNum(prev)) prev = x[i];
-    else if (sum > 0) prev = ((sum - volume[i]) * prev + volume[i] * x[i]) / sum;
-    out[i] = prev;
-  }
-  return out;
-}
-
 /** Nadaraya-Watson kernel regression on past bars only (no repainting): Gaussian weights exp(−j² / 2h²). */
 export function kernelRegression(x: number[], window: number, bandwidth: number): number[] {
   const w = Array.from({ length: window }, (_, j) => Math.exp(-(j * j) / (2 * bandwidth * bandwidth)));
@@ -454,17 +437,11 @@ export const AVERAGES: IndicatorDef[] = [
   },
   ma('vidya', 'Variable Index Dynamic Average', 'VIDYA', "Chande's VIDYA: an EMA that speeds up when momentum (CMO) is strong.", '#00acc1', [lengthIn(14), lengthIn(9, 'CMO length', 'cmo', 2), sourceIn], (s, p) => vidya(s, intParam(p, 'length', 14), intParam(p, 'cmo', 9, 2))),
   ma('mcginley', 'McGinley Dynamic', 'MD', 'A self-adjusting average that speeds up in falling markets and hugs price better than an EMA.', '#6d4c41', [lengthIn(14, 'Length', 'length', 2), sourceIn], (s, p) => mcginley(s, intParam(p, 'length', 14, 2))),
-  ma('evwma', 'Elastic Volume-Weighted MA', 'EVWMA', 'Each bar moves the average by its share of recent volume: busy bars pull harder.', '#d81b60', [lengthIn(20), sourceIn], (s, p, bars) => evwma(s, bars.map((b) => b.volume), intParam(p, 'length', 20))),
   ma('vwema', 'Volume-Weighted EMA', 'VWEMA', 'EMA of price × volume divided by EMA of volume.', '#ad1457', [lengthIn(20), sourceIn], (s, p, bars) => {
     const n = intParam(p, 'length', 20);
     const pv = ema(s.map((v, i) => v * bars[i].volume), n);
     const vol = ema(bars.map((b) => b.volume), n);
     return pv.map((x, i) => (vol[i] > 0 ? x / vol[i] : NaN));
-  }),
-  ma('tsf', 'Time Series Forecast', 'TSF', "The linear regression line's projection one bar ahead (TA-Lib TSF).", '#ff7043', [lengthIn(14, 'Length', 'length', 2), sourceIn], (s, p) => {
-    const n = intParam(p, 'length', 14, 2);
-    const r = regression(s, n);
-    return r.intercept.map((b, i) => b + r.slope[i] * n);
   }),
   ma('jma', 'Jurik-style MA (approximation)', 'JMA≈', "A public approximation of Mark Jurik's adaptive average (the real JMA is proprietary). Very smooth with little lag.", '#00bfa5', [lengthIn(7), numIn('phase', 'Phase (−100..100)', 50, 1, -100, 100), numIn('power', 'Power', 2, 1, 1, 10), sourceIn], (s, p) => jurikApprox(s, intParam(p, 'length', 7), numParam(p, 'phase', 50), numParam(p, 'power', 2))),
   ma('laguerre', 'Laguerre Filter', 'Laguerre', "Ehlers' Laguerre filter: heavy smoothing from only four bars of memory. Lower gamma = faster.", '#7cb342', [numIn('gamma', 'Gamma (damping)', 0.8, 0.05, 0, 0.99), sourceIn], (s, p) => laguerre(s, numParam(p, 'gamma', 0.8))),

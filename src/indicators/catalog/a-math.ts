@@ -4,6 +4,7 @@
  */
 import type { Bar } from '../../types';
 import { ema, rma, sma, trueRange } from '../math';
+import { sessionDay, sessionSlot, usesUtcDays } from '../session';
 import type { IndicatorInput, IndicatorParams, NumberInput, PriceSource } from '../types';
 
 export const NaNs = (n: number) => new Array<number>(Math.max(0, n)).fill(NaN);
@@ -26,7 +27,7 @@ export const lengthIn = (def: number, label = 'Length', key = 'length', min = 1,
 export const numIn = (key: string, label: string, def: number, step: number, min: number, max: number): IndicatorInput => ({ key, label, type: 'number', default: def, min, max, step });
 export const sourceIn: IndicatorInput = { key: 'source', label: 'Source', type: 'source', default: 'close' };
 /** Period used by pivots and anchored levels: 1 = day, 2 = week, 3 = month (4 = quarter, 5 = year where offered). */
-export const anchorIn = (def = 1, max = 3): IndicatorInput => ({
+export const anchorIn = (def = 1, max = 3): NumberInput => ({
   key: 'anchor',
   label: max >= 5 ? 'Period (1 day, 2 week, 3 month, 4 quarter, 5 year)' : 'Period (1 day, 2 week, 3 month)',
   type: 'number',
@@ -34,7 +35,10 @@ export const anchorIn = (def = 1, max = 3): IndicatorInput => ({
   min: 1,
   max,
   step: 1,
+  legend: (v) => ['', 'D', 'W', 'M', 'Q', 'Y'][Number(v)] ?? String(v),
 });
+/** Stocks only: build the levels from regular-hours bars (09:30-16:00 ET), leaving out pre-market and after-hours. */
+export const rthIn: NumberInput = { key: 'rth', label: 'Regular hours only (stocks)', type: 'number', default: 1, min: 0, max: 1, step: 1, toggle: true, legend: 'hide' };
 
 // ---------- prices ----------
 
@@ -160,22 +164,6 @@ export { ema, rma, sma };
 
 // ---------- time anchors ----------
 
-const nyParts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', hourCycle: 'h23' });
-const hourMemo = new Map<number, { y: number; m: number; d: number; h: number }>();
-
-/** New York calendar date and hour of a UTC time (memoised per UTC hour: New York offsets are whole hours). */
-export function nyDate(time: number): { y: number; m: number; d: number; h: number; minute: number } {
-  const hourKey = Math.floor(time / 3600);
-  let hit = hourMemo.get(hourKey);
-  if (!hit) {
-    const parts = Object.fromEntries(nyParts.formatToParts(new Date(hourKey * 3600 * 1000)).map((x) => [x.type, x.value]));
-    hit = { y: Number(parts.year), m: Number(parts.month), d: Number(parts.day), h: Number(parts.hour) % 24 };
-    if (hourMemo.size > 200000) hourMemo.clear();
-    hourMemo.set(hourKey, hit);
-  }
-  return { ...hit, minute: Math.floor((time % 3600) / 60) };
-}
-
 /** Typical spacing between bars in seconds (the median gap), 0 for fewer than two bars. */
 export function barSpacing(bars: Bar[]): number {
   if (bars.length < 2) return 0;
@@ -185,24 +173,36 @@ export function barSpacing(bars: Bar[]): number {
   return gaps[Math.floor(gaps.length / 2)];
 }
 
+/** True for intraday charts (bars closer together than a day). */
+export const isIntraday = (bars: Bar[]) => barSpacing(bars) > 0 && barSpacing(bars) < 86400;
+
+/** Regular US stock session, 09:30-16:00 New York time, as seconds after local midnight. */
+const RTH_START = 9.5 * 3600;
+const RTH_END = 16 * 3600;
+
 /**
- * The period a bar belongs to (1 day, 2 week, 3 month, 4 quarter, 5 year). Intraday bars use the New York date
- * (the US session); daily and longer bars carry their date in UTC (exchanges stamp them at midnight UTC).
+ * Whether bar i counts towards a period's levels: with `rth` on, intraday stock bars outside 09:30-16:00 ET
+ * (Schwab's 04:00-20:00 extended hours) are left out. Crypto, daily bars and `rth` off count every bar.
  */
-export function periodKeys(bars: Bar[], anchor: number): number[] {
-  const intraday = barSpacing(bars) > 0 && barSpacing(bars) < 86400;
+export function countsForLevels(bars: Bar[], p: IndicatorParams | undefined, rth: boolean): (i: number) => boolean {
+  if (!rth || usesUtcDays(p) || !isIntraday(bars)) return () => true;
+  return (i) => {
+    const slot = sessionSlot(bars[i].time, p);
+    return slot >= RTH_START && slot < RTH_END;
+  };
+}
+
+/**
+ * The period a bar belongs to (1 day, 2 week, 3 month, 4 quarter, 5 year). Intraday bars use the trading day
+ * from session.ts (New York date for stocks, UTC for crypto); daily and longer bars carry their date in UTC.
+ */
+export function periodKeys(bars: Bar[], anchor: number, p?: IndicatorParams): number[] {
+  const intraday = isIntraday(bars);
   return bars.map((b) => {
-    let y: number;
-    let m: number;
-    let d: number;
-    if (intraday) ({ y, m, d } = nyDate(b.time));
-    else {
-      const dt = new Date(b.time * 1000);
-      y = dt.getUTCFullYear();
-      m = dt.getUTCMonth() + 1;
-      d = dt.getUTCDate();
-    }
-    const dayNumber = Math.floor(Date.UTC(y, m - 1, d) / 86400000);
+    const dayNumber = intraday ? sessionDay(b.time, p) : Math.floor(b.time / 86400);
+    const dt = new Date(dayNumber * 86400000);
+    const y = dt.getUTCFullYear();
+    const m = dt.getUTCMonth() + 1;
     switch (anchor) {
       case 2:
         return Math.floor((dayNumber + 3) / 7); // weeks start on Monday (1970-01-01 was a Thursday)
@@ -218,9 +218,19 @@ export function periodKeys(bars: Bar[], anchor: number): number[] {
   });
 }
 
-/** Open, high, low and close of each bar's previous completed period (NaN until one has finished). */
-export function previousPeriod(bars: Bar[], anchor: number): { o: number[]; h: number[]; l: number[]; c: number[]; curOpen: number[]; first: boolean[] } {
-  const keys = periodKeys(bars, anchor);
+/**
+ * Open, high, low and close of each bar's previous completed period (NaN until one has finished), built only from
+ * the bars `countsForLevels` accepts; `curOpen` is the current period's first counted open (in pre-market, the
+ * period's first bar's open).
+ */
+export function previousPeriod(
+  bars: Bar[],
+  anchor: number,
+  p?: IndicatorParams,
+  rth = true,
+): { o: number[]; h: number[]; l: number[]; c: number[]; curOpen: number[]; first: boolean[] } {
+  const keys = periodKeys(bars, anchor, p);
+  const counts = countsForLevels(bars, p, rth);
   const n = bars.length;
   const o = NaNs(n);
   const h = NaNs(n);
@@ -235,14 +245,21 @@ export function previousPeriod(bars: Bar[], anchor: number): { o: number[]; h: n
     const b = bars[i];
     if (i === 0 || keys[i] !== keys[i - 1]) {
       if (cur) prev = cur;
-      cur = { o: b.open, h: b.high, l: b.low, c: b.close };
+      cur = null;
       first[i] = true;
-    } else if (cur) {
-      cur.h = Math.max(cur.h, b.high);
-      cur.l = Math.min(cur.l, b.low);
-      cur.c = b.close;
     }
-    curOpen[i] = cur!.o;
+    if (counts(i)) {
+      if (!cur) cur = { o: b.open, h: b.high, l: b.low, c: b.close };
+      else {
+        cur.h = Math.max(cur.h, b.high);
+        cur.l = Math.min(cur.l, b.low);
+        cur.c = b.close;
+      }
+    }
+    // before the regular session opens (pre-market), the period's first bar stands in for its open
+    let j = i;
+    while (!cur && j > 0 && !first[j]) j--;
+    curOpen[i] = cur ? cur.o : bars[j].open;
     if (prev) {
       o[i] = prev.o;
       h[i] = prev.h;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Bar } from '../../types';
-import { CATALOG_GUIDES } from '.';
-import { getIndicator } from '../library';
+import { CATALOG, CATALOG_GUIDES } from '.';
+import { INDICATORS, getIndicator } from '../library';
 import { defaultParams } from '../library';
 import type { IndicatorDef } from '../types';
 import { kagi, lineBreak, renko } from './a-trend';
@@ -30,8 +30,6 @@ const EXPECTED: Record<string, Record<string, Record<number, number>>> = {
   vidya: { ma: { 9: 99.6095451828, 154: 110.4714514903, 299: 123.6747879907 } },
   // TA-Lib MCGD
   mcginley: { ma: { 13: 99.4768336648, 156: 111.9019313186, 299: 123.4968727154 } },
-  // TA-Lib TSF
-  tsf: { ma: { 13: 98.3905494505, 156: 113.2042857143, 299: 123.4961538461 } },
   // TA-Lib HT_TRENDLINE
   httrend: { ma: { 63: 100.560157684, 181: 115.6484223602, 299: 123.1571300836 } },
   // TA-Lib MIDPOINT
@@ -80,8 +78,6 @@ const EXPECTED: Record<string, Record<string, Record<number, number>>> = {
   dsma: { ma: { 40: 99.8107005696, 170: 115.5581449694, 299: 123.2774125829 } },
   // Python (public JMA approximation)
   jma: { ma: { 0: 100.61, 150: 113.4864935639, 299: 122.5271106049 } },
-  // Python (Fries EVWMA)
-  evwma: { ma: { 19: 97.92, 159: 111.4051023143, 299: 123.7922683053 } },
   // numpy
   nwkernel: { ma: { 99: 99.4984033489, 199: 113.8365511001, 299: 123.207748833 } },
   // Python (Holt 1957)
@@ -140,10 +136,6 @@ const EXPECTED: Record<string, Record<string, Record<number, number>>> = {
   alligator: { jaw: { 20: 99.2138461538, 160: 111.9726863936, 299: 123.9380867231 }, teeth: { 12: 99.084375, 156: 112.5951931208, 299: 123.4357933023 }, lips: { 7: 99.443, 153: 112.6980179469, 299: 123.5199687484 } },
   // numpy
   heikinashi: { haOpen: { 0: 99.9, 150: 113.1477614856, 299: 123.3622246446 }, haClose: { 0: 100.2425, 150: 113.5225, 299: 122.6475 }, haHigh: { 0: 102.03, 150: 114.66, 299: 124.0 }, haLow: { 0: 99.14, 150: 112.21, 299: 120.89 } },
-  // Python (TradingView Volatility Stop Pine code)
-  volstop: { up: { 20: 96.8, 129: 110.4278383089, 268: 126.0570605617 }, down: { 53: 103.8607202183, 195: 118.2817388911, 299: 125.8935011941 } },
-  // Python (ATR trailing stop)
-  atrtrail: { up: { 14: 89.4792857143, 139: 107.4344107377, 271: 123.4514037378 }, down: { 60: 102.8688011101, 198: 117.5720307672, 299: 128.0909529475 } },
   // Python (Elder SafeZone)
   safezone: { long: { 13: 97.6244444444, 156: 111.48, 299: 121.235 }, short: { 13: 101.382, 156: 117.046, 299: 124.986 } },
   // Python (Gann HiLo)
@@ -153,9 +145,7 @@ const EXPECTED: Record<string, Record<string, Record<number, number>>> = {
   // Python (DevStop approximation)
   kasedev: { dev1: { 30: 99.0081968104, 165: 114.4788159129, 299: 118.7797776425 }, dev2: { 30: 98.3552329829, 165: 115.1953950083, 299: 117.6847108135 }, dev3: { 30: 97.5934418509, 165: 116.012749292, 299: 116.4071328463 } },
   // Python (published pivot formulas)
-  pivotsclassic_w: { p: { 7: 99.0533333333, 154: 112.7266666667, 299: 122.83 }, r1: { 7: 100.9266666667, 154: 115.2433333333, 299: 125.34 }, s1: { 7: 96.0766666667, 154: 109.9533333333, 299: 120.22 }, r2: { 7: 103.9033333333, 154: 118.0166666667, 299: 127.95 }, s2: { 7: 94.2033333333, 154: 107.4366666667, 299: 117.71 }, r3: { 7: 105.7766666667, 154: 120.5333333333, 299: 130.46 }, s3: { 7: 91.2266666667, 154: 104.6633333333, 299: 115.1 } },
-  // Python (published pivot formulas)
-  pivotsclassic: { p: { 1: 100.5933333333, 150: 113.9, 299: 123.19 }, r1: { 1: 102.0466666667, 150: 115.8, 299: 123.48 }, s1: { 1: 99.1566666667, 150: 112.51, 299: 122.87 }, r2: { 1: 103.4833333333, 150: 117.19, 299: 123.8 }, s2: { 1: 97.7033333333, 150: 110.61, 299: 122.58 }, r3: { 1: 104.9366666667, 150: 119.09, 299: 124.09 }, s3: { 1: 96.2666666667, 150: 109.22, 299: 122.26 } },
+  prevhlc_w: { ph: { 7: 102.03, 154: 115.5, 299: 125.44 }, pl: { 7: 97.18, 154: 110.21, 299: 120.32 }, pc: { 7: 97.95, 154: 112.47, 299: 122.73 } },
   // Python (published pivot formulas)
   pivotsfib: { p: { 1: 100.5933333333, 150: 113.9, 299: 123.19 }, r1: { 1: 101.6973133333, 150: 115.15678, 299: 123.42302 }, r2: { 1: 102.3793533333, 150: 115.93322, 299: 123.56698 }, r3: { 1: 103.4833333333, 150: 117.19, 299: 123.8 }, s1: { 1: 99.4893533333, 150: 112.64322, 299: 122.95698 }, s2: { 1: 98.8073133333, 150: 111.86678, 299: 122.81302 }, s3: { 1: 97.7033333333, 150: 110.61, 299: 122.58 } },
   // Python (published pivot formulas)
@@ -182,10 +172,6 @@ const EXPECTED: Record<string, Record<string, Record<number, number>>> = {
   autosr: { r1: { 40: 103.97, 170: 115.5, 299: 127.32 }, r2: { 54: 103.97, 177: 116.41, 299: 132.16 }, s1: { 31: 94.79, 165: 107.69, 299: 119.89 }, s2: { 45: 94.79, 172: 107.69, 299: 122.77 } },
   // numpy
   fibretrace: { f0: { 99: 92.94, 199: 122.49, 299: 132.16 }, f236: { 99: 95.8428, 199: 117.2154, 299: 126.36856 }, f382: { 99: 97.6386, 199: 113.9523, 299: 122.78572 }, f500: { 99: 99.09, 199: 111.315, 299: 119.89 }, f618: { 99: 100.5414, 199: 108.6777, 299: 116.99428 }, f786: { 99: 102.6078, 199: 104.9229, 299: 112.87156 }, f100: { 99: 105.24, 199: 100.14, 299: 107.62 } },
-  // Python
-  avwap: { vwap: { 250: 125.9533333333, 275: 126.984722281, 299: 125.278464961 }, u1: { 250: 125.9533352407, 275: 129.500839436, 299: 128.0604557056 }, l1: { 250: 125.953331426, 275: 124.468605126, 299: 122.4964742164 }, u2: { 250: 125.953337148, 275: 132.016956591, 299: 130.8424464502 }, l2: { 250: 125.9533295186, 275: 121.9524879709, 299: 119.7144834718 } },
-  // daily bars + session anchor: VWAP = typical price
-  vwapanchor: { vwap: { 0: 100.5933333333, 150: 113.26, 299: 122.2666666667 }, u1: { 0: 100.5933333333, 150: 113.26, 299: 122.2666666667 }, l1: { 0: 100.5933333333, 150: 113.26, 299: 122.2666666667 }, u2: { 0: 100.5933333333, 150: 113.26, 299: 122.2666666667 }, l2: { 0: 100.5933333333, 150: 113.26, 299: 122.2666666667 } },
   // Python
   roundlevels: { above: { 0: 150.0, 150: 150.0, 299: 150.0 }, below: { 0: 100.0, 150: 100.0, 299: 100.0 } },
   // daily bars: no intraday range
@@ -216,9 +202,9 @@ describe('overlay family: reference values', () => {
     });
   }
 
-  it('weekly pivots group daily bars into Monday-Sunday weeks', () => {
-    const out = run('pivotsclassic', { anchor: 2 });
-    for (const [key, values] of Object.entries(EXPECTED.pivotsclassic_w)) for (const [i, v] of Object.entries(values)) close(out[key][Number(i)], v);
+  it('weekly levels group daily bars into Monday-Sunday weeks', () => {
+    const out = run('prevhlc', { anchor: 2 });
+    for (const [key, values] of Object.entries(EXPECTED.prevhlc_w)) for (const [i, v] of Object.entries(values)) close(out[key][Number(i)], v);
   });
 
   it('every indicator without a library reference has a hand-worked test below', () => {
@@ -288,7 +274,7 @@ describe('overlay family: hand-worked examples', () => {
     const L = [0.5, 1, 1, 2, 2];
     const C = [1, 1.5, 4, 2.5, 2.5];
     const bars: Bar[] = times.map((time, i) => ({ time, open: C[i], high: H[i], low: L[i], close: C[i], volume: 1 }));
-    const out = run('prevhlc', { anchor: 1 }, bars);
+    const out = run('prevhlc', { anchor: 1, rth: 0 }, bars);
     expect(out.ph[4]).toBe(5);
     expect(out.pl[4]).toBe(0.5);
     expect(out.pc[4]).toBe(4);
@@ -297,11 +283,60 @@ describe('overlay family: hand-worked examples', () => {
   });
 });
 
+describe('overlay family: regular trading hours', () => {
+  // 10 Jan (EST): 10:00 and 15:00 in the session, an 18:00 after-hours spike to 20 and a 19:30 close at 12; then 11 Jan
+  const at = (d: number, h: number, m = 0) => Date.UTC(2024, 0, d, h + 5, m) / 1000;
+  const rows: [number, number, number, number, number][] = [
+    [at(10, 10), 9, 10, 8.5, 9],
+    [at(10, 15), 9, 9.8, 9, 9.5],
+    [at(10, 18), 9.5, 20, 9.5, 11],
+    [at(10, 19, 30), 11, 12.5, 11, 12],
+    [at(11, 10), 12, 12, 11, 11.5],
+    [at(11, 11), 11.5, 12, 11, 11.5],
+  ];
+  const bars: Bar[] = rows.map(([time, open, high, low, close]) => ({ time, open, high, low, close, volume: 100 }));
+
+  it('stock levels come from 09:30-16:00 New York bars by default', () => {
+    const out = run('prevhlc', {}, bars);
+    expect([out.ph[5], out.pl[5], out.pc[5]]).toEqual([10, 8.5, 9.5]);
+    const woodie = run('pivotswoodie', {}, bars);
+    close(woodie.p[5], (10 + 8.5 + 2 * 12) / 4); // this session's first regular-hours open
+  });
+
+  it('switching regular hours off counts the extended-hours spike and close', () => {
+    const out = run('prevhlc', { rth: 0 }, bars);
+    expect([out.ph[5], out.pl[5], out.pc[5]]).toEqual([20, 8.5, 12]);
+  });
+
+  it('crypto keeps UTC days and every bar', () => {
+    const out = run('prevhlc', { _market: 'coinbase' }, bars);
+    // in UTC the 19:30 ET bar (00:30 UTC) already belongs to 11 Jan, so 10 Jan is bars 0-2
+    expect([out.ph[5], out.pl[5], out.pc[5]]).toEqual([20, 8.5, 11]);
+  });
+
+  it('the current period high/low skips pre-market and after-hours bars too', () => {
+    const out = run('periodhl', {}, bars);
+    expect(out.hi[3]).toBe(10);
+    expect(out.hi[5]).toBe(12);
+  });
+});
+
+describe('the whole catalog', () => {
+  it('has no duplicate ids across the library and every family, and no guide without an indicator', () => {
+    const base = INDICATORS.filter((d) => !CATALOG.includes(d));
+    const all = [...base, ...CATALOG].map((d) => d.id);
+    const dupes = all.filter((id, i) => all.indexOf(id) !== i);
+    expect(dupes).toEqual([]);
+    const known = new Set(all);
+    expect(Object.keys(CATALOG_GUIDES).filter((id) => !known.has(id))).toEqual([]);
+  });
+});
+
 describe('overlay family: every definition is well formed', () => {
   const ids = OVERLAYS.map((d) => d.id);
 
   it('has about a hundred new indicators with unique, lowercase ids', () => {
-    expect(OVERLAYS.length).toBeGreaterThanOrEqual(90);
+    expect(OVERLAYS.length).toBeGreaterThanOrEqual(85);
     expect(new Set(ids).size).toBe(ids.length);
     for (const id of ids) expect(id).toMatch(/^[a-z][a-z0-9]*$/);
   });

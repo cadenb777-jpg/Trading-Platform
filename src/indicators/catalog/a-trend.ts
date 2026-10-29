@@ -1,13 +1,13 @@
 /**
  * Trend lines and trailing stops drawn on the price chart. References: StockCharts ChartSchool (Chandelier Exit),
- * TA-Lib (CKSP, SAREXT, TYPPRICE, MEDPRICE, WCLPRICE, AVGPRICE), TradingView's built-in Volatility Stop, Alexander
+ * TA-Lib (CKSP, SAREXT, TYPPRICE, MEDPRICE, WCLPRICE, AVGPRICE), Alexander
  * Elder (SafeZone, "Come Into My Trading Room"), Robert Krausz (Gann HiLo Activator), Bill Williams (Alligator),
  * Steve Nison (Renko, Kagi, Three Line Break, "Beyond Candlesticks").
  */
 import { highest, lowest, stdev } from '../math';
 import type { Bar } from '../../types';
 import type { IndicatorDef, PlotDef } from '../types';
-import { NaNs, atrOf, closesOf, highsOf, intParam, isNum, lengthIn, lowsOf, numIn, numParam, rma, shiftBy, sma, sourceIn, srcOf } from './a-math';
+import { NaNs, atrOf, closesOf, highsOf, intParam, isNum, lengthIn, lowsOf, numIn, numParam, rma, shiftBy, sma } from './a-math';
 
 const UP = '#26a69a';
 const DOWN = '#ef5350';
@@ -21,56 +21,6 @@ function trend(id: string, name: string, shortName: string, description: string,
 /** Splits one stop line into an up-trend and a down-trend plot. */
 function split(values: number[], dirs: number[]): { up: number[]; down: number[] } {
   return { up: values.map((v, i) => (dirs[i] > 0 ? v : NaN)), down: values.map((v, i) => (dirs[i] < 0 ? v : NaN)) };
-}
-
-/** TradingView's Volatility Stop (Wilder's idea): trails the highest/lowest close by a multiple of ATR. */
-export function volatilityStop(bars: Bar[], length: number, mult: number, src: number[]): { stop: number[]; dir: number[] } {
-  const atr = atrOf(bars, length);
-  const stop = NaNs(bars.length);
-  const dir = new Array<number>(bars.length).fill(0);
-  let up = true;
-  let s = NaN;
-  let max = NaN;
-  let min = NaN;
-  for (let i = 0; i < bars.length; i++) {
-    if (!isNum(atr[i])) continue;
-    const m = atr[i] * mult;
-    const v = src[i];
-    if (!isNum(s)) (s = v), (max = v), (min = v);
-    max = Math.max(max, v);
-    min = Math.min(min, v);
-    s = up ? Math.max(s, max - m) : Math.min(s, min + m);
-    const nowUp = v - s >= 0;
-    if (nowUp !== up) {
-      max = v;
-      min = v;
-      s = nowUp ? max - m : min + m;
-    }
-    up = nowUp;
-    stop[i] = s;
-    dir[i] = up ? 1 : -1;
-  }
-  return { stop, dir };
-}
-
-/** ATR trailing stop on closes: ratchets with price, flips side when a close crosses it. */
-export function atrTrailing(bars: Bar[], length: number, mult: number): { stop: number[]; dir: number[] } {
-  const atr = atrOf(bars, length);
-  const c = closesOf(bars);
-  const stop = NaNs(bars.length);
-  const dir = new Array<number>(bars.length).fill(0);
-  let ts = NaN;
-  for (let i = 0; i < bars.length; i++) {
-    if (!isNum(atr[i])) continue;
-    const loss = mult * atr[i];
-    if (!isNum(ts)) ts = c[i] - loss;
-    else if (c[i] > ts && c[i - 1] > ts) ts = Math.max(ts, c[i] - loss);
-    else if (c[i] < ts && c[i - 1] < ts) ts = Math.min(ts, c[i] + loss);
-    else ts = c[i] > ts ? c[i] - loss : c[i] + loss;
-    stop[i] = ts;
-    dir[i] = c[i] > ts ? 1 : -1;
-  }
-  return { stop, dir };
 }
 
 /** Parabolic SAR with separate long/short acceleration, ported from TA-Lib SAREXT (positive = long, negative = short). */
@@ -316,24 +266,6 @@ export const TREND_LINES: IndicatorDef[] = [
     },
   ),
   trend(
-    'volstop',
-    'Volatility Stop',
-    'VStop',
-    "A trailing stop a multiple of ATR from the best close since the trend began; it flips when a close crosses it.",
-    [lengthIn(20, 'ATR length'), numIn('mult', 'ATR multiplier', 2, 0.1, 0.1, 10), sourceIn],
-    upDown('dots'),
-    (bars, p) => dirsToUpDown(volatilityStop(bars, intParam(p, 'length', 20), numParam(p, 'mult', 2), srcOf(bars, p))),
-  ),
-  trend(
-    'atrtrail',
-    'ATR Trailing Stop',
-    'ATR Stop',
-    'A close-based trailing stop a multiple of ATR away; it only moves in the trend’s favour and flips on a cross.',
-    [lengthIn(14, 'ATR length'), numIn('mult', 'ATR multiplier', 3, 0.1, 0.1, 10)],
-    upDown(),
-    (bars, p) => dirsToUpDown(atrTrailing(bars, intParam(p, 'length', 14), numParam(p, 'mult', 3))),
-  ),
-  trend(
     'kasedev',
     'Kase-style Dev Stops (approximation)',
     'DevStop≈',
@@ -373,7 +305,7 @@ export const TREND_LINES: IndicatorDef[] = [
     'CKSP',
     'Two ATR-based stop lines from the recent highest high and lowest low, smoothed by a second look-back (TA-Lib CKSP).',
     [lengthIn(10, 'ATR length', 'length', 2), numIn('mult', 'ATR multiplier', 1, 0.1, 0.1, 10), lengthIn(9, 'Stop length', 'stop')],
-    [line('highStop', 'Stop (from highs)', DOWN), line('lowStop', 'Stop (from lows)', UP)],
+    [line('highStop', 'Long stop (from highs)', UP), line('lowStop', 'Short stop (from lows)', DOWN)],
     (bars, p) => {
       const n = intParam(p, 'length', 10, 2);
       const x = numParam(p, 'mult', 1);

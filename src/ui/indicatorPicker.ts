@@ -84,6 +84,9 @@ const ALIASES: Record<string, string> = {
   tsf: 'time series forecast linear regression',
 };
 
+/** The everyday indicators most people mean when a search is ambiguous. */
+const CORE = new Set(['sma', 'ema', 'wma', 'vwap', 'bb', 'donchian', 'rsi', 'macd', 'stoch', 'cci', 'willr', 'atr', 'obv', 'volume', 'keltner', 'psar', 'ichimoku', 'supertrend', 'adx']);
+
 export interface PickerEntry {
   def: IndicatorDef;
   /** Lowercased name, short name, id, aliases, category and description. */
@@ -105,7 +108,8 @@ export function buildIndex(defs: IndicatorDef[]): PickerEntry[] {
 
 /**
  * Entries matching every word of the query, best first: an exact short name or id, then names starting with the
- * query, then names containing it, then matches anywhere (aliases, description). Ties keep the library order.
+ * query, then names containing it, then matches anywhere; a whole-query alias match and the core indicators each
+ * rank one step higher. Ties keep the library order.
  */
 export function searchIndex(index: PickerEntry[], query: string): PickerEntry[] {
   const q = query.trim().toLowerCase();
@@ -118,7 +122,9 @@ export function searchIndex(index: PickerEntry[], query: string): PickerEntry[] 
     if (e.short === q || e.id === q) score = 0;
     else if (e.name.startsWith(q) || e.short.startsWith(q) || e.id.startsWith(q)) score = 1;
     else if (e.name.includes(q) || e.short.includes(q)) score = 2;
-    else if ((ALIASES[e.def.id] ?? '').includes(q)) score = 3;
+    // the whole query in an alias ("moving average" for SMA), and the everyday core indicators, move up a step each
+    if ((ALIASES[e.def.id] ?? '').includes(q)) score -= 1;
+    if (CORE.has(e.def.id)) score -= 1;
     scored.push({ e, score, at });
   });
   scored.sort((a, b) => a.score - b.score || a.at - b.at);
