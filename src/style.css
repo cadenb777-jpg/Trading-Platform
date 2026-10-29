@@ -3001,8 +3001,6 @@ button.news-item {
 }
 
 .data-table th {
-  position: sticky;
-  top: 0;
   z-index: 1;
   background: var(--panel);
   text-align: right;
@@ -3050,10 +3048,16 @@ button.news-item {
 }
 
 /* Table tools (src/ui/tableTools.ts): sortable headers, a slim filter row, "Showing x of y". */
-.data-table.tt thead {
+/* Column headers stay visible only inside a table's own scroll box; on a page that scrolls as a whole they scroll
+   away with the table instead of floating over everything below it. */
+.table-wrap .data-table th,
+.table-wrap .data-table.tt thead {
   position: sticky;
   top: 0;
   z-index: 1;
+}
+.table-wrap .data-table.tt thead th {
+  position: static;
 }
 
 .data-table.tt thead th {
@@ -6459,7 +6463,6 @@ a.btn {
 /* ---------- Trade page (src/pages/tradePage.ts) and the order ticket (src/trade/ticket.ts) ---------- */
 .trade-page { --page-max: 1560px; }
 .tr-top {
-  position: sticky; top: 0; z-index: 5;
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3);
   padding: var(--sp-2) 0; margin-bottom: var(--sp-3);
   background: var(--bg); border-bottom: 1px solid var(--border);
@@ -6484,7 +6487,7 @@ a.btn {
 }
 .tr-watch { grid-area: watch; padding: var(--sp-3); align-self: stretch; }
 .tr-chart { grid-area: chart; padding: var(--sp-3); }
-.tr-ticket { grid-area: ticket; padding: var(--sp-3); position: sticky; top: 64px; }
+.tr-ticket { grid-area: ticket; padding: var(--sp-3); position: sticky; top: var(--sp-2); }
 .tr-lists { grid-area: lists; padding: var(--sp-2) var(--sp-3) var(--sp-3); }
 .tr-offline .tr-ticket { opacity: 0.55; pointer-events: none; }
 

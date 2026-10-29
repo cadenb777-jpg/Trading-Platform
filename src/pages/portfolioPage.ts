@@ -69,22 +69,20 @@ export function createPortfolioPage() {
 
   function renderList() {
     const item = (p: Portfolio, onclick: () => void, active: boolean) => h('button', { class: active ? 'active' : '', onclick }, p.name);
-    // models and client portfolios only: the owner's real accounts live on the Account page
+    // My accounts first (analyse or optimise a real account here; its live totals stay on Account), then models
+    const mine = saved.filter((p) => isMine(p));
     const models = saved.filter((p) => !isMine(p));
-    const accounts = saved.length - models.length;
     list.replaceChildren(
       h('button', { class: 'btn primary', onclick: () => select(blank()) }, '+ New portfolio'),
+      h('div', { class: 'muted small' }, 'My accounts'),
+      ...(mine.length
+        ? mine.map((p) => item(p, () => select(structuredClone(p)), p.id === current.id))
+        : [h('div', { class: 'muted small' }, 'None yet. Import a statement or sync Webull on ', h('a', { href: '#account' }, 'Account'), '.')]),
       h('div', { class: 'muted small' }, 'Saved models'),
       ...(models.length ? models.map((p) => item(p, () => select(structuredClone(p)), p.id === current.id)) : [h('div', { class: 'muted small' }, 'None yet. Saved portfolios are stored by the helper on your computer.')]),
       h('div', { class: 'muted small' }, 'Templates'),
       ...TEMPLATES.map((t) => item(t, () => select(structuredClone(t)), false)),
-      h(
-        'p',
-        { class: 'muted small pf-accounts-link' },
-        accounts ? `Your ${accounts} real account${accounts === 1 ? '' : 's'} (statements, Webull) are on ` : 'Your real accounts (import a statement, sync Webull) are on ',
-        h('a', { href: '#account' }, 'Account →'),
-        accounts ? ' Use “Analyse in Portfolios” there to test one here.' : '',
-      ),
+      mine.length ? h('p', { class: 'muted small pf-accounts-link' }, 'Live totals, dividends, risk and taxes for your accounts are on ', h('a', { href: '#account' }, 'Account →')) : '',
     );
   }
 
