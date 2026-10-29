@@ -30,6 +30,7 @@ import { openSettings } from '../ui/settings';
 import { tableTools } from '../ui/tableTools';
 import { renderCompare, saveText } from '../prospect/compare';
 import { loadProfile, typeBadge, type ProfileContext } from '../prospect/profile';
+import { createReviewView } from '../prospect/review';
 import {
   CLIENT_FILTERS,
   DATA_LIMITS,
@@ -61,11 +62,12 @@ import {
   type SortKey,
 } from '../prospect/logic';
 
-type Mode = 'search' | 'map' | 'compare' | 'data';
+type Mode = 'search' | 'map' | 'compare' | 'review' | 'data';
 const MODES: { id: Mode; label: string }[] = [
   { id: 'search', label: 'Search' },
   { id: 'map', label: 'Map' },
   { id: 'compare', label: 'Compare' },
+  { id: 'review', label: 'Review' },
   { id: 'data', label: 'Data' },
 ];
 const SORTS: { id: SortKey | ''; label: string }[] = [
@@ -135,7 +137,7 @@ export function createProspectPage() {
   const frame = pageFrame('Prospecting', 'RIAs, exempt advisers and family offices from free SEC filings (Form ADV, 13F, Form D). Every fact shows its source and date; family-office labels are educated guesses, never certain.', [tabs]);
   frame.el.classList.add('pr-page');
   const strip = h('div', { class: 'pr-strip', 'aria-label': 'Data freshness' });
-  const views: Record<Mode, HTMLElement> = { search: h('div', { class: 'pr-view' }), map: h('div', { class: 'pr-view' }), compare: h('div', { class: 'pr-view' }), data: h('div', { class: 'pr-view' }) };
+  const views: Record<Mode, HTMLElement> = { search: h('div', { class: 'pr-view' }), map: h('div', { class: 'pr-view' }), compare: h('div', { class: 'pr-view' }), review: h('div', { class: 'pr-view' }), data: h('div', { class: 'pr-view' }) };
   frame.body.replaceChildren(strip, ...Object.values(views));
 
   // ---------- profile drawer ----------
@@ -185,6 +187,10 @@ export function createProspectPage() {
       return status?.peopleNote ?? null;
     },
   };
+  // ---------- review queue (website, AI and watcher findings; src/prospect/review.ts) ----------
+  const review = createReviewView((id) => openFirm(id));
+  views.review.append(review.el);
+
   function openFirm(id: string) {
     drawerReturn = document.activeElement instanceof HTMLElement && !drawer.contains(document.activeElement) ? document.activeElement : null;
     drawer.hidden = scrim.hidden = false;
@@ -213,6 +219,7 @@ export function createProspectPage() {
     drawTabs();
     if (mode === 'map') showMap();
     if (mode === 'compare') drawCompare();
+    if (mode === 'review') review.show();
     if (mode === 'data') drawData();
   }
 

@@ -82,6 +82,7 @@ def public():
         'model': data.get('model') or DEFAULT_MODEL,
         'openBrowser': data.get('open_browser') is not False,
         'autoUpdate': data.get('auto_update') is True,
+        'prospectSmtpCheck': data.get('prospect_smtp_check') is True,
         'models': [{'id': k, 'name': v} for k, v in AI_MODELS.items()],
     }
 
@@ -202,6 +203,8 @@ async def set_settings(ctx, msg):
         changes['open_browser'] = bool(msg['openBrowser'])
     if 'autoUpdate' in msg:
         changes['auto_update'] = bool(msg['autoUpdate'])
+    if 'prospectSmtpCheck' in msg:
+        changes['prospect_smtp_check'] = msg['prospectSmtpCheck'] is True
     if 'model' in msg:
         if msg['model'] not in AI_MODELS:
             raise EngineError('Unknown model')

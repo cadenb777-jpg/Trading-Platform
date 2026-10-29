@@ -145,6 +145,51 @@ exact), retries 429/5xx and dropped connections with growing waits (2, 4, 8... s
 Retry-After), resumes partial files, and stops on a 403 (wrong SEC email, or the SEC's rate limit: wait 10 minutes). The background schedule only refreshes sources you have
 downloaded yourself, and only when the SEC page lists a newer file.
 
+## Contacts from firm websites (helper/engine/prospect_contacts.py)
+
+The profile's **Contacts** section and the page's **Review** tab. Tables in prospect.db: `contact_facts` (every finding:
+person, email, phone, focus, AI fact, change; with source URL, date, origin and review status), `contact_pages` (page text
+kept for the AI analyst and change checks), `contact_crawls`, `contact_domains` (MX / catch-all), `contact_email_checks`,
+`contact_optout`, `contact_watch`.
+
+- **Crawler** (`prospect.crawl {firmId, website?}`): the website from Form ADV, or one the owner types. Up to 10 pages:
+  home, then team / people / about / leadership / contact / approach pages picked by link text, then bio pages linked
+  from the team page. robots.txt first (403 = nothing allowed, 404 = everything, an unreadable one stops the crawl;
+  a Crawl-delay over 10 s is respected by not crawling), one request a second per host, only public internet addresses
+  (every redirect hop checked), other sites skipped. User-Agent: `TradingPlatformProspecting/1.0 (TradingPlatform personal
+  research tool of an investment adviser; ... obeys robots.txt; contact <SEC email>)`.
+- **What is extracted**: people (a name with a job title in the same or next block, or schema.org Person data; a name
+  without a title is skipped), a bio snippet, emails on the firm's own domain (mailto, text, "[at]"/"[dot]"), main lines
+  (Form ADV phone, numbers labelled main/office/phone, numbers on home/contact/about pages) and direct lines (labelled
+  "direct"). Fax, mobile/cell and unlabelled numbers on team or bio pages are dropped. Investment focus: keyword tags and up
+  to 3 "we specialize / our approach..." sentences, each with its page.
+- **Email labels** (never "verified" unless the firm published it): `published`; for people without one (website or
+  filings), a guess from the firm's pattern (first.last, flast, firstlast, first, f.last, first_last, firstl, first-last,
+  last, lastf, last.first, learned from published addresses of named people; first.last when none) labelled
+  `pattern + server-checked`, `pattern + domain accepts mail` (MX records found), `guess`, or `catch-all (can't verify)`.
+  MX comes from dnspython when installed (optional, requirements-extra.txt), else free DNS-over-HTTPS (Cloudflare, then
+  Google), cached 7 days. The SMTP check is OFF by default (Settings > Data sources): it connects to the MX on port 25, tests
+  a random address first (accepted = catch-all), then RCPT for each guess (null sender, no message sent, 20 at most,
+  cached 30 days). Many home internet providers block port 25; the labels then fall back to the MX check.
+- **AI research analyst** (`prospect.ai_profile {firmId}` = cost estimate: pages, tokens, dollars; `{firmId, run: true}`
+  = draft): the owner's Anthropic key and model (ai.py client), structured JSON output. Sources = the SEC facts (linked to
+  IAPD / EDGAR) and the saved pages. Every fact must give one of those URLs and a verbatim quote; facts whose URL or quote
+  isn't in the sources are dropped and counted. Streams engine_event progress. Kept facts go to the review queue.
+- **Change watcher** (`prospect.watch.run {firmId?}`, `prospect.watch.status`, `prospect.watch.set {firmId, on}`): every 7
+  days (started by `prospect.schedule_loop` through `SCHEDULE_HOOKS`) for starred firms plus firms with a saved note (60 at
+  most): compares the SEC facts with the last snapshot (AUM, new Form ADV / 13F quarter / Form D, website on file, new
+  people and title changes in filings) and re-crawls the website (new person, title change, person gone, page text
+  changed). The first run is a baseline. The SEC facts come from the bulk data the download schedule refreshes.
+- **Review queue** (`prospect.review.list {status?}`, `prospect.review.decide {fids, decision: approve|reject|undo}`):
+  findings arrive pending; approved ones show "Reviewed by you on <date>"; rejected ones are hidden and stay rejected
+  while a re-crawl reads the same; a material change (a new title) sends an approved item back to pending.
+- **Do not contact** (`prospect.optout.set {firmId | email, on, reason?}`, `prospect.optout.list`): per firm or email,
+  plus any firm whose outreach status is "do not contact". `prospect.contacts_export {firmIds?, guesses?}` (CSV with
+  the email label and review state per row) and `prospect.export` (through `EXPORT_FILTERS`, reply `doNotContact`) leave
+  them out.
+
+Not used, on purpose: LinkedIn scraping, bought or leaked lists, people-search sites, personal cell numbers.
+
 ## What was not verified live
 
 This sandbox could not reach sec.gov or census.gov. The parsers were built from documented schemas and third-party
@@ -160,6 +205,10 @@ real files:
   the parser follows the documented form; a firm it can't read is listed as "couldn't read Schedule A";
 - the IAPD firm search parameters (`state`, `filter`, `nrows`, `start`) and reply fields (`hits.hits[]._source.firm_source_id`,
   `firm_name`, `firm_ia_scope`, `firm_ia_full_sec_number`, `firm_address_details`), from how the website behaves.
+
+- the website crawler and extractors were tested on hand-made pages (`helper/tests/fixtures/prospect_contacts/`), not on
+  real firm websites (many build their team pages with JavaScript, which this reader doesn't run); DNS-over-HTTPS and the
+  SMTP check were tested with fakes only.
 
 The first real download will show any column the parser couldn't find as empty fields; check `prospect.status` counts
 after it.

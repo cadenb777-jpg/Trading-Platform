@@ -324,6 +324,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   data: saved and opened firms automatically, all firms by AUM only when turned on in the Data tab (prospect.adv_pdf_reader
   start/pause/resume); failed fetches back off 1h/6h/24h (reset on a new filing), 403/429 pauses 30 min. State-registered
   RIAs from the IAPD firm search (source 'state', beta). Both unverified live. Browser gate PROSPECT_COMPLETE_HELPER_VERSION 38.
+  engine/prospect_contacts.py (docs/prospecting.md "Contacts"): firm-website crawler (<= 10 pages, robots.txt, 1 req/s/host,
+  honest UA, public hosts only) -> people/emails/main+direct phones/focus as contact_facts with source URL + date, pending
+  in the Review tab (src/prospect/review.ts) until approved ("reviewed by you on <date>"). Email labels: published /
+  pattern + server-checked / pattern + domain accepts mail / guess / catch-all; never "verified". MX via dnspython or DoH;
+  SMTP check off by default (settings prospect_smtp_check). prospect.ai_profile drafts cited facts (quote must be in the
+  source, else dropped; cost shown first). Weekly watcher via prospect.SCHEDULE_HOOKS; do-not-contact via
+  prospect.EXPORT_FILTERS. No LinkedIn, bought lists or people-search sites. UI: src/prospect/contacts.ts in the profile.
 
 ## Conventions
 

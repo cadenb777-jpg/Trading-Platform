@@ -2186,6 +2186,12 @@ SOURCE_NAMES = {'adv': 'Adviser lists', 'adv_full': 'Form ADV people and funds',
                 'state': 'State-registered advisers', 'geo': 'Map locations', 'build': 'Matching firms'}
 
 
+#: Extra background loops started with the schedule (prospect_contacts adds its weekly change watcher): fn(ctx, db_path).
+SCHEDULE_HOOKS = []
+#: Firms left out of prospect.export (prospect_contacts adds the do-not-contact list): fn(con) -> set of firm ids.
+EXPORT_FILTERS = []
+
+
 async def schedule_loop(ctx, db_path=None):
     """Keeps already-downloaded sources fresh: the monthly adviser lists and the quarterly 13F / Form D data sets
     (looked for monthly; a file is only downloaded when the SEC has a newer one). Never starts a source you haven't
@@ -2196,6 +2202,8 @@ async def schedule_loop(ctx, db_path=None):
         background(prospect_iapd.pdf_loop(ctx, db_path))
     except Exception as err:
         log.info('Form ADV PDF reader not started: %s', err)
+    for hook in SCHEDULE_HOOKS:
+        background(hook(ctx, db_path))
     await asyncio.sleep(600)
     while True:
         if db_path.exists():
@@ -2525,9 +2533,17 @@ def export_csv(con, query):
     out = io.StringIO()
     w = csv.writer(out)
     w.writerow([label for _, label in EXPORT_COLUMNS])
-    for r in result['rows']:
+    skip = set()
+    for fn in EXPORT_FILTERS:
+        try:
+            skip |= set(fn(con))
+        except Exception as err:
+            log.info('Export filter skipped: %s', err)
+    rows = [r for r in result['rows'] if r.get('id') not in skip]
+    for r in rows:
         w.writerow([csv_cell('; '.join(r.get(k) or []) if k == 'reasons' else r.get(k)) for k, _ in EXPORT_COLUMNS])
-    return {'csv': out.getvalue(), 'count': len(result['rows']), 'total': result['total'], 'columns': [label for _, label in EXPORT_COLUMNS]}
+    return {'csv': out.getvalue(), 'count': len(rows), 'total': result['total'], 'columns': [label for _, label in EXPORT_COLUMNS],
+            'doNotContact': len(result['rows']) - len(rows)}
 
 
 def status(con, db_path=None):
@@ -2729,3 +2745,9 @@ try:
     from . import prospect_iapd  # noqa: E402,F401
 except Exception as _err:  # optional: the core data still works
     log.info('IAPD reader unavailable: %s', _err)
+
+# Website contacts, review queue, change watcher, AI analyst and do-not-contact list (adds prospect.crawl and friends).
+try:
+    from . import prospect_contacts  # noqa: E402,F401
+except Exception as _err:  # optional: the core data still works
+    log.info('Prospect contacts unavailable: %s', _err)

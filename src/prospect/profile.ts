@@ -12,6 +12,7 @@ import { h, toast } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
 import { tickerAttr } from '../ui/tickerCard';
 import { columnChart, shareBar, shareList } from './charts';
+import { contactsSection } from './contacts';
 import { CHANGE_TONE, CHANGE_WORDS, CLIENT_LABELS, confidenceLabel, confidenceTone, countText, dateText, moneyText, quarterText, TYPE_SHORT, TYPE_TERM, weightText } from './logic';
 
 export interface ProfileContext {
@@ -372,6 +373,7 @@ export function renderProfile(p: ProspectProfile, ctx: ProfileContext): HTMLElem
     facts,
     why,
     outreach,
+    contactsSection(p.id),
     aum,
     clients,
     people,

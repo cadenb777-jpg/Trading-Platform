@@ -8009,3 +8009,24 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .pr-page .data-table th.num, .pr-page .data-table td.num { text-align: right; }
 .pr-page .data-table th.num .tt-sort { margin-left: auto; }
 .pr-data-grid > .pr-warn { grid-column: 1 / -1; margin: 0; }
+
+/* Prospect contacts (src/prospect/contacts.ts, review.ts) */
+.pc-controls { display: grid; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.pc-controls .input[type='url'] { min-width: 220px; flex: 1 1 240px; }
+.pc-progress { margin: 0; min-height: 1.2em; }
+.pc-people, .pc-general, .pc-ai-facts, .pc-changes, .pc-watch { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.pc-person { border-top: 1px solid var(--border); padding-top: var(--sp-2); min-width: 0; }
+.pc-person:first-child { border-top: 0; padding-top: 0; }
+.pc-person-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.pc-bio { margin: 4px 0; color: var(--muted); }
+.pc-email, .pc-phone { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.pc-label { font-size: var(--fs-xs); white-space: nowrap; }
+.pc-meta { color: var(--muted); margin-top: 2px; }
+.pc-review { color: var(--muted); }
+.pc-review.ok { color: var(--up-text); }
+.pc-quote { margin: 4px 0; padding-left: var(--sp-2); border-left: 2px solid var(--border); color: var(--text); }
+.pc-ai { display: grid; gap: var(--sp-2); }
+.pc-skipped ul { margin: 4px 0; padding-left: 18px; overflow-wrap: anywhere; }
+.pc-review-view { display: grid; gap: var(--sp-3); }
+.pc-review-table td { vertical-align: top; }
+.pc-row-actions { white-space: nowrap; }
