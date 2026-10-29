@@ -590,7 +590,8 @@ def _member_kind(name):
         return 'people'
     if '7b1' in n or '7_b_1' in n or '7b_1' in n:
         return 'funds'
-    if 'base_a' in n or 'adv_base' in n or 'base a' in n:
+    # Only Base A maps FilingID -> CRD; Base B (and any later Base C, D...) holds more items without a CRD.
+    if re.search(r'base[ _-]?a(?![a-z])', n):
         return 'base'
     return None
 

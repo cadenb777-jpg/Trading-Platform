@@ -131,6 +131,10 @@ class Parsers(Loaded):
         funds = self.con.execute('SELECT name, gav, owners FROM private_funds WHERE crd = 1003').fetchall()
         self.assertEqual([tuple(f) for f in funds], [('PINE STREET OPPORTUNITIES FUND LP', 750_000_000, 120)])
 
+    def test_adv_base_b_is_not_the_crd_table(self):
+        self.assertEqual(pr._member_kind('adv-part1/IA_ADV_Base_A_20111105_20241231.csv'), 'base')
+        self.assertIsNone(pr._member_kind('adv-part1/IA_ADV_Base_B_20111105_20241231.csv'))
+
     def test_13f_value_units_before_and_after_2023(self):
         self.assertEqual(pr.value_multiplier('2022-11-14'), 1000)
         self.assertEqual(pr.value_multiplier('2023-01-03'), 1)
