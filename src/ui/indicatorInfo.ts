@@ -1,4 +1,5 @@
 /** The ⓘ window for an indicator: what it does, how to use it, and what it says right now on this chart. */
+import { CATALOG_GUIDES } from '../indicators/catalog';
 import { runInsight } from '../ai/insight';
 import { INDICATOR_GUIDES } from '../indicators/info';
 import type { IndicatorDef, IndicatorParams } from '../indicators/types';
@@ -78,7 +79,7 @@ function reading(def: IndicatorDef, ctx: IndicatorChartContext): string[] {
 }
 
 export function openIndicatorInfo(def: IndicatorDef, ctx?: IndicatorChartContext) {
-  const guide = INDICATOR_GUIDES[def.id];
+  const guide = INDICATOR_GUIDES[def.id] ?? CATALOG_GUIDES[def.id];
   const aiPanel = h('section', { class: 'panel insight-panel', hidden: true });
   const body = h(
     'div',
