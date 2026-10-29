@@ -196,7 +196,8 @@ def parse_form_d(xml_text):
         name = ' '.join(x for x in (_text(person, 'firstName'), _text(person, 'lastName')) if x)
         roles = [r.text.strip() for r in person.iter() if _local(r.tag) == 'relationship' and r.text]
         if name:
-            people.append({'name': name, 'roles': roles})
+            # relationshipClarification is the filer's own words, often the title ("Managing Member of the GP").
+            people.append({'name': name, 'roles': roles, 'title': _text(person, 'relationshipClarification')})
     brokers = sorted({r.text.strip() for r in root.iter() if _local(r.tag) == 'recipientName' and r.text and r.text.strip() not in ('None', 'N/A')})
     exempt = _find(root, 'federalExemptionsExclusions')
     exemptions = [i.text.strip() for i in (list(exempt) if exempt is not None else []) if i.text]

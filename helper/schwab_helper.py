@@ -41,7 +41,7 @@ if os.environ.get('TP_SPLASH'):
     logging.getLogger().addHandler(logging.NullHandler())
 warnings.showwarning = lambda *args, **kwargs: None
 import httpx  # noqa: E402
-from schwab.auth import easy_client  # noqa: E402
+from schwab.auth import RedirectTimeoutError, easy_client  # noqa: E402
 from schwab.streaming import StreamClient  # noqa: E402
 from websockets.asyncio.server import broadcast, serve  # noqa: E402
 import updater  # noqa: E402  (standard library only)
@@ -1079,6 +1079,15 @@ async def market_scanner(market):
     await scanner.background_loop(market.engine, market.news)
 
 
+async def prospect_schedule(market):
+    """Keeps the prospecting data (engine/prospect.py) fresh, only for sources the owner has downloaded once."""
+    await engine.wait_loaded()
+    if 'prospect' in engine.LOAD_ERRORS:
+        return
+    from engine import prospect
+    await prospect.schedule_loop(market.engine)
+
+
 def chrome_command(url):
     """The command that opens `url` in Google Chrome on this computer, or None if Chrome isn't installed."""
     if sys.platform == 'win32':
@@ -1141,7 +1150,7 @@ async def run(client, sec_contact='', open_browser=True):
         sys.exit(f'Port {PORT} is already in use. Is the helper already running in another window?')
     async with server:
         jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market), warm_up(market),
-                open_when_ready(market, open_browser), market_scanner(market), market.update_loop()]
+                open_when_ready(market, open_browser), market_scanner(market), prospect_schedule(market), market.update_loop()]
         if SCREEN:
             SCREEN.ready(PLATFORM_URL, LOG_PATH, os.environ.get('TP_LAUNCH_WARNING', ''))
             return await until_restart(market, [*jobs, screen_clock()])
@@ -1243,6 +1252,19 @@ def main():
         sys.exit(f'The helper stopped because of an error: {err}\nDetails are in {LOG_PATH}')
 
 
+def schwab_login(config):
+    """Saved Schwab login, or the browser login when it's missing or a week old (opens by itself, no Enter needed)."""
+    return easy_client(
+        config['app_key'],
+        config['app_secret'],
+        config.get('callback_url', CALLBACK_URL),
+        str(TOKEN_PATH),
+        asyncio=True,
+        interactive=False,  # open the Schwab login page straight away instead of waiting for Enter
+        callback_timeout=900.0,  # 15 minutes to log in and approve
+    )
+
+
 def serve_forever(args):
     if SCREEN:
         SCREEN.step('Getting ready...', 91, 0.3)
@@ -1254,19 +1276,18 @@ def serve_forever(args):
         SCREEN.pause()
     if not SCREEN or login:
         print()
-        print('Logging in to Schwab...')
-        print('If a browser opens: log in, approve access, and if you see a "connection is not private"')
-        print('warning, click Advanced, then Proceed. That warning is expected for this local login.')
+        print('Logging in to Schwab (Schwab asks for this about once a week)...')
+        print('Your browser opens the Schwab login page by itself. Log in and approve access.')
+        print('If you then see a "connection is not private" warning, click Advanced, then Proceed:')
+        print('that warning is expected for this local login. You have 15 minutes; nothing to type here.')
         print()
     else:
         SCREEN.step('Logging in to Schwab...', 96, 2)
-    client = easy_client(
-        config['app_key'],
-        config['app_secret'],
-        config.get('callback_url', CALLBACK_URL),
-        str(TOKEN_PATH),
-        asyncio=True,
-    )
+    try:
+        client = schwab_login(config)
+    except RedirectTimeoutError:
+        sys.exit('The Schwab login wasn\'t finished within 15 minutes. Close this window and start the helper again '
+                 'to get a fresh login page.')
     if SCREEN:
         SCREEN.resume()  # puts the start screen back after the login steps
         SCREEN.step('Starting the live data server...', 99, 1)
@@ -1279,6 +1300,9 @@ def serve_forever(args):
         quant = sys.modules.get('engine.quant')
         if quant is not None:
             quant.shutdown()  # and the optimiser's
+        prospect = sys.modules.get('engine.prospect')
+        if prospect is not None:
+            prospect.shutdown()  # and the prospect data worker
     if restart:
         restart_helper()
 

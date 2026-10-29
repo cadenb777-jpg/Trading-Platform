@@ -32,5 +32,6 @@ export const PAGE_SUGGESTIONS: Record<string, string[]> = {
   account: ['Summarize my account in 5 bullets', 'Which holdings give me the most dividend income?', 'Am I too concentrated in any stock or sector?'],
   portfolio: ['Summarize this portfolio’s risk and return', 'What is the biggest risk in this portfolio?', 'Which holdings give me the most dividend income?', 'Is my dividend income well diversified?', 'Which dividends look at risk of a cut?'],
   backtest: ['Is this backtest result trustworthy or luck?', 'Explain the Monte Carlo and random-walk results', 'Why does this strategy lose in some years?'],
+  prospect: ['Which of these firms look like the best prospects for me, and why?', 'Summarise the firm profile on screen for a first call', 'What questions should I ask this family office?', 'What does the 13F overlap here tell me about these firms?'],
   calendar: ['Which events this week matter most for stocks?', 'Explain the latest actual vs forecast surprises', 'What should I watch out for before these releases?'],
 };

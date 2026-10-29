@@ -16,11 +16,14 @@ const dayTime = (date: string) => Date.parse(`${date.slice(0, 10)}T00:00:00Z`) /
 // ---------- Price-only maths (exported for tests) ----------
 
 /**
- * Larry Williams' Pro Go (described in his seminars and repeated in the common TradingView / thinkScript versions,
- * e.g. usethinkscript.com "Larry Williams Pro-Go Indicator"): the move from yesterday's close to today's open is the
- * public's (orders placed overnight), the move from today's open to today's close is the professionals' (traded
- * during the session). Each is averaged over `length` bars.
+ * Larry Williams' Pro Go (from his seminars; formula as in the TradingView "William's ProGo indicator" script, which
+ * describes the public line as "the change from yesterday's close to today's open"): the overnight move belongs to
+ * the public (orders placed outside the session), the session move (open to close) to the professionals. Each is
+ * averaged over `length` bars.
  *   Public = SMA(open - previous close, length);  Pros = SMA(close - open, length)
+ * The usethinkscript.com port ("Larry Williams Pro-Go Indicator") computes public as close[1] - open, the same move
+ * with the sign flipped. We use open - previous close so both lines read the same way: above zero = that group bought
+ * (a gap up for the public, a rise during the day for the pros), and Pros − Public compares like with like.
  */
 export function proGo(bars: Bar[], length: number) {
   const pub = sma(bars.map((b, i) => (i ? b.open - bars[i - 1].close : NaN)), length);
@@ -57,8 +60,8 @@ export function vixFix(bars: Bar[], period: number, bbLength: number, mult: numb
  *   of its low.
  * - Oops! buy: the bar opens below the prior low (a gap down) and trades back up to that low. Sell: opens above the
  *   prior high and falls back to it.
- * - Outside day with a down close (buy setup): higher high and lower low than the prior bar, closing below the prior
- *   low; Williams buys the next open.
+ * - Outside day with a down close: higher high and lower low than the prior bar, closing below the prior low;
+ *   Williams buys the next open, so the marker sits on that next (entry) bar.
  */
 export function williamsPatterns(bars: Bar[]) {
   const n = bars.length;
@@ -78,7 +81,8 @@ export function williamsPatterns(bars: Bar[]) {
     if (hiddenSell(i - 1) && b.low < p.low) out.hiddenSell[i] = 1;
     if (b.open < p.low && b.high >= p.low) out.oopsBuy[i] = 1;
     if (b.open > p.high && b.low <= p.high) out.oopsSell[i] = 1;
-    if (b.high > p.high && b.low < p.low && b.close < p.low) out.outsideBuy[i] = 1;
+    const pp = bars[i - 2];
+    if (pp && p.high > pp.high && p.low < pp.low && p.close < pp.low) out.outsideBuy[i] = 1;
   }
   return out;
 }
@@ -102,7 +106,10 @@ export function barForDay(bars: Bar[], time: number): number {
   return found >= 0 && (found < bars.length - 1 || time < bars[found].time + DAY * 7) ? found : -1;
 }
 
-/** Insider trades: per bar, buy/sell dollars and markers; and net dollars month to date (trades up to that bar). */
+/**
+ * Insider trades, each placed on the day its Form 4 became public (`time` = filing date, never the earlier trade
+ * date): per bar, buy/sell markers, and net dollars month to date (filings up to that bar).
+ */
 export function insiderSeries(bars: Bar[], points: ExternalPoint[] | undefined) {
   const n = bars.length;
   const buys = new Array<number>(n).fill(0);
@@ -135,7 +142,8 @@ interface InsiderReply {
 
 async function loadInsiders(symbol: string): Promise<ExternalPoint[]> {
   const d = await engineRequest<InsiderReply>('research.insider_history', { symbol: symbol.replace(/^\$/, ''), years: 5 }, 180000);
-  return d.trades.map((t) => ({ time: dayTime(t.date), values: { buy: t.code === 'P' ? 1 : 0, sell: t.code === 'S' ? 1 : 0, value: t.value ?? 0 } }));
+  // The filing date, not the trade date: nobody outside the company knew about the trade before it was filed.
+  return d.trades.map((t) => ({ time: dayTime(t.filed || t.date), values: { buy: t.code === 'P' ? 1 : 0, sell: t.code === 'S' ? 1 : 0, value: t.value ?? 0 } }));
 }
 
 /** 13F reports are due 45 days after the quarter ends, so a quarter's holders count from then. */
@@ -250,7 +258,7 @@ export const SMART_MONEY: IndicatorDef[] = [
     name: 'Insider buying/selling (SEC Form 4)',
     shortName: 'Insiders',
     category: 'Positioning',
-    description: 'Open-market buys (B) and sales (S) by the company’s officers, directors and 10% owners, from their SEC Form 4 filings, plus net insider dollars for each month so far.',
+    description: 'Open-market buys (B) and sales (S) by the company’s officers, directors and 10% owners from their SEC Form 4 filings, shown on the day the filing became public, plus net insider dollars for each month so far.',
     placement: 'separate',
     inputs: [],
     plots: [
@@ -329,11 +337,11 @@ const holdersGuide = (what: string): IndicatorGuide => ({
   what,
   use: [
     '13F filers are institutions managing $100M+ (funds, pensions, banks, hedge funds): the "institutions" side of the market. The public isn’t in it.',
-    'Read the trend over several quarters, not one: a rising line means institutions are accumulating.',
+    'It shows the two newest quarters in the download: the step between them, and the bars for who opened, added, cut or sold out (only among filers who reported both quarters).',
     'Each quarter counts from 45 days after it ends (the filing deadline), so the chart never shows it before it was public.',
   ],
   signals: ['Holders and shares rising while price falls = institutions buying weakness (bullish over months).', 'Many selling out while price still rises = distribution.'],
-  tip: 'Needs the 13F download on the Prospecting page (it keeps the latest quarters). 13F data is 45+ days old, long only, and leaves out shorts and most options.',
+  tip: 'Needs the 13F download on the Prospecting page (it keeps each filer’s two newest quarters). Share classes (GOOGL/GOOG, BRK.A/BRK.B) are kept apart. 13F data is 45+ days old, long only, and leaves out shorts and most options.',
 });
 
 export const SMART_MONEY_GUIDES: Record<string, IndicatorGuide> = {
@@ -350,14 +358,14 @@ export const SMART_MONEY_GUIDES: Record<string, IndicatorGuide> = {
     tip: 'It finds bottoms, not tops: low readings don’t mean a top is near.',
   },
   williamspatterns: {
-    what: 'Larry Williams’ short-term patterns from "Long-Term Secrets to Short-Term Trading". Each arrow sits on the bar where his entry would trigger. Smash Day: a close beyond the previous bar’s range (below its low for a buy) that the next bar reverses (trades above the smash bar’s high). Hidden Smash Day: an up close that is still below the open and in the bottom 25% of the range (a buy), or the mirror for a sell; entry on a break of its high/low. Oops!: a gap open beyond the previous bar’s low or high that trades back to it. OD: an outside day (higher high, lower low) closing below the prior low, a buy for the next open.',
+    what: 'Larry Williams’ short-term patterns from "Long-Term Secrets to Short-Term Trading". Each arrow sits on the bar where his entry would trigger. Smash Day: a close beyond the previous bar’s range (below its low for a buy) that the next bar reverses (trades above the smash bar’s high). Hidden Smash Day: an up close that is still below the open and in the bottom 25% of the range (a buy), or the mirror for a sell; entry on a break of its high/low. Oops!: a gap open beyond the previous bar’s low or high that trades back to it. OD: an outside day (higher high, lower low) that closed below the prior low; the circle is on the next bar, where Williams buys the open.',
     use: ['The idea: the public panics into the close or the open; professionals take the other side when price reverses.', 'Use on daily bars, with the trend (buy signals in uptrends, sell signals in downtrends).', 'Each signal can be hidden on its own from the legend.'],
     signals: ['Smash buy / Hidden buy: buy above the signal bar’s high; stop below its low.', 'Oops! buy: a gap down that fills back to yesterday’s low; stop below today’s low.', 'OD: buy the next open; Williams used a quick exit (first profitable open).'],
     tip: 'Patterns fire often. Test them on Backtest before trusting them, and skip ones against the bigger trend.',
   },
   insiders: {
-    what: 'Insider trading from SEC Form 4: open-market buys (B, green) and sales (S, red) by the company’s officers, directors and 10%+ owners, marked on the day they traded, with net insider dollars month to date in the pane. Awards, option exercises, tax withholding and gifts are left out because they aren’t a choice to buy or sell with their own money.',
-    use: ['Insiders know the business best. Buying with their own money is rare and meaningful; selling is common (taxes, diversification, planned 10b5-1 sales).', 'Clusters matter: several insiders buying in the same few weeks is the strongest signal.', 'Form 4 is filed within two business days, so the markers became public a day or two after they appear.'],
+    what: 'Insider trading from SEC Form 4: open-market buys (B, green) and sales (S, red) by the company’s officers, directors and 10%+ owners, shown on the day the filing became public (up to two business days after the trade), with net insider dollars month to date (by filing date) in the pane. Awards, option exercises, tax withholding and gifts are left out because they aren’t a choice to buy or sell with their own money.',
+    use: ['Insiders know the business best. Buying with their own money is rare and meaningful; selling is common (taxes, diversification, planned 10b5-1 sales).', 'Clusters matter: several insiders buying in the same few weeks is the strongest signal.', 'Markers sit on the filing day, so the chart never shows a trade before the public could know about it.'],
     signals: ['Cluster of B arrows after a fall = insiders see value; bullish over months.', 'Big net selling by several executives at highs = caution, especially without planned-sale notes.'],
     tip: 'Loads 5 years of filings the first time (it can take a minute), then it’s cached. Needs the SEC email in Settings.',
   },

@@ -267,9 +267,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   hourly bars back to 2016. Only data.alpaca.markets; never trading (test scans every helper module).
   Indicators can load outside data via `IndicatorDef.external` (COT for the related futures market, FINRA short volume).
   Smart money pack (src/indicators/catalog/smartMoney.ts): Williams Pro Go, VIX Fix, Smash Day/Oops!/outside-day
-  markers, insiders (research.insider_history: Form 4 P/S, paced 8 req/s, engine/smartmoney.py), 13F holders/shares
-  (prospect.holders_by_symbol reads prospect.db; without it "Download 13F data in Prospecting first"), put/call (today
-  only, no free history), UMCSENT. Presets (src/indicators/presets.ts) sit atop the picker: "Larry Williams set".
+  markers, insiders (research.insider_history: Form 4 P/S placed on the filing date, engine/smartmoney.py), 13F
+  holders/shares (prospect.holders_by_symbol: prospect.db, 2 newest well-reported quarters, changes only among filers
+  in both, one share class per CUSIP), put/call (today only, no free history), UMCSENT; needs helper v40
+  (SMART_MONEY_HELPER_VERSION). Presets (src/indicators/presets.ts) sit atop the picker: "Larry Williams set".
+  Every SEC request goes through sec.sec_get, which spaces them helper-wide (sec.pace, SEC_SPACING 0.125 s = 8/s).
   Schwab stays market-data only (its app's order limit is 0). Order placement exists only in engine/webull.py (Webull
   OpenAPI, hand-written HMAC-SHA256 signing matching the official SDK; hosts: Test us-openapi-alb.uat.webullbroker.com,
   Live api.webull.com) behind one-time 60 s preview tokens (webull.preview_order -> webull.place_order {token}), max
@@ -304,6 +306,30 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Accounts: labels from account_class (webull.account_info: "Roth IRA ••1234"; futures/crypto/unknown = listed, never
   read/synced/traded); sync = one portfolio per stock account (empty ones only when chosen), updated by account id;
   Account page switcher = all combined or one (pickAccounts); Trade page picks one account, sent with preview/cancel.
+  Prospecting (v35, engine/prospect.py, docs/prospecting.md; requests in src/data/prospect.ts): RIAs,
+  ERAs, family offices and 13F managers from free SEC bulk files (monthly adviser lists, Form ADV data Schedule A/B +
+  7.B.(1), 13F and Form D data sets) and the Census geocoder, in a separate ~/.trading-platform/prospect.db. Big files
+  download with resume/backoff (0.2 s between SEC requests) and parse in the 'prospect' spawn worker; firms are rebuilt
+  after each ingest (exact CRD/SEC file no./CIK, then name + address scores). Family-office types are guesses with
+  reasons and a confidence word, never certain. 13F VALUE is thousands before 2023-01-03 filings, dollars after.
+  prospect.firm takes `firmId`. The schedule only refreshes sources the owner downloaded once. Every file's columns are
+  checked against `EXPECTED` before saving (missing required = that source fails, nothing saved; results in
+  prospect.status `headers` and the diagnostics `prospect` section). Name-only merges also need the same ZIP or city.
+  Prospecting page (src/pages/prospectPage.ts, #prospect, rail group Business; codes PROS / FO / RIA, "FO smith" searches):
+  Search (filters -> request in src/prospect/logic.ts, tested; search rows carry topPeople), Map (#prospect/map: Leaflet
+  1.9.4 bundled, OSM tiles with attribution, CSP img-src allows tile.openstreetmap.org, own grid clusters, click = radius
+  search; no tiles = plain grid + note), profile drawer (#prospect/firm/<id>, src/prospect/profile.ts, AI topic 'prospect'),
+  Compare (src/prospect/compare.ts: CSV + print via report.css), Data (per-source freshness, header checks, ingest with
+  streamed progress, 1-2 GB confirm before the first download). Address radius uses prospect.geocode (Census one-line).
+  Saved searches / notes + outreach status = store collections prospect_searches / prospect_notes (doc id = firm id).
+  Complete downloads (docs/research/prospect-data-gaps.md): 'all' isolates each source's error (meta result:<source>,
+  'failed' retries them), files loaded are remembered (meta files:<source>) so retries skip them, job.overall is one
+  0-100 figure weighted by STAGES, loaders return checks (in file / loaded / skipped by reason). Form D = 12 quarters,
+  newest filing per issuer CIK; 13F = totals for 8 quarters (filer_history_13f), positions for 2; 13F-NT keeps "reported
+  by". engine/prospect_iapd.py: Form ADV Part 1 PDFs from IAPD (pypdf, 1 per 2 s) for firms that filed after the bulk
+  data: saved and opened firms automatically, all firms by AUM only when turned on in the Data tab (prospect.adv_pdf_reader
+  start/pause/resume); failed fetches back off 1h/6h/24h (reset on a new filing), 403/429 pauses 30 min. State-registered
+  RIAs from the IAPD firm search (source 'state', beta). Both unverified live. Browser gate PROSPECT_COMPLETE_HELPER_VERSION 38.
 
 ## Conventions
 

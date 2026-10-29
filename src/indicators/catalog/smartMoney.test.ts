@@ -87,9 +87,10 @@ describe('Williams patterns', () => {
     expect(fired(williamsPatterns(bars([[10, 11, 9, 10], [11.5, 11.8, 10.9, 11]])).oopsSell)).toEqual([1]);
   });
 
-  it('outside day with a close below the prior low', () => {
-    expect(fired(williamsPatterns(bars([[10, 11, 9, 10], [10.5, 11.5, 8.5, 8.8]])).outsideBuy)).toEqual([1]);
-    expect(fired(williamsPatterns(bars([[10, 11, 9, 10], [10.5, 11.5, 8.5, 9.5]])).outsideBuy)).toEqual([]); // closed inside
+  it('outside day with a close below the prior low, marked on the next (entry) bar', () => {
+    expect(fired(williamsPatterns(bars([[10, 11, 9, 10], [10.5, 11.5, 8.5, 8.8], [8.9, 9.5, 8.6, 9.2]])).outsideBuy)).toEqual([2]);
+    expect(fired(williamsPatterns(bars([[10, 11, 9, 10], [10.5, 11.5, 8.5, 8.8]])).outsideBuy)).toEqual([]); // no entry bar yet
+    expect(fired(williamsPatterns(bars([[10, 11, 9, 10], [10.5, 11.5, 8.5, 9.5], [9.5, 10, 9, 9.8]])).outsideBuy)).toEqual([]); // closed inside
   });
 
   it('never looks ahead: a bar’s markers don’t change when later bars arrive', () => {
