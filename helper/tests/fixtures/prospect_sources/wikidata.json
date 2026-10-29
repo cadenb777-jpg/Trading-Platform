@@ -1,0 +1,6 @@
+{"head": {"vars": ["person", "personLabel", "worth", "company", "companyLabel", "familyLabel"]}, "results": {"bindings": [
+ {"person": {"type": "uri", "value": "http://www.wikidata.org/entity/Q900001"}, "personLabel": {"type": "literal", "value": "John Smith"},
+  "worth": {"type": "literal", "value": "2100000000"}, "company": {"type": "uri", "value": "http://www.wikidata.org/entity/Q900002"},
+  "companyLabel": {"type": "literal", "value": "Acme Corp"}},
+ {"person": {"type": "uri", "value": "http://www.wikidata.org/entity/Q900003"}, "personLabel": {"type": "literal", "value": "Ann Other"},
+  "worth": {"type": "literal", "value": "5000000000"}}]}}

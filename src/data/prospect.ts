@@ -7,7 +7,7 @@ export { prospectCompleteReady } from './schwab';
 
 /** 'failed' retries the sources whose last run failed; 'state' = state-registered advisers (IAPD, beta). */
 export type ProspectSource = 'adv' | 'adv_full' | '13f' | 'formd' | 'state' | 'geo' | 'all' | 'failed';
-export type FirmType = 'Registered RIA' | 'Exempt reporting adviser' | 'Likely family office' | 'Multi-family office' | 'Other 13F filer' | 'Form D issuer' | 'State-registered RIA';
+export type FirmType = 'Registered RIA' | 'Exempt reporting adviser' | 'Likely family office' | 'Multi-family office' | 'Other 13F filer' | 'Form D issuer' | 'State-registered RIA' | 'Possible single-family office';
 export type ClientType = 'individuals' | 'hnw' | 'banks' | 'investment_companies' | 'bdcs' | 'pooled' | 'pensions' | 'charities' | 'government' | 'other_advisers' | 'insurance' | 'sovereign' | 'corporations' | 'other';
 
 export interface ProspectQuery {
@@ -25,6 +25,8 @@ export interface ProspectQuery {
   minPosition?: number;
   has13f?: boolean;
   hasPrivateFunds?: boolean;
+  /** Has a liquidity signal (Form 144, S-1 seller, 8-K Item 2.01) in the last 12 months (public records). */
+  recentLiquidity?: boolean;
   sort?: 'aum' | 'name' | 'clients' | 'filed' | 'value13f' | 'funds' | 'distance' | 'position';
   limit?: number;
   offset?: number;
@@ -92,6 +94,8 @@ export interface ProspectProfile extends ProspectFirm {
   /** The per-firm Form ADV PDF reader (IAPD): bulk filing date vs the PDF read, and what it found. */
   advPdf?: { bulkDate: string | null; pdfDate: string | null; status: 'ok' | 'unreadable' | 'failed' | null; note: string | null; at: number | null } | null;
   sources: { label: string; url: string }[];
+  /** Evidence from public records (13D/13G, 990-PF, GLEIF, Wikidata, liquidity filings); older helpers send none. */
+  signals?: ProspectSignal[];
 }
 
 export interface ProspectStatus {
@@ -166,3 +170,21 @@ export async function prospectAdvPdfReader(action: 'start' | 'pause' | 'resume')
   return reply;
 }
 export const prospectExport = (query: ProspectQuery) => engineRequest<{ csv: string; count: number; total: number; columns: string[] }>('prospect.export', { query }, 120000);
+
+// ---------- Public records for family offices (helper/engine/prospect_sources.py) ----------
+
+export interface ProspectSignal { label: string; source: string; url: string; date: string; code: string }
+export type PublicSourceKey = 'sec_owners' | 'liquidity' | 'gleif' | 'propublica' | 'wikidata';
+export interface PublicSourcesStatus {
+  sources: { key: PublicSourceKey; label: string; what: string; last: ({ at: number; ok: boolean; error: string | null; sourceDate?: string } & Record<string, unknown>) | null }[];
+  applied: { at: number; groups: number; newFirms: number; upgraded: number; signals: number; linkedFirms: number } | null;
+  counts: { entities: number; facts: number; signals: number; possibleSfo: number; liquidity: number };
+  job: { running: boolean; sources?: PublicSourceKey[]; current?: PublicSourceKey | null; stage?: string; error?: string | null; finished?: number };
+}
+export const prospectSourcesStatus = () => engineRequest<PublicSourcesStatus>('prospect.sources.status', {}, 20000);
+/** Refreshes public-records sources (all when none given), with progress events, then links them to firms. */
+export async function prospectSourcesRefresh(sources: PublicSourceKey[] | undefined, onEvent?: (e: EngineEvent) => void) {
+  const reply = await engineRequest<Record<string, unknown>>('prospect.sources.refresh', { ...(sources ? { sources } : {}), wait: true }, 3 * 3600_000, onEvent);
+  clearEngineCache('prospect.');
+  return reply;
+}

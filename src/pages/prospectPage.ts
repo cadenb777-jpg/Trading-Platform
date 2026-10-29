@@ -29,6 +29,7 @@ import { infoTip } from '../ui/glossary';
 import { openSettings } from '../ui/settings';
 import { tableTools } from '../ui/tableTools';
 import { renderCompare, saveText } from '../prospect/compare';
+import { publicSourcesPanel } from '../prospect/sourcesPanel';
 import { loadProfile, typeBadge, type ProfileContext } from '../prospect/profile';
 import {
   CLIENT_FILTERS,
@@ -286,6 +287,8 @@ export function createProspectPage() {
   box13f.onchange = () => ((form.has13f = box13f.checked), updateFilterCount());
   const boxFunds = h('input', { type: 'checkbox', checked: form.hasPrivateFunds });
   boxFunds.onchange = () => ((form.hasPrivateFunds = boxFunds.checked), updateFilterCount());
+  const boxLiquidity = h('input', { type: 'checkbox', checked: form.recentLiquidity });
+  boxLiquidity.onchange = () => ((form.recentLiquidity = boxLiquidity.checked), updateFilterCount());
   const textBox = input('text', 'Name, person, CRD or CIK', { placeholder: 'Firm, person, CRD or CIK  (or "25 miles of 10022")', type: 'search' });
   const milesBox = input('miles', 'Radius in miles', { placeholder: '25', inputmode: 'decimal' });
   const nearBox = input('near', 'Centre: ZIP, address or lat, lon', { placeholder: 'ZIP or street address' });
@@ -302,7 +305,7 @@ export function createProspectPage() {
     h('fieldset', { class: 'pr-fieldset' }, h('legend', { class: 'muted small' }, 'Within a radius ', infoTip('prRadius')), h('div', { class: 'pr-radius-row' }, milesBox, h('span', { class: 'muted small' }, 'miles of'), nearBox)),
     h('div', { class: 'pr-row2' }, field(h('span', {}, 'AUM from ', infoTip('prAum')), input('aumMin', 'AUM minimum', { placeholder: 'e.g. 100m' })), field('AUM up to', input('aumMax', 'AUM maximum', { placeholder: 'e.g. 5b' }))),
     h('div', { class: 'pr-field' }, h('span', { class: 'muted small' }, 'Serves (Form ADV client types)'), h('div', { class: 'chip-row pr-chips' }, ...CLIENT_FILTERS.map((c) => chipToggle(c === 'hnw' ? 'High net worth' : CLIENT_LABELS[c], () => form.clientTypes.includes(c), () => (form.clientTypes = form.clientTypes.includes(c) ? form.clientTypes.filter((x) => x !== c) : [...form.clientTypes, c]))))),
-    h('div', { class: 'pr-checks' }, h('label', {}, box13f, ' Files 13F'), h('label', {}, boxFunds, ' Has private funds')),
+    h('div', { class: 'pr-checks' }, h('label', {}, box13f, ' Files 13F'), h('label', {}, boxFunds, ' Has private funds'), h('label', {}, boxLiquidity, ' Recent liquidity event ', infoTip('prLiquidity'))),
     h('div', { class: 'pr-row2' }, field(h('span', {}, 'Holds (13F) ', infoTip('pr13f')), input('holds', 'Holds ticker or CUSIP', { placeholder: 'AAPL or CUSIP' })), field('Min position', input('minPosition', 'Minimum position', { placeholder: 'e.g. 1m' }))),
     h('div', { class: 'pr-actions' }, h('button', { type: 'submit', class: 'btn primary' }, 'Search'), h('button', { type: 'button', class: 'btn ghost', onclick: () => resetForm() }, 'Reset')),
     h('div', { class: 'pr-saved' }, field('Saved searches', savedSel), h('div', { class: 'pr-inline' }, h('button', { type: 'button', class: 'btn small', onclick: () => saveSearch() }, 'Save this search'), h('button', { type: 'button', class: 'btn small ghost', onclick: () => deleteSaved() }, 'Delete'))),
@@ -332,6 +335,7 @@ export function createProspectPage() {
     sortSel.value = form.sort;
     box13f.checked = form.has13f;
     boxFunds.checked = form.hasPrivateFunds;
+    boxLiquidity.checked = form.recentLiquidity;
     filters.querySelectorAll<HTMLButtonElement>('.pr-chips .chip').forEach((b) => {
       const label = b.textContent ?? '';
       const type = (Object.keys(TYPE_SHORT) as FirmType[]).find((t) => TYPE_SHORT[t] === label);
@@ -719,6 +723,7 @@ export function createProspectPage() {
   const dataBox = h('div', { class: 'pr-data-grid' });
   const dataHead = h('div', { class: 'panel-head' });
   views.data.append(h('section', { class: 'panel' }, dataHead, h('p', { class: 'muted small' }, 'Downloads come straight from the SEC and US Census (free, public). The SEC asks for your email in Settings; downloads run one at a time, politely paced. Nothing leaves your computer.'), dataBox));
+  views.data.append(publicSourcesPanel(() => (refreshStatus(), results && runSearch())));
 
   function confirmFirst(source: ProspectSource): Promise<boolean> {
     if (source === 'failed') return Promise.resolve(true);

@@ -145,6 +145,51 @@ exact), retries 429/5xx and dropped connections with growing waits (2, 4, 8... s
 Retry-After), resumes partial files, and stops on a 403 (wrong SEC email, or the SEC's rate limit: wait 10 minutes). The background schedule only refreshes sources you have
 downloaded yourself, and only when the SEC page lists a newer file.
 
+## Family offices from other public records (prospect_sources.py)
+
+Single-family offices are exempt from adviser registration, so most never appear in the Form ADV lists. The helper
+looks for their traces in five more free sources (`helper/engine/prospect_sources.py`, Data tab > "Public records for
+family offices"). Each collector keeps the raw replies in cache.db and saves every fact with its source URL and date.
+
+| Source | What it reads | Signal it can give |
+| --- | --- | --- |
+| SEC 5%+ owners and insiders | EDGAR daily master indexes for the last 30 days; the header of each Schedule 13D/13G (all, up to 1,200) and Form 3/4/5 whose names look like an entity (family, holdings, trust, partners, LLC...) | "13D/13G filer" (owns 5%+ of a listed company), "insider" (Form 4); names, CIKs and addresses of people and holding companies |
+| Liquidity events | Form 144 headers (up to 300), 8-K headers of the companies those owners hold (Item 2.01, up to 300), the selling-stockholder table of the newest S-1s (up to 10) | "Recent liquidity event" with its date |
+| GLEIF LEI API | Legal-name lookup of up to 100 entity filers, then their direct and ultimate parents | the same legal entity (linked), a holding structure |
+| ProPublica Nonprofit Explorer (IRS 990-PF) | "<family name> foundation" searched in the owner's state (up to 150), then each private foundation's record (990-PF filing or IRS foundation code 2-4): address, care-of name, total assets | "990-PF foundation at the same address", "shares a person with these filers in the same city" |
+| Wikidata SPARQL | US people with a net worth of $1B+ in US dollars and the companies they founded | "founder of a company this family holds, same family name" |
+
+How records are joined (method and score are kept in `links`):
+
+- **Same address** (street number and name + ZIP, suite must not differ): strong (0.95). An address with more than 4
+  firms on it is an office building and never counts.
+- **Shared person name + same city** (e.g. a foundation's care-of name is a Form 4 owner there): medium (0.75).
+- **Same SEC CIK** as an existing firm: 1.0. The same legal entity in GLEIF, or an identical entity name: grouped.
+- **Name only**: weak, stored as a "possible" link (score 0.6 or less) and never merged.
+
+A group with no Form ADV becomes a **Possible single-family office** when its evidence adds up to 3 points or more
+from at least two kinds of source (or a name that says family office): 990-PF foundation at the same address 2, a
+"family office / family holdings..." name 2, and 1 each for a 13D/13G filing, an insider filing, a foundation sharing
+a person, a GLEIF holding structure, a Wikidata founder and a liquidity event. 5+ points = strong signals, 4 =
+moderate, 3 = weak; never certain. A matched 13F filer or Form D issuer without Form ADV is relabelled the same way
+(its own reasons are kept and the relabel is undone if the evidence goes); a registered adviser never is. The
+evidence shows in the firm profile ("Evidence": label, source, date, link) as `signals` in `prospect.firm`, and the
+search has a "Recent liquidity event" filter (`recentLiquidity`: a liquidity signal in the last 365 days).
+
+Requests: `prospect.sources.refresh {sources?: [sec_owners|liquidity|gleif|propublica|wikidata], wait?}` (background,
+or with `wait` progress as `engine_event`s) and `prospect.sources.status`. A source that fails is recorded with its
+reason and the others still run; a source whose every lookup failed counts as failed, not as "nothing found". The
+links are rebuilt after each refresh and after every firm-list rebuild.
+
+Politeness: SEC requests share the SEC pacer above (contact email in the User-Agent); GLEIF, ProPublica and Wikidata
+get at most one request a second with a descriptive User-Agent. OpenCorporates, state registries, LinkedIn,
+people-search sites and bought lists are not used.
+
+Limits: only the last 30 days of SEC filings are read per run (older ones stay once saved, so the picture grows run
+by run); ProPublica's API gives a foundation's care-of name, address and assets but not its full trustee list (that is
+on the 990-PF PDF it links); S-1 seller tables are read heuristically; Wikidata only knows famous people. These are
+signals, not proof.
+
 ## What was not verified live
 
 This sandbox could not reach sec.gov or census.gov. The parsers were built from documented schemas and third-party
@@ -158,6 +203,11 @@ real files:
 - the Census batch reply layout and the Gazetteer file name;
 - the IAPD Form ADV PDF text layout (Schedule A rows, Section 7.B.(1) labels, checked-box glyphs `nmlkji`/`gfedcb`):
   the parser follows the documented form; a firm it can't read is listed as "couldn't read Schedule A";
+- the public-records sources (prospect_sources.py): the EDGAR daily `master.YYYYMMDD.idx` layout, the SEC header
+  section names (`SUBJECT COMPANY`, `FILED BY`, `REPORTING-OWNER`, `ISSUER`, `ITEM INFORMATION`) read from the first 64 KB
+  of each filing's .txt, ProPublica's `search.json` / `organizations/{ein}.json` fields (`careofname`, `foundation_code`,
+  `filings_with_data[].formtype`, `totassetsend`), GLEIF's `lei-records?filter[entity.legalName]=` and
+  `/direct-parent` / `/ultimate-parent`, and the Wikidata query (net worth P2218 in US dollars, founded by P112);
 - the IAPD firm search parameters (`state`, `filter`, `nrows`, `start`) and reply fields (`hits.hits[]._source.firm_source_id`,
   `firm_name`, `firm_ia_scope`, `firm_ia_full_sec_number`, `firm_address_details`), from how the website behaves.
 

@@ -324,6 +324,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   data: saved and opened firms automatically, all firms by AUM only when turned on in the Data tab (prospect.adv_pdf_reader
   start/pause/resume); failed fetches back off 1h/6h/24h (reset on a new filing), 403/429 pauses 30 min. State-registered
   RIAs from the IAPD firm search (source 'state', beta). Both unverified live. Browser gate PROSPECT_COMPLETE_HELPER_VERSION 38.
+  engine/prospect_sources.py (docs/prospecting.md "Family offices from other public records"): free collectors
+  (13D/13G + Forms 3/4/5 via EDGAR daily index + filing headers, Form 144 / 8-K 2.01 / S-1 sellers, GLEIF parents,
+  ProPublica 990-PF, Wikidata founders) cached in cache.db, saved in prospect.db src_* tables; apply() (also run at the
+  end of build_firms) groups and links them (same address strong, shared person + city medium, name only possible) into
+  `signals` and "Possible single-family office" firms (points, never certain). Requests prospect.sources.refresh/status;
+  profile `signals` (Evidence section), search `recentLiquidity`; Data tab panel src/prospect/sourcesPanel.ts.
 
 ## Conventions
 

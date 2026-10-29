@@ -1,0 +1,6 @@
+{"organization": {"ein": 61234567, "name": "JOHN AND MARY SMITH FOUNDATION", "careofname": "% JOHN A SMITH", "address": "100 MAIN ST STE 5",
+  "city": "GREENWICH", "state": "CT", "zipcode": "06830-1234", "subsection_code": 3, "foundation_code": 4, "asset_amount": 24000000},
+ "filings_with_data": [
+  {"tax_prd": 202312, "tax_prd_yr": 2023, "formtype": 2, "pdf_url": "https://example.org/990pf-2023.pdf", "totassetsend": 25000000},
+  {"tax_prd": 202212, "tax_prd_yr": 2022, "formtype": 2, "pdf_url": null, "totassetsend": 21000000}],
+ "filings_without_data": []}

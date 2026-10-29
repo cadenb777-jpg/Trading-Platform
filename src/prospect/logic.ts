@@ -8,7 +8,7 @@ import type { ClientType, CompareResult, FirmType, ProspectFirm, ProspectQuery, 
 
 /** The type chips on the search form (the two remaining types sit behind "More"). */
 export const MAIN_TYPES: FirmType[] = ['Registered RIA', 'Exempt reporting adviser', 'Likely family office', 'Multi-family office'];
-export const MORE_TYPES: FirmType[] = ['State-registered RIA', 'Other 13F filer', 'Form D issuer'];
+export const MORE_TYPES: FirmType[] = ['Possible single-family office', 'State-registered RIA', 'Other 13F filer', 'Form D issuer'];
 export const TYPE_SHORT: Record<FirmType, string> = {
   'Registered RIA': 'RIA',
   'Exempt reporting adviser': 'Exempt adviser',
@@ -17,6 +17,7 @@ export const TYPE_SHORT: Record<FirmType, string> = {
   'Other 13F filer': '13F filer',
   'Form D issuer': 'Form D issuer',
   'State-registered RIA': 'State RIA',
+  'Possible single-family office': 'Single-family office?',
 };
 /** Glossary term behind each type. */
 export const TYPE_TERM: Record<FirmType, string> = {
@@ -27,6 +28,7 @@ export const TYPE_TERM: Record<FirmType, string> = {
   'Other 13F filer': 'pr13fFiler',
   'Form D issuer': 'prFormD',
   'State-registered RIA': 'prStateRia',
+  'Possible single-family office': 'prSfo',
 };
 
 export const CLIENT_LABELS: Record<ClientType, string> = {
@@ -154,12 +156,14 @@ export interface SearchForm {
   clientTypes: ClientType[];
   has13f: boolean;
   hasPrivateFunds: boolean;
+  /** A liquidity signal in the last 12 months (public records). */
+  recentLiquidity: boolean;
   holds: string;
   minPosition: string;
   sort: SortKey | '';
 }
 
-export const emptyForm = (): SearchForm => ({ text: '', types: [], state: '', city: '', zip: '', miles: '', near: '', aumMin: '', aumMax: '', clientTypes: [], has13f: false, hasPrivateFunds: false, holds: '', minPosition: '', sort: '' });
+export const emptyForm = (): SearchForm => ({ text: '', types: [], state: '', city: '', zip: '', miles: '', near: '', aumMin: '', aumMax: '', clientTypes: [], has13f: false, hasPrivateFunds: false, recentLiquidity: false, holds: '', minPosition: '', sort: '' });
 
 /** A 9-character CUSIP (letters and digits, the last a digit). Anything else in "Holds" is read as a ticker. */
 export const isCusip = (s: string) => /^[0-9A-Z]{8}[0-9]$/.test(s.trim().toUpperCase());
@@ -186,6 +190,7 @@ export function formToQuery(f: SearchForm, point?: { lat: number; lon: number } 
   if (f.clientTypes.length) q.clientTypes = [...f.clientTypes];
   if (f.has13f) q.has13f = true;
   if (f.hasPrivateFunds) q.hasPrivateFunds = true;
+  if (f.recentLiquidity) q.recentLiquidity = true;
   const holds = f.holds.trim().toUpperCase();
   if (holds) {
     q.holds = isCusip(holds) ? { cusip: holds } : { symbol: holds };
@@ -209,7 +214,7 @@ export function formToQuery(f: SearchForm, point?: { lat: number; lon: number } 
 
 /** How many filters are on (for the "Filters (3)" button on phones). */
 export function activeFilterCount(f: SearchForm): number {
-  return [f.text, f.state, f.city, f.zip, f.near, f.aumMin, f.aumMax, f.holds].filter((s) => s.trim()).length + (f.types.length ? 1 : 0) + (f.clientTypes.length ? 1 : 0) + (f.has13f ? 1 : 0) + (f.hasPrivateFunds ? 1 : 0);
+  return [f.text, f.state, f.city, f.zip, f.near, f.aumMin, f.aumMax, f.holds].filter((s) => s.trim()).length + (f.types.length ? 1 : 0) + (f.clientTypes.length ? 1 : 0) + (f.has13f ? 1 : 0) + (f.hasPrivateFunds ? 1 : 0) + (f.recentLiquidity ? 1 : 0);
 }
 
 /** A plain sentence for what is being searched ("Multi-family offices within 25 mi of 10022, AUM $100M+"). */
@@ -226,6 +231,7 @@ export function describeForm(f: SearchForm): string {
   if (f.clientTypes.length) parts.push(`serving ${f.clientTypes.map((c) => CLIENT_LABELS[c].toLowerCase()).join(' or ')}`);
   if (f.has13f) parts.push('files 13F');
   if (f.hasPrivateFunds) parts.push('has private funds');
+  if (f.recentLiquidity) parts.push('recent liquidity event');
   if (f.holds.trim()) parts.push(`holds ${f.holds.trim().toUpperCase()}${parseMoney(f.minPosition) ? ` (${moneyText(parseMoney(f.minPosition))}+)` : ''}`);
   return parts.join(', ');
 }

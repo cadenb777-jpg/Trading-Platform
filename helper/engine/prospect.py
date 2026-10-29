@@ -85,7 +85,11 @@ TYPE_MFO = 'Multi-family office'
 TYPE_13F = 'Other 13F filer'
 TYPE_FORMD = 'Form D issuer'
 TYPE_STATE = 'State-registered RIA'
-TYPES = (TYPE_RIA, TYPE_ERA, TYPE_FO, TYPE_MFO, TYPE_13F, TYPE_FORMD, TYPE_STATE)
+#: set by prospect_sources from public records (13D/13G, 990-PF, GLEIF...), never by classify()
+TYPE_SFO = 'Possible single-family office'
+TYPES = (TYPE_RIA, TYPE_ERA, TYPE_FO, TYPE_MFO, TYPE_13F, TYPE_FORMD, TYPE_STATE, TYPE_SFO)
+#: a liquidity signal (Form 144, S-1 seller, 8-K Item 2.01) this recent counts for the "Recent liquidity event" filter
+RECENT_LIQUIDITY_DAYS = 365
 
 #: Form ADV Item 5.D client types: letter -> (key, label)
 CLIENT_TYPES = {
@@ -151,6 +155,9 @@ CREATE TABLE IF NOT EXISTS links (firm_id TEXT, source TEXT, source_key TEXT, me
 CREATE INDEX IF NOT EXISTS links_firm ON links (firm_id);
 CREATE TABLE IF NOT EXISTS geocache (address TEXT PRIMARY KEY, lat REAL, lon REAL, matched TEXT, status TEXT, at REAL);
 CREATE TABLE IF NOT EXISTS zcta (zip TEXT PRIMARY KEY, lat REAL, lon REAL);
+CREATE TABLE IF NOT EXISTS signals (firm_id TEXT, entity_key TEXT, code TEXT, label TEXT, source TEXT, url TEXT, date TEXT,
+  method TEXT, score REAL);
+CREATE INDEX IF NOT EXISTS signals_firm ON signals (firm_id, code);
 CREATE TABLE IF NOT EXISTS filer_history_13f (cik INTEGER, period TEXT, name TEXT, total_value REAL, entries INTEGER,
   report_type TEXT, filed TEXT, accessions TEXT, PRIMARY KEY (cik, period));
 CREATE TABLE IF NOT EXISTS adv_filings (crd INTEGER PRIMARY KEY, bulk_date TEXT, pdf_date TEXT, pdf_status TEXT, pdf_note TEXT,
@@ -1417,6 +1424,11 @@ def build_firms(db_path, tickers=None):
         if tickers:
             mapped = map_cusips(con, tickers)
         set_meta(con, 'built', {'at': time.time(), 'firms': len(rows), 'links': len(links)})
+        try:  # family offices from public records (13D/13G, 990-PF, GLEIF...): links, signals, possible SFOs
+            from . import prospect_sources
+            prospect_sources.apply(con)
+        except Exception as err:
+            log.warning('Public-records signals not applied: %s', err)
     con.close()
     return {'firms': len(rows), 'links': len(links), 'cusipsMapped': mapped}
 
@@ -2298,6 +2310,9 @@ def search(con, q):
         where.append('has13f = 1')
     if q.get('hasPrivateFunds'):
         where.append('funds > 0')
+    if q.get('recentLiquidity'):
+        where.append("id IN (SELECT firm_id FROM signals WHERE code = 'liquidity' AND date >= ?)")
+        args.append((dt.date.today() - dt.timedelta(days=RECENT_LIQUIDITY_DAYS)).isoformat())
     position_sql = None
     if q.get('holds'):
         cusips = resolve_holding(con, q['holds'])
@@ -2457,6 +2472,9 @@ def firm_profile(con, firm_id, holdings_limit=200):
     for cik in sorted(set(ciks) | ({row['cik']} if row['cik'] else set())):
         sources.append({'label': f'EDGAR filings (CIK {cik})', 'url': EDGAR_COMPANY.format(cik=cik)})
     firm['sources'] = sources
+    # evidence from public records (prospect_sources): each with its source, link and date
+    firm['signals'] = [dict(r) for r in con.execute(
+        'SELECT DISTINCT label, source, url, date, code FROM signals WHERE firm_id = ? ORDER BY date DESC', (firm_id,))]
     return firm
 
 
@@ -2660,7 +2678,7 @@ async def h_ingest(ctx, msg):
 @handler('prospect.search')
 async def h_search(ctx, msg):
     """{text, types[], state, city, zip, near:{lat,lon,miles}|{zip,miles}, aumMin, aumMax, clientTypes[], holds:{symbol|cusip},
-    minPosition, has13f, hasPrivateFunds, sort (aum|name|clients|filed|value13f|funds|distance|position), limit, offset}.
+    minPosition, has13f, hasPrivateFunds, recentLiquidity, sort (aum|name|clients|filed|value13f|funds|distance|position), limit, offset}.
     `id` and `type` are the message's own (request id, kind), so firm types come as `types`."""
     return await _query(search, {k: v for k, v in msg.items() if not k.startswith('_') and k not in ('id', 'type')})
 
@@ -2729,3 +2747,9 @@ try:
     from . import prospect_iapd  # noqa: E402,F401
 except Exception as _err:  # optional: the core data still works
     log.info('IAPD reader unavailable: %s', _err)
+
+# Family offices from other public records (13D/13G, 990-PF, GLEIF, Wikidata): prospect.sources.* requests.
+try:
+    from . import prospect_sources  # noqa: E402,F401
+except Exception as _err:  # optional: the core data still works
+    log.info('Public-records sources unavailable: %s', _err)

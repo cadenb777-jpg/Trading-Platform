@@ -1,0 +1,5 @@
+{"meta": {"pagination": {"total": 1}}, "data": [{"type": "lei-records", "id": "5493001SMITHHOLD0001",
+ "attributes": {"lei": "5493001SMITHHOLD0001", "entity": {"legalName": {"name": "SMITH FAMILY HOLDINGS LLC", "language": "en"},
+  "legalAddress": {"addressLines": ["251 LITTLE FALLS DRIVE"], "city": "WILMINGTON", "region": "US-DE", "country": "US", "postalCode": "19808"},
+  "headquartersAddress": {"addressLines": ["100 MAIN STREET", "SUITE 5"], "city": "GREENWICH", "region": "US-CT", "country": "US", "postalCode": "06830"},
+  "category": "GENERAL", "legalForm": {"id": "HZEH"}}}}]}

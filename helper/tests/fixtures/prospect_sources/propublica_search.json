@@ -1,0 +1,4 @@
+{"total_results": 3, "organizations": [
+ {"ein": 61234567, "strein": "06-1234567", "name": "JOHN AND MARY SMITH FOUNDATION", "city": "GREENWICH", "state": "CT"},
+ {"ein": 61111111, "strein": "06-1111111", "name": "SMITHSONIAN FRIENDS INC", "city": "GREENWICH", "state": "CT"},
+ {"ein": 62222222, "strein": "06-2222222", "name": "GREENWICH ART FOUNDATION", "city": "GREENWICH", "state": "CT"}]}

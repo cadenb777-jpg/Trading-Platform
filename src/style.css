@@ -8009,3 +8009,7 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .pr-page .data-table th.num, .pr-page .data-table td.num { text-align: right; }
 .pr-page .data-table th.num .tt-sort { margin-left: auto; }
 .pr-data-grid > .pr-warn { grid-column: 1 / -1; margin: 0; }
+/* Prospecting: evidence from public records (profile) and the public-records panel (Data tab) */
+.pr-evidence { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 4px; }
+.pr-evidence li { line-height: 1.45; }
+.pr-public { margin-top: var(--sp-3); }

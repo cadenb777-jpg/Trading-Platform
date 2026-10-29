@@ -85,8 +85,25 @@ export function renderProfile(p: ProspectProfile, ctx: ProfileContext): HTMLElem
   const why = section(
     h('span', {}, 'Why this type ', infoTip('prConfidence')),
     h('div', { class: 'pr-why' }, typeBadge(p.type, p.confidence), h('ul', {}, ...(p.reasons.length ? p.reasons : ['No reasons recorded']).map((r) => h('li', {}, r)))),
+    p.type === 'Possible single-family office' ? srcLine('Found in public records other than Form ADV (see Evidence below). Single-family offices are exempt from adviser registration, so this is an educated guess: check before relying on it.') : null,
     p.type === 'Likely family office' || p.type === 'Multi-family office' ? srcLine('Family-office labels are educated guesses from names and the Form ADV client mix. Single-family offices are exempt from adviser registration, so many never appear in public data.') : null,
   );
+
+  // ----- evidence from public records (13D/13G, 990-PF, GLEIF, Wikidata, liquidity filings)
+  const signals = p.signals ?? [];
+  const evidence = signals.length
+    ? section(
+        h('span', {}, 'Evidence ', infoTip('prSfo')),
+        h(
+          'ul',
+          { class: 'pr-evidence' },
+          ...signals.map((s) =>
+            h('li', {}, s.code === 'liquidity' ? h('span', { class: 'badge accent' }, 'Liquidity') : null, s.code === 'liquidity' ? ' ' : '', s.label, h('span', { class: 'muted small' }, ` · ${s.source}${s.date ? `, ${dateText(s.date, true)}` : ''} `), s.url ? ext(s.url, 'Record') : null),
+          ),
+        ),
+        srcLine('Each item is a public record that points to a family office (or a recent liquidity event). They are signals, not proof: open the records to check.'),
+      )
+    : null;
 
   // ----- AUM history
   const hist = p.aumHistory.filter((r) => r.aum != null || r.clients != null);
@@ -371,6 +388,7 @@ export function renderProfile(p: ProspectProfile, ctx: ProfileContext): HTMLElem
     ai.panel,
     facts,
     why,
+    evidence,
     outreach,
     aum,
     clients,

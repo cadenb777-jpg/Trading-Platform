@@ -28,6 +28,7 @@ const TYPE_CLASS: Record<string, string> = {
   'Other 13F filer': 'other',
   'Form D issuer': 'other',
   'State-registered RIA': 'ria',
+  'Possible single-family office': 'fo',
 };
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
