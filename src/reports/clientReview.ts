@@ -9,7 +9,7 @@ import { infoTip } from '../ui/glossary';
 import { tickerAttr } from '../ui/tickerCard';
 import type { PriceInfo } from '../portfolio/prices';
 import { describeFees, isCashOrAlt, positions, type Analysis, type Portfolio } from '../portfolio/types';
-import { allocationDrift, defaultTolerance, incomeEstimate, riskFit, RISK_LEVELS } from './review';
+import { allocationDrift, defaultTolerance, incomeEstimate, riskFit, RISK_LEVELS, sinceStart } from './review';
 import type { Client } from './types';
 
 export interface ReviewInput {
@@ -48,9 +48,24 @@ export function drawClientReview(box: HTMLElement, i: ReviewInput) {
   // ----- performance (net and gross of fees) -----
   const t = a?.trailing;
   const g = a?.gross?.trailing;
+  const since = sinceStart(a, c.initialInvestment);
   const kpis = statCards([
-    { label: modelled ? 'Account value (modelled)' : 'Account value', value: money(total), hint: modelled ? 'From the initial investment and the model’s returns: the model has no share amounts' : `Live prices · ${portfolio.name}` },
-    { label: 'Since start, net', value: pct(t?.inception.portfolio, 1, true), tone: tone(t?.inception.portfolio), hint: g ? `Gross ${pct(g.inception, 1, true)} before fees${a?.start ? ` · from ${a.start}` : ''}` : 'No fee applied' },
+    {
+      label: modelled ? 'Account value (modelled)' : 'Account value',
+      value: money(total),
+      hint: modelled
+        ? `${c.initialInvestment ? `${money(c.initialInvestment)} invested ${a?.start ?? ''} grown at the model’s returns, net of fees${since?.years ? ` (${since.years.toFixed(1)} years)` : ''}` : 'From the model’s returns'}: the model has no share amounts`
+        : `Live prices · ${portfolio.name}`,
+    },
+    {
+      label: 'Since start, net · per year (annualised)',
+      value: t?.inception.portfolio != null ? `${pct(t.inception.portfolio, 1, true)}/yr` : '—',
+      tone: tone(t?.inception.portfolio),
+      hint: [
+        since?.cumulative != null ? `${pct(since.cumulative, 1, true)} in all${since.years ? ` over ${since.years.toFixed(1)} years` : ''}${a?.start ? ` (from ${a.start})` : ''}` : '',
+        g ? `gross ${pct(g.inception, 1, true)}/yr before fees` : 'no fee applied',
+      ].filter(Boolean).join(' · '),
+    },
     { label: 'YTD, net', value: pct(t?.ytd.portfolio, 1, true), tone: tone(t?.ytd.portfolio), hint: g ? `Gross ${pct(g.ytd, 1, true)} · benchmark ${pct(t?.ytd.benchmark, 1, true)}` : `Benchmark ${pct(t?.ytd.benchmark, 1, true)}` },
     { label: '1 year, net', value: pct(t?.['1y'].portfolio, 1, true), tone: tone(t?.['1y'].portfolio), hint: g ? `Gross ${pct(g['1y'], 1, true)}` : '' },
     { label: 'Fees paid', value: money(a?.fees?.total), hint: a?.fees?.effectiveRate != null ? `${pct(a.fees.effectiveRate, 2)} a year effective · ${c.feeSchedule ? describeFees(c.feeSchedule) : `${pct(c.fee, 2)} a year`}` : 'Since the start date' },

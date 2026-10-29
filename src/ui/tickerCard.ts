@@ -390,11 +390,14 @@ export function initTickerCards(a: TickerActions) {
     if (quiet && quiet === target) return;
     quiet = null;
     const t = findTicker(target) ?? (() => {
+      // A focused row or button stands for the ticker inside it; a focused page, heading or panel doesn't (moving
+      // focus to a page after a command used to open a card for the first ticker anywhere on it).
+      if (!target.matches('tr, li, button, a, [role="row"], [role="option"], [role="button"]')) return null;
       const inner = target.querySelector?.<HTMLElement>(`[${TICKER_ATTR}]`);
       const symbol = normalizeTicker(inner?.getAttribute(TICKER_ATTR));
       return inner && symbol ? { el: inner, symbol } : null;
     })();
-    if (!t) return;
+    if (!t || !t.el.getClientRects().length) return; // never for a ticker on a hidden page
     // only keyboard focus (a mouse click focuses too, and hover already handles that)
     if (!target.matches(':focus-visible')) return;
     clearTimeout(showTimer);

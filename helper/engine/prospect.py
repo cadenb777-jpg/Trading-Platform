@@ -1634,6 +1634,7 @@ async def download(ctx, url, dest, emit=None, label='', client=None, attempts=5)
         try:
             if sec_host:
                 await _sec_pace()
+                await sec.pace()  # the helper-wide SEC limit (sec_get paces itself; streamed downloads do it here)
             slots = sec._sec_slots if sec_host else asyncio.Semaphore(1)
             async with slots:
                 async with http.stream('GET', url, headers=headers, timeout=120) as response:

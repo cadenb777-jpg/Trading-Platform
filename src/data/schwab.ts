@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 39;
+export const LATEST_HELPER_VERSION = 40;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -38,6 +38,9 @@ export const CROSSCHECK_HELPER_VERSION = 34;
 export const PROSPECT_HELPER_VERSION = 35;
 /** Complete Prospecting downloads (retry failed, state advisers, Form ADV PDFs from IAPD) need at least this version. */
 export const PROSPECT_COMPLETE_HELPER_VERSION = 38;
+/** The chart's Smart money indicators (insider history, 13F holders by symbol) need at least this version. */
+export const SMART_MONEY_HELPER_VERSION = 40;
+const SMART_MONEY_REQUESTS = new Set(['research.insider_history', 'prospect.holders_by_symbol']);
 /** True when the connected helper has the complete Prospecting downloads (v38+). */
 export const prospectCompleteReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_COMPLETE_HELPER_VERSION;
 
@@ -284,6 +287,7 @@ class HelperConnection {
     if (type.startsWith('crosscheck.') && (this.version ?? 0) < CROSSCHECK_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('prospect.') || String(msg.collection ?? '').startsWith('prospect_') || (type === 'ai.insight' && msg.topic === 'prospect')) && (this.version ?? 0) < PROSPECT_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type === 'prospect.adv_pdf' || type === 'prospect.adv_pdf_reader' || (type === 'prospect.ingest' && (msg.source === 'failed' || msg.source === 'state'))) && (this.version ?? 0) < PROSPECT_COMPLETE_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if (SMART_MONEY_REQUESTS.has(type) && (this.version ?? 0) < SMART_MONEY_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('scanner.') || (type === 'ai.insight' && NEW_INSIGHTS.has(String(msg.topic)))) && (this.version ?? 0) < SCANNER_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {
@@ -467,6 +471,8 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'flow.cot_markets': 60 * 60_000,
   'flow.cot_for_symbol': 30 * 60_000,
   'flow.short_volume': 30 * 60_000,
+  'research.insider_history': 60 * 60_000,
+  'prospect.holders_by_symbol': 60 * 60_000,
   'research.company': 5 * 60_000,
   'alts.fund': 15 * 60_000,
   'crosscheck.value': 60_000,

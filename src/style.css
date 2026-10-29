@@ -5553,7 +5553,7 @@ a.btn {
 
 .mgr .picker-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 4px;
 }
@@ -5565,6 +5565,76 @@ a.btn {
 
 .mgr .picker-row .picker-item {
   padding-right: 8px;
+}
+
+/* Indicator picker: group chips with counts, favourites star, category label in flat (search) results */
+.picker-chips {
+  gap: 4px;
+}
+
+.picker-chips .chip {
+  min-height: 0;
+  padding: 2px 10px;
+  font-size: var(--fs-sm);
+}
+
+.chip-count {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.picker-status {
+  margin: 0;
+}
+
+.picker-star {
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+}
+
+.picker-star:hover {
+  color: var(--text);
+}
+
+.picker-star.on {
+  color: var(--warn);
+}
+
+.picker-star.on svg {
+  fill: currentColor;
+}
+
+.picker-cat {
+  display: none;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.picker-list.flat .picker-cat {
+  display: inline;
+}
+
+.mgr .picker-name {
+  flex-wrap: wrap;
+  column-gap: 8px;
+  row-gap: 0;
+}
+
+.mgr .picker-short,
+.mgr .picker-cat,
+.mgr .mgr-count {
+  white-space: nowrap;
+}
+
+.picker-list.flat .picker-cat::before {
+  content: '· ';
 }
 
 /* ---------- Best setups v2: strategy tabs, summary, checklists ---------- */
@@ -5810,6 +5880,8 @@ a.btn {
 .sp-table .tt-range { flex-direction: column; align-items: flex-end; }
 .sp-table .tt-filters .input { min-width: 0; width: 64px; }
 .sp-table .tt-filters .tt-range .input { width: 52px; }
+/* Account holdings: narrower min/max boxes so every column (down to Accounts) fits a 1440 px screen. */
+.acct-holdings .tt-filters .tt-range .input { min-width: 40px; width: 48px; }
 .sp-table { width: 100%; border-collapse: collapse; font-size: var(--fs-base); }
 .sp-table th { text-align: left; font-weight: 500; color: var(--muted); padding: 6px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .sp-table td { padding: 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -7357,6 +7429,21 @@ button.stat-drill:focus-visible .stat-drill-mark {
 .acct-yield summary {
   cursor: pointer;
 }
+.data-table td.acct-accounts-cell {
+  white-space: normal;
+  min-width: 5rem;
+  max-width: 6.5rem;
+  text-align: left;
+}
+/* the period table fits the holding window: headers wrap and cells are tighter, so no column is cut off */
+.acct-yield .data-table th {
+  white-space: normal;
+  vertical-align: bottom;
+}
+.acct-yield .data-table th,
+.acct-yield .data-table td {
+  padding: 6px 6px;
+}
 .acct-yield a {
   color: var(--link);
 }
@@ -8030,3 +8117,30 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .pc-review-view { display: grid; gap: var(--sp-3); }
 .pc-review-table td { vertical-align: top; }
 .pc-row-actions { white-space: nowrap; }
+
+/* Laptop screens (900 px tall or less): a compact menu so every item, down to the bell, fits without scrolling. */
+@media (min-width: 701px) and (max-height: 940px) {
+  .rail {
+    gap: 0;
+    padding: 4px 0;
+  }
+  .rail .nav-btn {
+    gap: 0;
+    padding: 2px 0;
+  }
+  .rail .nav-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+  .rail .brand {
+    margin-bottom: 2px;
+    font-size: 22px;
+  }
+  .rail-group {
+    margin: 3px 0;
+  }
+  .rail-bottom {
+    padding-top: 4px;
+    gap: 0;
+  }
+}

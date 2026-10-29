@@ -123,7 +123,11 @@ describe('ranking', () => {
     expect(buildResults('client smi', two).map((g) => g.label)).toEqual(['Clients']);
     expect(top('client', two).id).toBe('fn:CLIENT'); // Enter on the code alone opens the Clients page
     expect(buildResults('client', two).find((g) => g.label === 'Clients')?.items.map((i) => i.id)).toEqual(['cl:c1', 'cl:c2']);
+    expect(buildResults('client', two).filter((g) => g.label === 'Clients')).toHaveLength(1); // listed once, not twice
     expect(flatten(buildResults('client zzzz', two)).some((i) => i.id.startsWith('cl:'))).toBe(false);
+    // a code alone is never offered as an unknown ticker or futures contract (QA saw "/CLIENT contract detail")
+    for (const code of ['client', 'multi', 'ws'])
+      expect(flatten(buildResults(code, src())).some((i) => i.id.startsWith('tk:'))).toBe(false);
   });
   it('PROS / FO / RIA open Prospecting, with text as a search', () => {
     expect(top('pros').id).toBe('fn:PROS');

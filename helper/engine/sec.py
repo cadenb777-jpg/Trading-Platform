@@ -5,6 +5,7 @@ statements (XBRL company facts). The SEC asks for a contact email in the User-Ag
 """
 import asyncio
 import re
+import time
 import xml.etree.ElementTree as ET
 
 from .core import EngineError, handler
@@ -15,6 +16,22 @@ FACTS_URL = 'https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json'
 ARCHIVE_URL = 'https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{document}'
 
 _sec_slots = asyncio.Semaphore(5)
+#: seconds between requests to the SEC from anywhere in the helper (at most 8 a second; the SEC allows 10)
+SEC_SPACING = 0.125
+_pace_lock = None
+_last_sent = [0.0]
+
+
+async def pace():
+    """Waits for this request's turn so the whole helper sends the SEC at most one request per SEC_SPACING."""
+    global _pace_lock
+    if _pace_lock is None:
+        _pace_lock = asyncio.Lock()
+    async with _pace_lock:
+        wait = _last_sent[0] + SEC_SPACING - time.monotonic()
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _last_sent[0] = time.monotonic()
 
 
 class NotListed(EngineError):
@@ -24,6 +41,7 @@ class NotListed(EngineError):
 async def sec_get(ctx, url):
     if not ctx.sec_contact:
         raise EngineError('SEC data needs a contact email: open Settings (the gear at the bottom of the left menu) and add your email under "SEC email".')
+    await pace()
     async with _sec_slots:
         response = await ctx.sec_http.get(url)
     if response.status_code == 404:

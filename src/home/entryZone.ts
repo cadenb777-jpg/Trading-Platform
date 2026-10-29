@@ -8,7 +8,7 @@
  */
 import type { Setup } from './setupsPanel';
 
-export type Zone = 'forming' | 'waiting' | 'approaching' | 'entry' | 'extended' | 'target' | 'invalid' | 'expired';
+export type Zone = 'forming' | 'waiting' | 'approaching' | 'entry' | 'extended' | 'triggered' | 'target' | 'invalid' | 'expired';
 
 export interface ZoneInfo {
   zone: Zone;
@@ -18,6 +18,13 @@ export interface ZoneInfo {
   detail: string;
   tone: 'up' | 'down' | 'warn' | '';
 }
+
+/** Zones of a setup that is over: the stop traded, the target was reached or the entry window closed. */
+export const OVER_ZONES: readonly Zone[] = ['invalid', 'target', 'expired'];
+/** Zones that still count as a live setup (the Setups counts, its Today list and open risk per sector). */
+export const LIVE_ZONES: readonly Zone[] = ['waiting', 'approaching', 'entry', 'triggered'];
+export const isOver = (z: Zone) => OVER_ZONES.includes(z);
+export const isLive = (z: Zone) => LIVE_ZONES.includes(z);
 
 /** How far past the entry (as a share of the planned risk) still counts as a fair fill. */
 export const CHASE_LIMIT = 0.25;
@@ -41,7 +48,16 @@ export function entryZone(s: Setup, price: number | null | undefined, today = ne
   if (!s.trade && s.status !== 'ready' && s.status !== 'waiting') return { zone: 'waiting', label: s.status, detail: s.statusText, tone: '' };
   if (!s.trade && today > p.validUntil) return { zone: 'expired', label: 'Entry window closed', detail: `The trigger wasn't hit by ${p.validUntil}. Let it go and wait for the next setup.`, tone: '' };
   const past = beyond(price, entry);
-  if (p.entryType === 'open' && !s.trade) return { zone: 'entry', label: `Enter at the open`, detail: `This strategy enters at the next ${s.unit ?? 'day'}'s open (about ${money(price)} now). Stop ${money(p.stop)}.`, tone: 'up' };
+  if (s.trade) {
+    // The scanner's paper trade: the strategy's signal triggered. It is never a position of the owner's.
+    const when = `The strategy's signal triggered at ${money(entry)} on ${s.trade.filled} (the scanner follows it as a paper trade; it isn't a position of yours).`;
+    if (past > CHASE_LIMIT * risk)
+      return { zone: 'triggered', label: 'Triggered · too far to chase', detail: `${when} Price ${money(price)} has run ${money(past)} past it: buying now shrinks the reward and widens the risk. Wait for a pullback toward ${money(entry)} or skip it.`, tone: 'warn' };
+    if (past >= 0)
+      return { zone: 'triggered', label: `Triggered at ${money(entry)}`, detail: `${when} Price ${money(price)} is still within a fair fill of it: you can still ${side} with the stop at ${money(p.stop)}${p.target != null ? `, target ${money(p.target)}` : ''}.`, tone: 'up' };
+    return { zone: 'triggered', label: `Triggered at ${money(entry)}`, detail: `${when} Price ${money(price)} is back ${money(-past)} ${d > 0 ? 'below' : 'above'} that level, still short of the stop ${money(p.stop)}.`, tone: '' };
+  }
+  if (p.entryType === 'open') return { zone: 'entry', label: `Enter at the open`, detail: `This strategy enters at the next ${s.unit ?? 'day'}'s open (about ${money(price)} now). Stop ${money(p.stop)}.`, tone: 'up' };
   if (past < 0) {
     const gap = -past;
     if (gap <= NEAR_ATR * p.atr)

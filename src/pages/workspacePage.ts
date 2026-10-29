@@ -118,6 +118,7 @@ function chartBody(price: HTMLElement, status: HTMLElement): Body {
       return view;
     })();
     chart.symbol = ref.symbol;
+    chart.market = ref.provider;
     try {
       bars = await getProvider(ref.provider).loadHistory(ref.symbol, timeframe, ctl.signal);
     } catch (err) {

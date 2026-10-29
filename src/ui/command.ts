@@ -253,7 +253,8 @@ export function buildResults(input: string, src: Sources, recents: RecentEntry[]
 
   // a single word that is a ticker: its actions (Chart first, the Enter default)
   let shownTicker: string | null = null;
-  if (!p.pair && p.ticker && !q.includes(' ')) {
+  // (a function code typed alone, like CLIENT or MULTI, is that function, not an unknown ticker or futures root)
+  if (!p.pair && p.ticker && !q.includes(' ') && (known(p.ticker) || !p.code)) {
     const hit = known(p.ticker);
     const sym = hit?.symbol ?? p.ticker;
     shownTicker = sym;
@@ -305,7 +306,8 @@ export function buildResults(input: string, src: Sources, recents: RecentEntry[]
     ...src.portfolios.filter((x) => x.mine).map((x) => ({ id: `ac:${x.id}`, title: x.name, subtitle: 'My account (Account page)', keywords: 'account' })),
   ]);
   fuzzyGroup('Portfolios', src.portfolios.filter((x) => !x.mine).map((x) => ({ id: `pf:${x.id}`, title: x.name, subtitle: 'Model portfolio', keywords: 'portfolio model' })));
-  fuzzyGroup('Clients', src.clients.map((c) => ({ id: `cl:${c.id}`, title: c.name, subtitle: 'Client', keywords: 'client report' })));
+  // (not again when the CLIENT code above already listed them)
+  if (!groups.some((g) => g.label === 'Clients')) fuzzyGroup('Clients', src.clients.map((c) => ({ id: `cl:${c.id}`, title: c.name, subtitle: 'Client', keywords: 'client report' })));
   fuzzyGroup('Actions', src.actions);
 
   return groups.sort((a, b) => b.items[0].score - a.items[0].score);

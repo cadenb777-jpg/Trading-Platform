@@ -67,10 +67,15 @@ export function yearlySplit(closes: Close[], divs: Payment[], maxYears = 5): Yea
   return out;
 }
 
-/** All periods together: the share of every $1 paid that came from the price falling. */
+/**
+ * All periods together, the same way as the "Is the yield sustainable?" summary: the payouts of the whole span against
+ * the price change over the whole span (first start price to last end price). A year whose fall a later rise made
+ * good doesn't count: only a net fall paid for payouts. Each bar still shows its own 12 months.
+ */
 export function overall(splits: YearSplit[]): { payout: number; fromPrice: number; share: number | null } {
+  if (!splits.length) return { payout: 0, fromPrice: 0, share: null };
   const payout = splits.reduce((s, x) => s + x.payout, 0);
-  const fromPrice = splits.reduce((s, x) => s + x.fromPrice, 0);
+  const { fromPrice } = splitPayout(payout, splits[splits.length - 1].endPrice - splits[0].startPrice);
   return { payout, fromPrice, share: payout > 0 ? fromPrice / payout : null };
 }
 

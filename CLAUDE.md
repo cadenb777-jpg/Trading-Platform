@@ -266,6 +266,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   30m-4h charts ask for 3 years and the helper fills what Schwab lacks (Schwab wins); the AI reads regular-session
   hourly bars back to 2016. Only data.alpaca.markets; never trading (test scans every helper module).
   Indicators can load outside data via `IndicatorDef.external` (COT for the related futures market, FINRA short volume).
+  Smart money pack (src/indicators/catalog/smartMoney.ts): Williams Pro Go, VIX Fix, Smash Day/Oops!/outside-day
+  markers, insiders (research.insider_history: Form 4 P/S placed on the filing date, engine/smartmoney.py), 13F
+  holders/shares (prospect.holders_by_symbol: prospect.db, 2 newest well-reported quarters, changes only among filers
+  in both, one share class per CUSIP), put/call (today only, no free history), UMCSENT; needs helper v40
+  (SMART_MONEY_HELPER_VERSION). Presets (src/indicators/presets.ts) sit atop the picker: "Larry Williams set".
+  Every SEC request goes through sec.sec_get, which spaces them helper-wide (sec.pace, SEC_SPACING 0.125 s = 8/s).
   Schwab stays market-data only (its app's order limit is 0). Order placement exists only in engine/webull.py (Webull
   OpenAPI, hand-written HMAC-SHA256 signing matching the official SDK; hosts: Test us-openapi-alb.uat.webullbroker.com,
   Live api.webull.com) behind one-time 60 s preview tokens (webull.preview_order -> webull.place_order {token}), max
