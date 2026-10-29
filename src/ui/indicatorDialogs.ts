@@ -1,9 +1,10 @@
 import { allIndicators, defaultColors, defaultParams, getIndicator } from '../indicators/library';
-import { PRICE_SOURCES, type IndicatorDef, type IndicatorInstance } from '../indicators/types';
+import { PRICE_SOURCES, type IndicatorCategory, type IndicatorDef, type IndicatorInstance } from '../indicators/types';
 import { TIMEFRAME_DEFS, TIMEFRAME_SECONDS, type Timeframe } from '../types';
 import { h, openModal, toast } from './dom';
 import { icon, type IconName } from './icons';
 import { openIndicatorInfo } from './indicatorInfo';
+import { buildIndex, favourites, recents, searchIndex } from './indicatorPicker';
 import { presetRows } from './indicatorPresets';
 
 export interface IndicatorManagerOps {
@@ -16,44 +17,183 @@ export interface IndicatorManagerOps {
   togglePlot(uid: string, key: string): void;
 }
 
+type PickerFilter = 'all' | 'fav' | 'recent' | IndicatorCategory;
+const FILTER_KEY = 'tp.indicatorFilter';
+
+function savedFilter(): PickerFilter {
+  try {
+    return (localStorage.getItem(FILTER_KEY) as PickerFilter | null) ?? 'all';
+  } catch {
+    return 'all';
+  }
+}
+
 /**
- * The indicator manager: every built-in indicator on the left (search, click + to add), the ones on the chart on
+ * The indicator manager: every built-in indicator on the left (search by name, id or alias; category chips with
+ * counts; favourites and recently used; arrow keys move through the list, Enter adds), the ones on the chart on
  * the right, each with show/hide, settings, remove and a chip per line to hide or show that line on its own.
  * Returns a refresh function the chart calls when indicators change elsewhere (legend, settings).
  */
 export function openIndicatorManager(ops: IndicatorManagerOps): { refresh: () => void; close: () => void } {
-  const list = h('div', { class: 'picker-list' });
+  const list = h('div', { class: 'picker-list', role: 'list', 'aria-label': 'Indicators you can add' });
   const added = h('div', { class: 'mgr-added' });
-  const search = h('input', { class: 'input', type: 'search', placeholder: 'Search indicators, e.g. RSI, COT, z-score', 'aria-label': 'Search indicators' });
+  const search = h('input', { class: 'input', type: 'search', placeholder: 'Search by name, short name or alias, e.g. RSI, bollinger, pivots', 'aria-label': 'Search indicators' });
+  const chips = h('div', { class: 'chip-row picker-chips', role: 'toolbar', 'aria-label': 'Show a group of indicators' });
+  const status = h('p', { class: 'muted tiny picker-status', 'aria-live': 'polite' });
   const addedTitle = h('h3', { class: 'mgr-title' });
+  const index = buildIndex(allIndicators());
+  let filter: PickerFilter = savedFilter();
+
+  const add = (def: IndicatorDef) => {
+    ops.add(def);
+    recents.add(def.id);
+    toast(`Added ${def.name}`);
+    refresh();
+  };
+
+  // One row per indicator, built the first time it is shown and reused, so filtering 400 entries stays instant.
+  const rows = new Map<string, { row: HTMLElement; count: HTMLElement; star: HTMLButtonElement }>();
+  const rowFor = (def: IndicatorDef) => {
+    let r = rows.get(def.id);
+    if (r) return r;
+    const count = h('span', { class: 'mgr-count' });
+    const star = h('button', { class: 'picker-star', 'data-nav': 'star', onclick: () => (favourites.toggle(def.id), renderAvailable()) }, icon('star', 18));
+    const row = h(
+      'div',
+      { class: 'picker-row', role: 'listitem', 'data-id': def.id },
+      h(
+        'button',
+        { class: 'picker-item', 'data-nav': 'item', title: `Add ${def.name}`, onclick: () => add(def) },
+        h('span', { class: 'picker-name' }, def.name, h('span', { class: 'picker-short' }, def.shortName), h('span', { class: 'picker-cat' }, def.category), count),
+        h('span', { class: 'picker-desc' }, def.description),
+      ),
+      star,
+      h('button', { class: 'picker-info', 'data-nav': 'info', title: `What is ${def.shortName}?`, 'aria-label': `About ${def.name}`, onclick: () => openIndicatorInfo(def) }, icon('info', 18)),
+      h('button', { class: 'mgr-add', 'data-nav': 'add', title: `Add ${def.name}`, 'aria-label': `Add ${def.name}`, onclick: () => add(def) }, icon('plus', 18)),
+    );
+    r = { row, count, star };
+    rows.set(def.id, r);
+    return r;
+  };
+
+  const chip = (value: PickerFilter, label: string, n: number) =>
+    h(
+      'button',
+      {
+        class: `chip${filter === value ? ' on' : ''}`,
+        'aria-pressed': String(filter === value),
+        onclick: () => {
+          filter = value;
+          try {
+            localStorage.setItem(FILTER_KEY, value);
+          } catch {
+            /* not remembered */
+          }
+          renderAvailable();
+        },
+      },
+      label,
+      h('span', { class: 'chip-count' }, String(n)),
+    );
 
   const renderAvailable = () => {
-    const q = search.value.trim().toLowerCase();
-    const matches = allIndicators().filter((d) => `${d.name} ${d.shortName} ${d.category} ${d.description}`.toLowerCase().includes(q));
-    list.replaceChildren();
-    if (!q) list.append(...presetRows(ops.add, refresh));
-    for (const category of [...new Set(matches.map((d) => d.category))]) {
-      list.append(h('div', { class: 'picker-category' }, category));
-      for (const def of matches.filter((d) => d.category === category)) {
-        const count = ops.list().filter((i) => i.defId === def.id).length;
-        list.append(
-          h(
-            'div',
-            { class: 'picker-row' },
-            h(
-              'button',
-              { class: 'picker-item', title: `Add ${def.name}`, onclick: () => (ops.add(def), toast(`Added ${def.name}`), refresh()) },
-              h('span', { class: 'picker-name' }, def.name, h('span', { class: 'picker-short' }, def.shortName), count ? h('span', { class: 'mgr-count' }, `on chart ×${count}`) : ''),
-              h('span', { class: 'picker-desc' }, def.description),
-            ),
-            h('button', { class: 'picker-info', title: `What is ${def.shortName}?`, 'aria-label': `About ${def.name}`, onclick: () => openIndicatorInfo(def) }, icon('info', 18)),
-            h('button', { class: 'mgr-add', title: `Add ${def.name}`, 'aria-label': `Add ${def.name}`, onclick: () => (ops.add(def), toast(`Added ${def.name}`), refresh()) }, icon('plus', 18)),
-          ),
-        );
-      }
+    const q = search.value.trim();
+    const matches = searchIndex(index, q).map((e) => e.def);
+    const favs = favourites.list();
+    const recent = recents.list();
+    const favSet = new Set(favs);
+    const byCategory = new Map<string, IndicatorDef[]>();
+    for (const d of matches) byCategory.set(d.category, [...(byCategory.get(d.category) ?? []), d]);
+    const byId = new Map(matches.map((d) => [d.id, d]));
+    const recentDefs = recent.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
+    const favDefs = matches.filter((d) => favSet.has(d.id));
+    const categories = [...new Set(index.map((e) => e.def.category))];
+    if (filter !== 'all' && filter !== 'fav' && filter !== 'recent' && !categories.includes(filter)) filter = 'all';
+
+    const focusedChip = chips.contains(document.activeElement) ? [...chips.children].indexOf(document.activeElement as Element) : -1;
+    chips.replaceChildren(
+      chip('all', 'All', matches.length),
+      chip('fav', '★ Favourites', favDefs.length),
+      chip('recent', 'Recent', recentDefs.length),
+      // while searching, groups with no match are left out so the chips stay short
+      ...categories.filter((c) => !q || byCategory.has(c) || filter === c).map((c) => chip(c, c, byCategory.get(c)?.length ?? 0)),
+    );
+    if (focusedChip >= 0) (chips.children[focusedChip] as HTMLElement | undefined)?.focus();
+
+    const shown = filter === 'all' ? matches : filter === 'fav' ? favDefs : filter === 'recent' ? recentDefs : (byCategory.get(filter) ?? []);
+    const grouped = filter === 'all' && !q;
+    const onChart = new Map<string, number>();
+    for (const i of ops.list()) onChart.set(i.defId, (onChart.get(i.defId) ?? 0) + 1);
+    const frag = document.createDocumentFragment();
+    if (grouped) frag.append(...presetRows(ops.add, refresh));
+    let lastCategory = '';
+    for (const def of shown) {
+      if (grouped && def.category !== lastCategory) frag.append(h('div', { class: 'picker-category', role: 'presentation' }, (lastCategory = def.category)));
+      const r = rowFor(def);
+      const n = onChart.get(def.id) ?? 0;
+      r.count.textContent = n ? `on chart ×${n}` : '';
+      const fav = favSet.has(def.id);
+      r.star.classList.toggle('on', fav);
+      r.star.setAttribute('aria-pressed', String(fav));
+      r.star.setAttribute('aria-label', `Favourite: ${def.name}`);
+      r.star.title = fav ? 'Remove from favourites' : 'Add to favourites';
+      frag.append(r.row);
     }
-    if (!matches.length) list.append(h('div', { class: 'muted pad' }, 'No indicators match your search.'));
+    if (!shown.length) {
+      const why =
+        filter === 'fav' && !favs.length
+          ? 'No favourites yet. Click the star next to an indicator to keep it here.'
+          : filter === 'recent' && !recent.length
+            ? 'Indicators you add will show up here.'
+            : 'No indicators match your search.';
+      frag.append(h('div', { class: 'muted pad' }, why));
+    }
+    list.classList.toggle('flat', !grouped);
+    list.replaceChildren(frag);
+    status.textContent = `${shown.length} indicator${shown.length === 1 ? '' : 's'}${q ? ` matching “${q}”` : ''}`;
   };
+
+  // Keyboard: arrows move between rows (same column) and across a row's buttons; typing jumps back to the search.
+  const navTargets = (nav: string) => [...list.querySelectorAll<HTMLElement>(`[data-nav="${nav}"]`)];
+  list.addEventListener('keydown', (e) => {
+    const target = e.target as HTMLElement;
+    const nav = target.dataset.nav;
+    if (!nav) return;
+    if (e.key === 'Escape') {
+      e.stopPropagation(); // back to the search box; a second Escape there closes the window
+      e.preventDefault();
+      search.focus();
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+      const items = navTargets(nav);
+      const at = items.indexOf(target);
+      const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : at + (e.key === 'ArrowDown' ? 1 : -1);
+      e.preventDefault();
+      if (next < 0) search.focus();
+      else items[Math.min(next, items.length - 1)]?.focus();
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      const inRow = [...(target.closest('.picker-row')?.querySelectorAll<HTMLElement>('[data-nav]') ?? [])];
+      const next = inRow[inRow.indexOf(target) + (e.key === 'ArrowRight' ? 1 : -1)];
+      if (next) (e.preventDefault(), next.focus());
+    } else if (e.key.length === 1 && e.key !== ' ' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      search.focus(); // the key lands in the search box
+    }
+  });
+  chips.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const all = [...chips.children] as HTMLElement[];
+    const next = all[all.indexOf(document.activeElement as HTMLElement) + (e.key === 'ArrowRight' ? 1 : -1)];
+    if (next) (e.preventDefault(), next.focus());
+  });
+  search.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'Enter') {
+      const first = navTargets('item')[0];
+      if (first) (e.preventDefault(), first.focus());
+    } else if (e.key === 'Escape' && search.value) {
+      e.stopPropagation(); // clear the search instead of closing the window
+      search.value = '';
+      renderAvailable();
+    }
+  });
 
   const renderAdded = () => {
     const items = ops.list();
@@ -106,14 +246,18 @@ export function openIndicatorManager(ops: IndicatorManagerOps): { refresh: () =>
     renderAvailable();
   };
 
-  search.addEventListener('input', renderAvailable);
+  search.addEventListener('input', () => {
+    // a search looks through everything unless favourites or recent are picked
+    if (search.value.trim() && filter !== 'fav' && filter !== 'recent') filter = 'all';
+    renderAvailable();
+  });
   refresh();
   const close = openModal(
     'Indicators',
     h(
       'div',
       { class: 'mgr' },
-      h('div', { class: 'mgr-col' }, h('h3', { class: 'mgr-title' }, 'Add indicators'), search, list),
+      h('div', { class: 'mgr-col' }, h('h3', { class: 'mgr-title' }, 'Add indicators'), search, chips, status, list),
       h('div', { class: 'mgr-col mgr-right' }, addedTitle, added, h('p', { class: 'muted tiny' }, 'Tip: click a coloured line name to hide or show just that line. The same works on the chart’s legend.')),
       h(
         'div',
