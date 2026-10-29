@@ -125,6 +125,14 @@ describe('ranking', () => {
     expect(buildResults('client', two).find((g) => g.label === 'Clients')?.items.map((i) => i.id)).toEqual(['cl:c1', 'cl:c2']);
     expect(flatten(buildResults('client zzzz', two)).some((i) => i.id.startsWith('cl:'))).toBe(false);
   });
+  it('PROS / FO / RIA open Prospecting, with text as a search', () => {
+    expect(top('pros').id).toBe('fn:PROS');
+    expect(top('fo').id).toBe('fn:FO');
+    expect(top('ria').id).toBe('fn:RIA');
+    expect(top('FO Smith family')).toMatchObject({ id: 'pr:FO:Smith family', hint: 'FO' });
+    expect(top('ria boston').id).toBe('pr:RIA:boston');
+    expect(top('prospect acme').id).toBe('pr:PROS:acme');
+  });
   it('futures and indexes only offer what works for them', () => {
     expect(codesFor('/ES').map((c) => c.code)).toEqual(['GP']);
     expect(codesFor('$SPX').map((c) => c.code)).toEqual(['GP', 'ALRT', 'WL']);

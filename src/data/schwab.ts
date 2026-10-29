@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 34;
+export const LATEST_HELPER_VERSION = 35;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -34,6 +34,8 @@ const FUTURES_MARKET_HELPER_VERSION = 31;
 export const ALERTS_HELPER_VERSION = 32;
 /** Cross-checking a value across free sources (the "Sources" chip) needs at least this version. */
 export const CROSSCHECK_HELPER_VERSION = 34;
+/** The Prospecting page (RIA / family-office database, its saved searches and notes) needs at least this version. */
+export const PROSPECT_HELPER_VERSION = 35;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
@@ -276,6 +278,7 @@ class HelperConnection {
     if ((type.startsWith('futures.') || (type === 'ai.insight' && msg.topic === 'futures')) && (this.version ?? 0) < FUTURES_MARKET_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('alerts.') && (this.version ?? 0) < ALERTS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('crosscheck.') && (this.version ?? 0) < CROSSCHECK_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if ((type.startsWith('prospect.') || String(msg.collection ?? '').startsWith('prospect_') || (type === 'ai.insight' && msg.topic === 'prospect')) && (this.version ?? 0) < PROSPECT_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('scanner.') || (type === 'ai.insight' && NEW_INSIGHTS.has(String(msg.topic)))) && (this.version ?? 0) < SCANNER_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {
@@ -471,6 +474,11 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'futures.curve': 60_000,
   'futures.detail': 5 * 60_000,
   'webull.futures_contracts': 20_000,
+  // Prospecting data changes only when a download finishes (prospect.ingest clears nothing itself: call clearEngineCache('prospect.')).
+  'prospect.status': 5_000,
+  'prospect.search': 5 * 60_000,
+  'prospect.firm': 5 * 60_000,
+  'prospect.compare': 5 * 60_000,
 };
 const engineCache = new Map<string, { at: number; value: Promise<unknown> }>();
 

@@ -51,7 +51,7 @@ from engine.core import is_safe_url  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 34
+HELPER_VERSION = 35
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -1079,6 +1079,15 @@ async def market_scanner(market):
     await scanner.background_loop(market.engine, market.news)
 
 
+async def prospect_schedule(market):
+    """Keeps the prospecting data (engine/prospect.py) fresh, only for sources the owner has downloaded once."""
+    await engine.wait_loaded()
+    if 'prospect' in engine.LOAD_ERRORS:
+        return
+    from engine import prospect
+    await prospect.schedule_loop(market.engine)
+
+
 def chrome_command(url):
     """The command that opens `url` in Google Chrome on this computer, or None if Chrome isn't installed."""
     if sys.platform == 'win32':
@@ -1141,7 +1150,7 @@ async def run(client, sec_contact='', open_browser=True):
         sys.exit(f'Port {PORT} is already in use. Is the helper already running in another window?')
     async with server:
         jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market), warm_up(market),
-                open_when_ready(market, open_browser), market_scanner(market), market.update_loop()]
+                open_when_ready(market, open_browser), market_scanner(market), prospect_schedule(market), market.update_loop()]
         if SCREEN:
             SCREEN.ready(PLATFORM_URL, LOG_PATH, os.environ.get('TP_LAUNCH_WARNING', ''))
             return await until_restart(market, [*jobs, screen_clock()])
@@ -1279,6 +1288,9 @@ def serve_forever(args):
         quant = sys.modules.get('engine.quant')
         if quant is not None:
             quant.shutdown()  # and the optimiser's
+        prospect = sys.modules.get('engine.prospect')
+        if prospect is not None:
+            prospect.shutdown()  # and the prospect data worker
     if restart:
         restart_helper()
 

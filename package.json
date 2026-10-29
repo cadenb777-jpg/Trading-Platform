@@ -22,9 +22,12 @@
   "homepage": "https://github.com/cadenb777-jpg/trading-platform#readme",
   "dependencies": {
     "fflate": "^0.8.3",
+    "leaflet": "1.9.4",
     "lightweight-charts": "^5.2.1"
   },
   "devDependencies": {
+    "@types/geojson": "7946.0.16",
+    "@types/leaflet": "1.9.20",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"

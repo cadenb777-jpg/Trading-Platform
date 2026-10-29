@@ -1,0 +1,3 @@
+"0","1 Park Ave, New York, NY, 10022","Match","Exact","1 PARK AVE, NEW YORK, NY, 10016","-73.98,40.75","59653655","L"
+"1","9 Nowhere Rd, Atlantis, ZZ, 00000","No_Match"
+"2","100 Federal St, Boston, MA, 02110","Tie"

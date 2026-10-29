@@ -34,13 +34,18 @@ async def sec_get(ctx, url):
     return response
 
 
-async def company(ctx, symbol):
-    """Looks up a ticker's SEC CIK number and name."""
+async def tickers(ctx):
+    """Every listed ticker the SEC knows: {TICKER: {cik, name}} (cached a day)."""
     async def load():
         data = (await sec_get(ctx, TICKERS_URL)).json()
         return {row['ticker'].upper(): {'cik': int(row['cik_str']), 'name': row['title']} for row in data.values()}
-    tickers = await ctx.cached('sec-tickers', 86400, load, persist=True, stale_ok=True)
-    found = tickers.get(symbol.upper().replace('.', '-')) or tickers.get(symbol.upper())
+    return await ctx.cached('sec-tickers', 86400, load, persist=True, stale_ok=True)
+
+
+async def company(ctx, symbol):
+    """Looks up a ticker's SEC CIK number and name."""
+    tickers_ = await tickers(ctx)
+    found = tickers_.get(symbol.upper().replace('.', '-')) or tickers_.get(symbol.upper())
     if not found:
         raise NotListed(f'"{symbol}" isn\'t in the SEC\'s company list (ETFs, indexes and foreign companies often aren\'t).')
     return found
