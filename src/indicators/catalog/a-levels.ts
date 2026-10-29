@@ -33,7 +33,7 @@ type PivotFormula = (x: Prev) => Record<string, number>;
 const PIVOT_TYPES: Record<string, { name: string; short: string; description: string; keys: string[]; f: PivotFormula }> = {
   pivotsclassic: {
     name: 'Pivot Points (Classic / Floor)',
-    short: 'Pivots',
+    short: 'Floor Pivots',
     description: "Floor-trader pivots from the previous period's high, low and close: P, R1-R3 and S1-S3.",
     keys: ['r3', 'r2', 'r1', 'p', 's1', 's2', 's3'],
     f: ({ h, l, c }) => {
