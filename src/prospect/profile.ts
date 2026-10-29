@@ -6,7 +6,7 @@
  * missing data says what is missing.
  */
 import { insightButton } from '../ai/insight';
-import { OUTREACH, prospectFirm, type ClientType, type Outreach, type ProspectNote, type ProspectPosition, type ProspectProfile } from '../data/prospect';
+import { OUTREACH, prospectAdvPdf, prospectCompleteReady, prospectFirm, type ClientType, type Outreach, type ProspectNote, type ProspectPosition, type ProspectProfile } from '../data/prospect';
 import { dataTable, statCards } from '../ui/charts';
 import { h, toast } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
@@ -148,6 +148,50 @@ export function renderProfile(p: ProspectProfile, ctx: ProfileContext): HTMLElem
     p.people.length ? srcLine(`${ctx.peopleNote ?? 'People come from Form ADV Schedule A/B, 13F signatures and Form D related persons.'} Names and titles only: filings carry no emails or direct lines.`) : missing(`No people found. ${p.crd ? 'Download "Form ADV full data" in the Data panel for owners and officers.' : 'This firm files no Form ADV; only a 13F signer or Form D related persons would show here.'}`),
   );
 
+  // ----- newer Form ADV from IAPD (the SEC bulk data ended Dec 2024)
+  const pdf = p.advPdf;
+  const newer = p.crd && p.type !== 'State-registered RIA' && p.filingDate && (!pdf?.bulkDate || p.filingDate > pdf.bulkDate);
+  const pdfBox = h('div', { class: 'pr-adv-pdf small', 'data-adv-pdf': pdf?.status ?? 'none' });
+  const drawPdf = (busy = false, msg = '') => {
+    const read = pdf?.status === 'ok' && pdf.pdfDate && pdf.pdfDate >= (p.filingDate || '');
+    pdfBox.replaceChildren(
+      h(
+        'p',
+        { class: 'pr-src' },
+        read
+          ? `People and private funds read from the firm's Form ADV PDF on IAPD (filing of ${dateText(pdf!.pdfDate!, true)}).${pdf!.note ? ` Note: ${pdf!.note}.` : ''}`
+          : pdf?.status === 'unreadable'
+            ? `The firm's Form ADV PDF on IAPD couldn't be read (${pdf.note}). Open it from Sources below.`
+            : newer
+              ? `This firm filed Form ADV on ${dateText(p.filingDate, true)}, after the SEC bulk data${pdf?.bulkDate ? ` (${dateText(pdf.bulkDate, true)})` : ''}. Its newer owners, officers and funds are read from IAPD${prospectCompleteReady() ? ' (opening it puts it first in line)' : ' once the helper is updated'}${pdf?.status === 'failed' ? `; last try failed: ${pdf.note}` : ''}.`
+              : '',
+        msg ? h('b', {}, ` ${msg}`) : null,
+      ),
+      newer && !read && prospectCompleteReady()
+        ? h('button', {
+            class: 'btn small ghost',
+            disabled: busy,
+            onclick: async () => {
+              drawPdf(true, 'Reading the PDF from IAPD…');
+              try {
+                const r = await prospectAdvPdf(p.id);
+                if (r.status === 'ok') {
+                  toast(`Read ${r.people ?? 0} people and ${r.funds ?? 0} private funds from IAPD`);
+                  await loadProfile(pdfBox.closest<HTMLElement>('.pr-profile')?.parentElement ?? pdfBox, p.id, ctx);
+                  return;
+                }
+                drawPdf(false, r.note);
+              } catch (err) {
+                drawPdf(false, (err as Error).message);
+              }
+            },
+          }, 'Read the newest Form ADV from IAPD now')
+        : '',
+    );
+  };
+  drawPdf();
+  people.append(pdfBox);
+
   // ----- private funds
   const funds = section(
     'Private funds',
@@ -159,14 +203,25 @@ export function renderProfile(p: ProspectProfile, ctx: ProfileContext): HTMLElem
           { id: 'prospect:funds' },
         )
       : missing(p.crd ? 'No private funds in the Form ADV data loaded (Schedule D 7.B.(1)).' : 'No Form ADV, so no private-fund list.'),
-    p.privateFunds.length ? srcLine(`Source: Form ADV Schedule D 7.B.(1). ${ctx.peopleNote ?? ''}`) : null,
+    p.privateFunds.length
+      ? srcLine(p.privateFunds.some((f) => f.source === 'iapd') ? 'Source: Form ADV Schedule D 7.B.(1), read from the firm\'s Form ADV PDF on IAPD (dates per fund).' : `Source: Form ADV Schedule D 7.B.(1). ${ctx.peopleNote ?? ''}`)
+      : null,
   );
 
   // ----- 13F
   const th = p.holdings13f;
   let thSection: HTMLElement;
   if (!th.period || !th.positions) {
-    thSection = section('13F holdings', missing(p.has13f ? 'Only a 13F notice (holdings reported by another manager) or no positions in the loaded quarters.' : 'No 13F: the firm holds under $100M in listed US securities, or its holdings are reported by another manager.'));
+    thSection = section(
+      '13F holdings',
+      missing(
+        th.reportedBy?.length
+          ? `Files 13F notices only: its holdings are reported by ${th.reportedBy.join(', ')}.`
+          : p.has13f
+            ? 'Only a 13F notice (holdings reported by another manager) or no positions in the loaded quarters.'
+            : 'No 13F: the firm holds under $100M in listed US securities, or its holdings are reported by another manager.',
+      ),
+    );
   } else {
     const positions = th.positions;
     let filter: string | null = null;
@@ -237,6 +292,7 @@ export function renderProfile(p: ProspectProfile, ctx: ProfileContext): HTMLElem
           : null,
       ),
       th.otherManagers?.length ? srcLine(`Other managers included in this filing: ${th.otherManagers.map((m) => m.name).join(', ')}.`) : null,
+      trend13f(th.history),
       srcLine(`Source: SEC Form 13F data set, quarter ended ${dateText(th.period, true)}. Values in dollars; changes by share count (1% tolerance). Shows long and option positions as filed; 13F covers listed US securities only (no cash, bonds, private assets or foreign shares).`),
     );
   }
@@ -324,6 +380,19 @@ export function renderProfile(p: ProspectProfile, ctx: ProfileContext): HTMLElem
     offerings,
     matches,
     sources,
+  );
+}
+
+/** 13F total value by quarter (up to 8 quarters): the trend in listed securities. */
+function trend13f(history: ProspectProfile['holdings13f']['history']) {
+  const rows = (history ?? []).filter((x) => x.value != null);
+  if (rows.length < 2) return null;
+  return h(
+    'div',
+    { class: 'pr-13f-trend' },
+    h('h4', {}, '13F value by quarter'),
+    dataTable(['Quarter', '13F value', 'Positions'], rows.map((x) => [quarterText(x.period), { v: moneyText(x.value), cls: 'num' }, { v: countText(x.positions), cls: 'num' }]), undefined, { id: 'prospect:13f-trend' }),
+    srcLine('Totals from each quarter\'s 13F filing (positions are kept for the latest 2 quarters only).'),
   );
 }
 

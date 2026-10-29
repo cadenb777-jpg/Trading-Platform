@@ -56,13 +56,23 @@ ZCTA_URLS = ['https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2024_Gaz
              'https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2023_Gazetteer/2023_Gaz_zcta_national.zip']
 EDGAR_COMPANY = 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}'
 IAPD_FIRM = 'https://adviserinfo.sec.gov/firm/summary/{crd}'
+IAPD_BROCHURE = 'https://adviserinfo.sec.gov/firm/brochure/{crd}'
+IAPD_PDF = 'https://reports.adviserinfo.sec.gov/reports/ADV/{crd}/PDF/{crd}.pdf'
 
-SOURCES = ('adv', 'adv_full', '13f', 'formd', 'geo')
+SOURCES = ('adv', 'adv_full', '13f', 'formd', 'state', 'geo')
+#: 'Download everything' order and each stage's share of the overall progress bar (build = matching firms)
+STAGES = (('adv', 10), ('adv_full', 30), ('13f', 25), ('formd', 10), ('state', 10), ('build', 5), ('geo', 10))
 #: how old (days) a source may get before the background schedule looks for a newer file (only for sources you
 #: have downloaded at least once: the schedule never starts a download you didn't ask for)
-REFRESH_DAYS = {'adv': 30, 'adv_full': 30, '13f': 30, 'formd': 30}
-#: 13F quarters kept (latest + the one before, for quarter-on-quarter changes); ~3 million rows a quarter
+REFRESH_DAYS = {'adv': 30, 'adv_full': 30, '13f': 30, 'formd': 30, 'state': 30}
+#: 13F quarters with full holdings (latest + the one before, for quarter-on-quarter changes); ~3 million rows a quarter
 KEEP_13F_PERIODS = 2
+#: 13F quarters with filer-level facts only (manager, total value, positions count): the AUM trend
+KEEP_13F_HISTORY = 8
+#: Form D quarterly data sets loaded (3 years): a fund whose last Form D or amendment was 2 years ago is still found
+FORMD_QUARTERS = 12
+#: map-location batches that failed are tried again on this many later runs, then left (ZIP centre only)
+GEO_RETRIES = 3
 #: older monthly rosters loaded on the first ADV download, about a quarter apart, for the AUM history
 ADV_HISTORY_FILES = 4
 GEOCODE_BATCH = 1000
@@ -74,7 +84,8 @@ TYPE_FO = 'Likely family office'
 TYPE_MFO = 'Multi-family office'
 TYPE_13F = 'Other 13F filer'
 TYPE_FORMD = 'Form D issuer'
-TYPES = (TYPE_RIA, TYPE_ERA, TYPE_FO, TYPE_MFO, TYPE_13F, TYPE_FORMD)
+TYPE_STATE = 'State-registered RIA'
+TYPES = (TYPE_RIA, TYPE_ERA, TYPE_FO, TYPE_MFO, TYPE_13F, TYPE_FORMD, TYPE_STATE)
 
 #: Form ADV Item 5.D client types: letter -> (key, label)
 CLIENT_TYPES = {
@@ -140,7 +151,15 @@ CREATE TABLE IF NOT EXISTS links (firm_id TEXT, source TEXT, source_key TEXT, me
 CREATE INDEX IF NOT EXISTS links_firm ON links (firm_id);
 CREATE TABLE IF NOT EXISTS geocache (address TEXT PRIMARY KEY, lat REAL, lon REAL, matched TEXT, status TEXT, at REAL);
 CREATE TABLE IF NOT EXISTS zcta (zip TEXT PRIMARY KEY, lat REAL, lon REAL);
+CREATE TABLE IF NOT EXISTS filer_history_13f (cik INTEGER, period TEXT, name TEXT, total_value REAL, entries INTEGER,
+  report_type TEXT, filed TEXT, accessions TEXT, PRIMARY KEY (cik, period));
+CREATE TABLE IF NOT EXISTS adv_filings (crd INTEGER PRIMARY KEY, bulk_date TEXT, pdf_date TEXT, pdf_status TEXT, pdf_note TEXT,
+  tries INTEGER DEFAULT 0, at REAL);
 """
+
+#: columns added after the first release (old databases get them on connect)
+MIGRATIONS = (('other_managers_13f', 'role', "TEXT DEFAULT ''"), ('private_funds', 'source', "TEXT DEFAULT ''"),
+              ('adv_filings', 'tried_for', "TEXT DEFAULT ''"))
 
 
 def connect(path=None):
@@ -150,6 +169,9 @@ def connect(path=None):
     con.row_factory = sqlite3.Row
     con.execute('PRAGMA journal_mode=WAL')
     con.executescript(SCHEMA)
+    for table, column, kind in MIGRATIONS:
+        if column not in {r[1] for r in con.execute(f'PRAGMA table_info({table})')}:
+            con.execute(f'ALTER TABLE {table} ADD COLUMN {column} {kind}')
     return con
 
 
@@ -455,12 +477,12 @@ def _date_key(name):
     return max(found) if found else ''
 
 
-def pick_13f_files(links, count=KEEP_13F_PERIODS):
+def pick_13f_files(links, count=KEEP_13F_HISTORY):
     files = sorted({u for u in links if re.search(r'form13f', u, re.I) and _date_key(u)}, key=_date_key, reverse=True)
     return files[:count]
 
 
-def pick_formd_files(links, count=1):
+def pick_formd_files(links, count=FORMD_QUARTERS):
     files = sorted({u for u in links if _date_key(u) and re.search(r'(?<![a-z])d\.zip$|form[-_]?d', u.rsplit('/', 1)[-1], re.I)},
                    key=_date_key, reverse=True)
     return files[:count]
@@ -495,6 +517,48 @@ def pick_adv_full_files(links, days=366):
     newest = dt.date.fromisoformat(max(_date_key(u) for u in files))
     cutoff = (newest - dt.timedelta(days=days)).isoformat()
     return sorted((u for u in files if _date_key(u) > cutoff), key=lambda u: (_date_key(u), u), reverse=True)
+
+
+# ---------- Completeness counts ----------
+
+class Check:
+    """Rows in a source file vs rows loaded vs rows skipped (with the reason), so the Data tab can say
+    "Loaded 15,312 of 15,340 advisers; 28 skipped: no CRD"."""
+
+    def __init__(self, what):
+        self.what, self.in_file, self.loaded, self.skipped = what, 0, 0, {}
+
+    def row(self, n=1):
+        self.in_file += n
+
+    def skip(self, reason, n=1):
+        self.skipped[reason] = self.skipped.get(reason, 0) + n
+
+    def out(self):
+        return {'what': self.what, 'inFile': self.in_file, 'loaded': self.loaded, 'skipped': dict(self.skipped)}
+
+
+def merge_checks(checks):
+    """Adds up the checks of several files of one source, per kind of row ('advisers', '13F positions', ...)."""
+    out = {}
+    for c in checks:
+        if not c:
+            continue
+        m = out.setdefault(c['what'], {'what': c['what'], 'inFile': 0, 'loaded': 0, 'skipped': {}})
+        m['inFile'] += c['inFile']
+        m['loaded'] += c['loaded']
+        for k, v in c['skipped'].items():
+            m['skipped'][k] = m['skipped'].get(k, 0) + v
+    return list(out.values())
+
+
+def check_text(c):
+    """'Loaded 15,312 of 15,340 advisers; 28 skipped: no CRD'."""
+    text = f'Loaded {c["loaded"]:,} of {c["inFile"]:,} {c["what"]}'
+    skipped = sum(c['skipped'].values())
+    if skipped:
+        text += f'; {skipped:,} skipped: ' + ', '.join(f'{k} {v:,}' if len(c['skipped']) > 1 else k for k, v in sorted(c['skipped'].items(), key=lambda kv: -kv[1]))
+    return text
 
 
 # ---------- Form ADV: monthly rosters ----------
@@ -560,15 +624,23 @@ def load_adv_roster(db_path, zip_path, kind, roster_date, history_only=False):
     """Loads one monthly roster: the newest becomes adv_firms; every roster adds an AUM history point."""
     con = connect(db_path)
     _progress(con, f'Reading the {kind} list ({roster_date})')
-    firms = []
+    firms = {}
+    check = Check('advisers')
     tables = ('adv_roster', 'adv_roster_ria') if kind == 'RIA' else ('adv_roster',)
     for name, data in roster_files(zip_path):
         keys, rows = peek(table_rows(name, data))
         note_headers(con, 'adv', f'{Path(zip_path).name}/{name}', keys, *tables)
         for row in rows:
+            check.row()
             firm = parse_adv_row(row, kind, roster_date)
-            if firm:
-                firms.append(firm)
+            if not firm:
+                check.skip('no CRD')
+            elif firm['crd'] in firms:
+                check.skip('duplicate')
+            else:
+                firms[firm['crd']] = firm
+    firms = list(firms.values())
+    check.loaded = len(firms)
     with con:
         if not history_only:
             con.execute('DELETE FROM adv_firms WHERE kind = ?', (kind,))
@@ -579,16 +651,18 @@ def load_adv_roster(db_path, zip_path, kind, roster_date, history_only=False):
                             [(f['crd'], roster_date, f['filing_date'], f['aum_total'], f['aum_disc'], f['clients_total'], f['employees'])
                              for f in firms])
     con.close()
-    return {'rows': len(firms)}
+    return {'rows': len(firms), 'check': check.out()}
 
 
 # ---------- Form ADV: the fuller data (Schedule A/B people, Schedule D 7.B.(1) private funds) ----------
 
 def _member_kind(name):
-    n = name.lower()
-    if 'schedule_a_b' in n or 'schedule_a' in n or 'schedule a' in n:
+    n = name.lower().rsplit('/', 1)[-1]
+    # Exact table names only: the release also holds side tables such as IA_Schedule_D_7B1A17b (one row per
+    # answer to a fund question) that share the prefix but have no fund name or gross asset value.
+    if re.search(r'schedule[ _-]?a(?:[ _-]?b)?(?![a-z0-9])', n):
         return 'people'
-    if '7b1' in n or '7_b_1' in n or '7b_1' in n:
+    if re.search(r'7[ _-]?b[ _-]?1(?![a-z0-9])', n):
         return 'funds'
     # Only Base A maps FilingID -> CRD; Base B (and any later Base C, D...) holds more items without a CRD.
     if re.search(r'base[ _-]?a(?![a-z])', n):
@@ -645,7 +719,11 @@ def load_adv_full(db_path, zip_paths):
     if not any(k == 'base' for _, _, k in members):
         raise HeaderError('The Form ADV data download has no IA_ADV_Base_A table (FilingID -> CRD). Nothing was saved.')
     keep = {fid: (crd, latest[crd][0]) for fid, crd in filing_crd.items() if latest[crd][1] == fid}
+    # Firms whose newer Form ADV was already read from IAPD keep those facts (the bulk data is older).
+    from_pdf = {r[0]: r[1] for r in con.execute("SELECT crd, pdf_date FROM adv_filings WHERE pdf_status = 'ok'")}
     people, funds = [], []
+    checks = {'people': Check('people (Schedule A/B)'), 'funds': Check('private funds (7.B.(1))')}
+    unreadable, readable = {'people': [], 'funds': []}, set()
     for i, (zp, name, kind) in enumerate(members):
         if kind == 'base':
             continue
@@ -653,28 +731,55 @@ def load_adv_full(db_path, zip_paths):
         hint = 'B' if re.search(r'schedule_b', name.lower()) else ''
         with zipfile.ZipFile(zp) as zf, zf.open(name) as fh:
             keys, rows = peek(stream_rows(fh, ',', 'cp1252'))
-            note_headers(con, 'adv_full', f'{Path(zp).name}/{name}', keys, 'adv_people' if kind == 'people' else 'adv_funds')
+            try:
+                note_headers(con, 'adv_full', f'{Path(zp).name}/{name}', keys, 'adv_people' if kind == 'people' else 'adv_funds')
+            except HeaderError as err:
+                unreadable[kind].append(str(err))  # a look-alike table: skip it; fail only if no table of this kind reads
+                continue
+            readable.add(kind)
+            check = checks[kind]
             for row in rows:
+                check.row()
                 fid = pick(row, 'filingid')
                 if fid not in keep:
+                    check.skip('older filing' if fid in filing_crd else 'no CRD')
                     continue
                 crd, date = keep[fid]
+                if (from_pdf.get(crd) or '') >= (date or '~'):
+                    check.skip('newer filing read from IAPD')
+                    continue
                 if kind == 'people':
                     p = parse_schedule_ab(row, hint)
-                    if p and p['individual']:
+                    if not p:
+                        check.skip('no name')
+                    elif not p['individual']:
+                        check.skip('owner is a company, not a person')
+                    else:
                         people.append((f'crd-{crd}', None, p['name'], p['title'], f'ADV Schedule {p["schedule"]}', fid,
                                        1 if KEY_TITLE.search(p['title'] or '') else 0, date, p['ownership']))
                 else:
                     f = parse_private_fund(row)
                     if f:
-                        funds.append((crd, f['fund_id'], f['name'], f['fund_type'], f['gav'], f['owners'], date))
+                        funds.append((crd, f['fund_id'], f['name'], f['fund_type'], f['gav'], f['owners'], date, 'bulk'))
+                    else:
+                        check.skip('no fund name')
+    for kind, errors in unreadable.items():
+        if errors and kind not in readable:
+            raise HeaderError(errors[0])
+    checks['people'].loaded, checks['funds'].loaded = len(people), len(funds)
     with con:
         con.execute("DELETE FROM people WHERE source LIKE 'ADV Schedule%'")
         con.executemany('INSERT INTO people VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', people)
-        con.execute('DELETE FROM private_funds')
-        con.executemany('INSERT INTO private_funds VALUES (?, ?, ?, ?, ?, ?, ?)', funds)
+        con.execute("DELETE FROM private_funds WHERE COALESCE(source, '') != 'iapd'")
+        con.executemany(f'INSERT INTO private_funds ({FUND_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', funds)
+        # The bulk filing date of every adviser: an adviser whose roster shows a newer filing is read from IAPD.
+        con.executemany('INSERT INTO adv_filings (crd, bulk_date) VALUES (?, ?) ON CONFLICT(crd) DO UPDATE SET bulk_date = excluded.bulk_date',
+                        [(crd, d) for crd, (d, _) in latest.items()])
     con.close()
-    return {'people': len(people), 'funds': len(funds), 'advisers': len(latest)}
+    return {'people': len(people), 'funds': len(funds), 'advisers': len(latest), 'checks': [c.out() for c in checks.values()]}
+
+
+FUND_COLUMNS = 'crd, fund_id, name, fund_type, gav, owners, filing_date, source'
 
 
 # ---------- Form 13F data sets ----------
@@ -722,11 +827,14 @@ def _zip_table(zf, stem):
     return name
 
 
-def load_13f(db_path, zip_path):
-    """Loads one 13F data set: filers (from the cover pages) and the holdings of their chosen filings."""
+def load_13f(db_path, zip_path, holdings=True):
+    """Loads one 13F data set: filers (from the cover pages), each filer-quarter's total value and position count
+    (filer_history_13f, the AUM trend) and, when `holdings`, the positions of their chosen filings. Older quarters
+    are loaded with holdings=False: ~3 million rows a quarter would only fill the disk."""
     con = connect(db_path)
     _progress(con, 'Reading 13F cover pages')
     label = Path(zip_path).name
+    positions, filer_check = Check('13F positions'), Check('13F filers')
     with zipfile.ZipFile(zip_path) as zf:
         def rows(stem, required=True, check=None):
             name = _zip_table(zf, stem)
@@ -741,8 +849,8 @@ def load_13f(db_path, zip_path):
         info = _zip_table(zf, 'INFOTABLE')
         if not info:
             raise HeaderError(f'The SEC 13F download {label} has no INFOTABLE table. Nothing from it was saved.')
-        with zf.open(info) as fh:
-            note_headers(con, '13f', f'{label}/{info}', list(next(stream_rows(fh), {})), '13f_INFOTABLE')
+        with zf.open(info) as fh:  # the header line itself, so a table with no rows still passes
+            note_headers(con, '13f', f'{label}/{info}', [norm_header(h.lstrip('\ufeff')) for h in fh.readline().decode('utf-8', 'replace').rstrip('\r\n').split('\t')], '13f_INFOTABLE')
         submissions = {}
         for r in rows('SUBMISSION'):
             cik = clean_cik(r.get('cik'))
@@ -750,41 +858,51 @@ def load_13f(db_path, zip_path):
                 submissions[r['accessionnumber']] = {'accession': r['accessionnumber'], 'cik': cik, 'type': r.get('submissiontype', ''),
                                                      'filed': parse_date(r.get('filingdate')), 'period': parse_date(r.get('periodofreport'))}
         covers = {r['accessionnumber']: r for r in rows('COVERPAGE')}
-        rows('SUMMARYPAGE', False)  # only checked: totals come from the rows saved
+        rows('SUMMARYPAGE', False)  # only checked: totals come from the rows read
         signatures = rows('SIGNATURE', False)
-        others = rows('OTHERMANAGER2', False, 'OTHERMANAGER') or rows('OTHERMANAGER', False)
+        # OTHERMANAGER: managers that report for this one (a 13F notice names who files its holdings);
+        # OTHERMANAGER2: managers included in this report (a combination report).
+        others = [(r, 'reports holdings') for r in rows('OTHERMANAGER', False)] + [(r, 'included') for r in rows('OTHERMANAGER2', False, 'OTHERMANAGER')]
         chosen = choose_13f_filings(submissions, covers)
         keep = {acc: key for key, accs in chosen.items() for acc in accs}
-        _progress(con, 'Reading 13F holdings')
-        holdings, count = [], 0
+        filer_check.row(len({s['cik'] for s in submissions.values()}))
+        _progress(con, 'Reading 13F holdings' if holdings else 'Reading 13F totals')
+        sums, batch = {}, []  # accession -> [value, rows]
         with con:
-            for (cik, period), accs in chosen.items():
-                if adds_only(submissions[accs[0]], covers.get(accs[0], {})):
-                    # Only "new holdings" amendments for this quarter in this data set: the original report came in an
-                    # earlier data set, so add to it (replacing just these amendments' own rows if loaded before).
-                    con.executemany('DELETE FROM holdings_13f WHERE accession = ?', [(a,) for a in accs])
-                else:
-                    con.execute('DELETE FROM holdings_13f WHERE cik = ? AND period = ?', (cik, period))
-            name = info
-            if name:
-                with zf.open(name) as fh:
-                    for r in stream_rows(fh):
-                        acc = r.get('accessionnumber')
-                        if acc not in keep:
-                            continue
-                        s = submissions[acc]
-                        h = parse_13f_holding(r, value_multiplier(s['filed']))
-                        holdings.append((s['cik'], s['period'], h['cusip'], h['issuer'], h['class'], h['value'], h['shares'],
-                                         h['share_type'], h['put_call'], h['discretion'], acc))
-                        if len(holdings) >= 50000:
-                            con.executemany('INSERT INTO holdings_13f VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', holdings)
-                            count += len(holdings)
-                            holdings = []
-                            _progress(con, 'Reading 13F holdings', count, 0)
-            con.executemany('INSERT INTO holdings_13f VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', holdings)
-            count += len(holdings)
+            if holdings:
+                for (cik, period), accs in chosen.items():
+                    if adds_only(submissions[accs[0]], covers.get(accs[0], {})):
+                        # Only "new holdings" amendments for this quarter in this data set: the original report came in an
+                        # earlier data set, so add to it (replacing just these amendments' own rows if loaded before).
+                        con.executemany('DELETE FROM holdings_13f WHERE accession = ?', [(a,) for a in accs])
+                    else:
+                        con.execute('DELETE FROM holdings_13f WHERE cik = ? AND period = ?', (cik, period))
+            with zf.open(info) as fh:
+                for r in stream_rows(fh):
+                    positions.row()
+                    acc = r.get('accessionnumber')
+                    if acc not in keep:
+                        positions.skip('replaced by a later report' if acc in submissions else 'no filing for it')
+                        continue
+                    s = submissions[acc]
+                    h = parse_13f_holding(r, value_multiplier(s['filed']))
+                    total = sums.setdefault(acc, [0.0, 0])
+                    total[0] += h['value'] or 0
+                    total[1] += 1
+                    if not holdings:
+                        continue
+                    batch.append((s['cik'], s['period'], h['cusip'], h['issuer'], h['class'], h['value'], h['shares'],
+                                  h['share_type'], h['put_call'], h['discretion'], acc))
+                    if len(batch) >= 50000:
+                        con.executemany('INSERT INTO holdings_13f VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', batch)
+                        positions.loaded += len(batch)
+                        batch = []
+                        _progress(con, 'Reading 13F holdings', positions.loaded, 0)
+            con.executemany('INSERT INTO holdings_13f VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', batch)
+            positions.loaded += len(batch)
     _progress(con, 'Saving 13F filers')
     with con:
+        _save_13f_history(con, submissions, covers, chosen, sums)
         # Filers: the newest filing per CIK sets the name and address.
         newest = {}
         for s in submissions.values():
@@ -796,14 +914,15 @@ def load_13f(db_path, zip_path):
             if old and (old['latest_period'] or '', old['latest_filed'] or '') > (s['period'], s['filed']):
                 continue
             accs = chosen.get((cik, s['period']), [])
-            # Totals from the rows saved (the summary page of an amendment covers only that amendment).
-            total, entries = con.execute('SELECT SUM(value), COUNT(*) FROM holdings_13f WHERE cik = ? AND period = ?', (cik, s['period'])).fetchone()
+            hist = con.execute('SELECT total_value, entries FROM filer_history_13f WHERE cik = ? AND period = ?', (cik, s['period'])).fetchone()
             con.execute('INSERT OR REPLACE INTO filers_13f VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (
                 cik, c.get('filingmanagername', ''), ' '.join(x for x in (c.get('filingmanagerstreet1', ''), c.get('filingmanagerstreet2', '')) if x),
                 c.get('filingmanagercity', ''), c.get('filingmanagerstateorcountry', ''), c.get('filingmanagerzipcode', ''),
                 integer(c.get('crdnumber')), c.get('secfilenumber', ''), c.get('form13ffilenumber', ''), s['period'],
-                accs[-1] if accs else s['accession'], s['filed'], total or None,
-                entries or None, c.get('reporttype', ''), ''))
+                accs[-1] if accs else s['accession'], s['filed'], (hist['total_value'] if hist else None) or None,
+                (hist['entries'] if hist else None) or None, c.get('reporttype', '') or s['type'], ''))
+        filer_check.loaded = len(newest)
+        filer_check.skip('no cover page', filer_check.in_file - len(newest))
         sig_rows = []
         for r in signatures:
             s = submissions.get(r.get('accessionnumber'))
@@ -816,25 +935,61 @@ def load_13f(db_path, zip_path):
         con.executemany("DELETE FROM people WHERE source = '13F signature' AND source_ref = ?", [(a,) for a in accs])
         con.executemany('INSERT INTO people VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', sig_rows)
         other_rows = []
-        for r in others:
+        for r, role in others:
             s = submissions.get(r.get('accessionnumber'))
             if s and r.get('name'):
-                other_rows.append((s['cik'], s['period'], r['name'], integer(r.get('crdnumber')), r.get('secfilenumber', ''), r.get('form13ffilenumber', '')))
+                other_rows.append((s['cik'], s['period'], r['name'], integer(r.get('crdnumber')), r.get('secfilenumber', ''), r.get('form13ffilenumber', ''), role))
         for cik, period in {(r[0], r[1]) for r in other_rows}:
             con.execute('DELETE FROM other_managers_13f WHERE cik = ? AND period = ?', (cik, period))
-        con.executemany('INSERT INTO other_managers_13f VALUES (?, ?, ?, ?, ?, ?)', other_rows)
+        con.executemany('INSERT INTO other_managers_13f (cik, period, name, crd, sec_file, file_13f, role) VALUES (?, ?, ?, ?, ?, ?, ?)', other_rows)
         prune_13f(con)
     con.close()
-    return {'filers': len(newest), 'holdings': count}
+    return {'filers': len(newest), 'holdings': positions.loaded, 'holdingsKept': holdings,
+            'checks': [filer_check.out()] + ([positions.out()] if holdings else [])}
 
 
-def prune_13f(con, keep=KEEP_13F_PERIODS):
-    """Keeps each filer's newest `keep` reported quarters (older quarters would only fill the disk)."""
-    periods = {}
-    for cik, period in con.execute('SELECT DISTINCT cik, period FROM holdings_13f'):
-        periods.setdefault(cik, []).append(period)
-    cutoffs = [(cik, sorted(ps, reverse=True)[keep - 1]) for cik, ps in periods.items() if len(ps) > keep]
-    con.executemany('DELETE FROM holdings_13f WHERE cik = ? AND period < ?', cutoffs)
+def is_notice(report_type):
+    """A 13F notice (13F-NT): the manager's holdings are reported by another manager."""
+    text = (report_type or '').upper()
+    return 'NOTICE' in text or text.startswith('13F-NT')
+
+
+def _save_13f_history(con, submissions, covers, chosen, sums):
+    """One row per filer-quarter: total value and positions (kept for KEEP_13F_HISTORY quarters)."""
+    for (cik, period), accs in chosen.items():
+        c = covers.get(accs[-1], {})
+        name, report = c.get('filingmanagername', ''), c.get('reporttype', '') or submissions[accs[-1]]['type']
+        filed = submissions[accs[-1]]['filed']
+        # Totals from the rows read in this data set. A "new holdings" amendment whose original came in an earlier data
+        # set adds to the total already saved (each accession once), in both modes: the original's positions may not
+        # be in holdings_13f (it may have been loaded as totals only), so a sum of the table would undercount.
+        total, entries = sum(sums.get(a, [0, 0])[0] for a in accs), sum(sums.get(a, [0, 0])[1] for a in accs)
+        done = list(accs)
+        if adds_only(submissions[accs[0]], covers.get(accs[0], {})):
+            old = con.execute('SELECT total_value, entries, accessions FROM filer_history_13f WHERE cik = ? AND period = ?', (cik, period)).fetchone()
+            if old:
+                seen = json.loads(old['accessions'] or '[]')
+                new = [a for a in accs if a not in seen]
+                total = (old['total_value'] or 0) + sum(sums.get(a, [0, 0])[0] for a in new)
+                entries = (old['entries'] or 0) + sum(sums.get(a, [0, 0])[1] for a in new)
+                done = seen + new
+        con.execute('INSERT OR REPLACE INTO filer_history_13f VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    (cik, period, name, total or None, entries or None, report, filed, json.dumps(done)))
+    for s in submissions.values():  # notices: the quarter is on record; its holdings are in another manager's report
+        if s['type'].upper().startswith('13F-NT') and (s['cik'], s['period']) not in chosen:
+            c = covers.get(s['accession'], {})
+            con.execute('INSERT OR IGNORE INTO filer_history_13f VALUES (?, ?, ?, NULL, NULL, ?, ?, ?)',
+                        (s['cik'], s['period'], c.get('filingmanagername', ''), c.get('reporttype', '') or s['type'], s['filed'], json.dumps([s['accession']])))
+
+
+def prune_13f(con, keep=KEEP_13F_PERIODS, history=KEEP_13F_HISTORY):
+    """Keeps each filer's newest `keep` quarters of holdings and `history` quarters of totals."""
+    for table, n in (('holdings_13f', keep), ('filer_history_13f', history)):
+        periods = {}
+        for cik, period in con.execute(f'SELECT DISTINCT cik, period FROM {table}'):
+            periods.setdefault(cik, []).append(period)
+        cutoffs = [(cik, sorted(ps, reverse=True)[n - 1]) for cik, ps in periods.items() if len(ps) > n]
+        con.executemany(f'DELETE FROM {table} WHERE cik = ? AND period < ?', cutoffs)
 
 
 # ---------- Form D data sets ----------
@@ -862,11 +1017,17 @@ def load_formd(db_path, zip_path):
                 issuers.setdefault(r['accessionnumber'], r)
         people = rows('RELATEDPERSONS')
     keep, out = set(), []
+    check = Check('Form D filings')
+    check.row(len(issuers))
     for acc, issuer in issuers.items():
         off = offerings.get(acc, {})
         industry = off.get('industrygrouptype', '')
         name = issuer.get('entityname', '')
         if industry != 'Pooled Investment Fund' and family_office_name(name)[0] < 2:
+            check.skip('not a fund or family office')
+            continue
+        if not clean_cik(issuer.get('cik')):
+            check.skip('no CIK')
             continue
         keep.add(acc)
         sub = subs.get(acc, {})
@@ -892,8 +1053,24 @@ def load_formd(db_path, zip_path):
         con.executemany('INSERT OR REPLACE INTO formd_offerings VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', out)
         con.executemany("DELETE FROM people WHERE source = 'Form D related person' AND source_ref = ?", [(a,) for a in keep])
         con.executemany('INSERT INTO people VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', person_rows)
+        dropped = dedupe_formd(con)
+    superseded = len(keep & dropped)
+    if superseded:
+        check.skip('older filing', superseded)
+    check.loaded = len(keep) - superseded
     con.close()
-    return {'offerings': len(out), 'people': len(person_rows)}
+    return {'offerings': len(out) - superseded, 'people': len(person_rows), 'checks': [check.out()]}
+
+
+def dedupe_formd(con):
+    """One offering per issuer (CIK): the newest Form D or amendment wins (it restates the offering), so loading 12
+    quarters never lists a fund twice. Returns the accessions removed (and drops their related persons)."""
+    dropped = {r[0] for r in con.execute(
+        'SELECT accession FROM (SELECT accession, ROW_NUMBER() OVER (PARTITION BY cik ORDER BY filed DESC, accession DESC) AS n '
+        'FROM formd_offerings WHERE cik IS NOT NULL) WHERE n > 1')}
+    con.executemany('DELETE FROM formd_offerings WHERE accession = ?', [(a,) for a in dropped])
+    con.executemany("DELETE FROM people WHERE source = 'Form D related person' AND source_ref = ?", [(a,) for a in dropped])
+    return dropped
 
 
 # ---------- Names, matching and the classifier ----------
@@ -1025,6 +1202,10 @@ def classify(f):
     strength, name_reason = max((family_office_name(n) for n in names), key=lambda x: x[0])
     mfo_name = any(MFO.search(n) for n in names)
     kind = f.get('kind')
+    if kind == 'STATE':
+        return {'type': TYPE_STATE, 'confidence': 'from filing',
+                'reasons': ['registered with its state securities regulator, not the SEC (from the IAPD firm search; beta)',
+                            'state-registered advisers usually manage under $100M; their Form ADV is on IAPD']}
     if kind in ('RIA', 'ERA'):
         reasons = [f'files Form ADV as an {"SEC-registered adviser" if kind == "RIA" else "exempt reporting adviser"}']
         signals = client_signals(f.get('client_mix'), f.get('clients_total'), f.get('aum_total')) if kind == 'RIA' else []
@@ -1126,6 +1307,9 @@ def build_firms(db_path, tickers=None):
     index = NameIndex([{'name': f['name'], 'city': f['city'], 'state': f['state'], 'zip': f['zip'], 'id': f['id']} for f in firms.values()]
                       + [{'name': n, 'city': f['city'], 'state': f['state'], 'zip': f['zip'], 'id': f['id']} for f in firms.values() for n in f['other_names']])
     by_cik = {}
+    reporters = {}
+    for r in con.execute("SELECT cik, period, name FROM other_managers_13f WHERE role = 'reports holdings'"):
+        reporters.setdefault((r['cik'], r['period']), []).append(r['name'])
 
     def attach(fid, cik, name):
         f = firms[fid]
@@ -1159,6 +1343,8 @@ def build_firms(db_path, tickers=None):
         attach(target, fl['cik'], fl['name'])
         f = firms[target]
         f['has13f'], f['value_13f'], f['period_13f'] = 1, fl['total_value'], fl['latest_period']
+        if is_notice(fl['report_type']):
+            f['reported_by'] = reporters.get((fl['cik'], fl['latest_period']), [])
         links.append((target, 'Form 13F', str(fl['cik']), method, score, 'linked', fl['name']))
 
     offering_counts = {}
@@ -1202,6 +1388,8 @@ def build_firms(db_path, tickers=None):
     rows = []
     for f in firms.values():
         c = classify(f)
+        if 'reported_by' in f:
+            c['reasons'].append('files 13F notices: holdings reported by ' + (', '.join(f['reported_by']) or 'another manager (not named in the data set)'))
         key = _address_key(f['street'], f['city'], f['state'], f['zip'])
         lat, lon, how = None, None, ''
         if key in geo:
@@ -1469,8 +1657,12 @@ async def download(ctx, url, dest, emit=None, label='', client=None, attempts=5)
                         async for chunk in response.aiter_raw(1 << 20):
                             fh.write(chunk)
                             have += len(chunk)
-                            if emit and time.monotonic() - last > 1:
+                            if time.monotonic() - last > 1:
                                 last = time.monotonic()
+                                if JOB.get('running') and total:
+                                    JOB['sub'] = 0.7 * have / total  # the download is ~70% of a file's time
+                                if not emit:
+                                    continue
                                 pct = f' {have / total * 100:.0f}%' if total else ''
                                 await emit({'type': 'status', 'text': f'Downloading {label or dest.name}{pct} ({have / 1e6:,.0f} MB)'})
             part.replace(dest)
@@ -1502,6 +1694,26 @@ JOB = {'running': False}
 _ingest_lock = None
 
 
+def overall_percent(job=None):
+    """One figure for the whole job (0-100), weighted by stage (STAGES): finished stages count in full, the current
+    one by its files done plus the share of the file in hand (download, then reading)."""
+    job = job if job is not None else JOB
+    plan = job.get('plan') or []
+    total = sum(w for _, w in plan) or 1
+    if not job.get('running'):
+        return 100 if job.get('finished') and plan else None
+    done = sum(w for s, w in plan if s in (job.get('results') or {}))
+    current = next((w for s, w in plan if s == job.get('current')), 0)
+    i, n = job.get('part') or (0, 1)
+    share = min(1.0, (i + min(1.0, job.get('sub') or 0.0)) / max(1, n))
+    return min(99, round((done + current * share) / total * 100))
+
+
+def _part(i, n, sub=0.0):
+    """The current stage is at file i of n (sub = how far into that file, 0..1)."""
+    JOB['part'], JOB['sub'] = (i, n), sub
+
+
 async def _watch_progress(db_path, emit, future):
     """Turns the worker's progress notes (meta 'progress') into engine events until it finishes."""
     seen = None
@@ -1517,12 +1729,15 @@ async def _watch_progress(db_path, emit, future):
             seen = row[0]
             p = json.loads(row[0])
             JOB['stage'] = p['stage']
+            if p.get('total'):
+                JOB['sub'] = 0.7 + 0.3 * min(1.0, p['done'] / p['total'])
             text = p['stage'] + (f' ({p["done"]:,}/{p["total"]:,})' if p.get('total') else f' ({p["done"]:,} rows)' if p.get('done') else '')
             if emit:
                 await emit({'type': 'status', 'text': text})
 
 
 async def _run_worker(emit, fn_name, *args):
+    JOB['sub'] = max(JOB.get('sub') or 0.0, 0.7)  # downloaded: reading from here
     task = asyncio.ensure_future(_offload(fn_name, *args))
     watcher = asyncio.ensure_future(_watch_progress(args[0], emit, task))
     try:
@@ -1546,23 +1761,91 @@ def _record(db_path, source, info):
     con.close()
 
 
+# Resume: every file loaded is remembered (meta 'files:<source>'), so a retry skips it; a file half downloaded
+# resumes from its .part; a file fully downloaded but not yet loaded stays on disk until it loads.
+
+def loaded_files(db_path, source):
+    con = connect(db_path)
+    try:
+        return get_meta(con, f'files:{source}', {}) or {}
+    finally:
+        con.close()
+
+
+def mark_loaded(db_path, source, name, info):
+    con = connect(db_path)
+    with con:
+        files = get_meta(con, f'files:{source}', {}) or {}
+        files[name] = {**info, 'at': time.time()}
+        set_meta(con, f'files:{source}', files)
+    con.close()
+
+
+async def fetch(ctx, url, emit, label):
+    """The local copy of `url`: reused when a finished download is already on disk, else downloaded (resuming)."""
+    dest = DOWNLOADS / _file_name(url)
+    if dest.exists() and dest.stat().st_size > 0 and not dest.with_name(dest.name + '.part').exists():
+        if await _still_current(ctx, url, dest):
+            return dest
+        dest.unlink(missing_ok=True)
+    return await download(ctx, url, dest, emit, label)
+
+
+async def _still_current(ctx, url, dest):
+    """A file kept on disk is reused only if the server's size (Content-Length) matches and the server copy isn't
+    newer (Last-Modified), when the server says; if it can't be asked, the file is reused."""
+    try:
+        sec_host = 'sec.gov' in urllib.parse.urlparse(url).netloc
+        if sec_host:
+            await _sec_pace()
+        resp = await (ctx.sec_http if sec_host else ctx.http).head(url, timeout=30, follow_redirects=True)
+        if resp.status_code >= 400:
+            return True
+        size = resp.headers.get('Content-Length')
+        if size and size.isdigit() and int(size) != dest.stat().st_size:
+            log.info('Kept download %s has %s bytes, the server %s: downloading again', dest.name, dest.stat().st_size, size)
+            return False
+        modified = resp.headers.get('Last-Modified')
+        if modified:
+            import email.utils
+            when = email.utils.parsedate_to_datetime(modified).timestamp()
+            if when > dest.stat().st_mtime:
+                log.info('The server has a newer %s: downloading again', dest.name)
+                return False
+        return True
+    except Exception as err:
+        log.info('Could not check kept download %s (%s): reusing it', dest.name, err)
+        return True
+
+
 async def ingest_adv(ctx, emit, db_path):
     links = page_links(await sec_page(ctx, INDEX_PAGES['adv']), INDEX_PAGES['adv'])
     files = pick_adv_files(links)
     if not files:
         raise EngineError('No adviser lists were found on the SEC page (its layout may have changed).')
-    done = set(_loaded(db_path, 'adv').get('history', []))
-    results = []
+    info = _loaded(db_path, 'adv')
+    done = set(info.get('history', []))
+    loaded = loaded_files(db_path, 'adv')
+    results, checks = [], []
     for i, (url, kind, date) in enumerate(files):
+        _part(i, len(files))
+        name = url.rsplit('/', 1)[-1]
         newest_of_kind = all(f[1] != kind or f[2] <= date for f in files)
-        if not newest_of_kind and url in done:
+        if name in loaded or (not newest_of_kind and url in done):
+            if newest_of_kind:
+                checks.append((loaded.get(name) or {}).get('check'))
+            done.add(url)
             continue
-        dest = await download(ctx, url, DOWNLOADS / _file_name(url), emit, f'{kind} list {date}')
+        dest = await fetch(ctx, url, emit, f'{kind} list {date}')
         r = await _run_worker(emit, 'load_adv_roster', str(db_path), str(dest), kind, date, not newest_of_kind)
-        results.append({'file': url.rsplit('/', 1)[-1], 'kind': kind, 'date': date, **r})
+        results.append({'file': name, 'kind': kind, 'date': date, **r})
+        if newest_of_kind:
+            checks.append(r.get('check'))
         done.add(url)
+        mark_loaded(db_path, 'adv', name, {'kind': kind, 'date': date, 'check': r.get('check')})
         dest.unlink(missing_ok=True)
-    _record(db_path, 'adv', {'files': results, 'history': sorted(done), 'sourceDate': files[0][2]})
+    _record(db_path, 'adv', {'files': results or info.get('files', []), 'history': sorted(done), 'sourceDate': files[0][2],
+                             'checks': merge_checks(checks)})
     return results
 
 
@@ -1571,15 +1854,23 @@ async def ingest_adv_full(ctx, emit, db_path):
     files = pick_adv_full_files(links)
     if not files:
         raise EngineError('No Form ADV data files were found on the SEC page (its layout may have changed).')
-    paths = [await download(ctx, url, DOWNLOADS / _file_name(url), emit, f'Form ADV data ({i + 1}/{len(files)})') for i, url in enumerate(files)]
-    try:
-        r = await _run_worker(emit, 'load_adv_full', str(db_path), [str(p) for p in paths])
-    finally:
-        for p in paths:
-            p.unlink(missing_ok=True)
+    names = sorted(u.rsplit('/', 1)[-1] for u in files)
     newest = _date_key(files[0])
-    _record(db_path, 'adv_full', {'files': [u.rsplit('/', 1)[-1] for u in files], 'sourceDate': newest, **r,
-                                  'note': adv_full_note(newest)})
+    loaded = loaded_files(db_path, 'adv_full')
+    if loaded.get('set', {}).get('names') == names:  # this exact release set is in already
+        info = _loaded(db_path, 'adv_full')
+        _record(db_path, 'adv_full', {**info, 'note': adv_full_note(newest)})
+        return {'skipped': 'already loaded', **{k: info.get(k) for k in ('people', 'funds', 'advisers')}}
+    paths = []
+    for i, url in enumerate(files):  # files stay on disk until they load, so a retry only fetches what's missing
+        _part(i, len(files) + 1)
+        paths.append(await fetch(ctx, url, emit, f'Form ADV data ({i + 1}/{len(files)})'))
+    _part(len(files), len(files) + 1)
+    r = await _run_worker(emit, 'load_adv_full', str(db_path), [str(p) for p in paths])
+    for p in paths:
+        p.unlink(missing_ok=True)
+    mark_loaded(db_path, 'adv_full', 'set', {'names': names})
+    _record(db_path, 'adv_full', {'files': names, 'sourceDate': newest, **r, 'note': adv_full_note(newest)})
     return r
 
 
@@ -1587,8 +1878,9 @@ def adv_full_note(newest):
     """What the owner should know about the age of the people and private-fund data."""
     note = f'People and private funds as of {newest} (latest SEC Form ADV data release)'
     if newest and newest < (dt.date.today() - dt.timedelta(days=200)).isoformat():
-        note += '; the SEC bulk data has not been updated since (it ended in Dec 2024 when this was built), so check IAPD for changes'
-    return note + '.' 
+        note += ('; the SEC bulk data has not been updated since (it ended in Dec 2024 when this was built). Firms that filed '
+                 'later are read one by one from their Form ADV PDF on IAPD')
+    return note + '.'
 
 
 async def ingest_13f(ctx, emit, db_path):
@@ -1596,13 +1888,25 @@ async def ingest_13f(ctx, emit, db_path):
     files = pick_13f_files(links)
     if not files:
         raise EngineError('No 13F data sets were found on the SEC page (its layout may have changed).')
-    results = []
-    for url in reversed(files):  # older first, so the newest quarter's filers win
-        dest = await download(ctx, url, DOWNLOADS / _file_name(url), emit, f'13F data {_date_key(url)}')
-        r = await _run_worker(emit, 'load_13f', str(db_path), str(dest))
-        results.append({'file': url.rsplit('/', 1)[-1], **r})
+    loaded = loaded_files(db_path, '13f')
+    results, checks = [], []
+    ordered = list(reversed(files))  # older first, so the newest quarter's filers win
+    for i, url in enumerate(ordered):
+        _part(i, len(ordered))
+        name = url.rsplit('/', 1)[-1]
+        holdings = url in files[:KEEP_13F_PERIODS]
+        before = loaded.get(name)
+        if before and (before.get('holdings') or not holdings):
+            checks += before.get('checks') or []
+            continue
+        dest = await fetch(ctx, url, emit, f'13F data {_date_key(url)}')
+        r = await _run_worker(emit, 'load_13f', str(db_path), str(dest), holdings)
+        results.append({'file': name, **r})
+        checks += r.get('checks') or []
+        mark_loaded(db_path, '13f', name, {'holdings': holdings, 'checks': r.get('checks')})
         dest.unlink(missing_ok=True)
-    _record(db_path, '13f', {'files': results, 'sourceDate': _date_key(files[0])})
+    _record(db_path, '13f', {'files': results, 'sourceDate': _date_key(files[0]), 'quarters': len(files),
+                             'holdingsQuarters': min(len(files), KEEP_13F_PERIODS), 'checks': merge_checks(checks)})
     return results
 
 
@@ -1611,20 +1915,47 @@ async def ingest_formd(ctx, emit, db_path):
     files = pick_formd_files(links)
     if not files:
         raise EngineError('No Form D data sets were found on the SEC page (its layout may have changed).')
-    dest = await download(ctx, files[0], DOWNLOADS / _file_name(files[0]), emit, f'Form D data {_date_key(files[0])}')
-    r = await _run_worker(emit, 'load_formd', str(db_path), str(dest))
-    dest.unlink(missing_ok=True)
-    _record(db_path, 'formd', {'files': [files[0].rsplit('/', 1)[-1]], 'sourceDate': _date_key(files[0]), **r})
-    return r
+    loaded = loaded_files(db_path, 'formd')
+    results, checks = [], []
+    ordered = list(reversed(files))  # oldest first, so newer filings (amendments) replace older ones
+    for i, url in enumerate(ordered):
+        _part(i, len(ordered))
+        name = url.rsplit('/', 1)[-1]
+        if name in loaded:
+            checks += loaded[name].get('checks') or []
+            continue
+        dest = await fetch(ctx, url, emit, f'Form D data {_date_key(url)} ({i + 1}/{len(ordered)})')
+        r = await _run_worker(emit, 'load_formd', str(db_path), str(dest))
+        results.append({'file': name, **r})
+        checks += r.get('checks') or []
+        mark_loaded(db_path, 'formd', name, {'checks': r.get('checks')})
+        dest.unlink(missing_ok=True)
+    con = connect(db_path)
+    offerings = con.execute('SELECT COUNT(*) FROM formd_offerings').fetchone()[0]
+    con.close()
+    _record(db_path, 'formd', {'files': [u.rsplit('/', 1)[-1] for u in ordered], 'sourceDate': _date_key(files[0]),
+                               'quarters': len(files), 'offerings': offerings, 'checks': merge_checks(checks)})
+    return {'files': results, 'offerings': offerings}
+
+
+def _geo_status(status):
+    """'failed:2' -> 2 (failed batches are retried on later runs), anything else -> None."""
+    m = re.match(r'failed:(\d+)$', status or '')
+    return int(m.group(1)) if m else None
 
 
 async def ingest_geo(ctx, emit, db_path):
-    """Geocodes firm addresses not seen before with the Census batch geocoder (free, no key) and loads ZIP centroids."""
+    """Geocodes firm addresses not seen before with the Census batch geocoder (free, no key) and loads ZIP centroids.
+    A batch that fails is tried again on the next GEO_RETRIES runs (its firms use their ZIP centre meanwhile)."""
     con = connect(db_path)
     has_zcta = con.execute('SELECT COUNT(*) FROM zcta').fetchone()[0]
     rows = con.execute('SELECT DISTINCT street, city, state, zip FROM firms WHERE street != \'\'').fetchall()
-    known = {r[0] for r in con.execute('SELECT address FROM geocache')}
+    tries = {}
+    for r in con.execute('SELECT address, status FROM geocache'):
+        n = _geo_status(r[1])
+        tries[r[0]] = n if n is not None else GEO_RETRIES  # matched / no match: done
     con.close()
+    zcta_error = ''
     if not has_zcta:
         for url in ZCTA_URLS:
             try:
@@ -1637,17 +1968,21 @@ async def ingest_geo(ctx, emit, db_path):
                     con.executemany('INSERT OR REPLACE INTO zcta VALUES (?, ?, ?)', zrows)
                 con.close()
                 dest.unlink(missing_ok=True)
+                zcta_error = ''
                 break
             except Exception as err:
+                zcta_error = f'ZIP centres could not be downloaded ({err})'
                 log.info('ZIP centroids from %s failed: %s', url, err)
     todo, seen = [], set()
     for r in rows:
         key = _address_key(*r)
-        if key and key not in known and key not in seen and len((r[2] or '')) == 2:
+        if key and tries.get(key, 0) < GEO_RETRIES and key not in seen and len((r[2] or '')) == 2:
             seen.add(key)
             todo.append((key, tuple(r)))
-    matched = 0
-    for start in range(0, len(todo), GEOCODE_BATCH):
+    matched, failed_batches = 0, 0
+    batches = max(1, math.ceil(len(todo) / GEOCODE_BATCH))
+    for b, start in enumerate(range(0, len(todo), GEOCODE_BATCH)):
+        _part(b, batches)
         chunk = todo[start:start + GEOCODE_BATCH]
         if emit:
             await emit({'type': 'status', 'text': f'Finding map locations {start:,}/{len(todo):,} (US Census geocoder)'})
@@ -1663,23 +1998,45 @@ async def ingest_geo(ctx, emit, db_path):
             except Exception as err:
                 log.info('Census geocoder batch failed (%s), try %d', err, attempt + 1)
                 await asyncio.sleep(5 * (attempt + 1))
-        if result is None:
-            continue  # leave these for next time
         now = time.time()
         con = connect(db_path)
         with con:
-            for i, (key, _) in enumerate(chunk):
-                hit = result.get(i)
-                con.execute('INSERT OR REPLACE INTO geocache VALUES (?, ?, ?, ?, ?, ?)',
-                            (key, hit[0] if hit else None, hit[1] if hit else None, hit[2] if hit else '', 'match' if hit else 'no match', now))
-                matched += 1 if hit else 0
+            if result is None:  # remembered, and tried again on the next run (up to GEO_RETRIES runs)
+                failed_batches += 1
+                con.executemany('INSERT OR REPLACE INTO geocache VALUES (?, NULL, NULL, \'\', ?, ?)',
+                                [(key, f'failed:{tries.get(key, 0) + 1}', now) for key, _ in chunk])
+            else:
+                for i, (key, _) in enumerate(chunk):
+                    hit = result.get(i)
+                    con.execute('INSERT OR REPLACE INTO geocache VALUES (?, ?, ?, ?, ?, ?)',
+                                (key, hit[0] if hit else None, hit[1] if hit else None, hit[2] if hit else '', 'match' if hit else 'no match', now))
+                    matched += 1 if hit else 0
         con.close()
     con = connect(db_path)
     with con:
         apply_geocodes(con)
-        set_meta(con, 'ingest:geo', {'at': time.time(), 'geocoded': len(todo), 'matched': matched})
+        report = geo_report(con)
+        set_meta(con, 'ingest:geo', {'at': time.time(), 'geocoded': len(todo), 'matched': matched, 'failedBatches': failed_batches,
+                                     'report': report, 'zctaError': zcta_error})
     con.close()
-    return {'geocoded': len(todo), 'matched': matched}
+    return {'geocoded': len(todo), 'matched': matched, 'failedBatches': failed_batches, 'report': report}
+
+
+def geo_report(con):
+    """How every firm got (or didn't get) its map point."""
+    total, by_address, by_zip = con.execute(
+        "SELECT COUNT(*), SUM(geo = 'address'), SUM(geo = 'zip') FROM firms").fetchone()
+    total, by_address, by_zip = total or 0, by_address or 0, by_zip or 0
+    waiting = sum(1 for (s,) in con.execute("SELECT status FROM geocache WHERE status LIKE 'failed:%'") if (_geo_status(s) or 0) < GEO_RETRIES)
+    gave_up = sum(1 for (s,) in con.execute("SELECT status FROM geocache WHERE status LIKE 'failed:%'") if (_geo_status(s) or 0) >= GEO_RETRIES)
+    none = total - by_address - by_zip
+    text = (f'{by_address:,} of {total:,} located by address, {by_zip:,} by ZIP only, '
+            f'{none:,} no usable US address (foreign or missing)')
+    if waiting:
+        text += f'; {waiting:,} addresses will be tried again next run (the Census geocoder did not answer)'
+    if gave_up:
+        text += f'; {gave_up:,} addresses gave up after {GEO_RETRIES} runs (ZIP centre used)'
+    return {'total': total, 'address': by_address, 'zip': by_zip, 'none': none, 'retrying': waiting, 'gaveUp': gave_up, 'text': text}
 
 
 def apply_geocodes(con):
@@ -1696,60 +2053,149 @@ def apply_geocodes(con):
     con.executemany('UPDATE firms SET lat = ?, lon = ?, geo = ? WHERE id = ?', updates)
 
 
-INGESTERS = {'adv': ingest_adv, 'adv_full': ingest_adv_full, '13f': ingest_13f, 'formd': ingest_formd, 'geo': ingest_geo}
+async def ingest_build(ctx, emit, db_path):
+    """Matches firms across every loaded source (and maps 13F CUSIPs to tickers when the SEC list is reachable)."""
+    tickers = None
+    try:
+        from . import sec
+        tickers = await sec.tickers(ctx)
+    except Exception as err:
+        log.info('Ticker list unavailable for CUSIP mapping: %s', err)
+    return await _run_worker(emit, 'build_firms', str(db_path), tickers)
+
+
+#: source -> ingest job; prospect_iapd adds 'state' (state-registered advisers) when it loads
+INGESTERS = {'adv': ingest_adv, 'adv_full': ingest_adv_full, '13f': ingest_13f, 'formd': ingest_formd, 'geo': ingest_geo,
+             'build': ingest_build}
+
+
+def short_reason(err):
+    """The error in one plain line (no library boilerplate, no long query strings)."""
+    text = (str(err) or err.__class__.__name__).split('\n')[0]
+    text = re.sub(r'\s*For more information check:.*$', '', text)
+    text = re.sub(r"(https?://[^\s'\"?]+)\?[^\s'\"]*", r'\1', text)
+    return text.strip()
+
+
+def advice(err, source=''):
+    """What the owner can do about a failed source, in plain words."""
+    text = str(err)
+    if source == 'state':
+        return ('This source is beta (an undocumented IAPD search). The rest of the data is fine; press "Retry failed sources" '
+                'later, and if it keeps failing send diagnostics (Settings) so the reader can be updated.')
+    if isinstance(err, HeaderError):
+        return 'The SEC changed this file. Send diagnostics (Settings) so the reader can be updated; the other sources are fine.'
+    if 'refused' in text or '403' in text:
+        return 'Check the SEC email in Settings, wait 10 minutes, then press "Retry failed sources".'
+    if 'no longer on the website' in text or '404' in text:
+        return 'The SEC moved this file. Press "Retry failed sources" later; if it keeps failing, send diagnostics (Settings).'
+    if 'failed after' in text or 'timed out' in text.lower() or 'connect' in text.lower():
+        return 'The connection dropped. Press "Retry failed sources": it carries on where it stopped.'
+    if 'pypdf' in text:
+        return 'Run the helper\'s start file again so it installs the optional PDF reader (pypdf).'
+    return 'Press "Retry failed sources". If it fails again, send diagnostics (Settings).'
+
+
+def failed_sources(db_path):
+    """Sources whose last run failed (in 'Download everything' order)."""
+    con = connect(db_path)
+    try:
+        return [s for s, _ in STAGES if s in INGESTERS and (get_meta(con, f'result:{s}') or {}).get('ok') is False]
+    finally:
+        con.close()
+
+
+def _plan(source, db_path):
+    if source == 'all':
+        names = [s for s, _ in STAGES if s in INGESTERS]
+    elif source == 'failed':
+        names = failed_sources(db_path)
+        if not names:
+            raise EngineError('Nothing failed: every source downloaded at its last run.')
+        if any(s not in ('geo', 'build') for s in names):
+            names = [s for s in names if s != 'build'] + ['build'] + ([] if 'geo' in names else ['geo'])
+    elif source == 'geo':
+        names = ['geo']
+    else:
+        names = [source, 'build']
+    weights = dict(STAGES)
+    order = [s for s, _ in STAGES]
+    names = sorted(dict.fromkeys(names), key=lambda s: order.index(s) if s in order else len(order))
+    return [(s, weights.get(s, 10)) for s in names]
 
 
 async def run_ingest(ctx, source, emit=None, db_path=None):
-    """Runs one source (or 'all') then rebuilds the firm list. One ingest at a time."""
+    """Runs one source, 'all' or 'failed' (then rebuilds the firm list). Each source's error is caught and kept
+    (meta 'result:<source>': ok, reason, what to do, when); the others carry on. One ingest at a time."""
     global _ingest_lock
     db_path = Path(db_path or DB_PATH)
     if _ingest_lock is None:
         _ingest_lock = asyncio.Lock()
     if _ingest_lock.locked():
         raise EngineError(f'A download is already running ({JOB.get("source")}). Check prospect.status for progress.')
-    sources = ['adv', 'adv_full', '13f', 'formd', 'geo'] if source == 'all' else [source]
+    plan = _plan(source, db_path)
+    many = source in ('all', 'failed')
     async with _ingest_lock:
-        JOB.update({'running': True, 'source': source, 'started': time.time(), 'stage': 'Starting', 'error': None})
-        out = {}
+        JOB.clear()
+        JOB.update({'running': True, 'source': source, 'started': time.time(), 'stage': 'Starting', 'error': None,
+                    'plan': plan, 'results': {}, 'part': (0, 1), 'sub': 0.0})
+        out, problems = {}, []
         try:
-            failed = []
-            for s in sources:
-                JOB['stage'] = f'{s}: starting'
-                if s == 'geo':
-                    out[s] = await ingest_geo(ctx, emit, db_path)
-                    continue
-                con = connect(db_path)
-                with con:
-                    set_meta(con, f'headers:{s}', [])
-                con.close()
+            for s, _ in plan:
+                JOB.update({'current': s, 'stage': f'{s}: starting'})
+                _part(0, 1)
+                old_headers = None
+                if s not in ('geo', 'build'):
+                    con = connect(db_path)
+                    with con:
+                        old_headers = get_meta(con, f'headers:{s}')
+                        set_meta(con, f'headers:{s}', [])
+                    con.close()
                 try:
                     out[s] = await INGESTERS[s](ctx, emit, db_path)
-                except HeaderError as err:
-                    if source != 'all':
-                        raise
-                    out[s] = {'error': str(err)}
-                    failed.append(str(err))
-                    continue
-                tickers = None
-                try:
-                    from . import sec
-                    tickers = await sec.tickers(ctx)
+                    result = {'ok': True, 'when': time.time()}
+                    if old_headers:  # every file was already loaded (skipped): keep the checks from when it was
+                        con = connect(db_path)
+                        with con:
+                            if not get_meta(con, f'headers:{s}'):
+                                set_meta(con, f'headers:{s}', old_headers)
+                        con.close()
+                except asyncio.CancelledError:
+                    raise
                 except Exception as err:
-                    log.info('Ticker list unavailable for CUSIP mapping: %s', err)
-                out['build'] = await _run_worker(emit, 'build_firms', str(db_path), tickers)
-            JOB.update({'running': False, 'finished': time.time(), 'stage': 'Done' if not failed else 'Done with problems',
-                        'result': out, 'error': ' '.join(failed) or None})
+                    log.warning('Prospect source %s failed: %s', s, err)
+                    result = {'ok': False, 'reason': short_reason(err), 'action': advice(err, s), 'when': time.time()}
+                    out[s] = {'error': result['reason']}
+                    problems.append(f'{SOURCE_NAMES.get(s, s)}: {result["reason"]}')
+                con = connect(db_path)
+                with con:
+                    set_meta(con, f'result:{s}', result)
+                con.close()
+                JOB['results'][s] = result
+                if not result['ok'] and not many:
+                    raise EngineError(result['reason'])
+            JOB.update({'running': False, 'finished': time.time(), 'stage': 'Done with problems' if problems else 'Done',
+                        'result': out, 'error': ' · '.join(problems) or None, 'current': None})
             return out
-        except Exception as err:
-            JOB.update({'running': False, 'finished': time.time(), 'stage': 'Failed', 'error': str(err)})
+        except BaseException as err:
+            JOB.update({'running': False, 'finished': time.time(), 'stage': 'Failed', 'error': str(err) or 'stopped', 'current': None})
             raise
+
+
+SOURCE_NAMES = {'adv': 'Adviser lists', 'adv_full': 'Form ADV people and funds', '13f': '13F', 'formd': 'Form D',
+                'state': 'State-registered advisers', 'geo': 'Map locations', 'build': 'Matching firms'}
 
 
 async def schedule_loop(ctx, db_path=None):
     """Keeps already-downloaded sources fresh: the monthly adviser lists and the quarterly 13F / Form D data sets
     (looked for monthly; a file is only downloaded when the SEC has a newer one). Never starts a source you haven't
-    downloaded yourself."""
+    downloaded yourself. Also runs the per-firm Form ADV PDF reader (prospect_iapd) in the background."""
     db_path = Path(db_path or DB_PATH)
+    try:
+        from . import prospect_iapd
+        background(prospect_iapd.pdf_loop(ctx, db_path))
+    except Exception as err:
+        log.info('Form ADV PDF reader not started: %s', err)
     await asyncio.sleep(600)
     while True:
         if db_path.exists():
@@ -1758,14 +2204,17 @@ async def schedule_loop(ctx, db_path=None):
                 if not info or time.time() - info.get('at', 0) < days * 86400:
                     continue
                 try:
+                    if source == 'state':
+                        await run_ingest(ctx, 'state', db_path=db_path)
+                        continue
                     links = page_links(await sec_page(ctx, INDEX_PAGES[source]), INDEX_PAGES[source])
                     newest = {'adv': lambda: (pick_adv_files(links, 0) or [('', '', '')])[0][2], '13f': lambda: _date_key((pick_13f_files(links, 1) or [''])[0]),
-                              'formd': lambda: _date_key((pick_formd_files(links) or [''])[0]),
+                              'formd': lambda: _date_key((pick_formd_files(links, 1) or [''])[0]),
                               'adv_full': lambda: _date_key((pick_adv_full_files(links) or [''])[0])}[source]()
                     if newest and newest > (info.get('sourceDate') or ''):
-                        await run_ingest(ctx, source)
+                        await run_ingest(ctx, source, db_path=db_path)
                         if source == 'adv':
-                            await run_ingest(ctx, 'geo')
+                            await run_ingest(ctx, 'geo', db_path=db_path)
                     else:
                         _record(db_path, source, {**info})  # checked: nothing newer yet
                 except Exception as err:
@@ -1967,7 +2416,7 @@ def firm_profile(con, firm_id, holdings_limit=200):
                            'keyTitle': bool(r['key_title']), 'filed': r['filed'], 'ownership': r['ownership']})
     firm['people'] = people
     firm['privateFunds'] = [dict(r) for r in con.execute(
-        'SELECT name, fund_id AS fundId, fund_type AS fundType, gav, owners, filing_date AS filed FROM private_funds WHERE crd = ? ORDER BY gav DESC', (row['crd'],))] if row['crd'] else []
+        'SELECT name, fund_id AS fundId, fund_type AS fundType, gav, owners, filing_date AS filed, source FROM private_funds WHERE crd = ? ORDER BY gav DESC', (row['crd'],))] if row['crd'] else []
     ciks = [int(r['source_key']) for r in con.execute("SELECT source_key FROM links WHERE firm_id = ? AND source LIKE 'Form D%' AND status = 'linked'", (firm_id,))]
     if row['cik']:
         ciks.append(row['cik'])
@@ -1987,11 +2436,24 @@ def firm_profile(con, firm_id, holdings_limit=200):
         holdings = {'period': period, 'previousPeriod': prev_period, 'total': sum(p['value'] for p in cur.values()), 'count': len(cur),
                     'changes': counts, 'positions': changes[:holdings_limit], 'sectors': sector_mix(cur, mapping),
                     'turnover': turnover(weights_by_cusip(cur), weights_by_cusip(prev)),
-                    'otherManagers': [dict(r) for r in con.execute('SELECT name, crd, sec_file AS secFile FROM other_managers_13f WHERE cik = ? AND period = ?', (row['cik'], period))]}
+                    'otherManagers': [dict(r) for r in con.execute('SELECT name, crd, sec_file AS secFile, role FROM other_managers_13f WHERE cik = ? AND period = ?', (row['cik'], period))]}
+    if row['cik'] and row['has13f']:
+        filer = con.execute('SELECT report_type, latest_period FROM filers_13f WHERE cik = ?', (row['cik'],)).fetchone()
+        if filer and is_notice(filer['report_type']):
+            holdings['reportedBy'] = [r[0] for r in con.execute(
+                "SELECT name FROM other_managers_13f WHERE cik = ? AND period = ? AND role = 'reports holdings'", (row['cik'], filer['latest_period']))] or ['another manager']
+        # 13F value and positions by quarter (up to 8 quarters): the AUM trend in listed securities
+        holdings['history'] = [dict(r) for r in con.execute(
+            'SELECT period, total_value AS value, entries AS positions, report_type AS reportType FROM filer_history_13f WHERE cik = ? ORDER BY period', (row['cik'],))]
     firm['holdings13f'] = holdings
     sources = []
     if row['crd']:
         sources.append({'label': 'Adviser record (IAPD)', 'url': IAPD_FIRM.format(crd=row['crd'])})
+        sources.append({'label': 'Brochure (Form ADV Part 2, IAPD)', 'url': IAPD_BROCHURE.format(crd=row['crd'])})
+        sources.append({'label': 'Form ADV Part 1 (IAPD PDF)', 'url': IAPD_PDF.format(crd=row['crd'])})
+        pdf = con.execute('SELECT bulk_date, pdf_date, pdf_status, pdf_note, at FROM adv_filings WHERE crd = ?', (row['crd'],)).fetchone()
+        firm['advPdf'] = ({'bulkDate': pdf['bulk_date'], 'pdfDate': pdf['pdf_date'], 'status': pdf['pdf_status'], 'note': pdf['pdf_note'], 'at': pdf['at']}
+                          if pdf else None)
     for cik in sorted(set(ciks) | ({row['cik']} if row['cik'] else set())):
         sources.append({'label': f'EDGAR filings (CIK {cik})', 'url': EDGAR_COMPANY.format(cik=cik)})
     firm['sources'] = sources
@@ -2075,10 +2537,20 @@ def status(con, db_path=None):
     sources = {s: get_meta(con, f'ingest:{s}') for s in SOURCES}
     path = Path(db_path or DB_PATH)
     full = sources.get('adv_full') or {}
+    results = {s: get_meta(con, f'result:{s}') for s, _ in STAGES}
+    checks = {s: [{**c, 'text': check_text(c)} for c in (sources.get(s) or {}).get('checks') or []] for s in SOURCES}
+    job = {k: v for k, v in JOB.items() if k != 'result'}
+    job['overall'] = overall_percent()
+    try:
+        from . import prospect_iapd
+        pdf = prospect_iapd.pdf_status(con)
+    except Exception as err:  # the PDF reader is optional
+        pdf = {'error': str(err)}
     return {'counts': counts, 'types': types, 'sources': sources, 'built': get_meta(con, 'built'),
             'headers': {s: get_meta(con, f'headers:{s}') for s in SOURCES if s != 'geo'},
             'peopleAsOf': full.get('sourceDate'), 'peopleNote': full.get('note'),
-            'job': {k: v for k, v in JOB.items() if k != 'result'}, 'progress': get_meta(con, 'progress'),
+            'job': job, 'progress': get_meta(con, 'progress'), 'results': results, 'checks': checks,
+            'geo': geo_report(con), 'advPdf': pdf, 'stages': [s for s, _ in STAGES],
             'sizeMb': round(path.stat().st_size / 1e6, 1) if path.exists() else 0, 'refreshDays': REFRESH_DAYS}
 
 
@@ -2163,17 +2635,18 @@ async def h_status(ctx, msg):
 
 @handler('prospect.ingest')
 async def h_ingest(ctx, msg):
-    """{source: adv|adv_full|13f|formd|geo|all, wait?}. Without wait the download runs in the background and
+    """{source: adv|adv_full|13f|formd|state|geo|all|failed, wait?} ('failed' retries the sources whose last run failed). Without wait the download runs in the background and
     prospect.status shows its progress; with wait the reply comes at the end and progress streams as events."""
     source = str(msg.get('source') or '')
-    if source not in (*SOURCES, 'all'):
-        raise EngineError(f'Unknown source "{source}". Use one of: {", ".join(SOURCES)}, all.')
+    if source not in (*SOURCES, 'all', 'failed'):
+        raise EngineError(f'Unknown source "{source}". Use one of: {", ".join(SOURCES)}, all, failed.')
     if source != 'geo':
         _need_contact(ctx)
     if msg.get('wait'):
         return {'result': await run_ingest(ctx, source, msg.get('_emit'))}
     if JOB.get('running'):
         raise EngineError(f'A download is already running ({JOB.get("source")}).')
+    _plan(source, DB_PATH)  # 'failed' with nothing failed answers now, not in the background
 
     async def go():
         try:
@@ -2197,6 +2670,12 @@ async def h_firm(ctx, msg):
     """{firmId} -> the full profile ('id' is reserved in helper messages)."""
     firm_id = str(msg.get('firmId') or '')
     profile = await _query(firm_profile, firm_id)
+    if profile.get('crd') and firm_id.startswith('crd-'):
+        try:  # the owner opened it: its newer Form ADV (if any) is read from IAPD next
+            from . import prospect_iapd
+            prospect_iapd.want(profile['crd'])
+        except Exception:
+            pass
     positions = profile['holdings13f'].get('positions') or []
     if positions:
         filled = await fill_sectors(ctx, DB_PATH, [p['cusip'] for p in positions[:40]])
@@ -2242,3 +2721,11 @@ async def h_geocode(ctx, msg):
 async def h_export(ctx, msg):
     """{query: same fields as prospect.search} -> {csv, count, total, columns} (up to 5,000 rows)."""
     return await _query(export_csv, msg.get('query') or {})
+
+
+# Per-firm Form ADV PDFs and state-registered advisers (IAPD) live in their own module; importing it registers
+# the 'state' source and the prospect.adv_pdf request.
+try:
+    from . import prospect_iapd  # noqa: E402,F401
+except Exception as _err:  # optional: the core data still works
+    log.info('IAPD reader unavailable: %s', _err)

@@ -41,7 +41,7 @@ if os.environ.get('TP_SPLASH'):
     logging.getLogger().addHandler(logging.NullHandler())
 warnings.showwarning = lambda *args, **kwargs: None
 import httpx  # noqa: E402
-from schwab.auth import easy_client  # noqa: E402
+from schwab.auth import RedirectTimeoutError, easy_client  # noqa: E402
 from schwab.streaming import StreamClient  # noqa: E402
 from websockets.asyncio.server import broadcast, serve  # noqa: E402
 import updater  # noqa: E402  (standard library only)
@@ -51,7 +51,7 @@ from engine.core import is_safe_url  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 36
+HELPER_VERSION = 39
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -1252,6 +1252,19 @@ def main():
         sys.exit(f'The helper stopped because of an error: {err}\nDetails are in {LOG_PATH}')
 
 
+def schwab_login(config):
+    """Saved Schwab login, or the browser login when it's missing or a week old (opens by itself, no Enter needed)."""
+    return easy_client(
+        config['app_key'],
+        config['app_secret'],
+        config.get('callback_url', CALLBACK_URL),
+        str(TOKEN_PATH),
+        asyncio=True,
+        interactive=False,  # open the Schwab login page straight away instead of waiting for Enter
+        callback_timeout=900.0,  # 15 minutes to log in and approve
+    )
+
+
 def serve_forever(args):
     if SCREEN:
         SCREEN.step('Getting ready...', 91, 0.3)
@@ -1263,19 +1276,18 @@ def serve_forever(args):
         SCREEN.pause()
     if not SCREEN or login:
         print()
-        print('Logging in to Schwab...')
-        print('If a browser opens: log in, approve access, and if you see a "connection is not private"')
-        print('warning, click Advanced, then Proceed. That warning is expected for this local login.')
+        print('Logging in to Schwab (Schwab asks for this about once a week)...')
+        print('Your browser opens the Schwab login page by itself. Log in and approve access.')
+        print('If you then see a "connection is not private" warning, click Advanced, then Proceed:')
+        print('that warning is expected for this local login. You have 15 minutes; nothing to type here.')
         print()
     else:
         SCREEN.step('Logging in to Schwab...', 96, 2)
-    client = easy_client(
-        config['app_key'],
-        config['app_secret'],
-        config.get('callback_url', CALLBACK_URL),
-        str(TOKEN_PATH),
-        asyncio=True,
-    )
+    try:
+        client = schwab_login(config)
+    except RedirectTimeoutError:
+        sys.exit('The Schwab login wasn\'t finished within 15 minutes. Close this window and start the helper again '
+                 'to get a fresh login page.')
     if SCREEN:
         SCREEN.resume()  # puts the start screen back after the login steps
         SCREEN.step('Starting the live data server...', 99, 1)

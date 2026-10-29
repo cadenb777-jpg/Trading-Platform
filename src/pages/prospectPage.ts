@@ -8,6 +8,8 @@
  */
 import { clearEngineCache } from '../data/schwab';
 import {
+  prospectAdvPdfReader,
+  prospectCompleteReady,
   prospectExport,
   prospectGeocode,
   prospectIngest,
@@ -30,6 +32,10 @@ import { renderCompare, saveText } from '../prospect/compare';
 import { loadProfile, typeBadge, type ProfileContext } from '../prospect/profile';
 import {
   CLIENT_FILTERS,
+  DATA_LIMITS,
+  failedSources,
+  FRESHNESS_LABEL,
+  STAGE_NAMES,
   CLIENT_LABELS,
   countText,
   dateText,
@@ -715,6 +721,7 @@ export function createProspectPage() {
   views.data.append(h('section', { class: 'panel' }, dataHead, h('p', { class: 'muted small' }, 'Downloads come straight from the SEC and US Census (free, public). The SEC asks for your email in Settings; downloads run one at a time, politely paced. Nothing leaves your computer.'), dataBox));
 
   function confirmFirst(source: ProspectSource): Promise<boolean> {
+    if (source === 'failed') return Promise.resolve(true);
     const fresh = !status || (status.counts.firms ?? 0) === 0;
     const big = source === 'all' || source === 'adv_full' || source === '13f';
     if (!fresh && !big) return Promise.resolve(true);
@@ -732,7 +739,7 @@ export function createProspectPage() {
         h(
           'div',
           { class: 'pr-confirm' },
-          h('p', {}, h('b', {}, `The full database needs about ${FIRST_DOWNLOAD_SIZE}.`), ' The Form ADV data is about 1 GB to download and 13F holdings about 400 MB a quarter; downloads are deleted after loading.'),
+          h('p', {}, h('b', {}, `The full database needs about ${FIRST_DOWNLOAD_SIZE}.`), ' Downloads total about 4 GB: about 3 GB for 8 quarters of 13F data plus about 1 GB of Form ADV data (and 12 quarters of Form D, about 50 MB each). Each file is deleted after loading.'),
           h('p', {}, 'A first full download takes roughly 20-60 minutes, mostly waiting on the SEC. You can keep using the platform; progress shows here. If it stops, pressing Download again resumes.'),
           h('p', { class: 'muted small' }, `Free space on your computer: check before starting. Database now: ${sizeText(status)}.`),
           h('div', { class: 'pr-inline' }, h('button', { class: 'btn primary', onclick: () => finish(true) }, 'Start download'), h('button', { class: 'btn ghost', onclick: () => finish(false) }, 'Cancel')),
@@ -748,14 +755,17 @@ export function createProspectPage() {
     drawData();
     if (!pollTimer) pollTimer = setInterval(() => (clearEngineCache('prospect.status'), refreshStatus()), 3000);
     try {
-      await prospectIngest(source, (e) => {
+      const reply = await prospectIngest(source, (e) => {
         if (e.type !== 'status') return;
         ingesting.set(source, e.text);
-        const line = dataBox.querySelector<HTMLElement>(`[data-progress="${source}"]`);
+        const key = source === 'failed' ? 'all' : source;
+        const line = dataBox.querySelector<HTMLElement>(`[data-progress="${key}"]`);
         if (line) line.textContent = e.text;
         else drawData();
       });
-      toast('Download finished: the firm list was rebuilt');
+      const parts = Object.values((reply as { result?: Record<string, unknown> }).result ?? {});
+      const problems = parts.filter((r) => r && typeof r === 'object' && 'error' in (r as object)).length;
+      toast(problems ? `Download finished with problems: ${problems} source${problems === 1 ? '' : 's'} failed. See the Data tab ("Retry failed sources").` : 'Download finished: the firm list was rebuilt');
     } catch (err) {
       const msg = (err as Error).message;
       if (/SEC email|contact email/i.test(msg)) {
@@ -771,41 +781,97 @@ export function createProspectPage() {
 
   function drawData() {
     const running = !!status?.job?.running || ingesting.size > 0;
+    const complete = prospectCompleteReady();
+    const failed = complete ? failedSources(status) : [];
+    const overall = status?.job?.running ? (status.job.overall ?? 0) : null;
+    const many = ingesting.has('all') || ingesting.has('failed') || (status?.job?.running && (status.job.source === 'all' || status.job.source === 'failed'));
     dataHead.replaceChildren(
       h('h3', {}, 'Data sources'),
       h('span', { class: 'muted small' }, status ? `${countText(status.counts.firms ?? 0)} firms · ${countText(status.counts.people ?? 0)} people · ${countText(status.counts.holdings_13f ?? 0)} 13F positions · ${sizeText(status)}` : ''),
       h('button', { class: 'btn primary small', disabled: running, onclick: () => ingest('all') }, (status?.counts.firms ?? 0) ? 'Refresh everything' : 'Download everything'),
+      failed.length ? h('button', { class: 'btn small', disabled: running, onclick: () => ingest('failed'), title: 'Runs only the sources that failed; files already loaded are skipped' }, `Retry failed sources (${failed.length})`) : '',
       h('button', { class: 'btn ghost small', onclick: () => (clearEngineCache('prospect.status'), refreshStatus()) }, 'Recheck'),
-      ingesting.has('all') || (status?.job?.running && status.job.source === 'all')
-        ? h('p', { class: 'pr-progress small', 'data-progress': 'all', role: 'status' }, ingesting.get('all') ?? status?.job?.stage ?? 'Working…')
-        : '',
+      complete ? '' : h('p', { class: 'pr-warn small', 'data-update': 'helper' }, 'Update the helper to get the complete downloads: retry failed sources, state-registered advisers and current Form ADV owners and funds from IAPD. Download the project ZIP from GitHub again, replace your helper folder and restart it.'),
     );
     if (statusError) {
       dataBox.replaceChildren(h('div', { class: 'ap-error' }, statusError));
       return;
     }
+    const top: HTMLElement[] = [];
+    if (many || overall != null) {
+      const pct = overall ?? 0;
+      top.push(
+        h(
+          'div',
+          { class: 'pr-overall' },
+          h('div', { class: 'pr-overall-head small' }, h('b', {}, `${pct}%`), ' ', h('span', { 'data-progress': 'all', role: 'status' }, ingesting.get('all') ?? ingesting.get('failed') ?? status?.job?.stage ?? 'Working…')),
+          h('div', { class: 'pr-bar', role: 'progressbar', 'aria-label': 'Overall download progress', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(pct) }, h('i', { style: `width:${pct}%` })),
+          status?.job?.plan ? h('p', { class: 'muted small' }, 'Stages: ', ...status.job.plan.map(([s], i) => h('span', { class: status?.job?.current === s ? 'pr-stage now' : status?.job?.results?.[s] ? (status.job.results[s].ok ? 'pr-stage ok' : 'pr-stage bad') : 'pr-stage' }, `${i ? ' → ' : ''}${STAGE_NAMES[s] ?? s}`))) : null,
+        ),
+      );
+    } else if (status?.job?.finished && status.job.stage) {
+      top.push(h('p', { class: status.job.error ? 'pr-warn' : 'small up' }, status.job.error ? `Last download: ${status.job.stage}. ${status.job.error}` : `Last download: ${status.job.stage} (100%).`));
+    }
     dataBox.replaceChildren(
-      ...SOURCE_INFO.map((s) => {
+      ...top,
+      ...SOURCE_INFO.filter((s) => complete || s.key !== 'state').map((s) => {
         const f = sourceFreshness(status, s.key);
-        const live = ingesting.get(s.key) ?? (status?.job?.running && status.job.source === s.key ? status.job.stage : '');
+        const live = ingesting.get(s.key) ?? (f.state === 'running' ? status?.job?.stage : '');
         const checks = s.key === 'geo' ? null : headerSummary(status?.headers?.[s.key] ?? null);
         const info = status?.sources?.[s.key] as Record<string, unknown> | null | undefined;
+        const counts = status?.checks?.[s.key] ?? [];
         return h(
           'article',
-          { class: `pr-source ${f.state}` },
-          h('div', { class: 'pr-source-head' }, h('h4', {}, s.label), h('span', { class: `badge ${f.state === 'fresh' ? 'up' : f.state === 'due' ? 'warn' : f.state === 'running' ? 'accent' : ''}` }, { fresh: 'Up to date', due: 'Refresh due', missing: 'Not downloaded', running: 'Downloading' }[f.state])),
+          { class: `pr-source ${f.state}`, 'data-source': s.key },
+          h('div', { class: 'pr-source-head' }, h('h4', {}, s.label, s.beta ? h('span', { class: 'badge warn pr-beta', title: 'Built from an undocumented public search; checked on every download' }, 'beta') : null), h('span', { class: `badge ${{ fresh: 'up', due: 'warn', running: 'accent', failed: 'down', missing: '' }[f.state]}` }, FRESHNESS_LABEL[f.state])),
           h('p', { class: 'small' }, s.what),
-          h('p', { class: 'small' }, h('b', {}, f.text)),
-          s.key === 'adv_full' ? h('p', { class: 'pr-strip-note small' }, status?.peopleNote ?? 'The SEC\'s bulk Form ADV data (people and private funds) ended at 31 Dec 2024 when this was built; the panel shows the date of the newest release once loaded. Check IAPD for later changes.') : null,
-          s.key === '13f' && info ? h('p', { class: 'muted small' }, `Two newest quarters kept for changes. ${countText(status?.counts.filers_13f ?? 0)} managers loaded.`) : null,
+          f.state === 'failed'
+            ? h('div', { class: 'pr-fail small', role: 'alert' }, h('b', {}, 'Why: '), f.text, f.action ? h('div', {}, h('b', {}, 'What to do: '), f.action) : null)
+            : h('p', { class: 'small' }, h('b', {}, f.text)),
+          ...counts.map((c) => h('p', { class: 'small pr-check', 'data-check': s.key }, c.text)),
+          s.key === 'geo' && status?.geo?.total ? h('p', { class: 'small pr-check', 'data-check': 'geo' }, status.geo.text) : null,
+          s.key === 'adv_full' ? h('p', { class: 'pr-strip-note small' }, status?.peopleNote ?? "The SEC's bulk Form ADV data (people and private funds) ended at 31 Dec 2024; firms that filed later are read one by one from IAPD.") : null,
+          s.key === 'adv_full' && complete ? advPdfLine() : null,
+          s.key === '13f' && info ? h('p', { class: 'muted small' }, `Positions for the latest 2 quarters, totals for up to 8. ${countText(status?.counts.filers_13f ?? 0)} managers loaded.`) : null,
           checks ? h('p', { class: `small ${checks.ok ? 'up' : 'down'}` }, checks.ok ? '✓ ' : '✕ ', 'Header self-check: ', checks.text) : s.key !== 'geo' ? h('p', { class: 'muted small' }, 'Header self-check runs on the first download.') : null,
           h('p', { class: 'muted small' }, `${s.cadence} · ${s.size}`),
           live ? h('p', { class: 'pr-progress small', 'data-progress': s.key, role: 'status' }, live) : null,
-          h('button', { class: 'btn small', disabled: running, onclick: () => ingest(s.key) }, f.state === 'missing' ? 'Download' : 'Refresh'),
+          h('button', { class: 'btn small', disabled: running, onclick: () => ingest(s.key) }, f.state === 'missing' ? 'Download' : f.state === 'failed' ? 'Try again' : 'Refresh'),
         );
       }),
+      h('section', { class: 'pr-limits small', 'aria-label': 'What public data cannot show' }, h('h4', {}, 'What public data cannot show'), h('ul', {}, ...DATA_LIMITS.map((t) => h('li', {}, t)))),
     );
-    if (status?.job?.error && !running) dataBox.prepend(h('p', { class: 'pr-warn' }, `Last download: ${status.job.error}`));
+  }
+
+  /** The per-firm Form ADV PDF reader's progress (people and funds filed after the bulk data ended). */
+  function advPdfLine() {
+    const p = status?.advPdf;
+    if (!p || p.error) return null;
+    if (p.available === false) return h('p', { class: 'small pr-warn' }, p.note ?? 'Install pypdf to read Form ADV PDFs.');
+    const parts = [`${countText(p.read ?? 0)} firms read from their Form ADV PDF`, p.waiting ? `${countText(p.waiting)} filed after the bulk data` : 'none waiting'];
+    if (p.unreadable) parts.push(`${countText(p.unreadable)} couldn't be read`);
+    if (p.failed) parts.push(`${countText(p.failed)} couldn't be fetched (tried again after 1 h, 6 h, then 24 h)`);
+    const act = async (action: 'start' | 'pause' | 'resume') => {
+      try {
+        await prospectAdvPdfReader(action);
+        await refreshStatus();
+      } catch (err) {
+        toast((err as Error).message);
+      }
+    };
+    const hours = Math.max(1, Math.round(p.hours ?? 8));
+    const control = !p.waiting
+      ? null
+      : p.enabled
+        ? h('p', {}, h('b', {}, 'Reading every firm in the background'), p.pausedUntil ? ' (paused 30 minutes: IAPD refused or did not answer) ' : ` (about ${hours} hours left) `, h('button', { class: 'btn small ghost', onclick: () => act('pause') }, 'Pause'))
+        : h('p', {}, 'Saved firms and the firm you open are read on their own. ', h('button', { class: 'btn small', onclick: () => act((p.read ?? 0) || (p.failed ?? 0) ? 'resume' : 'start') }, (p.read ?? 0) > 0 ? 'Resume reading all firms' : `Read current Form ADV for all firms (about ${hours} hours, runs in the background)`));
+    return h(
+      'div',
+      { class: 'small pr-check', 'data-check': 'adv_pdf' },
+      h('p', {}, `Newer filings from IAPD: ${parts.join(' · ')}.`, p.verified === false ? h('span', { class: 'muted' }, ' The PDF reader is new: check a profile against IAPD.') : null),
+      control,
+      p.problems?.length ? h('details', {}, h('summary', {}, 'Firms it could not read'), h('ul', {}, ...p.problems.slice(0, 10).map((x) => h('li', {}, `${x.name ?? `CRD ${x.crd}`}: ${x.note}`)))) : null,
+    );
   }
 
   // ---------- notes ----------

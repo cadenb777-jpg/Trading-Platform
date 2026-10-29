@@ -8,7 +8,7 @@ import type { ClientType, CompareResult, FirmType, ProspectFirm, ProspectQuery, 
 
 /** The type chips on the search form (the two remaining types sit behind "More"). */
 export const MAIN_TYPES: FirmType[] = ['Registered RIA', 'Exempt reporting adviser', 'Likely family office', 'Multi-family office'];
-export const MORE_TYPES: FirmType[] = ['Other 13F filer', 'Form D issuer'];
+export const MORE_TYPES: FirmType[] = ['State-registered RIA', 'Other 13F filer', 'Form D issuer'];
 export const TYPE_SHORT: Record<FirmType, string> = {
   'Registered RIA': 'RIA',
   'Exempt reporting adviser': 'Exempt adviser',
@@ -16,6 +16,7 @@ export const TYPE_SHORT: Record<FirmType, string> = {
   'Multi-family office': 'Multi-family office',
   'Other 13F filer': '13F filer',
   'Form D issuer': 'Form D issuer',
+  'State-registered RIA': 'State RIA',
 };
 /** Glossary term behind each type. */
 export const TYPE_TERM: Record<FirmType, string> = {
@@ -25,6 +26,7 @@ export const TYPE_TERM: Record<FirmType, string> = {
   'Multi-family office': 'prMfo',
   'Other 13F filer': 'pr13fFiler',
   'Form D issuer': 'prFormD',
+  'State-registered RIA': 'prStateRia',
 };
 
 export const CLIENT_LABELS: Record<ClientType, string> = {
@@ -257,30 +259,53 @@ export const lastFiling = (f: Pick<ProspectFirm, 'filingDate' | 'period13f'>) =>
 
 // ---------- data freshness ----------
 
-export const SOURCE_INFO: { key: 'adv' | 'adv_full' | '13f' | 'formd' | 'geo'; label: string; what: string; size: string; cadence: string }[] = [
+export type SourceKey = 'adv' | 'adv_full' | '13f' | 'formd' | 'state' | 'geo';
+export const SOURCE_INFO: { key: SourceKey; label: string; what: string; size: string; cadence: string; beta?: boolean }[] = [
   { key: 'adv', label: 'Adviser lists (Form ADV, monthly)', what: 'Every SEC-registered adviser and exempt adviser: address, AUM, clients by type, fees, employees.', size: 'about 60 MB', cadence: 'Monthly' },
-  { key: 'adv_full', label: 'Form ADV full data (people and private funds)', what: 'Owners and executive officers with titles (Schedule A/B) and private funds with gross assets (Schedule D 7.B.1).', size: 'about 1 GB download', cadence: 'When the SEC publishes' },
-  { key: '13f', label: '13F holdings (quarterly)', what: 'Every manager with $100M+ in listed US securities: positions, signatures, other managers.', size: 'about 400 MB', cadence: 'Quarterly' },
-  { key: 'formd', label: 'Form D offerings (quarterly)', what: 'Private fund offerings: amounts, investors, minimums, related persons.', size: 'about 50 MB', cadence: 'Quarterly' },
+  { key: 'adv_full', label: 'Form ADV full data (people and private funds)', what: 'Owners and executive officers with titles (Schedule A/B) and private funds with gross assets (Schedule D 7.B.1). Firms that filed after the bulk data ended are read one by one from IAPD.', size: 'about 1 GB download', cadence: 'When the SEC publishes' },
+  { key: '13f', label: '13F holdings (quarterly)', what: 'Every manager with $100M+ in listed US securities: positions for the latest 2 quarters, total value for 8 quarters (the trend), signatures, other managers.', size: 'about 400 MB a quarter', cadence: 'Quarterly' },
+  { key: 'formd', label: 'Form D offerings (3 years)', what: 'Private fund offerings from the last 12 quarters (newest filing per fund): amounts, investors, minimums, related persons.', size: 'about 50 MB a quarter', cadence: 'Quarterly' },
+  { key: 'state', label: 'State-registered advisers (IAPD)', what: 'Smaller RIAs registered with their state instead of the SEC (often under $100M): name, CRD, main office. From the public IAPD firm search, state by state.', size: 'small, about 20 minutes (polite pace)', cadence: 'Monthly', beta: true },
   { key: 'geo', label: 'Map locations (US Census)', what: 'Turns firm addresses into map points (and ZIP centres), for radius search and the map.', size: 'a few MB', cadence: 'After each adviser list' },
 ];
 
 /** First full download: roughly what the database grows to. */
 export const FIRST_DOWNLOAD_SIZE = '1-2 GB of disk space';
 
-export type Freshness = { state: 'missing' | 'fresh' | 'due' | 'running'; text: string; date: string };
+/** What public data can never show, in plain words (the Data tab). */
+export const DATA_LIMITS = [
+  'Single-family offices are exempt from adviser registration, so they file no Form ADV. They show up only if they file 13F ($100M+ in listed US stocks) or Form D (a private offering).',
+  "Firms with less than $100M in listed US securities don't file 13F, so they have no holdings here.",
+  "The SEC's bulk Form ADV data (people and private funds) ended in Dec 2024. Firms that filed later are filled in one by one from their Form ADV PDF on IAPD.",
+  "Filings carry names and titles, never emails or direct phone lines. If a firm doesn't file, it isn't in public data.",
+];
 
-/** One source's line in the Data panel: its file date, when it was downloaded and whether a refresh is due. */
+export type Freshness = { state: 'missing' | 'fresh' | 'due' | 'running' | 'failed'; text: string; date: string; action?: string };
+export const FRESHNESS_LABEL: Record<Freshness['state'], string> = { fresh: 'Done', due: 'Out of date', missing: 'Not downloaded', running: 'Downloading', failed: 'Failed' };
+
+/** One source's line in the Data panel: Done / Failed (why, what to do) / Not downloaded / Out of date / Downloading. */
 export function sourceFreshness(status: ProspectStatus | null, key: string, nowMs = Date.now()): Freshness {
   const info = status?.sources?.[key] ?? null;
-  if (status?.job?.running && (status.job.source === key || status.job.source === 'all')) return { state: 'running', text: status.job.stage || 'Running', date: '' };
+  const job = status?.job;
+  if (job?.running && (job.current ? job.current === key : job.source === key || job.source === 'all')) return { state: 'running', text: job.stage || 'Running', date: '' };
+  const result = status?.results?.[key] ?? null;
+  if (result && result.ok === false && (!info?.at || result.when >= info.at)) return { state: 'failed', text: result.reason ?? 'Failed', date: '', action: result.action };
   if (!info || !info.at) return { state: 'missing', text: 'Not downloaded yet', date: '' };
   const days = Math.max(0, (nowMs / 1000 - info.at) / 86400);
   const ago = days < 1 ? 'today' : `${Math.floor(days)} day${Math.floor(days) === 1 ? '' : 's'} ago`;
   const limit = status?.refreshDays?.[key] ?? 30;
   const date = typeof info.sourceDate === 'string' ? info.sourceDate : '';
-  const file = key === '13f' && date ? `13F data to ${dateText(date, true)}` : key === 'adv' && date ? `${dateText(date)} list` : key === 'adv_full' && date ? `As of ${dateText(date, true)}` : key === 'formd' && date ? `Form D data to ${dateText(date, true)}` : key === 'geo' ? `${countText((info as { matched?: number }).matched ?? 0)} address${(info as { matched?: number }).matched === 1 ? '' : 'es'} matched` : '';
+  const file = key === '13f' && date ? `13F data to ${dateText(date, true)}` : key === 'adv' && date ? `${dateText(date)} list` : key === 'adv_full' && date ? `As of ${dateText(date, true)}` : key === 'formd' && date ? `Form D data to ${dateText(date, true)}` : key === 'state' && date ? `Listed ${dateText(date, true)}` : key === 'geo' ? `${countText((info as { matched?: number }).matched ?? 0)} address${(info as { matched?: number }).matched === 1 ? '' : 'es'} matched` : '';
   return { state: key !== 'geo' && days > limit ? 'due' : 'fresh', text: `${file ? `${file} · ` : ''}downloaded ${ago}`, date };
+}
+
+/** Short names of the download stages (the overall progress line). */
+export const STAGE_NAMES: Record<string, string> = { adv: 'Adviser lists', adv_full: 'People and funds', '13f': '13F', formd: 'Form D', state: 'State advisers', build: 'Matching firms', geo: 'Map locations' };
+
+/** Sources whose last run failed (for "Retry failed sources"), including the firm-matching step. */
+export function failedSources(status: ProspectStatus | null): string[] {
+  const keys = SOURCE_INFO.map((s) => s.key as string).filter((k) => sourceFreshness(status, k).state === 'failed');
+  return status?.results?.build?.ok === false && !status.job?.running ? [...keys, 'build'] : keys;
 }
 
 /** Header self-check summary for one source: "All columns found", or what's missing. */

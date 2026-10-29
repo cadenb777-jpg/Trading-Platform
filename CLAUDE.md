@@ -316,6 +316,14 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Compare (src/prospect/compare.ts: CSV + print via report.css), Data (per-source freshness, header checks, ingest with
   streamed progress, 1-2 GB confirm before the first download). Address radius uses prospect.geocode (Census one-line).
   Saved searches / notes + outreach status = store collections prospect_searches / prospect_notes (doc id = firm id).
+  Complete downloads (docs/research/prospect-data-gaps.md): 'all' isolates each source's error (meta result:<source>,
+  'failed' retries them), files loaded are remembered (meta files:<source>) so retries skip them, job.overall is one
+  0-100 figure weighted by STAGES, loaders return checks (in file / loaded / skipped by reason). Form D = 12 quarters,
+  newest filing per issuer CIK; 13F = totals for 8 quarters (filer_history_13f), positions for 2; 13F-NT keeps "reported
+  by". engine/prospect_iapd.py: Form ADV Part 1 PDFs from IAPD (pypdf, 1 per 2 s) for firms that filed after the bulk
+  data: saved and opened firms automatically, all firms by AUM only when turned on in the Data tab (prospect.adv_pdf_reader
+  start/pause/resume); failed fetches back off 1h/6h/24h (reset on a new filing), 403/429 pauses 30 min. State-registered
+  RIAs from the IAPD firm search (source 'state', beta). Both unverified live. Browser gate PROSPECT_COMPLETE_HELPER_VERSION 38.
 
 ## Conventions
 
