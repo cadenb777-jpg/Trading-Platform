@@ -405,7 +405,8 @@ def import_batch(raw, source, note='', extra=None):
     mine = [t for t in trades if t['source'] == source] or trades
     entry = log_import(source, added, skipped, note, {**(extra or {}), 'problems': problems[:20], 'unreadable': len(problems)})
     return {'added': added, 'skipped': skipped, 'unreadable': len(problems), 'problems': problems[:20], 'trades': len(trades),
-            'message': f"{imported_message(mine)} {added} new fill{'s' if added != 1 else ''}, {skipped} already in the journal"
+            'message': (f'Nothing new: all {skipped} fills are already in the journal' if skipped and not added else
+                        f"{imported_message(mine)} {added} new fill{'s' if added != 1 else ''}, {skipped} already in the journal")
                        + (f', {len(problems)} rows not readable' if problems else '') + '.', 'import': entry}
 
 
@@ -494,7 +495,7 @@ async def import_webull(ctx, msg):
     days = min(windows) if windows else None
     window_note = WEBULL_WINDOW_NOTE.format(days=days) if days else ''
     if no_price:
-        notes.append(f'{no_price} filled order{"s" if no_price != 1 else ""} came without a fill price or time and were skipped.')
+        notes.append(f'{no_price} filled order{"s came" if no_price != 1 else " came"} without a fill price or time and {"were" if no_price != 1 else "was"} skipped.')
     message = imported_message(mine) + (f' {total_added} new, {total_skipped} already in the journal.' if windows else '')
     entry = log_import('webull', total_added, total_skipped, ' '.join(notes), {'days': days, 'env': env})
     return {'message': message, 'windowNote': window_note, 'notes': notes, 'added': total_added, 'skipped': total_skipped, 'days': days,

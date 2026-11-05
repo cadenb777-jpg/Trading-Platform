@@ -8668,4 +8668,6 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   .jr-replay { height: 240px; }
   .jr-grid2 { grid-template-columns: 1fr; }
 }
+.modal.jr-modal { max-width: min(1100px, 96vw); }
+.jr-calendar .section-label, .jr-row > .section-label { white-space: nowrap; margin: 0; }
 /* ===== end Journal ===== */

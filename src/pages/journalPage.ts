@@ -130,6 +130,8 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
   const selected = new Set<string>();
   let sort: { col: string; dir: 1 | -1 } = { col: 'date', dir: -1 };
   let charts: { remove(): void }[] = [];
+  /** The last Webull import's result, shown on the Import view. */
+  let lastWebull: (Node | string)[] = [];
 
   const tabs = h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Journal views' });
   const frame = pageFrame('Journal', 'Your own trades, from Webull, broker exports or typed in: what works, what doesn’t, and why.', [tabs]);
@@ -159,6 +161,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
   }
 
   async function reload() {
+    if (helper.version == null || !journalReady()) return render(); // the helper's version arrives just after it connects
     try {
       const d = await engineRequest<{ trades: Trade[]; playbooks: Playbook[]; imports: ImportEntry[] }>('journal.list', {}, 30000);
       trades = d.trades;
@@ -167,6 +170,9 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
       loadError = '';
       journalSymbols.clear();
       for (const t of trades) journalSymbols.add(t.symbol);
+      // the calendar opens on the latest month with closed trades
+      const latest = trades.filter(counted).map(tradeDay).sort().pop();
+      if (!loaded && latest) month = latest.slice(0, 7);
     } catch (err) {
       loadError = (err as Error).message;
     }
@@ -210,6 +216,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
     charts = [];
     drawTabs();
     if (!helper.isConnected && !loaded) return body.replaceChildren(h('div', { class: 'empty-state' }, 'Start the helper on your computer: the journal is kept there (never in the browser).'));
+    if (helper.version == null) return body.replaceChildren(h('div', { class: 'muted pad' }, 'Connecting to the helper…'));
     if (!journalReady()) {
       filterBar.hidden = true;
       return body.replaceChildren(
@@ -270,7 +277,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
       { label: 'Expectancy', value: usd(s.expectancy, true), tone: tone(s.expectancy), hint: s.expectancyR != null ? `${s.expectancyR >= 0 ? '+' : ''}${s.expectancyR.toFixed(2)}R a trade (${s.nR} with an R)` : 'Average result a trade' },
       { label: 'Avg win / loss', value: `${usd(s.avgWin)} / ${usd(s.avgLoss)}`, hint: s.payoff != null ? `Payoff ratio ${s.payoff.toFixed(2)}` : '' },
       { label: 'Max drawdown', value: usd(s.maxDrawdown), tone: s.maxDrawdown < 0 ? 'down' : '', hint: 'Deepest fall from a high in the equity curve' },
-      { label: 'Streak', value: s.currentStreak ? `${Math.abs(s.currentStreak)} ${s.currentStreak > 0 ? 'wins' : 'losses'}` : '—', hint: `Longest: ${s.maxConsecWins} wins, ${s.maxConsecLosses} losses` },
+      { label: 'Streak', value: s.currentStreak ? `${Math.abs(s.currentStreak)} ${s.currentStreak > 0 ? (s.currentStreak === 1 ? 'win' : 'wins') : s.currentStreak === -1 ? 'loss' : 'losses'}` : '—', hint: `Longest: ${s.maxConsecWins} wins, ${s.maxConsecLosses} losses` },
       { label: 'Sharpe / Sortino', value: `${num2(s.sharpe)} / ${num2(s.sortino)}`, hint: 'On daily P&L, yearly scale' },
       { label: 'Fees', value: usd(s.fees), hint: `Gross ${usd(s.gross, true)}` },
     ]);
@@ -487,6 +494,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
   function openTrade(t: Trade) {
     const box = h('div', { class: 'jr-detail' });
     const close = openModal(`${t.symbol} · ${t.side === 'long' ? 'Long' : 'Short'} · ${tradeDay(t)}`, box, { wide: true, noAutofocus: true, onClose: () => chart?.remove() });
+    box.closest('.modal')?.classList.add('jr-modal');
     let chart: IChartApi | null = null;
     const p = tradePnl(t);
     const r = rOf(t);
@@ -516,7 +524,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
         row('Stop', t.plan?.stop?.toFixed(2) ?? 'none', a.followedStop == null ? '—' : a.followedStop ? 'respected' : 'went past it', a.followedStop),
         row('Target', t.plan?.target?.toFixed(2) ?? 'none', exit?.toFixed(2) ?? '—'),
         row('Result', t.plan?.stop != null && t.plan?.target != null && entry ? `${(Math.abs(t.plan.target - entry) / Math.abs(entry - t.plan.stop)).toFixed(1)}R planned` : '—', r ? `${r.r.toFixed(2)}R` : '—'),
-        row('Size', 'usual risk', a.oversized == null ? '—' : a.oversized ? 'over 1.5× usual' : 'usual', a.oversized == null ? null : !a.oversized),
+        row('Size', t.plan?.stop != null ? 'usual risk' : '—', a.oversized == null ? '—' : a.oversized ? 'over 1.5× usual' : 'usual', a.oversized == null ? null : !a.oversized),
         row('MAE / MFE', '', t.mae != null ? `${usd(t.mae)} / ${usd(t.mfe ?? null, true)}` : '—'),
       ));
     const stopIn = h('input', { class: 'input', type: 'number', step: 'any', value: t.plan?.stop ?? '', 'aria-label': 'Planned stop' }) as HTMLInputElement;
@@ -653,18 +661,30 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
     const ageDays = (Date.now() / 1000 - t.openedAt) / 86400;
     const span = end - t.openedAt;
     // intraday bars when the helper still has them, else daily
-    const plan = span < 2 * 86400 && ageDays < 18 ? { resolution: '5m', days: 20, seconds: 300 } : span < 20 * 86400 && ageDays < 170 ? { resolution: '30m', days: 180, seconds: 1800 } : { resolution: '1D', days: Math.ceil(ageDays) + 60, seconds: 86400 };
+    const daily1 = { resolution: '1D', days: Math.ceil(ageDays) + 60, seconds: 86400 };
+    const plans = [
+      ...(span < 2 * 86400 && ageDays < 18 ? [{ resolution: '5m', days: 20, seconds: 300 }] : span < 20 * 86400 && ageDays < 170 ? [{ resolution: '30m', days: 180, seconds: 1800 }] : []),
+      daily1,
+    ];
     if (t.assetClass !== 'stock') {
       box.replaceChildren(h('p', { class: 'muted small pad' }, 'Chart replay covers stocks and ETFs (futures and options history isn’t available here).'));
       return null;
     }
     try {
-      const reply = await helper.request({ type: 'history', symbol: t.symbol, resolution: plan.resolution, days: Math.min(plan.days, 365 * 15) });
-      if (reply.type !== 'history') throw new Error('No history');
-      const all: Bar[] = cleanBars(reply.bars);
+      let plan = daily1;
+      let all: Bar[] = [];
+      let bars: Bar[] = [];
+      for (const pl of plans) {
+        const reply = await helper.request({ type: 'history', symbol: t.symbol, resolution: pl.resolution, days: Math.min(pl.days, 365 * 15) }).catch(() => null);
+        if (reply?.type !== 'history') continue;
+        all = cleanBars(reply.bars);
+        const pad = pl.seconds * 40;
+        bars = all.filter((b) => b.time >= t.openedAt - pad && b.time <= end + pad);
+        plan = pl;
+        // enough bars while the trade was on, else try the next (coarser) bar size
+        if (bars.some((b) => b.time + pl.seconds > t.openedAt && b.time <= end)) break;
+      }
       let daily = plan.resolution === '1D' ? all : null;
-      const pad = plan.seconds * 40;
-      const bars = all.filter((b) => b.time >= t.openedAt - pad && b.time <= end + pad);
       if (!bars.length || !box.isConnected) throw new Error('No bars around this trade');
       box.replaceChildren();
       const chart = createChart(box, {
@@ -950,7 +970,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
 
   // ---------- import ----------
   function drawImport() {
-    const wbStatus = h('div', { class: 'small', role: 'status' });
+    const wbStatus = h('div', { class: 'small', role: 'status' }, ...lastWebull);
     const runWebull = async (btn: HTMLButtonElement) => {
       btn.disabled = true;
       wbStatus.replaceChildren(h('span', { class: 'muted' }, 'Reading your Webull order history (paced to Webull’s limits; a long history takes a minute)…'));
@@ -959,9 +979,11 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
           const e = ev as { text?: string };
           if (e.text) wbStatus.replaceChildren(h('span', { class: 'muted' }, e.text));
         });
-        const tag = await engineRequest<{ message: string }>('journal.import_orders_log', {}, 30000).catch(() => null);
-        wbStatus.replaceChildren(h('p', {}, h('b', {}, r.message)), r.windowNote ? h('p', { class: 'muted' }, r.windowNote) : '', ...r.notes.map((n) => h('p', { class: 'muted' }, n)), tag ? h('p', { class: 'muted' }, tag.message) : '');
-        reload();
+        const tag = await engineRequest<{ message: string; orders: number }>('journal.import_orders_log', {}, 30000).catch(() => null);
+        // kept for the redraw after the reload
+        lastWebull = [h('p', {}, h('b', {}, r.message)), r.windowNote ? h('p', { class: 'muted' }, r.windowNote) : '', ...r.notes.map((n) => h('p', { class: 'muted' }, n)), tag?.orders ? h('p', { class: 'muted' }, tag.message) : ''];
+        wbStatus.replaceChildren(...lastWebull);
+        await reload();
       } catch (err) {
         wbStatus.replaceChildren(h('p', { class: 'ap-error' }, (err as Error).message));
       }
@@ -1033,6 +1055,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
     let columns: ImportColumns = first.columns;
     const box = h('div', { class: 'jr-preview' });
     const close = openModal(`Import ${fileName}`, box, { wide: true, noAutofocus: true });
+    box.closest('.modal')?.classList.add('jr-modal');
     const draw = () => {
       const res = rowsToFills(first.rows, first.headerAt, columns, preset);
       const headers = first.rows[first.headerAt] ?? [];
@@ -1079,6 +1102,9 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
     draw();
   }
 
+  // the helper (re)connected or its version arrived: read the journal again if it isn't loaded yet
+  helper.onAvailability((up) => up && !frame.el.hidden && (!loaded || loadError) && reload());
+
   return {
     el: frame.el,
     start(sub?: string) {
@@ -1087,6 +1113,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
       if (!loaded) {
         render();
         helper.connect().then(() => reload(), () => render());
+        setTimeout(() => !loaded && reload(), 2500); // the version comes with the helper's first status message
       } else render();
     },
     stop() {
