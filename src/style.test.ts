@@ -17,4 +17,8 @@ describe('style.css', () => {
     }
     expect({ depth, lowest }).toEqual({ depth: 0, lowest: 0 });
   });
+
+  it('has no leftover merge conflict markers', () => {
+    expect(styleCss.match(/^(<{7}|={7}|>{7})( |$)/m)).toBeNull();
+  });
 });

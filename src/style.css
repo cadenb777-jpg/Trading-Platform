@@ -8688,7 +8688,6 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .acct-records { font-size: var(--fs-xs); color: var(--muted); }
 /* ====================================== end security view ====================================== */
 
-=======
 /* ===== Journal (src/pages/journalPage.ts) ===== */
 .jr-body { display: grid; gap: var(--sp-4); }
 .jr-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
