@@ -134,7 +134,8 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
     candles.applyOptions({ upColor: THEME.up, downColor: THEME.down, wickUpColor: THEME.up, wickDownColor: THEME.down });
     candles.setData(data.map((b) => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close })));
     if (prevLine) candles.removePriceLine(prevLine);
-    prevLine = range === '1D' && quote?.prevClose ? candles.createPriceLine({ price: quote.prevClose, color: '#8a8f9c', lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: true, title: 'Prev close' }) : null;
+    // Just the line: its price is written under the chart, and an axis tag would cover the scale's own labels.
+    prevLine = range === '1D' && quote?.prevClose ? candles.createPriceLine({ price: quote.prevClose, color: THEME.crosshair, lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: '' }) : null;
     chart.timeScale().fitContent();
     const session = range === '1D' ? data : lastSessions(data, 1);
     const hi = session.length ? Math.max(...session.map((b) => b.high)) : null;

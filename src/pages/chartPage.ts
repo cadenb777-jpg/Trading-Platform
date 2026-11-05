@@ -19,6 +19,11 @@ import { createTimeframePicker } from '../ui/timeframePicker';
 import { activeAlertCount, onAlertsChange, openAlertsDialog } from '../ui/alerts';
 import { createWatchlist, displaySymbol } from '../ui/watchlist';
 import { linkPanel } from '../ui/linkGroups';
+import { frameBatch, latestPerFrame } from '../chart/frame';
+import { HoverCard, type CardNote, type CardRow } from '../chart/hoverCard';
+import type { PointerInfo } from '../chart/ChartView';
+import { INDICATOR_GUIDES } from '../indicators/info';
+import { CATALOG_GUIDES } from '../indicators/catalog';
 
 const SYMBOL_SUGGESTIONS: Record<ProviderId, string[]> = {
   coinbase: ['BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD', 'DOGE-USD', 'ADA-USD', 'AVAX-USD', 'LINK-USD', 'LTC-USD'],
@@ -188,6 +193,8 @@ export function createChartPage() {
   // ---------- Drawing tools ----------
 
   function renderDrawBar() {
+    // While drawing, the crosshair follows the mouse exactly unless the drawing magnet is on.
+    chart.setCrosshairMagnet(drawings.tool === 'cursor' || drawings.magnet);
     drawBar.replaceChildren(
       ...DRAWING_TOOLS.map((t) =>
         h(
@@ -323,8 +330,9 @@ export function createChartPage() {
   // The legend is rebuilt only when its layout changes (indicators, visibility, panes). Live prices and the
   // crosshair just update the numbers in place, so the buttons stay put under the mouse.
   let legendLayout = '';
-  let legendValues: { uid: string; spans: HTMLElement[] }[] = [];
+  let legendValues: { uid: string; spans: HTMLElement[]; nums: (HTMLElement | null)[]; row: HTMLElement }[] = [];
   let ohlcValues: HTMLElement | null = null;
+  let ohlcNums: HTMLElement[] = [];
 
   const legendBtn = (iconName: IconName, title: string, onclick: () => void, extra = '') =>
     h('button', { class: `legend-btn${extra}`, title, 'aria-label': title, onclick: (e: Event) => (e.stopPropagation(), onclick()) }, icon(iconName, 16));
@@ -344,7 +352,8 @@ export function createChartPage() {
     legendLayout = layout;
     legendEl.replaceChildren();
     chartWrap.querySelectorAll(':scope > .pane-legend').forEach((n) => n.remove());
-    ohlcValues = h('span', { class: 'legend-ohlc' });
+    ohlcNums = [0, 1, 2, 3, 4].map(() => h('span', { class: 'legend-num' }));
+    ohlcValues = h('span', { class: 'legend-ohlc' }, ...['O', 'H', 'L', 'C'].map((label, i) => h('span', { class: 'kv' }, label, ohlcNums[i])), ohlcNums[4]);
     legendEl.append(h('div', { class: 'legend-row legend-title' }, h('b', {}, `${displaySymbol(symbol())} · ${state.timeframe} · ${provider().name}`), ohlcValues));
     legendValues = [];
     for (const instance of state.indicators) {
@@ -363,10 +372,14 @@ export function createChartPage() {
           h('span', { class: 'legend-num' }),
         ),
       );
-      legendValues.push({ uid: instance.uid, spans });
       const row = h(
         'div',
-        { class: `legend-row indicator${instance.visible ? '' : ' hidden-ind'}` },
+        {
+          class: `legend-row indicator${instance.visible ? '' : ' hidden-ind'}`,
+          // Hovering a legend row lifts its lines on the chart and dims the rest.
+          onpointerenter: () => hoverLegend(instance.uid),
+          onpointerleave: () => hoverLegend(null),
+        },
         h('button', { class: 'legend-name', title: 'Settings', onclick: () => editIndicator(instance.uid) }, indicatorLabel(def, instance)),
         error ? h('span', { class: 'legend-error', title: error }, `unavailable: ${error}`) : null,
         ...spans,
@@ -379,6 +392,7 @@ export function createChartPage() {
           legendBtn('trash', 'Remove from chart', () => removeIndicator(instance.uid), ' danger'),
         ),
       );
+      legendValues.push({ uid: instance.uid, spans, nums: spans.map((s) => s.querySelector('.legend-num')), row });
       if (chart.isSeparatePane(instance.uid)) {
         row.classList.add('pane-legend');
         row.style.top = `${chart.paneTop(instance.uid) + 4}px`;
@@ -389,27 +403,129 @@ export function createChartPage() {
     }
   }
 
+  const setText = (el: HTMLElement | null | undefined, text: string) => {
+    if (el && el.textContent !== text) el.textContent = text;
+  };
+
+  /** Updates the legend's numbers in place (no DOM rebuild), so it costs almost nothing per frame. */
   function updateLegendValues(index: number) {
     const bar = chart.barAt(index);
     const prev = chart.barAt(index - 1);
     if (ohlcValues) {
-      ohlcValues.replaceChildren();
+      ohlcValues.hidden = !bar;
       if (bar) {
-        const color = bar.close >= bar.open ? THEME.up : THEME.down;
+        ohlcValues.style.setProperty('--c', bar.close >= bar.open ? THEME.up : THEME.down);
         const change = prev ? ((bar.close - prev.close) / prev.close) * 100 : 0;
-        for (const [label, value] of [['O', bar.open], ['H', bar.high], ['L', bar.low], ['C', bar.close]] as const) {
-          ohlcValues.append(h('span', { class: 'kv' }, label, h('span', { style: `color:${color}` }, formatNumber(value))));
-        }
-        ohlcValues.append(h('span', { style: `color:${color}` }, `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`));
+        [bar.open, bar.high, bar.low, bar.close].forEach((v, i) => setText(ohlcNums[i], formatNumber(v)));
+        setText(ohlcNums[4], `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`);
       }
     }
-    for (const { uid, spans } of legendValues) {
+    // On the latest bar an indicator may not have caught up yet (it follows ticks a little behind, or is still in the
+    // worker): keep its last number until onValues brings the new one, instead of blanking to a dash.
+    const latest = index >= chart.barCount - 1;
+    for (const { uid, nums } of legendValues) {
       chart.valuesAt(uid, index).forEach((v, i) => {
-        const num = spans[i]?.querySelector('.legend-num');
-        if (num) num.textContent = formatNumber(v.value);
+        if (latest && !Number.isFinite(v.value) && nums[i]?.textContent) return;
+        setText(nums[i], formatNumber(v.value));
       });
     }
   }
+
+  // ---------- Hover: highlight, crosshair card, signals explained ----------
+
+  /**
+   * Legend hover focuses one indicator (others dim); resting the cursor on a line only lifts that line and lights its
+   * legend row. Restyling makes the library rebuild series, so chart hovers wait for the cursor to settle.
+   */
+  let highlighted = '';
+  let legendHovered: string | null = null;
+  let lineTimer: ReturnType<typeof setTimeout> | undefined;
+  function setHighlight(uid: string | null, dimOthers: boolean) {
+    const key = uid === null ? '' : `${uid}:${dimOthers}`;
+    if (key === highlighted) return;
+    highlighted = key;
+    chart.highlight(uid, dimOthers);
+    for (const l of legendValues) l.row.classList.toggle('lit', l.uid === uid);
+    chartWrap.classList.toggle('has-lit', uid !== null && dimOthers);
+  }
+  function hoverLegend(uid: string | null) {
+    legendHovered = uid;
+    clearTimeout(lineTimer);
+    setHighlight(uid, true);
+  }
+  let lineUid: string | null = null;
+  function hoverLine(uid: string | null) {
+    if (legendHovered || uid === lineUid) return;
+    lineUid = uid;
+    clearTimeout(lineTimer);
+    lineTimer = setTimeout(() => setHighlight(lineUid, false), uid ? 140 : 220);
+  }
+
+  let card: HoverCard;
+  const fmtVolume = (v: number) => (v >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `${(v / 1e3).toFixed(1)}K` : formatNumber(v));
+  const intradayFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const dailyFormat = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const timeLabel = (t: number) => (TIMEFRAME_SECONDS[state.timeframe] < 86400 ? intradayFormat : dailyFormat).format(t * 1000);
+
+  /** Signals (pattern/strategy markers) on a bar, with the first line of the indicator's guide explaining them. */
+  function signalsAt(index: number): CardNote[] {
+    const notes: CardNote[] = [];
+    for (const instance of state.indicators) {
+      const def = getIndicator(instance.defId);
+      if (!def || !instance.visible) continue;
+      for (const plot of def.plots) {
+        if (plot.type !== 'marker' || instance.hiddenPlots?.includes(plot.key)) continue;
+        const v = chart.markerValueAt(instance.uid, plot.key, index);
+        if (!v) continue;
+        const guide = INDICATOR_GUIDES[def.id] ?? CATALOG_GUIDES[def.id];
+        const title = plot.title === def.name || def.plots.length === 1 ? def.name : `${def.shortName}: ${plot.title}`;
+        notes.push({ title, text: guide ? ` ${guide.signals[0] ?? guide.what}` : '', color: instance.colors[plot.key] ?? plot.color });
+        if (notes.length >= 3) return notes;
+      }
+    }
+    return notes;
+  }
+
+  function showCard(p: PointerInfo) {
+    const bar = chart.barAt(p.index);
+    if (!bar) return card.hide();
+    const prev = chart.barAt(p.index - 1);
+    const change = prev ? bar.close - prev.close : 0;
+    const pctChange = prev ? (change / prev.close) * 100 : 0;
+    const dir = bar.close >= bar.open ? THEME.up : THEME.down;
+    const rows: CardRow[] = [
+      { label: 'Open', value: formatNumber(bar.open) },
+      { label: 'High', value: formatNumber(bar.high) },
+      { label: 'Low', value: formatNumber(bar.low) },
+      { label: 'Close', value: formatNumber(bar.close), color: dir },
+      { label: 'Change', value: `${change >= 0 ? '+' : '−'}${chart.formatPrice(Math.abs(change))} (${pctChange >= 0 ? '+' : '−'}${Math.abs(pctChange).toFixed(2)}%)`, color: change >= 0 ? THEME.up : THEME.down },
+      { label: 'Volume', value: fmtVolume(bar.volume) },
+    ];
+    if (!card.narrow) {
+      for (const instance of state.indicators) {
+        if (!instance.visible || instance.defId === 'volume') continue;
+        const def = getIndicator(instance.defId);
+        if (!def) continue;
+        for (const v of chart.valuesAt(instance.uid, p.index)) {
+          if (v.hidden || !Number.isFinite(v.value)) continue;
+          rows.push({ label: def.plots.length > 1 ? `${def.shortName} ${v.title}` : indicatorLabel(def, instance), value: formatNumber(v.value), color: v.color });
+          if (rows.length >= 14) break;
+        }
+        if (rows.length >= 14) break;
+      }
+    }
+    card.show(p.x, p.y, p.snappedY, { title: timeLabel(bar.time), rows, notes: signalsAt(p.index) });
+  }
+
+  const pointerFrame = latestPerFrame<PointerInfo | null>((p) => {
+    if (!p) {
+      card.hide();
+      hoverLine(null);
+      return;
+    }
+    showCard(p);
+    hoverLine(p.hoveredUid);
+  });
 
   function showIndicatorInfo(uid: string) {
     const instance = state.indicators.find((i) => i.uid === uid);
@@ -424,18 +540,17 @@ export function createChartPage() {
   let bars: Bar[] = [];
   let stopLive: () => void = () => {};
   let loadController: AbortController | null = null;
-  let pendingFrom: number | null = null;
   let waitingForTrades = false;
+  // Live trades are folded into the bars as they arrive; the chart redraws once per frame from the earliest changed bar.
+  const live = frameBatch<number>((from) => flushLive(from), Math.min);
 
   function showMessage(text: string | null, actions: Node[] = []) {
     messageEl.hidden = !text;
     messageEl.replaceChildren(...(text ? [h('p', {}, text), h('div', { class: 'message-actions' }, ...actions)] : []));
   }
 
-  function flushLive() {
-    if (pendingFrom === null) return;
-    chart.updateFrom(pendingFrom);
-    pendingFrom = null;
+  function flushLive(from: number) {
+    chart.updateFrom(from);
     if (waitingForTrades) {
       waitingForTrades = false;
       showMessage(null);
@@ -446,12 +561,12 @@ export function createChartPage() {
       priceEl.textContent = formatNumber(last.close);
       priceEl.className = `price ${prev && last.close < prev.close ? 'down' : 'up'}`;
     }
-    if (hoverIndex === null) renderLegend();
+    if (hoverIndex === null) updateLegendValues(chart.barCount - 1);
   }
 
   async function reload() {
     stopLive();
-    pendingFrom = null;
+    live.cancel();
     waitingForTrades = false;
     loadController?.abort();
     const controller = new AbortController();
@@ -488,6 +603,7 @@ export function createChartPage() {
     extBtn.hidden = !ext;
     extBtn.classList.toggle('on', state.extendedHours);
     shading.setEnabled(ext && state.extendedHours);
+    shading.setGuides(ext);
 
     chart.setBars(bars, tf);
     drawings.setDrawings(loadDrawings(drawingsKey));
@@ -506,9 +622,7 @@ export function createChartPage() {
           if (extendedApplies() && !state.extendedHours && !isRegularHours(trade.time)) return;
           const result = applyTrade(bars, tf, trade.price, trade.size, trade.time);
           if (!result) return;
-          const index = bars.length - 1;
-          if (pendingFrom === null) requestAnimationFrame(flushLive);
-          pendingFrom = Math.min(pendingFrom ?? index, index);
+          live.push(bars.length - 1);
         },
         onStatus: setStatus,
       },
@@ -535,6 +649,7 @@ export function createChartPage() {
     if (narrow()) state.watchlistOpen = false;
     chart = new ChartView(chartEl);
     chart.setChartType(state.chartType);
+    card = new HoverCard(chart.overlay);
     drawings = new DrawingManager(chart, chartWrap);
     profile = new VolumeProfile(chart);
     shading = new SessionShading(chart);
@@ -554,10 +669,14 @@ export function createChartPage() {
     drawings.onToolChange = renderDrawBar;
     renderDrawBar();
     for (const instance of state.indicators) chart.addIndicator(instance);
+    // Crosshair moves only touch the legend's numbers, at most once per frame.
+    const legendFrame = latestPerFrame<number>((index) => updateLegendValues(index));
     chart.onHover = (index) => {
       hoverIndex = index >= chart.barCount - 1 ? null : index;
-      renderLegend();
+      legendFrame.push(hoverIndex ?? chart.barCount - 1);
     };
+    chart.onPointer = (p) => pointerFrame.push(p);
+    chart.onValues = () => hoverIndex === null && legendFrame.push(chart.barCount - 1);
     chart.onLayout = renderLegend;
     chart.onDataError = (message) => showMessage(message, [h('button', { class: 'btn primary', onclick: reload }, 'Try again')]);
     reload();
