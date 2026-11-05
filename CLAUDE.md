@@ -242,7 +242,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   AI summary buttons (`insightButton`) are on Home, Flow, Research, Macro, Bonds, Investments boards, fund detail
   and Backtest; not on the Chart page or Portfolios (owner's choice).
   Theme: light/dark via CSS variables (`:root[data-theme='light']`) and src/ui/theme.ts (THEME object updated in place,
-  `followTheme(chart)` repaints canvases). Use variables, not hard-coded colours, in new CSS.
+  `followTheme(chart)` repaints canvases). Use variables, not hard-coded colours, in new CSS. Tokens, type and do/don't: docs/design.md.
   Chart legend (chartPage renderLegend) is rebuilt only when its layout changes; values update in place. Indicator
   instances can hide single plots (`hiddenPlots`) and levels (`hideLevels`); the manager is openIndicatorManager.
   Browser reply cache: engineRequest reuses read-only replies for ENGINE_CACHE_MS (20 s quotes .. 60 min catalogs),
