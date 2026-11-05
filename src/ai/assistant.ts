@@ -1,5 +1,6 @@
 /** The AI assistant chat: a panel docked on the right of any page, or its own pop-out window. */
-import { engineRequest, type EngineEvent } from '../data/schwab';
+import { aiActionsReady, engineRequest, type EngineEvent, type UiActionEvent, type UiCancelEvent } from '../data/schwab';
+import type { ActionResult } from './actions';
 import { h, toast } from '../ui/dom';
 import { icon } from '../ui/icons';
 import { openSettings } from '../ui/settings';
@@ -18,11 +19,30 @@ export interface AssistantAction {
   what?: string;
 }
 
+/** One platform action the AI carried out, shown as a compact line under its message. */
+export interface ChatStep {
+  ok: boolean;
+  message: string;
+  undoId?: string;
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   text: string;
   files?: { name: string; info: string }[];
   error?: boolean;
+  steps?: ChatStep[];
+  /** The owner pressed Undo on this message's actions. */
+  undone?: boolean;
+}
+
+/** How the assistant carries out the AI's platform actions (helper v42+); see actions.ts. */
+export interface AssistantActions {
+  run(name: string, args: Record<string, unknown>): Promise<ActionResult>;
+  /** A question to confirm with the owner before running, or null. */
+  confirmation(name: string, args: Record<string, unknown>): Promise<string | null>;
+  /** Undoes these actions (newest first); resolves to how many were undone. */
+  undo(undoIds: string[]): Promise<number>;
 }
 
 interface ChatState {
@@ -70,6 +90,8 @@ export interface AssistantOptions {
   /** Example questions for the page the user is on; falls back to the general list. */
   getSuggestions?(): string[];
   onAction(action: AssistantAction): void;
+  /** Platform actions the AI can chain and undo (needs helper v42+; without it the one-way onAction is used). */
+  actions?: AssistantActions;
   onClose?(): void;
   onPopOut?(): void;
 }
@@ -178,7 +200,39 @@ export function createAssistant(opts: AssistantOptions) {
     }
     const body = h('div', { class: `ai-bubble md${m.error ? ' error' : ''}` });
     body.innerHTML = renderMarkdown(m.text);
-    return h('div', { class: 'ai-msg assistant' }, h('span', { class: 'ai-avatar' }, '✦'), body);
+    return h('div', { class: 'ai-msg assistant' }, h('span', { class: 'ai-avatar' }, '✦'), h('div', { class: 'ai-msg-body' }, body, stepsLine(m)));
+  }
+
+  /** "✓ Opened AAPL 5m · ✓ Added RSI(9) — tuned for 5-minute bars · Undo" under the AI's message. */
+  function stepsLine(m: ChatMessage): HTMLElement {
+    const el = h('div', { class: 'ai-steps', hidden: !m.steps?.length });
+    if (!m.steps?.length) return el;
+    const parts: Node[] = [];
+    m.steps.forEach((step, i) => {
+      if (i) parts.push(h('span', { class: 'ai-step-sep', 'aria-hidden': 'true' }, ' · '));
+      parts.push(h('span', { class: `ai-step ${step.ok ? 'ok' : 'failed'}${m.undone && step.undoId ? ' undone' : ''}` }, step.ok ? '✓ ' : '✕ ', step.message));
+    });
+    const undoIds = m.steps.filter((s) => s.ok && s.undoId).map((s) => s.undoId!);
+    if (m.undone) parts.push(h('span', { class: 'ai-step-sep' }, ' · '), h('span', { class: 'muted' }, 'Undone'));
+    else if (undoIds.length && opts.actions) {
+      const undoBtn = h('button', { class: 'ai-undo', title: 'Put back what these actions changed' }, 'Undo');
+      undoBtn.addEventListener('click', async () => {
+        undoBtn.disabled = true;
+        try {
+          await opts.actions!.undo(undoIds);
+          m.undone = true;
+          saveState(chat);
+          el.replaceWith(stepsLine(m));
+          toast('Undone');
+        } catch (err) {
+          undoBtn.disabled = false;
+          toast(`Couldn’t undo: ${(err as Error).message}`);
+        }
+      });
+      parts.push(h('span', { class: 'ai-step-sep', 'aria-hidden': 'true' }, ' · '), undoBtn);
+    }
+    el.append(...parts);
+    return el;
   }
 
   function renderAll() {
@@ -207,8 +261,11 @@ export function createAssistant(opts: AssistantOptions) {
     input.focus();
   }
 
+  /** Identifies the running chat to the helper, so Stop also cancels its platform actions there (helper v42+). */
+  let stopToken = '';
   function stop() {
     controller?.abort();
+    if (stopToken && aiActionsReady()) engineRequest('ai.stop', { stopToken }, 10000).catch(() => {});
   }
 
   function setBusy(b: boolean) {
@@ -241,7 +298,56 @@ export function createAssistant(opts: AssistantOptions) {
       if (showStatus) replyEl.append(status);
       list.scrollTop = list.scrollHeight;
     };
+    const useActions = !!opts.actions && aiActionsReady();
+    let chatSignal: AbortSignal | undefined;
+    const stopped = () => chatSignal?.aborted ?? false;
+    /** Actions the helper gave up on (timed out): never run them late. */
+    const cancelled = new Set<string>();
+    /**
+     * Carries out one platform action the AI asked for, shows it, and sends the result back to the helper. It never
+     * runs after Stop, after the helper gave up on it, or when a confirmation was answered after the helper's deadline.
+     */
+    const doAction = async (ev: UiActionEvent, received: number) => {
+      const { callId, name, args } = ev;
+      const late = () => cancelled.has(callId) || (ev.timeoutMs ? Date.now() - received > ev.timeoutMs - 2000 : false);
+      let result: ActionResult;
+      if (stopped()) result = { ok: false, name, message: 'Stopped, so nothing changed' };
+      else if (late()) result = { ok: false, name, message: 'Timed out before it ran, so nothing changed' };
+      else {
+        const asked = await opts.actions!.confirmation(name, args).catch(() => null);
+        const question = asked ?? (ev.confirm ? `Let the AI run "${name.replace(/_/g, ' ')}"?` : null);
+        const allowed = !question || confirm(question);
+        if (!allowed) result = { ok: false, name, message: 'The owner said no, so nothing changed' };
+        else if (stopped()) result = { ok: false, name, message: 'Stopped, so nothing changed' };
+        else if (late()) result = { ok: false, name, message: 'The confirmation came too late, so nothing changed. Ask again if you still want it' };
+        else {
+          try {
+            result = await opts.actions!.run(name, args);
+          } catch (err) {
+            result = { ok: false, name, message: (err as Error).message };
+          }
+        }
+      }
+      if (!result.readOnly || !result.ok) {
+        (reply.steps ??= []).push({ ok: result.ok, message: result.message, ...(result.undoId ? { undoId: result.undoId } : {}) });
+        const old = replyEl.parentElement?.querySelector('.ai-steps');
+        old?.replaceWith(stepsLine(reply));
+        saveState(chat);
+      }
+      await engineRequest('ai.ui_result', { callId, result }, 15000).catch(() => {});
+    };
+    let actionChain = Promise.resolve();
     const onEvent = (e: EngineEvent) => {
+      const ui = e as EngineEvent | UiActionEvent | UiCancelEvent;
+      if (ui.type === 'ui_cancel') {
+        cancelled.add(ui.callId);
+        return;
+      }
+      if (ui.type === 'ui_action') {
+        const received = Date.now();
+        if (useActions) actionChain = actionChain.then(() => doAction(ui, received));
+        return;
+      }
       if (e.type === 'text') {
         reply.text += e.text;
         showStatus = false;
@@ -253,16 +359,19 @@ export function createAssistant(opts: AssistantOptions) {
     };
     setBusy(true);
     controller = new AbortController();
+    chatSignal = controller.signal;
+    stopToken = Math.random().toString(36).slice(2);
     try {
       const result = await engineRequest<{ conversation: string; text: string; actions: AssistantAction[] }>(
         'ai.chat',
-        { conversation: chat.conversation, message: text, attachments: files.map(({ info: _info, ...a }) => a), context: opts.getContext() },
+        { conversation: chat.conversation, message: text, attachments: files.map(({ info: _info, ...a }) => a), context: opts.getContext(), ...(useActions ? { ui_actions: 1, stopToken } : {}) },
         180000,
         onEvent,
         controller.signal,
       );
       chat.conversation = result.conversation;
       reply.text = result.text || reply.text;
+      await actionChain;
       for (const action of result.actions) opts.onAction(action);
     } catch (err) {
       if ((err as Error).name === 'AbortError') reply.text += reply.text ? '\n\n_(Stopped.)_' : '_(Stopped.)_';

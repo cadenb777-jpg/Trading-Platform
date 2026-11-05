@@ -2,7 +2,10 @@ import './installLocaleGuard';
 import './style.css';
 import { createChartPage } from './pages/chartPage';
 import { createHomePage } from './pages/homePage';
-import { createAssistant, type AssistantAction } from './ai/assistant';
+import { createAssistant, type AssistantAction, type AssistantActions } from './ai/assistant';
+import { confirmationFor, needsConfirmation, runAction as runUiAction, setUndoPrefix, undoActions, type ActionResult } from './ai/actions';
+import { ACTION_TAB_KEY, addressedTo, groupByOwner } from './ai/tabs';
+import { createActionEnv } from './ai/actionsEnv';
 import { setAssistantHub } from './ai/hub';
 import { guessMarket, type MarketRef } from './data/quotes';
 import { LATEST_HELPER_VERSION, helper } from './data/schwab';
@@ -192,6 +195,61 @@ try {
   // Older browsers: the pop-out window simply can't control the main window.
 }
 
+/** The AI's platform actions (src/ai/actions.ts) carried out on this window's state and pages. */
+const actionEnv = createActionEnv({
+  syncChart: () => chartPage?.sync(),
+  openChart,
+  navigate: (route) => (location.hash = `#${route}`),
+  currentRoute: routeKey,
+  routes: ROUTES,
+});
+/** This tab's id: the pop-out AI window sends its actions to the main tab the owner focused last (src/ai/tabs.ts). */
+const tabId = Math.random().toString(36).slice(2, 10);
+setUndoPrefix(tabId);
+const localActions: AssistantActions = {
+  run: (name, args) => runUiAction(actionEnv, name, args),
+  confirmation: async (name, args) => confirmationFor(actionEnv, name, args),
+  undo: undoActions,
+};
+
+/** In the pop-out AI window the main platform window carries out the actions; this asks it and waits for the answer. */
+function channelActions(ch: BroadcastChannel): AssistantActions {
+  const waiting = new Map<string, (value: unknown) => void>();
+  ch.addEventListener('message', (e) => {
+    const d = e.data as { kind?: string; reqId?: string; value?: unknown };
+    if (d?.kind === 'reply' && d.reqId && waiting.has(d.reqId)) {
+      waiting.get(d.reqId)!(d.value);
+      waiting.delete(d.reqId);
+    }
+  });
+  const target = () => {
+    try {
+      return localStorage.getItem(ACTION_TAB_KEY) ?? '';
+    } catch {
+      return '';
+    }
+  };
+  const ask = <T>(msg: Record<string, unknown>, fallback: T, to = target(), ms = 30000) =>
+    new Promise<T>((resolve) => {
+      if (!to) return resolve(fallback);
+      const reqId = Math.random().toString(36).slice(2);
+      waiting.set(reqId, resolve as (v: unknown) => void);
+      ch.postMessage({ ...msg, reqId, target: to });
+      setTimeout(() => waiting.delete(reqId) && resolve(fallback), ms);
+    });
+  const notDone = (name: string): ActionResult => ({ ok: false, name, message: 'The main platform window didn’t answer (is it open?), so nothing changed' });
+  return {
+    run: (name, args) => ask<ActionResult>({ kind: 'run', name, args }, notDone(name)),
+    // Asked of the tab that will run it (its own state); if it can't answer, the owner is still asked.
+    confirmation: (name, args) => ask<string | null>({ kind: 'confirm', name, args }, needsConfirmation(name) ? `Let the AI run "${name.replace(/_/g, ' ')}"?` : null, target(), 10000),
+    undo: async (ids) => {
+      let done = 0;
+      for (const [owner, own] of groupByOwner(ids)) done += await ask<number>({ kind: 'undo', ids: own }, 0, owner);
+      return done;
+    },
+  };
+}
+
 if (isAiWindow) {
   // The assistant in its own window: actions are carried out by the main platform window.
   document.title = 'AI Assistant · Trading Platform';
@@ -200,6 +258,7 @@ if (isAiWindow) {
     mode: 'window',
     getContext: () => ({ page: 'AI assistant window', symbol: state.symbols[state.provider] ?? '', timeframe: state.timeframe }),
     onAction: (a) => channel?.postMessage(a),
+    actions: channel ? channelActions(channel) : undefined,
   });
   document.querySelector('#app')!.append(assistant.el);
   assistant.focus();
@@ -210,7 +269,7 @@ if (isAiWindow) {
   let updateError = '';
   /** What the new helper adds, by the version you have. */
   const updateReason = (v: number) =>
-    v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : v < 12 ? 'It adds the Nasdaq-100 swing scanner (weekly swing with COT, z-score and Williams; mean reversion; breakouts) every 5 minutes, RIA fee schedules in client reports and fresher fund data. ' : v < 21 ? 'It adds the free Alpaca history option (Settings), a faster and steadier helper and fixes. ' : v < 22 ? 'It reworks the Setups scanner: honest tests (trades from the same week count as one bet, results after costs, corrected for many tests), 15 years of daily history, hourly history kept for good, simpler rules and weekly rule tests on your own data. ' : v < 23 ? 'The AI assistant can now see the page you’re on, so you can ask about anything on screen. ' : v < 24 ? 'It adds dividend tracking (import a statement, yields, income calendar). ' : v < 25 ? 'It fixes dividend estimates after raises and for twice-a-year payers. ' : v < 26 ? 'It adds Webull: view and sync your account, and place orders (Test first). ' : v < 27 ? 'It fixes Webull "too many requests" and adds the Trade page. ' : v < 28 ? 'It adds total return (with dividends) to Account, Investments and Research. ' : v < 29 ? 'It rebuilds the portfolio optimizer (shrinkage, risk parity, resampling, walk-forward test) and shows cash as Cash. ' : v < 30 ? 'It adds one-click helper updates and shows each Webull account (Roth IRA, Traditional IRA, Cash, Margin) separately, with a combined view, plus account risk, sectors and a tax view. ' : v < 31 ? 'It adds the Futures page: the whole futures market by sector, what’s moving, term structure and who is positioned how (COT), and futures trading in your Webull futures account (Trade page, Futures switch; off until you type FUTURES in Settings). Updates are checked every 10 minutes. ' : v < 32 ? 'It adds alerts that work with the platform closed, sent free to your phone by ntfy or Telegram (set up in Settings), and news on your holdings. The Account risk card opens charts of the daily swings behind its numbers. ' : v < 33 ? 'The portfolio optimizer now tests young holdings too: before a holding existed, its history is estimated from a similar long-running fund, and it shows how firmly the data pins down each suggested weight. The Account page adds dividends received and total gain per holding and account, display choices (% or $), a holding detail with purchase date and dividend entry, and an "Is the yield sustainable?" check with charts for high-yield funds. Futures prices are matched more reliably.' : v < 34 ? 'It adds Send diagnostics (Settings and the Data button): one file, with keys and account numbers masked, to upload in your Claude chat when something isn’t working. It adds a Sources check: a fund’s NAV or a price is compared across free sources (Schwab, SEC filings, Yahoo, Nasdaq), each shown with its time and link, plus a confidence meter. The portfolio optimizer gets professional goals (most diversified, hierarchical risk parity, smallest bad months, target volatility, income, stay close to a benchmark), advanced limits, an efficient frontier and a side-by-side test of every goal. ' : v < 35 ? 'It adds Prospecting (Business > Prospects): search, map and compare RIAs, exempt advisers, family offices and 13F managers from free SEC data, with notes and outreach status. ' : v < 36 ? 'It fixes the Prospecting download of the SEC Form ADV data (people and private funds). ' : v < 37 ? 'The weekly Schwab login now opens the login page by itself (no Enter key needed in the helper window). ' : v < 38 ? 'It makes Prospecting downloads complete and reliable (retry failed parts, 3 years of Form D, 2 years of 13F totals, current Form ADV owners and private funds from IAPD, state-registered advisers in beta). ' : v < 39 ? 'It fixes the Prospecting download of private funds from the SEC Form ADV data. ' : v < 40 ? 'It adds the Smart money chart indicators: insider buying and selling (SEC Form 4) and 13F institutional holders for a stock. ' : v < 41 ? 'It adds family offices from other public records (5%+ owners, foundations, legal-entity links, big sales) and firm contacts from their own websites with clear labels, an AI research analyst, a weekly change check, a review queue and a do-not-contact list (Prospects). ' : 'It includes bug fixes. ';
+    v < 6 ? 'Charts and prices work; Flow, Research, Macro, Portfolios, Investments and the AI need the update. ' : v < 8 ? 'The new Investments page (bonds, alternatives, private funds) and the new start screen need it. ' : v < 9 ? 'It starts faster and opens the platform in Chrome when it’s ready. ' : v < 10 ? 'It adds the market scanner, AI page summaries and corrected daily changes. ' : v < 11 ? 'The scanner now backtests the exact plan on each card, retries symbols after hiccups and is gentler on Schwab; Investments shows at-close values. ' : v < 12 ? 'It adds the Nasdaq-100 swing scanner (weekly swing with COT, z-score and Williams; mean reversion; breakouts) every 5 minutes, RIA fee schedules in client reports and fresher fund data. ' : v < 21 ? 'It adds the free Alpaca history option (Settings), a faster and steadier helper and fixes. ' : v < 22 ? 'It reworks the Setups scanner: honest tests (trades from the same week count as one bet, results after costs, corrected for many tests), 15 years of daily history, hourly history kept for good, simpler rules and weekly rule tests on your own data. ' : v < 23 ? 'The AI assistant can now see the page you’re on, so you can ask about anything on screen. ' : v < 24 ? 'It adds dividend tracking (import a statement, yields, income calendar). ' : v < 25 ? 'It fixes dividend estimates after raises and for twice-a-year payers. ' : v < 26 ? 'It adds Webull: view and sync your account, and place orders (Test first). ' : v < 27 ? 'It fixes Webull "too many requests" and adds the Trade page. ' : v < 28 ? 'It adds total return (with dividends) to Account, Investments and Research. ' : v < 29 ? 'It rebuilds the portfolio optimizer (shrinkage, risk parity, resampling, walk-forward test) and shows cash as Cash. ' : v < 30 ? 'It adds one-click helper updates and shows each Webull account (Roth IRA, Traditional IRA, Cash, Margin) separately, with a combined view, plus account risk, sectors and a tax view. ' : v < 31 ? 'It adds the Futures page: the whole futures market by sector, what’s moving, term structure and who is positioned how (COT), and futures trading in your Webull futures account (Trade page, Futures switch; off until you type FUTURES in Settings). Updates are checked every 10 minutes. ' : v < 32 ? 'It adds alerts that work with the platform closed, sent free to your phone by ntfy or Telegram (set up in Settings), and news on your holdings. The Account risk card opens charts of the daily swings behind its numbers. ' : v < 33 ? 'The portfolio optimizer now tests young holdings too: before a holding existed, its history is estimated from a similar long-running fund, and it shows how firmly the data pins down each suggested weight. The Account page adds dividends received and total gain per holding and account, display choices (% or $), a holding detail with purchase date and dividend entry, and an "Is the yield sustainable?" check with charts for high-yield funds. Futures prices are matched more reliably.' : v < 34 ? 'It adds Send diagnostics (Settings and the Data button): one file, with keys and account numbers masked, to upload in your Claude chat when something isn’t working. It adds a Sources check: a fund’s NAV or a price is compared across free sources (Schwab, SEC filings, Yahoo, Nasdaq), each shown with its time and link, plus a confidence meter. The portfolio optimizer gets professional goals (most diversified, hierarchical risk parity, smallest bad months, target volatility, income, stay close to a benchmark), advanced limits, an efficient frontier and a side-by-side test of every goal. ' : v < 35 ? 'It adds Prospecting (Business > Prospects): search, map and compare RIAs, exempt advisers, family offices and 13F managers from free SEC data, with notes and outreach status. ' : v < 36 ? 'It fixes the Prospecting download of the SEC Form ADV data (people and private funds). ' : v < 37 ? 'The weekly Schwab login now opens the login page by itself (no Enter key needed in the helper window). ' : v < 38 ? 'It makes Prospecting downloads complete and reliable (retry failed parts, 3 years of Form D, 2 years of 13F totals, current Form ADV owners and private funds from IAPD, state-registered advisers in beta). ' : v < 39 ? 'It fixes the Prospecting download of private funds from the SEC Form ADV data. ' : v < 40 ? 'It adds the Smart money chart indicators: insider buying and selling (SEC Form 4) and 13F institutional holders for a stock. ' : v < 41 ? 'It adds family offices from other public records (5%+ owners, foundations, legal-entity links, big sales) and firm contacts from their own websites with clear labels, an AI research analyst, a weekly change check, a review queue and a do-not-contact list (Prospects). ' : v < 42 ? 'The AI assistant can now make changes for you: open charts and stocks, switch time frames, add and tune indicators, set alerts and more, each with Undo (it never trades). ' : 'It includes bug fixes. ';
   async function updateNow() {
     updateError = '';
     try {
@@ -255,6 +314,7 @@ if (isAiWindow) {
     getContext: aiContext,
     getSuggestions: () => PAGE_SUGGESTIONS[routeKey()] ?? [],
     onAction: runAction,
+    actions: localActions,
     onClose: () => toggleAssistant(false),
     onPopOut: () => {
       window.open(`${location.pathname}#ai-window`, 'tp-ai', 'popup,width=520,height=860');
@@ -262,7 +322,31 @@ if (isAiWindow) {
     },
   });
   drawer.append(assistant.el);
-  channel?.addEventListener('message', (e) => runAction(e.data as AssistantAction));
+  // The pop-out AI window's requests: platform actions (with a reply) or, from older pages, one-way actions.
+  // Only the main tab the owner focused last answers the pop-out (so nothing runs twice in two tabs).
+  const claimActions = () => {
+    try {
+      localStorage.setItem(ACTION_TAB_KEY, tabId);
+    } catch {
+      // private window: the pop-out then can't reach this tab
+    }
+  };
+  window.addEventListener('focus', claimActions);
+  try {
+    if (document.hasFocus() || !localStorage.getItem(ACTION_TAB_KEY)) claimActions();
+  } catch {
+    // storage unavailable
+  }
+  // The pop-out AI window's requests: platform actions (with a reply) or, from older pages, one-way actions.
+  channel?.addEventListener('message', async (e) => {
+    const d = e.data as { kind?: string; reqId?: string; target?: string; name?: string; args?: Record<string, unknown>; ids?: string[] };
+    if (!d?.kind) return runAction(e.data as AssistantAction);
+    if (!addressedTo(d, tabId)) return;
+    const reply = (value: unknown) => channel?.postMessage({ kind: 'reply', reqId: d.reqId, value });
+    if (d.kind === 'run') reply(await localActions.run(String(d.name), d.args ?? {}));
+    else if (d.kind === 'confirm') reply(await localActions.confirmation(String(d.name), d.args ?? {}));
+    else if (d.kind === 'undo') reply(await localActions.undo(d.ids ?? []));
+  });
 
   const healthDot = h('span', { class: 'health-badge', 'aria-hidden': 'true' });
   const healthBtn = h(

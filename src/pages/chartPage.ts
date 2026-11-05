@@ -126,6 +126,8 @@ export function createChartPage() {
   /** Extended hours apply to intraday stock charts (Schwab), not crypto or daily bars. */
   const extendedApplies = () => provider().id === 'schwab' && TIMEFRAME_SECONDS[state.timeframe] < 86400;
   let started = false;
+  /** What the chart last loaded (market:symbol:timeframe:extended), so sync() knows when to reload. */
+  let loadedKey = '';
 
   // ---------- Toolbar ----------
 
@@ -463,6 +465,7 @@ export function createChartPage() {
     const sym = symbol();
     const tf = state.timeframe;
     const drawingsKey = refKey(currentRef());
+    loadedKey = `${drawingsKey}:${tf}:${state.extendedHours}`;
     document.title = `${displaySymbol(sym)} · Trading Platform`;
 
     chart.symbol = sym;
@@ -586,6 +589,27 @@ export function createChartPage() {
     }
   }
 
+  /**
+   * Brings the chart in line with `state` after something else changed it (the AI assistant's actions and their
+   * Undo): symbol, market, timeframe, chart type, indicators and drawings.
+   */
+  function sync() {
+    renderToolbar();
+    if (!started) return;
+    chart.setChartType(state.chartType);
+    if (loadedKey !== `${refKey(currentRef())}:${state.timeframe}:${state.extendedHours}`) {
+      reload();
+    } else if (loadedKey) {
+      drawings.setDrawings(loadDrawings(refKey(currentRef())));
+    }
+    chart.removeMissingIndicators(new Set(state.indicators.map((i) => i.uid)));
+    for (const instance of state.indicators) {
+      if (chart.hasIndicator(instance.uid)) chart.updateIndicator(instance);
+      else chart.addIndicator(instance);
+    }
+    indicatorsChanged();
+  }
+
   /** Redraws indicators of one type after its script was edited or deleted. */
   function refreshIndicatorsFor(defId: string) {
     const def = getIndicator(defId);
@@ -601,5 +625,5 @@ export function createChartPage() {
     renderLegend();
   }
 
-  return { el, start, open, addIndicatorById, refreshIndicatorsFor };
+  return { el, start, open, addIndicatorById, refreshIndicatorsFor, sync };
 }

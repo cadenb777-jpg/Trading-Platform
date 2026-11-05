@@ -394,6 +394,10 @@ export class ChartView {
     return this.indicators.get(uid)?.placement === 'separate';
   }
 
+  hasIndicator(uid: string): boolean {
+    return this.indicators.has(uid);
+  }
+
   /** Removes any indicator on the chart whose id isn't in `keep`. */
   removeMissingIndicators(keep: Set<string>) {
     for (const uid of [...this.indicators.keys()]) if (!keep.has(uid)) this.removeIndicator(uid);
