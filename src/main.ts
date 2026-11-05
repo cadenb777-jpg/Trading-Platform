@@ -77,6 +77,9 @@ window.addEventListener('tp:backtest-chart', () => {
   ensurePage(entry).then((page) => (page as Page & { fromChart?(): void }).fromChart?.());
 });
 
+/** "Journal this trade" (Trade fills, ticker card, security view): the journal on that symbol (detail: {symbol, orderId?, sync?}). */
+window.addEventListener('tp:open-journal', (e) => openPageWith('journal', 'open', (e as CustomEvent).detail ?? {}));
+
 /** "See all on Futures" from a COT summary line: the Futures page's COT panel on that market (or stock). */
 window.addEventListener('tp:open-cot', (e) => openPageWith('futures', 'openCot', (e as CustomEvent).detail ?? {}));
 
@@ -122,6 +125,7 @@ const pages: PageEntry[] = [
   { route: 'account', group: 'money', label: 'Account', icon: 'account', title: 'Account', create: async () => (await import('./pages/accountPage')).createAccountPage(openPortfolio, (id, kind) => openPageWith('trade', 'open', id, kind)) },
   { route: 'portfolio', group: 'money', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', create: async () => (await import('./pages/portfolioPage')).createPortfolioPage() },
   { route: 'trade', group: 'money', label: 'Trade', icon: 'trade', title: 'Trade', create: async () => (await import('./pages/tradePage')).createTradePage() },
+  { route: 'journal', group: 'money', label: 'Journal', icon: 'journal', title: 'Trading journal', create: async () => (await import('./pages/journalPage')).createJournalPage(openChart) },
   { route: 'clients', group: 'money', label: 'Clients', icon: 'clients', title: 'Clients & Reports', create: async () => (await import('./pages/clientsPage')).createClientsPage() },
   { route: 'prospect', group: 'business', label: 'Prospects', icon: 'prospect', title: 'Prospecting', create: async () => (await import('./pages/prospectPage')).createProspectPage() },
   // the security view (#sec/AAPL/FA): opened from any ticker (slide-over) and its "Full page" button

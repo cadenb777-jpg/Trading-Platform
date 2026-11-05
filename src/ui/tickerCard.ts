@@ -7,6 +7,7 @@
  * Trade only pre-fills the Trade page's ticket; nothing is ever placed from here.
  */
 import { prefillAssistant } from '../ai/hub';
+import { journalSymbols, openJournal } from '../journal/links';
 import { guessMarket, type MarketRef } from '../data/quotes';
 import { engineRequest, helper } from '../data/schwab';
 import { listDocs } from '../data/store';
@@ -256,6 +257,7 @@ function buildCard(symbol: string, pinned: boolean, embedded = false) {
             (await import('../trade/webull')).openOrderTicket({ symbol, side: 'BUY' }),
           )
         : '',
+      journalSymbols.has(symbol) ? btn('My trades', `Your journal trades in ${symbol}`, () => openJournal({ symbol })) : '',
       btn('Ask AI', `Ask the assistant about ${symbol}`, () =>
         prefillAssistant(`Give me a quick read on ${symbol}: what it is, how it has been trading lately, and anything I should know before buying or selling.`),
       ),

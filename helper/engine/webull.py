@@ -607,6 +607,76 @@ async def recent_buys(ctx):
     return {'buys': buys, 'complete': complete}
 
 
+#: Order history for the journal's backfill (read-only). Webull's developer docs say order records are kept for up to
+#: 2 years; when Webull refuses a range that long, shorter ones are tried (the window used is reported).
+HISTORY_WINDOWS = (730, 365, 90)
+HISTORY_PAGE = 100
+HISTORY_PAGES = 60
+
+
+def _when(value):
+    """A Webull time (ISO text, or unix seconds/milliseconds) as unix seconds; None when unreadable."""
+    n = _num(value)
+    if n is not None:
+        return n / 1000 if n > 1e11 else n
+    try:
+        t = dt.datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    return (t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)).timestamp()
+
+
+def filled_rows(data):
+    """The filled part of each order in a history page: {orderId, symbol, side, qty, price, time, type, status}. A row
+    without a fill price or time is returned with price/time None (the journal counts and skips it, never guesses)."""
+    out = []
+    for o in _list(data, 'orders'):
+        if not isinstance(o, dict):
+            raise EngineError(FORMAT)
+        for s in o['orders'] if isinstance(o.get('orders'), list) else [o]:
+            if not isinstance(s, dict):
+                raise EngineError(FORMAT)
+            qty = _num(s.get('filled_quantity')) or 0
+            if qty <= 0 or not isinstance(s.get('symbol'), str):
+                continue
+            price = _num(s.get('filled_price'))
+            if price is None:
+                price = _num(s.get('avg_filled_price'))
+            when = next((w for w in (_when(s.get(k)) for k in ('filled_time', 'filled_time_at', 'place_time', 'place_time_at')) if w), None)
+            out.append({'orderId': s.get('client_order_id') or o.get('client_order_id') or '', 'symbol': s['symbol'].upper(),
+                        'side': str(s.get('side') or '').upper(), 'qty': qty, 'price': price, 'time': when,
+                        'type': str(s.get('instrument_type') or o.get('instrument_type') or '').upper(), 'status': str(s.get('status') or o.get('status') or '').upper()})
+    return out
+
+
+async def order_history(ctx, account_id):
+    """Filled orders as far back as Webull allows (read-only, one page at a time through the gate):
+    {rows, days (the window used), complete (False when it stopped at the page limit)}."""
+    today = dt.datetime.now(NEW_YORK).date()
+    last_error = None
+    for days in HISTORY_WINDOWS:
+        rows, last = [], None
+        try:
+            for _ in range(HISTORY_PAGES):
+                query = {'account_id': account_id, 'page_size': HISTORY_PAGE, 'start_date': (today - dt.timedelta(days=days)).isoformat(), 'end_date': today.isoformat()}
+                if last:
+                    query['last_client_order_id'] = last
+                data = await _call(ctx, 'GET', '/trading/orders/historical-orders/list', query, version='v2')
+                page = _list(data, 'orders')
+                rows += filled_rows(data)
+                if len(page) < HISTORY_PAGE:
+                    return {'rows': rows, 'days': days, 'complete': True}
+                last = page[-1].get('client_order_id') if isinstance(page[-1], dict) else None
+                if not last:
+                    break
+            return {'rows': rows, 'days': days, 'complete': False}
+        except Busy:
+            raise
+        except EngineError as err:
+            last_error = err
+    raise last_error or EngineError(FORMAT)
+
+
 # ---------- order log and limits ----------
 
 def _log(entry):

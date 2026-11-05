@@ -67,6 +67,7 @@ helper/
 | 9f | Setups page: short-swing / swing / position time frames, per-stock adaptive bounds, COT + z-score edge study, 1,000-run tests with block bootstrap and false-discovery control, out-of-sample check, live entry alerts; indicators on every line chart; faster loading | ✅ |
 | 9g | Setups v22: honest tests (clustered random entry, after-cost R, Holm across strategies, robustness), 15-year daily and kept hourly history (Alpaca optional), simpler rules, lab forward records, weekly rule tests on your data | ✅ |
 | 10 | Trading through Webull (paper first) & alerts | 🟡 Webull account view, sync and guarded stock orders (Test first) done; chart ticket, brackets and phone alerts later |
+| 10b | Trading journal: Webull backfill and broker imports (deduped), round trips, dashboard, P&L calendar, chart replay with MAE/MFE, daily notes, playbooks, reports, AI coach | ✅ |
 | 11 | Cloud engine, login, phone access | ⏸ on hold (last, by choice) |
 
 ## Stage 4: Quant charting upgrades (Module 1, finishing)

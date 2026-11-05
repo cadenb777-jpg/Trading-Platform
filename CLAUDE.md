@@ -124,6 +124,17 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   most trusted agreeing source's value (never an average). Expense ratio is "aggregator only". Glossary `confidence`.
   UI: src/ui/sourcesChip.ts (chip + panel + meter; formatting in src/ui/confidence.ts): fund NAV (auto, only funds that
   publish NAVs) and ticker card (only on click, never on hover). Parsers tested on fixtures (helper/tests/fixtures/crosscheck).
+  Journal (src/pages/journalPage.ts, #journal, code JRNL; docs/research/trading-journal.md): helper engine/journal.py
+  keeps fills/trades/days/playbooks/plans/imports in platform.db tables journal_* (screenshots in ~/.trading-platform/
+  journal/). Fills -> round trips FIFO per account+symbol (group_fills: scale-ins, partials, shorts need an explicit
+  short on stocks, futures multipliers; a stock sell with nothing held = costUnknown; same-second ties by arrival `seq`).
+  Fill id = execution id, else order id + qty + price + time, else a row hash; dup_key (account + NY day + symbol +
+  side + qty + price, #n in a batch) only matches other sources, never manual entries. Sources: Webull backfill (webull.order_history,
+  read-only, ~2 years, paged; pre-history positions at average cost = openedBefore, out of stats), broker CSV/Excel
+  presets in src/journal/importers.ts (tested per broker), PDF via ai.chat, manual. Trade page orders: journal.plan
+  (stop/target/strategy by order id) + orders.log tagging. Maths in src/journal/stats.ts (tested; < 30 trades = "not
+  enough trades yet"). AI coach journal.coach shows the cost first; ai.py tool get_my_journal reads only. The journal
+  never sends orders (test). Requests need JOURNAL_HELPER_VERSION 43.
   Account page (src/pages/accountPage.ts, #account): portfolios with Portfolio.mine (set by Import statement; unset = live
   Webull sync) merged by src/portfolio/account.ts, figures from dividends.portfolio + dividendsView; read-only (orders on Trade).
   Structure (docs/structure.md: every number has one home): Account = real money only (all accounts + switcher, totals,

@@ -56,6 +56,10 @@ const PROSPECT_CONTACTS_REQUEST = /^prospect\.(crawl|contacts|email_check|ai_pro
 export const prospectContactsReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_CONTACTS_HELPER_VERSION;
 /** True when the connected helper has the complete Prospecting downloads (v38+). */
 export const prospectCompleteReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_COMPLETE_HELPER_VERSION;
+/** The trading journal (journal.*: Webull backfill, broker imports, AI coach) needs at least this version. */
+export const JOURNAL_HELPER_VERSION = 43;
+/** True when the connected helper has the trading journal (v43+). */
+export const journalReady = () => !helper.tooOld && (helper.version ?? 0) >= JOURNAL_HELPER_VERSION;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
@@ -316,6 +320,7 @@ class HelperConnection {
     if (type.startsWith('prospect.sources.') && (this.version ?? 0) < PROSPECT_SOURCES_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (SMART_MONEY_REQUESTS.has(type) && (this.version ?? 0) < SMART_MONEY_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (PROSPECT_CONTACTS_REQUEST.test(type) && (this.version ?? 0) < PROSPECT_CONTACTS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if (type.startsWith('journal.') && (this.version ?? 0) < JOURNAL_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type === 'ai.ui_result' || type === 'ai.stop') && (this.version ?? 0) < AI_ACTIONS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('scanner.') || (type === 'ai.insight' && NEW_INSIGHTS.has(String(msg.topic)))) && (this.version ?? 0) < SCANNER_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;

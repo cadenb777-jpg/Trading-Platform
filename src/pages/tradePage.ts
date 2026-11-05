@@ -12,7 +12,7 @@
  */
 import { CandlestickSeries, ColorType, LineStyle, createChart, type IChartApi, type IPriceLine, type ISeriesApi } from 'lightweight-charts';
 import { quoteChange, subscribeQuote, type Quote } from '../data/quotes';
-import { engineRequest, schwab } from '../data/schwab';
+import { engineRequest, journalReady, schwab } from '../data/schwab';
 import { state } from '../state';
 import { createFuturesTicket, type FuturesTicket } from '../trade/futuresTicket';
 import { positionPnl } from '../trade/futuresMath';
@@ -716,6 +716,10 @@ export function createTradePage() {
     if (ok && order.side === 'BUY') {
       placedEntries[order.symbol] = { orderId, at: Date.now() };
       save(ENTRIES_KEY, placedEntries);
+      // the journal keeps this order's plan (stop, target, setup), so the trade carries it once its fills are imported
+      const ps = ticket.planState();
+      if (orderId && journalReady() && ps.symbol === order.symbol && (ps.stop || ps.setup))
+        engineRequest('journal.plan', { orderId, symbol: order.symbol, side: 'BUY', stop: ps.stop, target: ps.setup?.target ?? null, setup: ps.setup?.setup ?? '', strategy: ps.setup?.strategy ?? '', exitBy: ps.setup?.exitBy ?? '', riskPct: ps.riskPct }).catch(() => {});
     }
     if (ok && order.side === 'BUY' && protectStop && protectStop > 0) protect[order.symbol] = { stop: protectStop, orderId };
     if (ok && order.side === 'SELL' && order.orderType.startsWith('STOP')) delete protect[order.symbol];
@@ -844,7 +848,7 @@ export function createTradePage() {
     if (!rows.length) return listBody.replaceChildren(h('div', { class: 'empty-state' }, 'No fills in the last 7 days.'));
     return listBody.replaceChildren(
       dataTable(
-        ['Symbol', 'Side', 'Filled', 'Type', 'Price', 'Status', 'Time'],
+        ['Symbol', 'Side', 'Filled', 'Type', 'Price', 'Status', 'Time', ''],
         rows.map((o) => [
           { v: o.symbol, cls: 'label' },
           { v: o.side, cls: o.side === 'BUY' ? 'up' : 'down' },
@@ -853,6 +857,7 @@ export function createTradePage() {
           orderPrice(o),
           o.status.replace(/_/g, ' ').toLowerCase(),
           o.placedAt ? new Date(o.placedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—',
+          h('button', { class: 'btn small ghost', type: 'button', title: 'Open this trade in the journal (imports your Webull fills first)', onclick: () => window.dispatchEvent(new CustomEvent('tp:open-journal', { detail: { symbol: o.symbol, orderId: o.orderId, sync: true } })) }, 'Journal this trade'),
         ]),
         undefined,
         { id: 'trade:fills' },

@@ -205,8 +205,13 @@ TOOLS = [
         }, 'required': ['name']},
     },
     {
+        'name': 'get_my_journal',
+        'description': "The owner's trading journal (their own past trades): a summary (closed trades, win rate, net P&L, profit factor, expectancy) and the trades with ids, dates, P&L, R, plan, strategy, tags, emotions, rating and notes. Optional symbol and date range (YYYY-MM-DD). Cite trade ids and dates; never invent numbers.",
+        'input_schema': {'type': 'object', 'properties': {'symbol': {'type': 'string'}, 'start': {'type': 'string'}, 'end': {'type': 'string'}}},
+    },
+    {
         'name': 'ui_action',
-        'description': 'Do something in the platform window: open_chart (symbol, optional timeframe like 5m/1h/1D), open_page (page: home, chart, multi, invest, futures, flow, research, macro, portfolio, clients, backtest, calendar, scripts), add_indicator (indicator name, e.g. "RSI" or "VWAP bands"), or create_alert (symbol, price, direction above/below, optional note).',
+        'description': 'Do something in the platform window: open_chart (symbol, optional timeframe like 5m/1h/1D), open_page (page: home, chart, multi, invest, futures, flow, research, macro, portfolio, clients, backtest, calendar, scripts, journal), add_indicator (indicator name, e.g. "RSI" or "VWAP bands"), or create_alert (symbol, price, direction above/below, optional note).',
         'input_schema': {'type': 'object', 'properties': {
             'action': {'type': 'string', 'enum': ['open_chart', 'open_page', 'add_indicator', 'create_alert']},
             'symbol': {'type': 'string'}, 'timeframe': {'type': 'string'}, 'page': {'type': 'string'},
@@ -368,7 +373,7 @@ TOOL_LABELS = {
     'get_positioning': 'Checking positioning', 'get_private_fund': 'Reading the fund\'s SEC filings',
     'search_private_funds': 'Searching private funds', 'get_bond_market': 'Checking the bond market', 'get_my_alternatives': 'Looking at your alternatives', 'list_portfolios': 'Looking at your portfolios', 'save_portfolio': 'Saving the portfolio',
     'analyze_portfolio': 'Analysing the portfolio', 'optimize_portfolio': 'Optimising weights', 'list_clients': 'Looking at your clients',
-    'save_client': 'Saving the client', 'ui_action': 'Updating the platform', 'web_search': 'Searching the web',
+    'save_client': 'Saving the client', 'get_my_journal': 'Reading your trading journal', 'ui_action': 'Updating the platform', 'web_search': 'Searching the web',
 }
 
 _conversations = {}
@@ -746,6 +751,11 @@ async def t_save_client(ctx, args, actions):
     return {'saved': True, 'id': saved['id'], 'name': saved['name']}
 
 
+async def t_get_my_journal(ctx, args, actions):
+    from . import journal
+    return journal.journal_for_ai(args.get('start') or None, args.get('end') or None, args.get('symbol') or None)
+
+
 async def t_ui_action(ctx, args, actions):
     action = args.get('action')
     if action not in ('open_chart', 'open_page', 'add_indicator', 'create_alert'):
@@ -764,7 +774,7 @@ TOOL_FUNCS = {
     'get_positioning': t_get_positioning, 'get_private_fund': t_get_private_fund, 'search_private_funds': t_search_private_funds,
     'get_bond_market': t_get_bond_market, 'get_my_alternatives': t_get_my_alternatives, 'list_portfolios': t_list_portfolios, 'save_portfolio': t_save_portfolio,
     'analyze_portfolio': t_analyze_portfolio, 'optimize_portfolio': t_optimize_portfolio, 'list_clients': t_list_clients,
-    'save_client': t_save_client, 'ui_action': t_ui_action,
+    'save_client': t_save_client, 'get_my_journal': t_get_my_journal, 'ui_action': t_ui_action,
 }
 
 

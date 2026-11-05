@@ -6,6 +6,7 @@
  *
  * The top half is pure (parsing, ranking, shortcut dispatch, recents) and tested in command.test.ts.
  */
+import { journalSymbols } from '../journal/links';
 import { prefillAssistant } from '../ai/hub';
 import { guessMarket, type MarketRef } from '../data/quotes';
 import { engineRequest, helper, loadNews } from '../data/schwab';
@@ -51,6 +52,7 @@ export const CODES: FnCode[] = [
   { code: 'ECO', label: 'Economic calendar', keywords: 'calendar economic releases fomc' },
   { code: 'FUT', aliases: ['CTM'], label: 'Futures', keywords: 'futures contracts commodities' },
   { code: 'PORT', label: 'Portfolios (models, what-ifs, optimizer)', keywords: 'portfolio model optimizer what-if' },
+  { code: 'JRNL', aliases: ['JOURNAL'], label: 'Trading journal (JRNL aapl: your trades in a symbol)', ticker: true, keywords: 'journal trades diary review p&l calendar playbook win rate' },
   { code: 'ACCT', label: 'Account (my real money, all accounts)', keywords: 'account holdings dividends total value' },
   { code: 'CLIENT', aliases: ['CLNT'], label: 'Client review (CLIENT smith)', keywords: 'client review report household adviser ria' },
   { code: 'MULTI', aliases: ['WS'], label: 'Workspace: linked panels (Chart mode)', keywords: 'multi chart grid side by side workspace panels linked layout launchpad' },
@@ -70,7 +72,7 @@ export const CODES: FnCode[] = [
 /** Where a code without a ticker goes. */
 const CODE_ROUTE: Record<string, string> = {
   GP: 'chart', DES: 'research', FA: 'research', HDS: 'flow', CN: 'home', OMON: 'flow', DVD: 'account', BETA: 'account', TRADE: 'trade', WEI: 'home', ECO: 'calendar', FUT: 'futures',
-  PORT: 'portfolio', ACCT: 'account', CLIENT: 'clients', PROS: 'prospect', MULTI: 'chart/multi', SCRIPT: 'chart/scripts', COT: 'futures/cot', BTST: 'backtest', SET: 'setups', MACRO: 'macro', INV: 'invest',
+  PORT: 'portfolio', ACCT: 'account', JRNL: 'journal', CLIENT: 'clients', PROS: 'prospect', MULTI: 'chart/multi', SCRIPT: 'chart/scripts', COT: 'futures/cot', BTST: 'backtest', SET: 'setups', MACRO: 'macro', INV: 'invest',
 };
 
 export function findCode(token: string): FnCode | null {
@@ -199,7 +201,8 @@ const SOURCE_LABEL: Record<SymbolSource, string> = { watchlist: 'Watchlist', hol
 export function codesFor(symbol: string): FnCode[] {
   if (symbol.startsWith('/')) return CODES.filter((c) => c.code === 'GP');
   const company = !symbol.startsWith('$') && !symbol.startsWith('^') && !symbol.includes('-');
-  return CODES.filter((c) => c.ticker && (company || ['GP', 'ALRT', 'WL'].includes(c.code)));
+  // JRNL only for symbols with journal trades (once the journal has been read)
+  return CODES.filter((c) => c.ticker && (company || ['GP', 'ALRT', 'WL'].includes(c.code)) && (c.code !== 'JRNL' || journalSymbols.has(symbol)));
 }
 
 /** One entry per symbol, the first source winning (watchlist before holdings before lists), names merged. */
@@ -754,6 +757,7 @@ async function runCode(code: string, symbol: string | null) {
   if (c.code === 'GP') return ref && d.openChart(ref);
   if (c.code === 'CN') return openNews(symbol);
   if (c.code === 'TRADE') return (await import('../trade/webull')).openOrderTicket({ symbol, side: 'BUY' });
+  if (c.code === 'JRNL') return d.openPage('journal', 'open', { symbol });
   if (c.code === 'ALRT') return (await import('./alerts')).openAlertsDialog(ref ?? undefined);
   if (c.code === 'WL' && ref) {
     if (state.watchlist.some((r) => r.provider === ref.provider && r.symbol === ref.symbol)) return toast(`${symbol} is already on your watchlist`);
