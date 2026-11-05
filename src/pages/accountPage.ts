@@ -33,6 +33,7 @@ type Saved = Portfolio & { id: string };
 /** Per-device conveniences (the switcher's last choice, the shown columns): storage errors are ignored. */
 const VIEW_KEY = 'tp-account-view';
 const COLUMNS_KEY = 'tp-account-columns';
+const COST_ADDED_KEY = 'tp-account-columns-cost';
 function readKey(key: string): string | null {
   try {
     return localStorage.getItem(key);
@@ -90,9 +91,9 @@ const COLUMNS: { key: string; label: string; on: boolean }[] = [
   { key: 'avg', label: 'Avg cost', on: false },
   { key: 'price', label: 'Price', on: true },
   { key: 'value', label: 'Value', on: true },
+  { key: 'cost', label: 'Cost basis', on: true },
   { key: 'weight', label: 'Weight', on: true },
   { key: 'today', label: 'Today', on: true },
-  { key: 'cost', label: 'Cost basis', on: false },
   { key: 'gain', label: 'Price gain', on: true },
   { key: 'divs', label: 'Dividends', on: true },
   { key: 'total', label: 'Total return', on: true },
@@ -105,7 +106,16 @@ const COLUMNS: { key: string; label: string; on: boolean }[] = [
 function readColumns(): Set<string> {
   try {
     const saved = JSON.parse(readKey(COLUMNS_KEY) ?? 'null');
-    if (Array.isArray(saved)) return new Set(saved.filter((k) => COLUMNS.some((c) => c.key === k)));
+    if (Array.isArray(saved)) {
+      const set = new Set(saved.filter((k) => COLUMNS.some((c) => c.key === k)));
+      // Cost basis became a default column next to Value: show it once for layouts saved before that.
+      if (!readKey(COST_ADDED_KEY)) {
+        set.add('cost');
+        saveKey(COST_ADDED_KEY, '1');
+        saveKey(COLUMNS_KEY, JSON.stringify([...set]));
+      }
+      return set;
+    }
   } catch {
     /* defaults */
   }
@@ -511,6 +521,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
         { class: 'acct-stats' },
         statCards([
           { label: one ? `${one.name} value` : 'Total value (all accounts)', value: usd(sum), hint: `${one ? `Only ${one.name}` : 'All your accounts added together'}${cash ? `; includes ${usd(cash)} cash and other amounts` : ''}` },
+          { label: 'Cost basis', value: usd(g.cost), hint: `What you paid for the holdings that have a cost basis${withCost < securities ? ` (${withCost} of ${securities})` : ''}; value − cost basis = price gain` },
           { label: one ? 'Today' : 'Today (all accounts)', value: fmtDay(d.usd, d.pct), tone: tone(d.usd), hint: 'Change since yesterday’s close on your shares' },
           { label: 'Price gain', value: fmtGain(g.priceGain, g.priceGainPct), tone: tone(g.priceGain), hint: `Value − cost basis ${usd(g.cost)} (unrealized)${withCost < securities ? `, on ${withCost} of ${securities} holdings with a cost basis` : ''}` },
           { label: 'Dividends received', value: usd(g.dividends), hint: divHint },
