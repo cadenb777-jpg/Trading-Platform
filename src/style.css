@@ -10485,7 +10485,10 @@ body.rail-collapsed .rail .rail-bottom {
 }
 
 /* ----- scrolling: a page scrolls on its own and never drags the window; the Setups detail fits the screen ----- */
+/* Each page is the containing block for what it positions: hidden screen-reader text and pop-up bits deep in a page
+   used to be placed against the window and stretched it, so the whole app could scroll far past its bottom. */
 .views > * {
+  position: relative;
   overscroll-behavior: contain;
 }
 @media (min-width: 901px) {

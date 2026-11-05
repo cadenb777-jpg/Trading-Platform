@@ -18,6 +18,9 @@ describe('style.css', () => {
     expect({ depth, lowest }).toEqual({ depth: 0, lowest: 0 });
   });
 
+  it('makes each page the containing block, so nothing deep in a page stretches the window', () => {
+    expect(styleCss).toMatch(/\.views > \* \{\s*position: relative;/);
+  });
   it('has no leftover merge conflict markers', () => {
     expect(styleCss.match(/^(<{7}|={7}|>{7})( |$)/m)).toBeNull();
   });
