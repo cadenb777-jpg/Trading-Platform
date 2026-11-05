@@ -13,7 +13,7 @@ import { allIndicators } from './indicators/library';
 import { persist, state } from './state';
 import { TIMEFRAMES, type Timeframe } from './types';
 import { createPriceAlert, openAlertsDialog, startAlertWatcher } from './ui/alerts';
-import { h, toast } from './ui/dom';
+import { h, toast, openPopover } from './ui/dom';
 import { icon } from './ui/icons';
 import { PAGES as NAV_PAGES, SECTIONS, pageOf, sectionPages, sectionTarget, type NavPage, type PageRoute, type SectionId } from './ui/nav';
 import { openLaunchpad } from './ui/launchpad';
@@ -21,7 +21,7 @@ import { createStatusBar } from './ui/statusBar';
 import { openSettings } from './ui/settings';
 import { initTheme } from './ui/theme';
 import { initAtmosphere, markRoute } from './ui/atmosphere';
-import { initBuddy } from './ui/buddy';
+import { buddySettings, initBuddy } from './ui/buddy';
 import { PAGE_SUGGESTIONS, screenText } from './ai/screen';
 import { followHealth, openDataHealth } from './ui/dataHealth';
 import { initTickerCards } from './ui/tickerCard';
@@ -464,6 +464,10 @@ if (isAiWindow) {
     h(
       'div',
       { class: 'rail-bottom' },
+      railBtn('rail-util buddy-nav', 'Buddy', 'paw', 'Market buddy: show or hide him, name and colours', (e) => {
+        const btn = e.currentTarget as HTMLElement;
+        openPopover(btn, buddySettings(), { align: 'left', label: 'Market buddy' });
+      }),
       railBtn('rail-util', 'Alerts', 'bell', 'Alerts', () => openAlertsDialog()),
       healthBtn,
       railBtn('rail-util', 'Settings', 'gear', 'Settings', () => openSettings()),

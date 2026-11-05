@@ -1,3 +1,4 @@
+import { buddySettings } from './buddy';
 /**
  * Settings: Data connections (src/ui/connections.ts: the AI key, SEC email, FRED, BEA, BLS, EIA, Census, Finnhub and Alpaca),
  * the AI model, Webull (trading:
@@ -493,6 +494,47 @@ function chartRows(): HTMLElement[] {
 }
 
 /** `focus`: 'ai' (the key box), 'alerts', 'connection' (the check at the top) or a section heading such as 'Trading'. */
+/** The tab shown last (kept while the page is open). */
+let lastTab = 'General';
+
+/** Settings as tabs down the left (one section at a time, so the window stays short and orderly). */
+function tabbed(groups: [string, Node[]][], want?: string): HTMLElement {
+  const shown = groups.filter(([, nodes]) => nodes.length);
+  let current = shown.find(([label]) => label === (want ?? lastTab))?.[0] ?? shown[0][0];
+  const pane = h('div', { class: 'settings-pane', role: 'tabpanel' });
+  const tabs = shown.map(([label]) => h('button', { type: 'button', class: 'settings-tab', role: 'tab', 'data-tab': label, onclick: () => show(label) }, label));
+  function show(label: string) {
+    current = lastTab = label;
+    pane.replaceChildren(...(shown.find(([l]) => l === label)?.[1] ?? []));
+    pane.scrollTop = 0;
+    tabs.forEach((t) => {
+      const on = t.dataset.tab === label;
+      t.classList.toggle('on', on);
+      t.setAttribute('aria-selected', String(on));
+    });
+  }
+  show(current);
+  return h('div', { class: 'settings-tabs' }, h('nav', { class: 'settings-nav', role: 'tablist', 'aria-label': 'Settings sections' }, ...tabs), pane);
+}
+
+/** Which tab an openSettings(focus) call means. */
+function tabFor(focus?: string): string | undefined {
+  if (!focus) return undefined;
+  const f = focus.toLowerCase();
+  // 'ai' is asked for when the Anthropic key is missing: its box is under Data connections
+  if (f === 'data' || f === 'ai') return 'Data connections';
+  if (f === 'ai-model') return 'AI';
+  if (f === 'alerts') return 'Alerts';
+  if (f === 'connection' || f === 'helper' || f === 'about') return 'Help';
+  if (f === 'trading' || f === 'webull') return 'Trading';
+  return 'General';
+}
+
+/** The market buddy's settings, as a section of General. */
+function buddyBlock(): HTMLElement {
+  return h('div', {}, h('h3', { class: 'settings-section' }, 'Market buddy'), h('div', { class: 'settings-row' }, buddySettings()));
+}
+
 export async function openSettings(focus?: string) {
   const body = h('div', { class: 'settings' }, h('div', { class: 'muted pad' }, 'Loading…'));
   const close = openModal('Settings', body, { wide: true });
@@ -501,7 +543,7 @@ export async function openSettings(focus?: string) {
     try {
       s = await getSettings(true);
     } catch (err) {
-      body.replaceChildren(...appearanceRow(), connectionCheck(), h('div', { class: 'ap-error' }, `${(err as Error).message}`), diagnosticsRow(), aboutSection());
+      body.replaceChildren(tabbed([['General', [...appearanceRow(), buddyBlock()]], ['Help', [connectionCheck(), h('div', { class: 'ap-error' }, `${(err as Error).message}`), diagnosticsRow(), aboutSection()]]], tabFor(focus)));
       return;
     }
     const model = h('select', { class: 'input' }, ...s.models.map((m) => h('option', { value: m.id, selected: m.id === s.model }, m.name)));
@@ -510,16 +552,9 @@ export async function openSettings(focus?: string) {
       toast('AI model updated');
     });
     body.replaceChildren(
-      ...appearanceRow(),
-      connectionCheck(),
-      ...dataConnectionsSection(s, { save, refresh: render }),
-      h('h3', { class: 'settings-section' }, 'AI assistant'),
-      h('div', { class: 'settings-row' }, h('div', { class: 'settings-label' }, h('b', {}, 'AI model')), h('p', { class: 'muted small' }, 'Best gives the most thorough answers. Fast and low-cost is about 40× cheaper and fine for quick questions. The Anthropic key is under Data connections.'), model),
-      ...(s.prospectSmtpCheck !== undefined && prospectContactsReady() ? [smtpCheckRow(s.prospectSmtpCheck, (on) => save({ prospectSmtpCheck: on }))] : []),
-      ...(s.ntfySet !== undefined ? [h('h3', { class: 'settings-section' }, 'Alerts'), alertsRow(s, render)] : []),
-      h('h3', { class: 'settings-section' }, 'Trading'),
-      webullRow(s, render),
-      h('h3', { class: 'settings-section' }, 'Helper'),
+      tabbed(
+        [
+          ['General', [...appearanceRow(), buddyBlock(), h('h3', { class: 'settings-section' }, 'Helper'),
       (() => {
         const box = h('input', { type: 'checkbox', checked: s.openBrowser !== false });
         box.addEventListener('change', async () => {
@@ -548,9 +583,24 @@ export async function openSettings(focus?: string) {
             );
           })()]
         : []),
-      diagnosticsRow(),
-      h('p', { class: 'muted small' }, 'Everything here is saved by the helper in your user folder (.trading-platform), not in the browser or online.'),
-      aboutSection(),
+          ]],
+          ['Data connections', dataConnectionsSection(s, { save, refresh: render })],
+          ['AI', [
+            h('h3', { class: 'settings-section' }, 'AI assistant'),
+            h('div', { class: 'settings-row' }, h('div', { class: 'settings-label' }, h('b', {}, 'AI model')), h('p', { class: 'muted small' }, 'Best gives the most thorough answers. Fast and low-cost is about 40× cheaper and fine for quick questions. The Anthropic key is under Data connections.'), model),
+            ...(s.prospectSmtpCheck !== undefined && prospectContactsReady() ? [smtpCheckRow(s.prospectSmtpCheck, (on) => save({ prospectSmtpCheck: on }))] : []),
+          ]],
+          ['Alerts', s.ntfySet !== undefined ? [h('h3', { class: 'settings-section' }, 'Alerts'), alertsRow(s, render)] : []],
+          ['Trading', [h('h3', { class: 'settings-section' }, 'Trading'), webullRow(s, render)]],
+          ['Help', [
+            connectionCheck(),
+            diagnosticsRow(),
+            h('p', { class: 'muted small' }, 'Everything here is saved by the helper in your user folder (.trading-platform), not in the browser or online.'),
+            aboutSection(),
+          ]],
+        ],
+        tabFor(focus),
+      ),
     );
     if (focus === 'ai' && !s.aiKeySet) body.querySelector<HTMLInputElement>('[data-connection=ai] input')?.focus();
     if (focus === 'data') body.querySelector('#settings-data')?.scrollIntoView({ block: 'start' });

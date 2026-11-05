@@ -138,6 +138,56 @@ interface Look {
 const LOOK_KEY = 'tp-buddy-look';
 
 let root: HTMLElement | null = null;
+let applyLook: () => void = () => {};
+
+function currentLook(): Look {
+  return { name: 'Bull', coat: 'Beagle', ...readJson<Partial<Look>>(LOOK_KEY, {}) };
+}
+
+/** True when he is switched on. */
+export const buddyShown = () => !readJson(HIDE_KEY, false);
+
+/** Shows or hides him. */
+export function setBuddyShown(show: boolean) {
+  writeJson(HIDE_KEY, !show);
+  if (root) root.hidden = !show;
+  else if (show) initBuddy();
+}
+
+/** The buddy's settings: on/off, name and coat. Used by the menu's paw button and his own ✎ button. */
+export function buddySettings(onDone?: () => void): HTMLElement {
+  const panel = h('div', { class: 'buddy-settings' });
+  let look = currentLook();
+  const show = h('input', { type: 'checkbox' }) as HTMLInputElement;
+  show.checked = buddyShown();
+  show.addEventListener('change', () => setBuddyShown(show.checked));
+  const name = h('input', { class: 'input', value: look.name, maxlength: '16', 'aria-label': 'Name' }) as HTMLInputElement;
+  name.addEventListener('input', () => {
+    look = { ...look, name: name.value.trim() || 'Bull' };
+    writeJson(LOOK_KEY, look);
+    applyLook();
+  });
+  const swatches = Object.entries(COATS).map(([k, [fur, ear]]) => {
+    const b = h('button', { type: 'button', class: `buddy-swatch${k === look.coat ? ' on' : ''}`, title: k, 'aria-label': k, style: `background: linear-gradient(135deg, ${fur} 55%, ${ear} 55%)` });
+    b.addEventListener('click', () => {
+      look = { ...look, coat: k };
+      writeJson(LOOK_KEY, look);
+      applyLook();
+      panel.querySelectorAll('.buddy-swatch').forEach((x) => x.classList.toggle('on', x === b));
+    });
+    return b;
+  });
+  panel.append(
+    h('label', { class: 'buddy-show' }, show, ' Show my market buddy'),
+    h('div', { class: 'buddy-panel-k' }, 'NAME'),
+    name,
+    h('div', { class: 'buddy-panel-k' }, 'COLOURS'),
+    h('div', { class: 'buddy-swatches' }, ...swatches),
+    h('p', { class: 'muted small' }, 'Click to pet, drag to move, double-click to send him off. He keeps clear of what you are reading and skips busy pages and the Chart page.'),
+  );
+  if (onDone) panel.append(h('button', { type: 'button', class: 'btn', onclick: onDone }, 'Done'));
+  return panel;
+}
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -156,25 +206,23 @@ function writeJson(key: string, v: unknown) {
 
 /** Shows or hides him (the PUP code). */
 export function toggleBuddy() {
-  const hidden = !readJson(HIDE_KEY, false);
-  writeJson(HIDE_KEY, hidden);
-  if (root) root.hidden = hidden;
-  else if (!hidden) initBuddy();
+  setBuddyShown(!buddyShown());
 }
 
 export function initBuddy() {
-  if (root || readJson(HIDE_KEY, false)) return;
+  if (root || !buddyShown()) return;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const bubble = h('div', { class: 'buddy-bubble', role: 'status', 'aria-live': 'polite', hidden: true });
-  const close = h('button', { type: 'button', class: 'buddy-close', title: 'Hide your buddy (bring him back with the code PUP)', 'aria-label': 'Hide the market buddy' }, '×');
+  const close = h('button', { type: 'button', class: 'buddy-close', title: 'Hide your buddy (bring him back with the paw button in the menu)', 'aria-label': 'Hide the market buddy' }, '×');
   const dog = h('button', { type: 'button', class: 'buddy-dog', title: 'Bull, your market buddy: click to pet, drag to move, double-click to send him off', 'aria-label': 'Pet the market buddy' });
   dog.innerHTML = SVG;
   const edit = h('button', { type: 'button', class: 'buddy-edit', title: 'Name and colours', 'aria-label': 'Change the buddy’s name and colours' }, '✎');
   root = h('div', { class: 'buddy', 'data-mood': 'calm' }, bubble, edit, close, dog);
   document.body.append(root);
   const el = root;
-  let look: Look = { name: 'Bull', coat: 'Beagle', ...readJson<Partial<Look>>(LOOK_KEY, {}) };
-  const applyLook = () => {
+  let look = currentLook();
+  applyLook = () => {
+    look = currentLook();
     const [fur, ear, line] = COATS[look.coat] ?? COATS.Beagle;
     el.style.setProperty('--b-fur', fur);
     el.style.setProperty('--b-ear', ear);
@@ -184,28 +232,11 @@ export function initBuddy() {
   };
   applyLook();
   edit.addEventListener('click', () => {
-    const panel = h('div', { class: 'buddy-panel', role: 'dialog', 'aria-label': 'Buddy name and colours' });
-    const name = h('input', { class: 'input', value: look.name, maxlength: '16', 'aria-label': 'Name' }) as HTMLInputElement;
-    name.addEventListener('input', () => {
-      look = { ...look, name: name.value.trim() || 'Bull' };
-      writeJson(LOOK_KEY, look);
-      applyLook();
-    });
-    const swatches = Object.entries(COATS).map(([k, [fur, ear]]) => {
-      const b = h('button', { type: 'button', class: `buddy-swatch${k === look.coat ? ' on' : ''}`, title: k, 'aria-label': k, style: `background: linear-gradient(135deg, ${fur} 55%, ${ear} 55%)` });
-      b.addEventListener('click', () => {
-        look = { ...look, coat: k };
-        writeJson(LOOK_KEY, look);
-        applyLook();
-        panel.querySelectorAll('.buddy-swatch').forEach((x) => x.classList.toggle('on', x === b));
-      });
-      return b;
-    });
-    const done = h('button', { type: 'button', class: 'btn', onclick: () => panel.remove() }, 'Done');
-    panel.append(h('label', { class: 'buddy-panel-k' }, 'NAME'), name, h('div', { class: 'buddy-panel-k' }, 'COLOURS'), h('div', { class: 'buddy-swatches' }, ...swatches), done);
     el.querySelector('.buddy-panel')?.remove();
+    const panel = h('div', { class: 'buddy-panel', role: 'dialog', 'aria-label': 'Buddy settings' });
+    panel.append(buddySettings(() => panel.remove()));
     el.append(panel);
-    name.focus();
+    panel.querySelector<HTMLInputElement>('input.input')?.focus();
   });
 
   let percent: number | null = null;

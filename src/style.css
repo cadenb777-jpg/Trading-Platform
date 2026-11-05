@@ -10624,7 +10624,8 @@ body.rail-collapsed .rail .rail-bottom {
   position: fixed;
   left: 0;
   top: 0;
-  z-index: 60;
+  /* above the page, under pop-ups (30) and dialogs (40) */
+  z-index: 25;
   width: 78px;
   transition: transform 1.2s linear;
 }
@@ -10839,4 +10840,70 @@ body[data-route='chart'] .buddy {
 .wd.wd-tall.news-panel .news-list {
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.buddy-settings { display: flex; flex-direction: column; gap: 6px; width: 220px; padding: 4px; }
+.buddy-show { display: flex; align-items: center; gap: 8px; color: var(--text-strong); font-weight: 600; }
+
+/* ----- Settings: tabs down the left, one section at a time ----- */
+.settings-tabs {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: var(--sp-4);
+  min-height: 420px;
+}
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: var(--sp-3);
+  border-right: 1px solid var(--border);
+}
+.settings-tab {
+  text-align: left;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.settings-tab:hover {
+  background: var(--row-hover);
+  color: var(--text-strong);
+}
+.settings-tab.on {
+  background: var(--accent-soft);
+  color: var(--text-strong);
+  box-shadow: inset 2px 0 0 var(--accent-2);
+}
+.settings-pane {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.settings-pane > .settings-section:first-child,
+.settings-pane > div:first-child > .settings-section:first-child {
+  margin-top: 0;
+}
+.settings-row .buddy-settings {
+  width: auto;
+  max-width: 360px;
+}
+@media (max-width: 700px) {
+  .settings-tabs {
+    grid-template-columns: 1fr;
+  }
+  .settings-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 0 0 var(--sp-2);
+  }
+  .settings-tab {
+    white-space: nowrap;
+  }
 }
