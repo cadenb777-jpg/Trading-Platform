@@ -4,6 +4,7 @@ import { insightButton } from '../ai/insight';
 import { subscribeQuote } from '../data/quotes';
 import { engineRequest } from '../data/schwab';
 import { dcf, impliedGrowth, sensitivity, wacc, type DcfInputs } from '../research/dcf';
+import { compsView, lboView, mergerView } from '../research/valuationTools';
 import { compact, createLineChart, dataTable, money, numberField, pageFrame, pct, rangeBar, statCards } from '../ui/charts';
 import { formatPrice, h } from '../ui/dom';
 import { termLabel } from '../ui/glossary';
@@ -53,7 +54,7 @@ type Tab = 'overview' | 'financials' | 'valuation' | 'filings';
 const TABS: [Tab, string][] = [
   ['overview', 'Overview'],
   ['financials', 'Financials'],
-  ['valuation', 'Valuation (DCF)'],
+  ['valuation', 'Valuation'],
   ['filings', 'SEC filings'],
 ];
 
@@ -82,6 +83,9 @@ export function createResearchPage() {
   let data: CompanyData | null = null;
   let period: 'annual' | 'quarterly' = 'annual';
   let riskFree = 0.042;
+  /** Which valuation tool is open beside the DCF, and the DCF's last value per share (for the football field). */
+  let tool: 'dcf' | 'comps' | 'lbo' | 'merger' = 'dcf';
+  let dcfValue: number | null = null;
   const symbolInput = h('input', { class: 'input symbol', value: 'AAPL', 'aria-label': 'Symbol', spellcheck: false });
   const tabs = h('div', { class: 'tabs', role: 'tablist' }, ...TABS.map(([t, label]) => h('button', { class: `tab${t === tab ? ' active' : ''}`, 'data-tab': t, onclick: () => setTab(t) }, label)));
   const ai = insightButton(() => {
@@ -125,6 +129,7 @@ export function createResearchPage() {
     ai.panel.hidden = true;
     try {
       data = await engineRequest<CompanyData>('research.company', { symbol }, 90000);
+      dcfValue = null;
       livePrice.textContent = formatPrice(data.valuation.price);
       setChange(data.quote.change ?? null);
       // Keep the price live while the page is open.
@@ -245,6 +250,36 @@ export function createResearchPage() {
   }
 
   function valuation(d: CompanyData): Node[] {
+    const tools = [
+      ['dcf', 'DCF'],
+      ['comps', 'Comparables'],
+      ['lbo', 'LBO'],
+      ['merger', 'Merger'],
+    ] as const;
+    const picker = h(
+      'div',
+      { class: 'ap-controls' },
+      h('div', { class: 'segmented', role: 'tablist', 'aria-label': 'Valuation method' }, ...tools.map(([t, label]) => h('button', { class: t === tool ? 'active' : '', 'aria-pressed': String(t === tool), onclick: () => ((tool = t), render()) }, label))),
+      h('span', { class: 'muted small' }, tool === 'dcf' ? 'Value from future free cash flow' : tool === 'comps' ? 'Value from what similar companies trade at' : tool === 'lbo' ? 'What a buyout firm could earn buying it with debt' : 'Would buying another company raise or lower earnings per share?'),
+    );
+    if (tool !== 'dcf' && dcfValue == null) dcfDefault(d);
+    if (tool === 'comps') return [picker, ...compsView(d, dcfValue)];
+    if (tool === 'lbo') return [picker, ...lboView(d)];
+    if (tool === 'merger') return [picker, ...mergerView(d)];
+    return [picker, ...dcfView(d)];
+  }
+
+  /** The DCF value per share with the pre-filled inputs (for the football field before the DCF tab is opened). */
+  function dcfDefault(d: CompanyData) {
+    const v = d.valuation;
+    if (!v.shares || d.ttm.freeCashFlow == null) return;
+    const g = (d.ratios.revenueGrowth ?? []).filter((x): x is number => x != null).slice(-3);
+    const w = wacc({ riskFree, beta: v.beta ?? 1, equityPremium: 0.05, costOfDebt: Math.min(0.12, Math.max(0.02, v.costOfDebt ?? 0.05)), taxRate: Math.min(0.35, Math.max(0, v.taxRate ?? 0.21)), marketCap: v.marketCap ?? 0, debt: v.debt });
+    const out = dcf({ baseFcf: d.ttm.freeCashFlow, growth: Math.min(0.25, Math.max(-0.05, g.length ? g.reduce((a, b) => a + b, 0) / g.length : 0.05)), terminalGrowth: 0.025, discountRate: w.wacc, netDebt: v.debt - v.cash, shares: v.shares });
+    dcfValue = Number.isFinite(out.perShare) ? out.perShare : null;
+  }
+
+  function dcfView(d: CompanyData): Node[] {
     const v = d.valuation;
     if (!v.shares || d.ttm.freeCashFlow == null) return [h('p', { class: 'muted' }, 'Not enough data (free cash flow or share count) for a DCF on this company.')];
     const revGrowth = (d.ratios.revenueGrowth ?? []).filter((x): x is number => x != null).slice(-3);
@@ -285,6 +320,7 @@ export function createResearchPage() {
       const r = wacc(w);
       waccOut.textContent = `Cost of equity ${pct(r.costOfEquity)} · after-tax debt ${pct(r.afterTaxDebt)} · ${(r.equityWeight * 100).toFixed(0)}% equity → WACC ${pct(r.wacc)}`;
       const out = dcf(inputs);
+      dcfValue = Number.isFinite(out.perShare) ? out.perShare : null;
       const price = v.price ?? NaN;
       const upside = out.perShare / price - 1;
       const implied = Number.isFinite(price) ? impliedGrowth(inputs, price) : null;

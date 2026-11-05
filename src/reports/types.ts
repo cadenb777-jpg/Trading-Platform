@@ -35,13 +35,14 @@ export interface Client {
   notesUpdated?: string;
 }
 
-export type ReportSection = 'summary' | 'market' | 'performance' | 'risk' | 'allocation' | 'holdings' | 'income' | 'alternatives' | 'commentary';
+export type ReportSection = 'summary' | 'market' | 'performance' | 'risk' | 'tearsheet' | 'allocation' | 'holdings' | 'income' | 'alternatives' | 'commentary';
 
 export const REPORT_SECTIONS: [ReportSection, string][] = [
   ['summary', 'Executive summary & change in value'],
   ['market', 'Market overview'],
   ['performance', 'Performance & growth'],
   ['risk', 'Returns, risk & stress tests'],
+  ['tearsheet', 'Risk tear sheet (value at risk, drawdowns, monthly returns)'],
   ['allocation', 'Asset allocation & liquidity'],
   ['holdings', 'Holdings detail'],
   ['income', 'Projected income'],

@@ -5,6 +5,7 @@
  */
 import { combineHoldings, myPortfolios } from '../portfolio/account';
 import { engineRequest } from '../data/schwab';
+import { optionsAnalyticsBlock } from '../flow/optionsAnalytics';
 import { NASDAQ_100 } from '../ui/command';
 import { h } from '../ui/dom';
 import { tabDef, type SecTab } from './codes';
@@ -400,6 +401,7 @@ export function omonTab(ctx: TabCtx) {
             cells: [fmtCompact(c.volume), fmtCompact(c.oi), fmtNum(c.ratio, 1), fmtPct(c.iv, 0), money(c.premium)],
           })))
         : note('Nothing unusual today.')),
+      optionsAnalyticsBlock(s.replace(/^\$/, ''), undefined, { compact: true }),
       h('p', { class: 'small' }, h('button', { type: 'button', class: 'link-btn', onclick: () => ctx.deps.openPage('flow', 'open', s, 'options') }, 'Full option chain, strikes and gamma on Flow ›')),
     ].filter((n): n is HTMLElement => !!n);
   }));

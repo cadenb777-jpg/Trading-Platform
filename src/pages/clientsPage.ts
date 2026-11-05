@@ -8,7 +8,8 @@ import { deleteDoc, listDocs, saveDoc } from '../data/store';
 import type { AltHolding } from '../invest/holdings';
 import { PRIVATE_FUNDS } from '../invest/catalog';
 import { fetchPrices, priceMap, type PriceInfo } from '../portfolio/prices';
-import { TEMPLATES, describeFees, holdingsPayload, isCashOrAlt, type Analysis, type FeeSchedule, type Portfolio } from '../portfolio/types';
+import { fetchTearSheet, type TearSheet } from '../portfolio/tearSheet';
+import { TEMPLATES, describeFees, holdingsPayload, isCashOrAlt, positions, type Analysis, type FeeSchedule, type Portfolio } from '../portfolio/types';
 import { buildReport, type FundFacts, type MarketRow } from '../reports/report';
 import '../reports/report.css';
 import { drawClientReview } from '../reports/clientReview';
@@ -369,12 +370,23 @@ export function createClientsPage() {
     const symbols = portfolio.holdings.filter((x) => !isCashOrAlt(x) && x.symbol.trim()).map((x) => x.symbol);
     if (symbols.length) prices = await fetchPrices(symbols).catch(() => ({}));
     const alternatives = altHoldings.filter((x) => c.altIds?.includes(x.id));
-    const [analysis, market, fundFacts] = await Promise.all([
+    const [analysis, market, fundFacts, tearsheet] = await Promise.all([
       analyse(c, portfolio, prices),
       on('market') ? loadMarket() : Promise.resolve([] as MarketRow[]),
       on('alternatives') ? loadFundFacts(portfolio, alternatives) : Promise.resolve({}),
+      // the tear sheet is optional: a report still builds without it (an old helper, or too little history)
+      on('tearsheet') ? loadTearSheet(portfolio, prices, c) : Promise.resolve(null),
     ]);
-    return { doc: buildReport({ client: c, portfolio, analysis, branding, prices, alternatives, fundFacts, market }), analysis };
+    return { doc: buildReport({ client: c, portfolio, analysis, branding, prices, alternatives, fundFacts, market, tearsheet }), analysis };
+  }
+
+  async function loadTearSheet(portfolio: Portfolio, prices: Record<string, PriceInfo>, c: Client): Promise<TearSheet | null> {
+    try {
+      const value = positions(portfolio, priceMap(prices)).total ?? (c.initialInvestment > 0 ? c.initialInvestment : 100000);
+      return await fetchTearSheet(holdingsPayload(portfolio, priceMap(prices)), value);
+    } catch {
+      return null;
+    }
   }
 
   /** The client's performance with fees (the same request as the report, so the browser reuses it for 5 minutes). */

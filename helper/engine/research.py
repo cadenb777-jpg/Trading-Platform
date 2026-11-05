@@ -232,17 +232,22 @@ async def beta(ctx, symbol, years=5):
     return cov / var if var else None
 
 
+async def company_core(ctx, cik):
+    """A company's statements (annual and quarterly) and latest share count from its XBRL company facts."""
+    async def load_core():
+        # Company facts files are large, so only the finished statements are kept on disk.
+        company_facts = await sec._json(ctx, sec.FACTS_URL.format(cik=cik))
+        return {'statements': statements(company_facts), 'shares': _latest_shares(company_facts)}
+    return await ctx.cached(('sec-core', cik), 6 * 3600, load_core, persist=True, stale_ok=True)
+
+
 @handler('research.company')
 async def company(ctx, msg):
     symbol = str(msg.get('symbol', '')).upper().strip()
     if not symbol:
         raise EngineError('Enter a symbol')
     info = await sec.company(ctx, symbol)
-    async def load_core():
-        # Company facts files are large, so only the finished statements are kept on disk.
-        company_facts = await sec._json(ctx, sec.FACTS_URL.format(cik=info['cik']))
-        return {'statements': statements(company_facts), 'shares': _latest_shares(company_facts)}
-    core_task = ctx.cached(('sec-core', info['cik']), 6 * 3600, load_core, persist=True, stale_ok=True)
+    core_task = company_core(ctx, info['cik'])
     subs, core, q, b, tr = await asyncio.gather(sec.submissions(ctx, info['cik']), core_task, quote(ctx, symbol), beta(ctx, symbol),
                                              dividends.total_returns(ctx, [symbol]))
     st = core['statements']

@@ -5,8 +5,10 @@
  */
 import { STRUCTURES, PRIVATE_FUNDS, type PrivateFund } from '../invest/catalog';
 import { holdingStats, type AltHolding } from '../invest/holdings';
-import { analysisSymbol, describeFees, isCashOrAlt, liquidityOf, positions, proxyNotes, type Analysis, type Holding, type Portfolio } from '../portfolio/types';
+import { analysisSymbol, describeFees, holdingLabel, isCashOrAlt, liquidityOf, positions, proxyNotes, type Analysis, type Holding, type Portfolio } from '../portfolio/types';
 import { pct } from '../ui/charts';
+import { heatScale, heatStyle } from '../portfolio/heat';
+import type { TearSheet } from '../portfolio/tearSheet';
 import { h } from '../ui/dom';
 import { barsSvg, donutSvg, lineSvg, mix } from './svg';
 import { ALT_DISCLOSURE, type Branding, type Client, type ReportSection } from './types';
@@ -49,6 +51,8 @@ export interface ReportInput {
   /** SEC fund data keyed by fund name (lower case). */
   fundFacts?: Record<string, FundFacts>;
   market?: MarketRow[];
+  /** The risk tear sheet (quant.tearsheet); the section is left out when it couldn't be worked out. */
+  tearsheet?: TearSheet | null;
 }
 
 /** One table with optional first-column labels and right-aligned numbers. */
@@ -116,7 +120,7 @@ interface AltLine {
   valueDate?: string;
 }
 
-export function buildReport({ client, portfolio, analysis: a, branding: b, prices = {}, alternatives = [], fundFacts = {}, market = [] }: ReportInput): HTMLElement {
+export function buildReport({ client, portfolio, analysis: a, branding: b, prices = {}, alternatives = [], fundFacts = {}, market = [], tearsheet = null }: ReportInput): HTMLElement {
   const on = (s: ReportSection) => client.sections?.[s] !== false;
   const primary = b.primary || '#1f3b57';
   const accent = b.accent || '#8fb8d8';
@@ -433,6 +437,60 @@ export function buildReport({ client, portfolio, analysis: a, branding: b, price
           { percent: true, height: 150, fill: true },
         ),
       ),
+    );
+  }
+
+  // ---- Risk tear sheet ----
+  if (on('tearsheet') && tearsheet) {
+    const t = tearsheet;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const years = t.monthly.slice(-6);
+    const scale = heatScale(years.flatMap((y) => y.months));
+    const sym = (s: string) => (s === 'CASH' ? 'Cash' : holdingLabel(portfolio, s).label);
+    page(
+      'Risk Tear Sheet',
+      h(
+        'div',
+        {},
+        section(
+          'Value at Risk',
+          table(
+            ['Confidence, horizon', 'Historical VaR', 'Expected shortfall', 'Normal VaR'],
+            t.var.map((r) => [`${Math.round(r.level * 100)}%, ${r.days} day${r.days > 1 ? 's' : ''}`, `${fmtMoney(r.historical * valueScale)} (${fmtPct(r.historical)})`, `${fmtMoney(r.historicalCvar * valueScale)} (${fmtPct(r.historicalCvar)})`, `${fmtMoney(r.parametric * valueScale)} (${fmtPct(r.parametric)})`]),
+          ),
+          h('p', { class: 'rpt-note' }, `On a value of ${fmtMoney(valueScale)}. Value at risk: a loss exceeded on only 5% (or 1%) of days in the period. Expected shortfall: the average loss on those days.`),
+        ),
+        section(
+          'Largest Drawdowns',
+          table(
+            ['Decline', 'Peak', 'Trough', 'Recovered', 'Length'],
+            t.drawdowns.map((d) => [fmtPct(d.depth), longDate(d.start), longDate(d.trough), d.recovered ? longDate(d.recovered) : 'Not yet', `${d.days.toLocaleString('en-US')} days`]),
+          ),
+        ),
+      ),
+      section(
+        'Monthly Returns (%)',
+        table(
+          ['Year', ...months, 'Year'],
+          years.map((y) => [String(y.year), ...y.months.map((m) => (m == null ? '' : h('span', { class: 'rpt-heat', style: heatStyle(m, scale) }, (m * 100).toFixed(1)))), fmtPct(y.total)]),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'rpt-split top' },
+        section(
+          'Risk Contribution',
+          table(['Holding', 'Weight', 'Share of risk'], [...t.risk].sort((a, b) => b.share - a.share).slice(0, 12).map((r) => [sym(r.symbol), fmtPct(r.weight), fmtPct(r.share)])),
+          h('p', { class: 'rpt-note' }, `Annualized volatility ${fmtPct(t.volatility)}.`),
+        ),
+        t.correlation.symbols.length > 1 && t.correlation.symbols.length <= 8
+          ? section(
+              'Correlation',
+              table(['', ...t.correlation.symbols.map(sym)], t.correlation.matrix.map((row, i) => [sym(t.correlation.symbols[i]), ...row.map((x) => x.toFixed(2))])),
+            )
+          : null,
+      ),
+      h('p', { class: 'rpt-note' }, `Current weights applied to daily prices from ${longDate(t.start)} to ${longDate(t.end)}, dividends reinvested where available; cash assumed to earn nothing. Historical results do not predict future results.`),
     );
   }
 

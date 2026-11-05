@@ -5,6 +5,13 @@ project ZIP again and restart it.
 
 ## Unreleased
 
+- Quant pack (needs helper v44: download the helper again): Research > Valuation adds Comparables (SEC industry
+  peers, median/mean multiples, implied value range, football field), an LBO model (debt tranches, cash sweep,
+  IRR/MoIC, sensitivity) and a merger model (accretion/dilution, breakeven synergies, sensitivity); a risk tear sheet
+  on Account, Portfolios and the client report (VaR/CVaR, correlation heat map, rolling beta and Sharpe, drawdown
+  table, monthly returns, block-bootstrap Monte Carlo, risk contribution); options analytics on Flow and OMON (own
+  Black-Scholes IV, greeks, smile, term structure, expected-move band, skew); bond portfolio duration and key-rate
+  durations in the bond calculator.
 - v31: a read-only Futures page: the main US futures by sector (heat tiles, what's moving in % and in standard
   deviations, specs and roll dates), term structure when Schwab prices single contracts, and COT positioning per market.
 - Charts show the TradingView attribution again (required by the Lightweight Charts licence).

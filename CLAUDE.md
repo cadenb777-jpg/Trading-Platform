@@ -135,6 +135,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (stop/target/strategy by order id) + orders.log tagging. Maths in src/journal/stats.ts (tested; < 30 trades = "not
   enough trades yet"). AI coach journal.coach shows the cost first; ai.py tool get_my_journal reads only. The journal
   never sends orders (test). Requests need JOURNAL_HELPER_VERSION 43.
+  Quant pack (gated by QUANT_HELPER_VERSION 44 in schwab.ts; ideas from Fincept Terminal, which is AGPL: never copy
+  its code): quant.comps (engine/comps.py: SIC peers via EDGAR browse, ranked by XBRL-frames revenue; display maths
+  src/research/comps.ts), LBO/merger maths in src/research/lbo.ts / merger.ts (views valuationTools.ts, Research >
+  Valuation), quant.tearsheet (engine/tearsheet.py; src/portfolio/tearSheet.ts on Account, Portfolios and the report
+  section 'tearsheet'), quant.options (engine/options_math.py: BSM, IV Newton+bisection from mids >= 5c, smile,
+  term structure, 25-delta skew; src/flow/optionsAnalytics.ts on Flow and OMON), bond portfolio and key-rate
+  durations in src/invest/bondRisk.ts. Tests: helper/tests/test_quant_pack.py (Hull), src/research/quantPack.test.ts.
   Account page (src/pages/accountPage.ts, #account): portfolios with Portfolio.mine (set by Import statement; unset = live
   Webull sync) merged by src/portfolio/account.ts, figures from dividends.portfolio + dividendsView; read-only (orders on Trade).
   Structure (docs/structure.md: every number has one home): Account = real money only (all accounts + switcher, totals,

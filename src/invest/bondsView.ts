@@ -9,6 +9,7 @@ import { activatable, h } from '../ui/dom';
 import { sparkline } from '../ui/sparkline';
 import { openFredWindow } from '../ui/fredWindow';
 import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
+import { bondPortfolioPanel } from './bondPortfolioView';
 import { analyze, buildLadder, calculatorProblems, isRealisticYield, ladderProblem, labelYears, priceChangeEstimate, priceFromYield, taxEquivalentYield, yearsUntil, yieldFromPrice, type BondInputs } from './bonds';
 import { BOARDS } from './catalog';
 import { boardTable, errorBox, loadBoard, openSymbol, skeletonBoard, type BoardRow, type InvestContext } from './shared';
@@ -385,6 +386,7 @@ export function createBondsView(ctx: InvestContext) {
         ),
         tey,
       ),
+      ...bondPortfolioPanel(curve),
       h('p', { class: 'muted small' }, 'Standard bond maths (semi-annual compounding for zero-coupon bonds); real quotes can differ slightly because of settlement dates and day counts.'),
     );
     update();
