@@ -34,4 +34,8 @@ order requests, and `tests/test_no_trading.py` checks both.
 Tests: `python -m unittest discover desktop/tests`. Checks without a screen: `QT_QPA_PLATFORM=offscreen python -m
 tp_desktop --no-helper --port 8766 --screenshot shot.png`.
 
+Since 1.2: the website's flowing background, a smooth ticker tape (click a symbol to chart it), the pixel market buddy
+(same drawing as the website; pet, drag, he walks to empty spots, never on the Chart page) and Settings as tabs (F6;
+F7 opens the buddy's settings).
+
 Planned next stages: indicators and drawings on the desktop chart, Setups and Research pages, multi-window layouts.

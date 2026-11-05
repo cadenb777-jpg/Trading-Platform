@@ -15,12 +15,14 @@ import threading
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QApplication, QDockWidget, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDockWidget, QFrame, QListWidget, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
                                QPlainTextEdit, QProgressBar, QPushButton, QStackedWidget, QTabBar, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget, QHeaderView)
 
 from . import APP_VERSION
+from .buddy import COATS, Buddy
 from .chart import PriceChart
+from .effects import FlowBackground, TickerTape
 from .chartmath import clock_text
 from .client import HelperClient
 from .helper_proc import DesktopHelper
@@ -28,6 +30,7 @@ from .nav import PAGES, SECTIONS, pages_in, parse_command
 from .theme import C, QSS
 
 PREFS = Path.home() / '.trading-platform' / 'desktop.json'
+TAPE_CORE = ['SPY', 'QQQ', 'DIA', 'IWM', 'TLT', 'GLD', 'USO', 'AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'META', 'TSLA']
 DEFAULT_WATCH = ['SPY', 'QQQ', 'DIA', 'IWM', 'AAPL', 'MSFT', 'NVDA', 'AMZN', 'META', 'TSLA']
 OVERVIEW = [('S&P 500', 'SPY'), ('Nasdaq 100', 'QQQ'), ('Dow', 'DIA'), ('Russell 2000', 'IWM'), ('Long Treasuries', 'TLT'),
             ('Gold', 'GLD'), ('Oil', 'USO'), ('Dollar', 'UUP'), ('Volatility', 'VIXY')]
@@ -186,12 +189,14 @@ class OverviewPage(QWidget):
         head.setObjectName('section')
         lay.addWidget(head)
         lay.addWidget(self.t)
+        lay.addStretch(1)  # the table is as tall as its rows; the flowing background shows below it
         for _, s in OVERVIEW:
             app.client.subscribe(s)
         self.render()
 
     def render(self):
         self.t.setRowCount(len(OVERVIEW))
+        self.t.setFixedHeight(self.t.horizontalHeader().height() + sum(self.t.rowHeight(r) for r in range(len(OVERVIEW))) + 6)
         for r, (name, s) in enumerate(OVERVIEW):
             q = self.app.quotes.get(s, {})
             pct = change(q)
@@ -333,8 +338,8 @@ class MainWindow(QMainWindow):
         self.helper = DesktopHelper()
         self.setWindowTitle(f'Trading Platform — Desktop {APP_VERSION}')
         self.resize(1440, 900)
-        root = QWidget()
-        root.setObjectName('root')
+        root = FlowBackground()
+        self.root = root
         self.setCentralWidget(root)
         outer = QVBoxLayout(root)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -364,8 +369,8 @@ class MainWindow(QMainWindow):
         top.addWidget(self.command)
         outer.addLayout(top)
 
-        self.tape = QLabel()
-        self.tape.setStyleSheet(f"padding: 4px 12px; border-top: 1px solid {C['line']}; border-bottom: 1px solid {C['line']}; background: {C['surface']}")
+        self.tape = TickerTape()
+        self.tape.clicked.connect(lambda sym: self.go('chart', sym))
         outer.addWidget(self.tape)
 
         self.stack = QStackedWidget()
@@ -380,7 +385,8 @@ class MainWindow(QMainWindow):
         fl = QHBoxLayout(fk)
         fl.setContentsMargins(8, 2, 8, 2)
         for key, label, fn in (('F1', 'Help', self.show_help), ('F2', 'Chart', lambda: self.go('chart')), ('F3', 'Overview', lambda: self.go('home')),
-                               ('F4', 'Account', lambda: self.go('account')), ('F5', 'Refresh', self.refresh)):
+                               ('F4', 'Account', lambda: self.go('account')), ('F5', 'Refresh', self.refresh),
+                               ('F6', 'Settings', lambda: self.open_settings()), ('F7', 'Buddy', lambda: self.open_settings('Market buddy'))):
             b = QPushButton(f'{key}  {label}')
             b.setObjectName('fkey')
             b.setStyleSheet(f"QPushButton#fkey {{ color: {C['text']}; }}")
@@ -420,6 +426,7 @@ class MainWindow(QMainWindow):
         # menus
         m = self.menuBar()
         f = m.addMenu('&File')
+        f.addAction('Settings…', lambda: self.open_settings())
         f.addAction('Start desktop helper', self.helper.start)
         f.addAction('Show helper log', self.log_dock.show)
         f.addSeparator()
@@ -451,6 +458,10 @@ class MainWindow(QMainWindow):
         self.client.connected.connect(self.on_connected)
         self.client.quote.connect(self.on_quote)
         for s in self.watch:
+            self.client.subscribe(s)
+        self.buddy = Buddy(root, self.prefs)
+        self.buddy.raise_()
+        for s in TAPE_CORE:
             self.client.subscribe(s)
         self.client.start()
         t = QTimer(self)
@@ -491,6 +502,9 @@ class MainWindow(QMainWindow):
             self.pages['account'].refresh()
         self.prefs.update(page=page.key, symbol=symbol or self.prefs.get('symbol'))
         save_prefs(self.prefs)
+        if hasattr(self, 'buddy'):
+            self.buddy.on_chart = page.key == 'chart'
+            QTimer.singleShot(600, self.buddy.settle)
 
     def run_command(self):
         cmd = parse_command(self.command.text())
@@ -526,6 +540,8 @@ class MainWindow(QMainWindow):
 
     def on_quote(self, msg):
         self.quotes[msg['symbol']] = msg
+        if msg['symbol'] == 'SPY' and hasattr(self, 'buddy'):
+            self.buddy.set_percent(change(msg))
         self.render_watch()
         self.pages['home'].render()
         if self.stack.currentWidget() is self.pages['quote'] and msg['symbol'] == self.pages['quote'].symbol:
@@ -536,7 +552,6 @@ class MainWindow(QMainWindow):
 
     def render_watch(self):
         self.wl.setRowCount(len(self.watch))
-        tape = []
         for r, s in enumerate(self.watch):
             q = self.quotes.get(s, {})
             pct = change(q)
@@ -544,10 +559,106 @@ class MainWindow(QMainWindow):
             self.wl.setItem(r, 0, item(s, C['accent'], Qt.AlignLeft | Qt.AlignVCenter))
             self.wl.setItem(r, 1, item(f"{q['last']:.2f}" if q.get('last') else '—', C['strong']))
             self.wl.setItem(r, 2, item(f'{pct:+.2f}%' if pct is not None else '—', col))
-            if q.get('last'):
-                tape.append(f"<span style='color:{C['label']}'>{s}</span> <span style='color:{C['strong']}'>{q['last']:.2f}</span> "
-                            f"<span style='color:{col or C['muted']}'>{pct:+.2f}%</span>" if pct is not None else f'{s} {q["last"]:.2f}')
-        self.tape.setText('&nbsp;&nbsp;&nbsp;'.join(tape) or f"<span style='color:{C['faint']}'>Quotes appear here once the desktop helper is connected.</span>")
+        tape = []
+        for s in TAPE_CORE + [w for w in self.watch if w not in TAPE_CORE]:
+            q = self.quotes.get(s, {})
+            if not q.get('last'):
+                continue
+            pct = change(q)
+            text = '—' if pct is None else f"{'▲ +' if pct >= 0 else '▼ −'}{abs(pct):.2f}%"
+            tape.append((s, f"{q['last']:,.2f}", text, C['muted'] if pct is None else (C['up'] if pct >= 0 else C['down'])))
+        self.tape.set_items(tape)
+
+    # ----- settings -----
+
+    def open_settings(self, tab=None):
+        """Settings as tabs down the left (General, Market buddy, Helper, About), like the website."""
+        dlg = QDialog(self)
+        dlg.setWindowTitle('Settings')
+        dlg.resize(640, 440)
+        dlg.setStyleSheet(f"QDialog {{ background: {C['surface']}; }} QListWidget {{ background: transparent; border: 0; border-right: 1px solid {C['line']}; }}"
+                          f"QListWidget::item {{ padding: 8px 12px; border-radius: 6px; color: {C['muted']}; }} QListWidget::item:selected {{ background: {C['raised']}; color: {C['strong']}; }}")
+        nav = QListWidget()
+        nav.setFixedWidth(170)
+        pages = QStackedWidget()
+
+        def section(title, *widgets):
+            w = QWidget()
+            lay = QVBoxLayout(w)
+            lay.setAlignment(Qt.AlignTop)
+            head = QLabel(title.upper())
+            head.setObjectName('section')
+            lay.addWidget(head)
+            for x in widgets:
+                lay.addWidget(x)
+            nav.addItem(title)
+            pages.addWidget(w)
+            return lay
+
+        clock = QComboBox()
+        clock.addItems(['12-hour (2:30 PM)', '24-hour (14:30)'])
+        clock.setCurrentIndex(0 if self.prefs.get('clock', '12h') == '12h' else 1)
+
+        def set_clock(i):
+            if (i == 0) != (self.pages['chart'].chart.clock == '12h'):
+                self.pages['chart'].toggle_clock()
+        clock.currentIndexChanged.connect(set_clock)
+        lab = QLabel('Chart times')
+        lab.setObjectName('label')
+        section('General', lab, clock)
+
+        show = QCheckBox('Show my market buddy')
+        show.setChecked(not self.prefs.get('buddy_hidden'))
+        name = QLineEdit(self.buddy.name)
+        name.setMaxLength(16)
+        coats = QWidget()
+        cl = QHBoxLayout(coats)
+        cl.setContentsMargins(0, 0, 0, 0)
+        swatches = []
+        for k, (fur, ear, _) in COATS.items():
+            b = QPushButton()
+            b.setFixedSize(28, 28)
+            b.setToolTip(k)
+            b.setCheckable(True)
+            b.setChecked(k == self.prefs.get('buddy_coat', 'Beagle'))
+            b.setStyleSheet(f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0.55 {fur}, stop:0.56 {ear}); border: 2px solid {C['line']}; border-radius: 6px; }}"
+                            f"QPushButton:checked {{ border-color: {C['strong']}; }}")
+            b.clicked.connect(lambda _=False, k=k: (self.prefs.update(buddy_coat=k), [x.setChecked(x.toolTip() == k) for x in swatches], self.buddy.update(), save_prefs(self.prefs)))
+            swatches.append(b)
+            cl.addWidget(b)
+        cl.addStretch(1)
+        show.toggled.connect(lambda on: (self.prefs.update(buddy_hidden=not on), save_prefs(self.prefs), self.buddy.settle()))
+        name.textChanged.connect(lambda t: (self.prefs.update(buddy_name=t.strip() or 'Bull'), save_prefs(self.prefs)))
+        l1, l2 = QLabel('Name'), QLabel('Colours')
+        l1.setObjectName('label')
+        l2.setObjectName('label')
+        hint = QLabel('Click to pet, drag to move, double-click to send him off. He walks to empty spots, skips busy pages and never shows on the Chart page.')
+        hint.setWordWrap(True)
+        hint.setStyleSheet(f"color: {C['muted']}")
+        section('Market buddy', show, l1, name, l2, coats, hint)
+
+        start = QPushButton('Start desktop helper')
+        start.clicked.connect(self.helper.start)
+        logb = QPushButton('Show helper log')
+        logb.clicked.connect(self.log_dock.show)
+        info = QLabel('The desktop app runs its own copy of the helper (port 8766). Keys and logins are shared with the website’s helper '
+                      'and set up there (Settings → Data connections on the website).')
+        info.setWordWrap(True)
+        info.setStyleSheet(f"color: {C['muted']}")
+        section('Helper', info, start, logb)
+
+        about = QLabel(f'Trading Platform desktop {APP_VERSION}. Updates install by themselves at start (Help → Check for updates). '
+                       'Read-only: orders stay on the website’s Trade page (preview, then confirm). Not investment advice.')
+        about.setWordWrap(True)
+        section('About', about)
+
+        nav.currentRowChanged.connect(pages.setCurrentIndex)
+        titles = [nav.item(i).text() for i in range(nav.count())]
+        nav.setCurrentRow(titles.index(tab) if tab in titles else 0)
+        lay = QHBoxLayout(dlg)
+        lay.addWidget(nav)
+        lay.addWidget(pages, 1)
+        dlg.exec()
 
     def tick(self):
         now = datetime.now(NY)
@@ -557,6 +668,7 @@ class MainWindow(QMainWindow):
         self.st_session.setText(f"{phase} · New York {clock_text(now.hour, now.minute, self.prefs.get('clock', '12h'))}")
 
     def closeEvent(self, e):
+        save_prefs(self.prefs)
         self.helper.stop()
         super().closeEvent(e)
 
