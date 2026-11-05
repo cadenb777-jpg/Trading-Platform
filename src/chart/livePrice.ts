@@ -17,7 +17,7 @@ export interface LivePriceHost {
 }
 
 const GLIDE_MS = 90;
-const FLASH_MS = 650;
+const FLASH_MS = 200;
 
 export class LivePrice {
   private shown = NaN;
@@ -155,9 +155,9 @@ export class LivePrice {
     this.ring = p.firstElementChild?.animate?.(
       [
         { transform: 'scale(0.4)', opacity: 0.75 },
-        { transform: 'scale(2.6)', opacity: 0 },
+        { transform: 'scale(2.2)', opacity: 0 },
       ],
-      { duration: 900, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+      { duration: 200, easing: 'ease-out' },
     ) ?? null;
   }
 

@@ -236,6 +236,15 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   and Backtest; not on the Chart page or Portfolios (owner's choice).
   Theme: light/dark via CSS variables (`:root[data-theme='light']`) and src/ui/theme.ts (THEME object updated in place,
   `followTheme(chart)` repaints canvases). Use variables, not hard-coded colours, in new CSS. Tokens, type and do/don't: docs/design.md.
+  Chart engine (src/chart/): live ticks recompute indicators on the tail only (incremental.ts: last 512 bars, checked
+  against stored values, else full recompute; tested equal for every indicator) and indicator lines follow ticks at
+  most every 100 ms (the library rebuilds a series per update); heavy built-ins on 2,000+ bars run in a Web Worker
+  (workerClient.ts/workerProtocol.ts, cost measured per indicator). frame.ts = rAF batching + easing (respects reduced
+  motion; motion <= 200 ms per docs/design.md). LivePrice draws the animated last-price line/label (the main series'
+  own are off); HoverCard = crosshair card (OHLC, indicators, signals explained by their guide) + glow, plain DOM in
+  ChartView.overlay. ChartView.highlight(uid, dimOthers) (legend hover dims others; resting on a line lifts it),
+  fit() glides, setBars cross-fades, MagnetOHLC crosshair, kinetic scroll, dispose(). SessionShading is a pane
+  primitive with prev close/today's open guides. Numbers: docs/research/chart-performance.md.
   Chart legend (chartPage renderLegend) is rebuilt only when its layout changes; values update in place. Indicator
   instances can hide single plots (`hiddenPlots`) and levels (`hideLevels`); the manager is openIndicatorManager.
   Browser reply cache: engineRequest reuses read-only replies for ENGINE_CACHE_MS (20 s quotes .. 60 min catalogs),

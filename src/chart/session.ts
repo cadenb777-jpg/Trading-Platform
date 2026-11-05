@@ -122,7 +122,7 @@ export class SessionShading {
       if (price === null) continue;
       const y = this.view.priceToY(price);
       if (y === null) continue;
-      const color = withAlpha(THEME.text, 0.4);
+      const color = withAlpha(THEME.crosshair, 0.7);
       ctx.strokeStyle = color;
       ctx.beginPath();
       ctx.moveTo(0, Math.round(y) + 0.5);
@@ -130,6 +130,7 @@ export class SessionShading {
       ctx.stroke();
       ctx.fillStyle = withAlpha(THEME.text, 0.55);
       const text = `${label} ${this.view.formatPrice(price)}`;
+      // Inside the pane (never on the price scale, where it would cover the scale's own labels).
       ctx.fillText(text, width - ctx.measureText(text).width - 8, y - 2);
     }
     ctx.restore();

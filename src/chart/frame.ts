@@ -100,7 +100,7 @@ function rgbOf(color: string): [number, number, number] | null {
   return [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)) as [number, number, number];
 }
 
-/** Blends two hex colours (`t` = 0 gives `a`, 1 gives `b`); returns `b` when either isn't a hex colour. */
+/** Blends two hex colours (`t` = 0 gives `a`, 1 gives `b`); for other colour formats it picks the nearer end. */
 export function mixColor(a: string, b: string, t: number): string {
   const x = rgbOf(a);
   const y = rgbOf(b);

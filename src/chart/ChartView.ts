@@ -287,7 +287,7 @@ export class ChartView {
     }
     shot.className = 'chart-crossfade';
     this.overlay.append(shot);
-    const fade = shot.animate?.([{ opacity: 1 }, { opacity: 0 }], { duration: 260, easing: 'ease-out' });
+    const fade = shot.animate?.([{ opacity: 1 }, { opacity: 0 }], { duration: 200, easing: 'ease-out' });
     if (fade) fade.onfinish = () => shot.remove();
     else shot.remove();
   }
@@ -310,7 +310,7 @@ export class ChartView {
     // Glide to the latest bars instead of jumping.
     const start = performance.now();
     const step = () => {
-      const k = easeOutCubic((performance.now() - start) / 320);
+      const k = easeOutCubic((performance.now() - start) / 200);
       ts.setVisibleLogicalRange({ from: from.from + (target.from - from.from) * k, to: from.to + (target.to - from.to) * k });
       if (k < 1) this.fitFrame = requestAnimationFrame(step);
     };

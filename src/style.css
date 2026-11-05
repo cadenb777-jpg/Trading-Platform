@@ -8590,6 +8590,11 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   height: 100%;
 }
 
+.legend-ohlc {
+  display: inline-flex;
+  gap: 8px;
+}
+
 .legend-ohlc .legend-num {
   color: var(--c);
 }
