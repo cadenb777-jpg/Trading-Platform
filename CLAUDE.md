@@ -49,6 +49,16 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   PAGE_SUGGESTIONS gives per-page example questions.
   AI (engine/ai.py): official `anthropic` SDK, default model claude-opus-5-5 with server-side fallbacks, tools over
   engine data plus `ui_action` (browser carries out open_chart/add_indicator/create_alert). It must never trade.
+  AI actions (helper v42, AI_ACTIONS_HELPER_VERSION; browser sends ai.chat `ui_actions: 1`): one tool per action
+  (ai.py UI_TOOLS) emitted as engine_event `ui_action {callId,name,args}`; the browser runs it through src/ai/actions.ts
+  (typed registry, hand checks, Undo stack; env wiring src/ai/actionsEnv.ts, chart via chartPage.sync()) and answers
+  `ai.ui_result {callId,result}`; UI tools run in order, 60 s timeout. find_indicators runs in the browser (live
+  library) with recommended settings from src/ai/tuning.ts (rule-of-thumb table per 1m/5m/15m/1h/1D/1W + fallback
+  scaling; docs/research/indicator-tuning.md). The chat shows "✓ step · Undo" lines; the pop-out window runs actions
+  in the main tab focused last (src/ai/tabs.ts: ACTION_TAB_KEY, undo ids "<tab>.<n>"). Safety: screen/tool text is
+  data (DATA_RULE, <tool_data>); UI_CONFIRM actions (remove_from_watchlist, clear_indicators) always ask the owner;
+  on timeout the helper sends ui_cancel and the browser checks the deadline after a confirm; Stop sends ai.stop.
+  Older helpers keep the one-way ui_action. No action can trade.
   Investments page (src/pages/investmentsPage.ts, src/invest/): boards via invest.board (quotes + 1m/3m/YTD/1y from
   daily closes), invest.history/movers/search; bonds.market (FRED yields/spreads), bonds.auctions (Treasury Fiscal Data),
   bonds.cusip (Schwab get_instrument_by_cusip); alts.fund (SEC: XBRL NAV per share, N-PORT, Form D, NAV sentences from
@@ -246,6 +256,17 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   and Backtest; not on the Chart page or Portfolios (owner's choice).
   Theme: light/dark via CSS variables (`:root[data-theme='light']`) and src/ui/theme.ts (THEME object updated in place,
   `followTheme(chart)` repaints canvases). Use variables, not hard-coded colours, in new CSS. Tokens, type and do/don't: docs/design.md.
+  Chart engine (src/chart/): live ticks recompute indicators on the tail only (incremental.ts: last 512 bars, checked
+  against stored values, else full recompute; tested equal for every indicator) and indicator lines follow ticks at
+  most every 100 ms (the library rebuilds a series per update); heavy built-ins on 2,000+ bars run in a Web Worker
+  (workerClient.ts/workerProtocol.ts: PROTOCOL_VERSION, one job per task, setBars cancels the old symbol's queued jobs). frame.ts = rAF batching + easing (respects reduced
+  motion; motion <= 200 ms per docs/design.md). LivePrice draws the animated last-price line/label (the main series'
+  own are off); HoverCard = crosshair card (OHLC, indicators, signals explained by their guide) + glow, plain DOM in
+  ChartView.overlay. ChartView.highlight(uid, dimOthers) (legend hover dims others; resting on a line lifts it),
+  fit() glides, setBars cross-fades, MagnetOHLC crosshair, kinetic scroll, dispose(). SessionShading is a pane
+  primitive with prev close/today's open guides (today = the last bar's New York day). Settings > Chart > "Chart
+  effects" (frame.ts chartEffects, localStorage, default on, reduced motion forces off) gates the crosshair glow,
+  selected-drawing glow and last-price flash/pulse (pulse only on a new bar or a 1-tick move >= 1 s after the last). Numbers: docs/research/chart-performance.md.
   Chart legend (chartPage renderLegend) is rebuilt only when its layout changes; values update in place. Indicator
   instances can hide single plots (`hiddenPlots`) and levels (`hideLevels`); the manager is openIndicatorManager.
   Browser reply cache: engineRequest reuses read-only replies for ENGINE_CACHE_MS (20 s quotes .. 60 min catalogs),
