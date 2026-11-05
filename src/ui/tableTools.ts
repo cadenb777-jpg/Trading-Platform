@@ -9,6 +9,7 @@ import { h, openPopover } from './dom';
  * - Column types are detected from the data (number / pick-list / text); `columns` overrides them by header text.
  * - A cell's value is its text, or its `data-value` attribute when set (use it when the text is not the value).
  * - Rows with class `total`, or with a different number of cells, stay at the bottom and are never filtered.
+ * - A row with class `tt-follow` (e.g. an expanded detail row) stays right under the row before it, and hides with it.
  * - Sort and filters are remembered per `id` in localStorage (a per-viewer convenience).
  * - Live data: when the rows change the sort and filters re-apply; when a table is rebuilt with the same id
  *   while you are typing in a filter box, the cursor moves to the new box.
@@ -284,7 +285,8 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
   let current: string[][] = [];
   let original: HTMLTableRowElement[] = []; // the page's own row order, to go back to when sorting is switched off
   const observer = new MutationObserver((records) => {
-    if (records.some((r) => !(r.target instanceof Node && (table.tHead?.contains(r.target) || table.caption?.contains(r.target))))) apply();
+    const inside = (n: Node) => table.tHead?.contains(n) || table.caption?.contains(n) || !!(n instanceof Element ? n : n.parentElement)?.closest('.tt-follow');
+    if (records.some((r) => !(r.target instanceof Node && inside(r.target)))) apply();
   });
   const watch = () => observer.observe(table, { childList: true, subtree: true, characterData: true });
 
@@ -293,7 +295,10 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
     const rows = [...body.rows];
     const known = new Set(original);
     if (rows.length !== original.length || rows.some((r) => !known.has(r))) original = rows; // the page changed the rows
-    const all = original;
+    // Detail rows ride along with the row above them.
+    const follows = new Map<HTMLTableRowElement, HTMLTableRowElement>();
+    original.forEach((r, i) => r.classList.contains('tt-follow') && i > 0 && follows.set(original[i - 1], r));
+    const all = original.filter((r) => !r.classList.contains('tt-follow'));
     const dataRows = all.filter((r) => r.cells.length === cols.length && !r.classList.contains('total'));
     const fixed = all.filter((r) => !dataRows.includes(r));
     const values = (current = dataRows.map((r) => [...r.cells].map(cellText)));
@@ -304,8 +309,12 @@ export function tableTools(table: HTMLTableElement, opts: TableToolsOptions) {
       if (c.button) c.button.disabled = c.type === 'none';
     });
     const view = tableView(values, cols, state);
-    dataRows.forEach((r, i) => r.classList.toggle('tt-hide', !view.keep[i]));
-    const wanted = view.order ? [...view.order.map((i) => dataRows[i]), ...fixed] : all;
+    dataRows.forEach((r, i) => {
+      r.classList.toggle('tt-hide', !view.keep[i]);
+      follows.get(r)?.classList.toggle('tt-hide', !view.keep[i]);
+    });
+    const ordered = view.order ? [...view.order.map((i) => dataRows[i]), ...fixed] : all;
+    const wanted = ordered.flatMap((r) => (follows.has(r) ? [r, follows.get(r)!] : [r]));
     if (wanted.some((r, i) => body.rows[i] !== r)) body.append(...wanted);
 
     for (const c of cols) {

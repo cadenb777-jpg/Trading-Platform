@@ -11,7 +11,8 @@ import { openFredWindow } from '../ui/fredWindow';
 import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
 import { analyze, buildLadder, calculatorProblems, isRealisticYield, ladderProblem, labelYears, priceChangeEstimate, priceFromYield, taxEquivalentYield, yearsUntil, yieldFromPrice, type BondInputs } from './bonds';
 import { BOARDS } from './catalog';
-import { boardTable, errorBox, loadBoard, openSymbolDetail, skeletonBoard, type BoardRow, type InvestContext } from './shared';
+import { boardTable, errorBox, loadBoard, openSymbol, skeletonBoard, type BoardRow, type InvestContext } from './shared';
+import { interactive, type MiniItem } from './rowInteract';
 
 type Tab = 'market' | 'auctions' | 'lookup' | 'calculator' | 'ladder';
 const TABS: [Tab, string][] = [
@@ -61,7 +62,11 @@ interface CusipResult {
   auctions: Auction[];
 }
 
-const bps = (now: number, then: number | null) => (then == null ? '' : `${now - then >= 0 ? '+' : '−'}${Math.round(Math.abs(now - then) * 100)} bp`);
+const bps = (now: number, then: number | null) => {
+  if (then == null || !Number.isFinite(then) || !Number.isFinite(now)) return '—';
+  const bp = Math.round((now - then) * 100);
+  return bp === 0 ? '0 bp' : `${bp > 0 ? '+' : '−'}${Math.abs(bp)} bp`;
+};
 const pctPoints = (v: number | null | undefined, digits = 2) => (v == null || !Number.isFinite(v) ? '—' : `${v.toFixed(digits)}%`);
 
 export function createBondsView(ctx: InvestContext) {
@@ -121,30 +126,35 @@ export function createBondsView(ctx: InvestContext) {
         seen.rates = series;
         const groups = [...new Set(series.map((s) => s.group))];
         rates.replaceChildren(
-          ...groups.map((g) =>
-            h(
+          ...groups.map((g) => {
+            const entries: [HTMLElement, MiniItem][] = [];
+            const grid = h(
+              'div',
+              { class: 'inv-rate-grid' },
+              ...series
+                .filter((s) => s.group === g)
+                .map((s) => {
+                  const tile = activatable(h(
+                    'div',
+                    { class: 'panel inv-rate clickable-card' },
+                    h('span', { class: 'muted small' }, s.name),
+                    h('b', { class: 'inv-rate-value' }, pctPoints(s.value)),
+                    h('span', { class: 'small inv-rate-change' }, h('span', {}, `${bps(s.value, s.monthAgo)} 1m`), h('span', {}, `${bps(s.value, s.yearAgo)} 1y`)),
+                    h('div', { class: 'inv-rate-spark' }, sparkline(s.spark, null, '#2962ff')),
+                    h('span', { class: 'muted tiny' }, s.date),
+                  ));
+                  entries.push([tile, { key: `fred:${s.id}`, label: s.name, sub: s.id, source: { kind: 'fred', id: s.id }, mode: 'level', open: () => openFredWindow(s.id, s.name) }]);
+                  return tile;
+                }),
+            );
+            interactive(grid, entries, { boardId: `bonds:${g}`, defaultRange: () => '1Y' });
+            return h(
               'section',
               {},
               h('h2', { class: 'group-title' }, g),
-              h(
-                'div',
-                { class: 'inv-rate-grid' },
-                ...series
-                  .filter((s) => s.group === g)
-                  .map((s) =>
-                    activatable(h(
-                      'div',
-                      { class: 'panel inv-rate clickable-card', title: 'Click for the full history: zoom, ranges, stats', onclick: () => openFredWindow(s.id, s.name) },
-                      h('span', { class: 'muted small' }, s.name),
-                      h('b', { class: 'inv-rate-value' }, pctPoints(s.value)),
-                      h('span', { class: 'small inv-rate-change' }, h('span', {}, `${bps(s.value, s.monthAgo)} 1m`), h('span', {}, `${bps(s.value, s.yearAgo)} 1y`)),
-                      h('div', { class: 'inv-rate-spark' }, sparkline(s.spark, null, '#2962ff')),
-                      h('span', { class: 'muted tiny' }, s.date),
-                    )),
-                  ),
-              ),
-            ),
-          ),
+              grid,
+            );
+          }),
           failed.length ? h('p', { class: 'muted small' }, `Not available right now: ${failed.join(', ')}.`) : '',
         );
       })
@@ -153,7 +163,7 @@ export function createBondsView(ctx: InvestContext) {
       .then((points) => curvePanel.replaceChildren(curvePanel.firstChild!, yieldCurve(points)))
       .catch((err) => curvePanel.replaceChildren(curvePanel.firstChild!, errorBox(err)));
     loadBoard(BOARDS.bonds)
-      .then((rows) => (seen.etfs = [...rows.values()], boards.replaceChildren(...BOARDS.bonds.map((g) => boardTable(g, rows, (s, l) => openSymbolDetail(s, l, rows.get(s), ctx))))))
+      .then((rows) => (seen.etfs = [...rows.values()], boards.replaceChildren(...BOARDS.bonds.map((g) => boardTable(g, rows, (s, l) => openSymbol(s, l, rows.get(s), ctx))))))
       .catch((err) => boards.replaceChildren(errorBox(err, renderMarket)));
   }
 

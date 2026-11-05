@@ -58,6 +58,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   holds hand-researched latest published figures (dated, sourced, verified flag; shown unless the SEC data is newer). Bond maths is
   src/invest/bonds.ts. The owner's own alternatives are store collection alt_holdings (iCapital has no public API:
   they import a CSV/Excel export, src/invest/holdings.ts).
+  Rows and tiles share one interaction model (src/invest/rowInteract.ts, notes in docs/research/investments-interaction.md):
+  hover/focus 150 ms = mini chart popover (1M..5Y; a board's range = its sorted period column), click = full view
+  (`openSymbol`: src/security/open.ts via import.meta.glob when present, else the symbol window), Space/chevron = expand
+  in place (tableTools keeps `tt-follow` rows under their row), Shift+click = Compare (max 4). Maths/cache: miniMath.ts.
   Futures page (v31, read-only; src/pages/futuresPage.ts, #futures, engine/futures_market.py): futures.board = 39 markets in
   8 sectors from the static SPECS table (CME/ICE/Cboe contract specs, cited there: multiplier, tick value, month cycle,
   expiry rule, CFTC code; micros use the parent's COT), Schwab quotes for root symbols ("/ES"), 1w/1m/YTD and the σ move

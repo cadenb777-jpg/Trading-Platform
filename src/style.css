@@ -8573,3 +8573,160 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
     gap: 0;
   }
 }
+
+/* ===== Investments interaction: mini chart popover, expanded rows, compare (src/invest/rowInteract.ts) ===== */
+:root { --viz-4: #d38bc0; }
+:root[data-theme='light'] { --viz-4: #9c3b78; }
+
+.inv-pop {
+  position: fixed;
+  z-index: 40;
+  width: 304px;
+  max-width: calc(100vw - 16px);
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  font-variant-numeric: tabular-nums;
+  animation: inv-pop-in var(--dur-1) var(--ease);
+}
+.inv-pop[hidden] { display: none; }
+.inv-pop[data-side='above'] { animation-name: inv-pop-in-above; }
+@keyframes inv-pop-in { from { opacity: 0; transform: translateY(-2px); } }
+@keyframes inv-pop-in-above { from { opacity: 0; transform: translateY(2px); } }
+
+.mc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-3); }
+.mc-title { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.mc-title b, .mc-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-now { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.3; white-space: nowrap; }
+.mc-ranges { align-self: start; }
+.mc-ranges button { padding: 2px 8px; font-size: var(--fs-xs); }
+.mc-chart { position: relative; }
+.mc-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.mc-svg .mc-line { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.mc-svg .mc-area { fill: currentColor; fill-opacity: 0.12; stroke: none; }
+.mc-svg .mc-zero { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+.mc-svg .mc-cursor { stroke: var(--muted); stroke-width: 1; }
+.mc-up { color: var(--up); }
+.mc-down { color: var(--down); }
+.mc-s1 { color: var(--viz-1); }
+.mc-s2 { color: var(--viz-2); }
+.mc-s3 { color: var(--viz-3); }
+.mc-s4 { color: var(--viz-4); }
+.mc-missing {
+  display: flex;
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+}
+.mc-line-text { display: flex; flex-wrap: wrap; gap: 0 var(--sp-1); align-items: baseline; }
+.mc-readout { margin-left: auto; min-height: 1.2em; }
+.mc-52 { display: grid; gap: 2px; }
+.mc-hl { display: flex; gap: var(--sp-4); }
+.mc-foot { display: flex; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; }
+.mc-hint { color: var(--muted); }
+
+/* The chevron that expands a board row (Space does the same). */
+.inv-table td.inv-has-chev { position: relative; padding-left: 30px; }
+.inv-chev {
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.inv-chev::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateX(-1px) rotate(-45deg);
+  transition: transform var(--dur-1) var(--ease);
+}
+.inv-chev[aria-expanded='true']::before { transform: translateY(-1px) rotate(45deg); }
+.inv-chev:hover { color: var(--accent-text); background: var(--raised); }
+.data-table tr[aria-expanded='true'] > td { background: var(--row-hover); }
+
+.data-table .inv-exp-row > td { padding: var(--sp-3) var(--sp-4) var(--sp-4); background: var(--bg-deep); cursor: default; text-align: left; }
+.data-table tbody .inv-exp-row:hover > td { background: var(--bg-deep); }
+.data-table tbody .inv-exp-row:hover > td:first-child { box-shadow: none; }
+.inv-exp {
+  position: sticky;
+  left: var(--sp-3);
+  max-width: calc(100vw - 64px);
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr);
+  gap: var(--sp-5);
+  font-variant-numeric: tabular-nums;
+  white-space: normal;
+  animation: inv-pop-in var(--dur-2) var(--ease);
+}
+.mc-big-chart { display: grid; gap: var(--sp-2); min-width: 0; }
+.mc-big-side { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.mc-facts { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-1) var(--sp-3); margin: 0; }
+.mc-facts dd { margin: 0; text-align: right; }
+.mc-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+/* Rows and tiles in Compare carry their line's colour on the leading edge. */
+[data-cmp='1'] { --cmp-c: var(--viz-1); }
+[data-cmp='2'] { --cmp-c: var(--viz-2); }
+[data-cmp='3'] { --cmp-c: var(--viz-3); }
+[data-cmp='4'] { --cmp-c: var(--viz-4); }
+.data-table tr.inv-cmp-on > td:first-child,
+.data-table tbody tr.inv-cmp-on:hover > td:first-child { box-shadow: inset 3px 0 0 var(--cmp-c); }
+.inv-rate.inv-cmp-on,
+.fund-card.inv-cmp-on { box-shadow: inset 0 3px 0 var(--cmp-c); }
+
+.inv-cmp {
+  position: fixed;
+  right: var(--sp-4);
+  bottom: var(--sp-4);
+  z-index: 35;
+  width: 400px;
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  font-variant-numeric: tabular-nums;
+  animation: inv-pop-in-above var(--dur-2) var(--ease);
+}
+.cmp-head { display: flex; align-items: center; gap: var(--sp-3); }
+.cmp-head h3 { margin: 0; flex: 1; }
+.cmp-legend { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.cmp-legend li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto; align-items: center; gap: var(--sp-2); }
+.cmp-swatch { width: 14px; height: 3px; border-radius: 2px; background: currentColor; }
+.cmp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmp-change { text-align: right; }
+
+@media (max-width: 700px) {
+  .inv-exp { grid-template-columns: 1fr; gap: var(--sp-3); max-width: calc(100vw - 56px); }
+  .inv-cmp { left: var(--sp-2); right: var(--sp-2); bottom: 76px; width: auto; max-height: 60vh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .inv-pop,
+  .inv-exp,
+  .inv-cmp { animation: none; }
+  .inv-chev::before { transition: none; }
+}
+/* ===== end Investments interaction ===== */

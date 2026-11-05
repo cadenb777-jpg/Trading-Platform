@@ -8,10 +8,11 @@ import { activatable, formatPrice, h, openModal } from '../ui/dom';
 import { termLabel } from '../ui/glossary';
 import { openSettings } from '../ui/settings';
 import { sparkline } from '../ui/sparkline';
-import { withTableTools } from '../ui/tableTools';
+import { loadState, withTableTools } from '../ui/tableTools';
 import type { BoardGroup } from './catalog';
-import { tickerAttr } from '../ui/tickerCard';
 import { asOfStamp } from '../ui/dataHealth';
+import { rangeForColumn } from './miniMath';
+import { interactive, type MiniItem } from './rowInteract';
 
 export interface BoardRow {
   symbol: string;
@@ -71,47 +72,103 @@ export async function loadBoard(groups: BoardGroup[]): Promise<Map<string, Board
   return new Map(rows.map((r) => [r.symbol, { ...r, asOf }]));
 }
 
-function pctCell(v: number | null | undefined) {
+/** A % cell; a missing value is "—" with the reason on hover and for screen readers (never NaN). */
+function pctCell(v: number | null | undefined, why: string) {
+  if (v == null || !Number.isFinite(v)) return naCell(why);
   return h('td', { class: tone(v) }, pct(v));
 }
 
-/** A market board: one row per symbol with price, today, 1 month, YTD, 1 year and a 3-month line. */
+/** "—" plus why it's missing. `data-value` stays empty so sorting and filtering treat it as blank. */
+export function naCell(why: string) {
+  return h('td', { class: 'muted', 'data-value': '', title: why }, h('span', { 'aria-hidden': 'true' }, '—'), h('span', { class: 'sr-only' }, why));
+}
+
+/** Why a board row has no value for a period. */
+function missingWhy(symbol: string, r: BoardRow | undefined) {
+  if (symbol.startsWith('/')) return 'Schwab has no daily history for futures';
+  if (!r) return 'Not in the latest reply from Schwab';
+  if (r.price == null) return 'No quote right now';
+  return 'Not enough price history for this period';
+}
+
+/**
+ * Opens a symbol's full view: the security view when this build has one (src/security/open.ts, loaded on demand),
+ * otherwise the symbol window below. Futures always use the window.
+ */
+const securityModule = import.meta.glob<{ openSecurity?: (symbol: string, tab?: string) => unknown }>('../security/open.ts');
+export function openSymbol(symbol: string, label: string, row: BoardRow | undefined, ctx: InvestContext) {
+  const load = Object.values(securityModule)[0];
+  if (!load || symbol.startsWith('/')) return openSymbolDetail(symbol, label, row, ctx);
+  load()
+    .then(async (m) => {
+      if (typeof m.openSecurity !== 'function') throw new Error('no security view');
+      await m.openSecurity(symbol);
+    })
+    .catch(() => openSymbolDetail(symbol, label, row, ctx));
+}
+
+/** What a board row shows in its mini chart and expanded view. */
+export function boardItem(symbol: string, label: string, r: BoardRow | undefined, open: () => void): MiniItem {
+  return {
+    key: symbol,
+    label,
+    sub: showSymbol(symbol),
+    source: symbol.startsWith('/') ? { kind: 'none', reason: 'Schwab has no daily history for futures; the price here is live only.' } : { kind: 'symbol', symbol },
+    mode: 'price',
+    open,
+    facts: () => [
+      { label: 'Price', value: r?.price != null ? formatPrice(r.price) : '—' },
+      { label: 'Today', value: pct(r?.change) },
+      ...(r?.tr1y != null ? [{ label: '1-yr total return', value: pct(r.tr1y) }] : []),
+      ...(r?.divYield ? [{ label: 'Dividend yield', value: `${r.divYield.toFixed(2)}%` }] : []),
+      ...(r?.peRatio ? [{ label: 'P/E', value: r.peRatio.toFixed(1) }] : []),
+    ],
+  };
+}
+
+/**
+ * A market board: one row per symbol with price, today, 1 month, YTD, 1 year and a 3-month line. Rows follow the
+ * page's interaction model (rowInteract.ts): hover for a mini chart, Space to expand, Shift+click to compare.
+ */
 export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPick: (symbol: string, label: string) => void) {
   const items = group.symbols.filter(([s]) => !group.hideEmpty || rows.get(s)?.price != null);
   if (!items.length) return h('div', { hidden: true });
+  const id = `board:${group.title}`;
+  const entries: [HTMLElement, MiniItem][] = [];
+  const table = withTableTools(h(
+    'table',
+    { class: 'data-table inv-table' },
+    h('thead', {}, h('tr', {}, ...['Name', 'Price', 'Today', '1 month', 'YTD', '1 year', termLabel('1Y total', 'totalreturn'), '3 months'].map((t) => h('th', {}, t)))),
+    h(
+      'tbody',
+      {},
+      ...items.map(([symbol, label]) => {
+        const r = rows.get(symbol);
+        const why = missingWhy(symbol, r);
+        const up = (r?.m3 ?? r?.change ?? 0) >= 0;
+        const tr = activatable(h(
+          'tr',
+          { class: 'clickable' },
+          h('td', { class: 'label', 'data-value': `${label} ${showSymbol(symbol)}` }, h('div', { class: 'inv-name' }, h('b', {}, label), h('span', { class: 'muted small' }, showSymbol(symbol)))),
+          h('td', { 'data-value': r?.price != null ? String(r.price) : '' }, r?.price != null ? formatPrice(r.price) : h('span', { class: 'muted small', title: 'Schwab has no price for this right now' }, 'No quote'), r?.atClose ? h('div', { class: 'muted tiny' }, `At close ${closeDate(r.atClose)}`) : ''),
+          pctCell(r?.change, r?.price == null ? 'No quote right now' : 'No change reported'),
+          pctCell(r?.m1, why),
+          pctCell(r?.ytd, why),
+          pctCell(r?.y1, why),
+          r?.tr1y != null && r.y1 != null ? h('td', { class: tone(r.tr1y), title: `Price ${pct(r.y1)} + dividends ${pct(r.tr1y - r.y1)}` }, pct(r.tr1y)) : naCell(symbol.startsWith('/') || symbol.startsWith('$') ? 'No dividends (index or future)' : 'Pays no dividend, or not enough history'),
+          h('td', { class: 'inv-spark' }, r?.spark && r.spark.length > 1 ? sparkline(r.spark, null, up ? '#26a69a' : '#ef5350') : ''),
+        ));
+        entries.push([tr, boardItem(symbol, label, r, () => onPick(symbol, label))]);
+        return tr;
+      }),
+    ),
+  ), { id, columns: { '3 months': 'none' } });
+  interactive(table, entries, { boardId: id, expandable: true, defaultRange: () => rangeForColumn(loadState(id).sort?.col) });
   return h(
     'section',
     { class: 'panel inv-board' },
     h('div', { class: 'panel-head' }, h('h3', {}, group.title), group.note ? h('span', { class: 'muted small' }, group.note) : null, boardStamp(items.map(([s]) => rows.get(s)))),
-    h(
-      'div',
-      { class: 'table-wrap' },
-      withTableTools(h(
-        'table',
-        { class: 'data-table inv-table' },
-        h('thead', {}, h('tr', {}, ...['Name', 'Price', 'Today', '1 month', 'YTD', '1 year', termLabel('1Y total', 'totalreturn'), '3 months'].map((t) => h('th', {}, t)))),
-        h(
-          'tbody',
-          {},
-          ...items.map(([symbol, label]) => {
-            const r = rows.get(symbol);
-            const up = (r?.m3 ?? r?.change ?? 0) >= 0;
-            return activatable(h(
-              'tr',
-              { class: 'clickable', onclick: () => onPick(symbol, label) },
-              h('td', { class: 'label', 'data-value': `${label} ${showSymbol(symbol)}` }, h('div', { class: 'inv-name' }, h('b', {}, label), h('span', { class: 'muted small', ...(symbol.startsWith('/') ? {} : tickerAttr(symbol)) }, showSymbol(symbol)))),
-              h('td', { 'data-value': r?.price != null ? String(r.price) : '' }, r?.price != null ? formatPrice(r.price) : h('span', { class: 'muted small', title: 'Schwab has no price for this right now' }, 'No quote'), r?.atClose ? h('div', { class: 'muted tiny' }, `At close ${closeDate(r.atClose)}`) : ''),
-              pctCell(r?.change),
-              pctCell(r?.m1),
-              pctCell(r?.ytd),
-              pctCell(r?.y1),
-              r?.tr1y != null && r.y1 != null ? h('td', { class: tone(r.tr1y), title: `Price ${pct(r.y1)} + dividends ${pct(r.tr1y - r.y1)}` }, pct(r.tr1y)) : h('td', { class: 'muted' }, '—'),
-              h('td', { class: 'inv-spark' }, r?.spark && r.spark.length > 1 ? sparkline(r.spark, null, up ? '#26a69a' : '#ef5350') : ''),
-            ));
-          }),
-        ),
-      ), { id: `board:${group.title}`, columns: { '3 months': 'none' } }),
-    ),
+    h('div', { class: 'table-wrap' }, table),
   );
 }
 

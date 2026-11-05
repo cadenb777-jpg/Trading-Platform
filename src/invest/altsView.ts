@@ -14,7 +14,8 @@ import { canCrossCheck, sourcesChip } from '../ui/sourcesChip';
 import { withTableTools } from '../ui/tableTools';
 import { BOARDS, MANAGER_SITES, PRIVATE_FUNDS, STRATEGIES, STRUCTURES, type PrivateFund, type Strategy } from './catalog';
 import { holdingStats, parseCsv, rowsToHoldings, totals, type AltHolding } from './holdings';
-import { boardInsight, boardTable, errorBox, factSheetLink, loadBoard, openSymbolDetail, skeletonBoard, tone, type BoardRow, type InvestContext } from './shared';
+import { boardInsight, boardTable, errorBox, factSheetLink, loadBoard, openSymbol, skeletonBoard, tone, type BoardRow, type InvestContext } from './shared';
+import { interactive, type MiniItem } from './rowInteract';
 
 type Tab = 'market' | 'funds' | 'search' | 'latest' | 'mine';
 const TABS: [Tab, string][] = [
@@ -178,7 +179,7 @@ export function createAltsView(ctx: InvestContext) {
             }),
           ),
         );
-        boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbolDetail(s, l, rows.get(s), ctx))));
+        boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbol(s, l, rows.get(s), ctx))));
       })
       .catch((err) => {
         pulse.replaceChildren(errorBox(err, renderMarket));
@@ -199,18 +200,22 @@ export function createAltsView(ctx: InvestContext) {
     const draw = () => {
       const q = fundFilter.toLowerCase();
       const list = PRIVATE_FUNDS.filter((f) => (strategy === 'All' || f.strategy === strategy) && (!q || `${f.name} ${f.short} ${f.manager} ${f.structure}`.toLowerCase().includes(q)));
+      const entries: [HTMLElement, MiniItem][] = [];
       grid.replaceChildren(
-        ...list.map((f) =>
-          h(
+        ...list.map((f) => {
+          const card = h(
             'button',
-            { class: 'fund-card', onclick: () => openFund(f), onmouseenter: () => prefetchFund(f) },
+            { class: 'fund-card', type: 'button' },
             h('span', { class: 'fund-card-top' }, h('b', {}, f.short), h('span', { class: 'fund-badge' }, f.structure)),
             h('span', { class: 'fund-card-name' }, f.name),
             h('span', { class: 'muted small' }, `${f.manager} · ${f.strategy}`),
-          ),
-        ),
+          );
+          entries.push([card, fundItem(f)]);
+          return card;
+        }),
         list.length ? '' : h('p', { class: 'muted' }, 'No funds match. Try "Search all private funds" to search every fund filed with the SEC.'),
       );
+      interactive(grid, entries, { boardId: 'alts:funds', defaultRange: () => '1Y' });
     };
     filterInput.addEventListener('input', () => ((fundFilter = filterInput.value), draw()));
     draw();
@@ -254,12 +259,37 @@ export function createAltsView(ctx: InvestContext) {
     return 'cik' in f ? { cik: f.cik, name: f.name } : { name: f.name, ticker: catalog?.ticker };
   }
 
-  /** Starts loading a fund's page when the pointer rests on its card. */
-  function prefetchFund(f: PrivateFund) {
-    clearTimeout(hoverTimer);
-    hoverTimer = setTimeout(() => engineRequest('alts.fund', fundParams(f), 90000).catch(() => {}), 250);
+  /**
+   * A fund card's mini chart: its monthly NAV line from SEC filings (the same alts.fund reply its page uses, so resting
+   * on a card also preloads the page), else the XBRL NAV per share; none when the SEC has neither.
+   */
+  function fundItem(f: PrivateFund): MiniItem {
+    const navFmt = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+    return {
+      key: `fund:${f.id}`,
+      label: f.short,
+      sub: f.name,
+      mode: 'price',
+      format: navFmt,
+      open: () => openFund(f),
+      source: {
+        kind: 'points',
+        id: `fund:${f.id}`,
+        source: 'NAV per share from SEC filings',
+        load: async () => {
+          const d = await engineRequest<FundData>('alts.fund', fundParams(f), 90000);
+          const day = (s: string) => Date.parse(`${s.slice(0, 10)}T00:00:00Z`) / 1000;
+          const fromNotes = d.navHistory?.points.map((p): [number, number] => [day(p.date), p.value]) ?? [];
+          if (fromNotes.length >= 2) return fromNotes;
+          const xbrl = d.facts?.navPerShare.map((p): [number, number] => [day(p.end), p.value]) ?? [];
+          if (xbrl.length >= 2) return xbrl;
+          const none = new Error('The SEC has no machine-readable NAV history for this fund. Open it for its filings and latest published NAV.');
+          none.name = 'NoHistory';
+          throw none;
+        },
+      },
+    };
   }
-  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
 
   function snapshotPanel(snap: FundSnapshot): Node {
     return h(
@@ -461,7 +491,7 @@ export function createAltsView(ctx: InvestContext) {
           row.replaceChildren(
             h(
               'button',
-              { class: 'manager-row', onclick: () => openSymbolDetail(f.managerTicker!, f.manager, r, ctx) },
+              { class: 'manager-row', onclick: () => openSymbol(f.managerTicker!, f.manager, r, ctx) },
               h('b', {}, `${f.managerTicker} · ${formatPrice(r?.price)}`),
               h('span', { class: tone(r?.change) }, `${pct(r?.change)} today`),
               h('span', { class: tone(r?.ytd) }, `YTD ${pct(r?.ytd, 1)}`),
