@@ -26,6 +26,7 @@ import { infoTip, termLabel } from '../ui/glossary';
 import { openNewsSummary } from '../ui/newsSummary';
 import { tableTools } from '../ui/tableTools';
 import { tickerAttr } from '../ui/tickerCard';
+import { openSecurity } from '../security/open';
 
 type Saved = Portfolio & { id: string };
 
@@ -447,7 +448,13 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
           'td',
           { class: 'label' },
           x.r.kind === 'security'
-            ? h('button', { type: 'button', class: 'link-btn acct-sym', ...tickerAttr(x.r.symbol), title: `${x.r.name || x.r.symbol}: open details`, onclick: () => openHolding(x) }, x.r.symbol)
+            ? h(
+                'span',
+                { class: 'acct-sym-cell' },
+                // the ticker opens the security view (chart, financials, holders, news, risk...), as everywhere
+                h('button', { type: 'button', class: 'link-btn acct-sym', ...tickerAttr(x.r.symbol), title: `${x.r.name || x.r.symbol}: security view`, onclick: () => void openSecurity(x.r.symbol) }, x.r.symbol),
+                h('button', { type: 'button', class: 'icon-btn acct-records', title: `Your ${x.r.symbol} records: accounts, purchase dates, dividends counted`, 'aria-label': `Your ${x.r.symbol} records`, onclick: () => openHolding(x) }, '⋯'),
+              )
             : h('span', { title: x.r.name }, h('b', {}, x.r.symbol), h('span', { class: `holding-tag ${x.r.kind}` }, x.r.kind === 'cash' ? 'Cash' : 'Alt')),
         );
       // totals: today over priced holdings, gains over holdings with a cost basis (as in the headline cards)
@@ -609,7 +616,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
       const body = h(
         'div',
         { class: 'acct-detail' },
-        h('p', { class: 'muted small' }, r.name || '', ' ', h('span', { ...tickerAttr(r.symbol), class: 'link-btn', 'data-ticker-click': 'pin' }, 'Quote card ›')),
+        h('p', { class: 'muted small' }, r.name || '', ' ', h('span', { ...tickerAttr(r.symbol), class: 'link-btn', 'data-ticker-click': 'pin' }, 'Security view ›')),
         stats,
         check ? yieldPanel(r.symbol, check, info!, x, highYield, cleanups) : null,
         h('h4', {}, 'By account'),

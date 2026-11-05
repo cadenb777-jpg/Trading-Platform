@@ -8573,3 +8573,98 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
     gap: 0;
   }
 }
+
+/* ======================================================================================================
+   Security view (src/security/*): #sec/AAPL/FA and the slide-over any ticker click opens. Variables only;
+   every rule is scoped under .sv / .sv-drawer so nothing global changes.
+   ====================================================================================================== */
+.sv { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; color: var(--text); }
+.sv-page { max-width: var(--page-max); margin: 0 auto; padding: var(--page-pad); }
+.sv .sv-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sv .sv-num.up, .sv .up { color: var(--up-text); }
+.sv .sv-num.down, .sv .down { color: var(--down-text); }
+.sv .sv-na { color: var(--faint); cursor: help; }
+.sv-top { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.sv-top .spacer { flex: 1; }
+.sv-top .icon-btn:disabled { opacity: 0.35; cursor: default; }
+.sv-symbol { width: 110px; text-transform: uppercase; font-family: var(--font-mono); }
+.sv-recent { width: auto; max-width: 120px; }
+.sv-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-2) var(--sp-4); align-items: end; border-bottom: 1px solid var(--border); padding-bottom: var(--sp-3); }
+.sv-name { margin: 0; font-size: var(--fs-xl); font-weight: 600; display: flex; gap: var(--sp-2); align-items: baseline; flex-wrap: wrap; }
+.sv-sym { font-family: var(--font-mono); color: var(--text-strong); }
+.sv-fullname { font-weight: 400; color: var(--muted); font-size: var(--fs-md); }
+.sv-meta { margin-top: 2px; }
+.sv-quote { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.sv-last { font-size: var(--fs-2xl); color: var(--text-strong); }
+.sv-chg { font-size: var(--fs-md); white-space: pre; }
+.sv-headstats { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: var(--sp-2) var(--sp-4); }
+.sv-hstat { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sv-range { display: flex; align-items: center; gap: 6px; }
+.sv-range-track { position: relative; flex: 1; min-width: 40px; height: 4px; border-radius: 2px; background: var(--panel-3); }
+.sv-range-track i { position: absolute; top: -3px; width: 2px; height: 10px; margin-left: -1px; background: var(--accent); border-radius: 1px; }
+.sv-position { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); align-items: baseline; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--accent-border); background: var(--accent-soft); border-radius: var(--radius-sm); font-size: var(--fs-sm); }
+.sv-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.sv-tabs { display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--border); scrollbar-width: thin; }
+.sv-tab { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: inherit; font-size: var(--fs-base); cursor: pointer; white-space: nowrap; }
+.sv-tab:hover { color: var(--text); }
+.sv-tab.active { color: var(--text-strong); border-bottom-color: var(--accent); }
+.sv-code { font-family: var(--font-mono); font-size: var(--fs-xs); padding: 0 4px; border-radius: 3px; background: var(--panel-2); color: var(--warn-text); border: 1px solid var(--border); }
+.sv-body { min-height: 200px; min-width: 0; }
+.sv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--sp-3); align-items: start; }
+.sv-drawer .sv-grid { grid-template-columns: 1fr; }
+.sv-slot { min-width: 0; }
+.sv-panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-3); min-width: 0; margin-bottom: var(--sp-3); }
+.sv-grid .sv-panel { margin-bottom: 0; }
+.sv-panel-title { margin: 0 0 var(--sp-2); font-size: var(--fs-md); font-weight: 600; }
+.sv-source { margin: var(--sp-2) 0 0; }
+.sv-note { margin: var(--sp-2) 0; }
+.sv-note.sv-error { color: var(--warn-text); }
+.sv-desc { margin: 0 0 var(--sp-2); line-height: 1.5; }
+.sv-kv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px var(--sp-3); margin: 0; font-size: var(--fs-base); }
+.sv-kv dt { color: var(--muted); min-width: 0; }
+.sv-kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.sv-table-wrap { overflow-x: auto; max-width: 100%; }
+.sv-table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.sv-table th, .sv-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.sv-table thead th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--panel); }
+.sv-table tbody th { font-weight: 400; color: var(--text); }
+.sv-table .num { text-align: right; }
+.sv-table tr.total th, .sv-table tr.total td { font-weight: 600; }
+.sv-subbar { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); align-items: center; margin-bottom: var(--sp-3); }
+.sv-studies { display: flex; flex-wrap: wrap; gap: var(--sp-2); font-size: var(--fs-sm); }
+.sv-study { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); cursor: pointer; }
+.sv-compare-box { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.sv-compare { width: 120px; text-transform: uppercase; }
+.sv-chart-wrap { position: relative; height: 460px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--bg-chart); }
+.sv-chart { position: absolute; inset: 0; }
+.sv-chart-msg { position: absolute; inset: auto 12px 12px 12px; }
+.sv-news { list-style: none; margin: 0; padding: 0; }
+.sv-news-row { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 2px var(--sp-2); width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--border); padding: 8px 2px; color: var(--text); font: inherit; cursor: pointer; }
+.sv-news-row:hover { background: var(--row-hover); }
+.sv-news-meta { grid-column: 2; }
+.sv-impact { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; background: var(--faint); }
+.sv-impact.high { background: var(--down); }
+.sv-impact.medium { background: var(--warn); }
+.sv-related { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-top: var(--sp-2); border-top: 1px solid var(--border); }
+.sv-rel-label { font-weight: 600; margin-right: var(--sp-1); }
+.sv-rel { font: inherit; font-family: var(--font-mono); font-size: var(--fs-sm); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel-2); color: var(--link); cursor: pointer; }
+.sv-rel:hover { border-color: var(--accent-border); }
+/* the slide-over: above dialogs, below the hover card */
+.sv-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 45; width: min(720px, 100vw); background: var(--bg); border-left: 1px solid var(--border-strong); box-shadow: var(--shadow-side); overflow-y: auto; overflow-x: hidden; padding: var(--sp-3) var(--sp-4) var(--sp-5); transform: translateX(16px); opacity: 0; transition: transform 0.16s ease, opacity 0.16s ease; overscroll-behavior: contain; }
+.sv-drawer.open { transform: none; opacity: 1; }
+.sv-drawer .sv-chart-wrap { height: 360px; }
+@media (prefers-reduced-motion: reduce) { .sv-drawer { transition: none; } }
+@media (max-width: 600px) {
+  .sv-page { padding: var(--sp-3); }
+  .sv-drawer { padding: var(--sp-2) var(--sp-3) var(--sp-4); }
+  .sv-head { grid-template-columns: minmax(0, 1fr); }
+  .sv-quote { align-items: flex-start; flex-direction: row; flex-wrap: wrap; gap: var(--sp-2); }
+  .sv-headstats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sv-grid { grid-template-columns: minmax(0, 1fr); }
+  .sv-chart-wrap, .sv-drawer .sv-chart-wrap { height: 300px; }
+  .sv-symbol { width: 80px; }
+}
+/* Account holdings: the records button beside the ticker */
+.acct-sym-cell { display: inline-flex; align-items: center; gap: 2px; }
+.acct-records { width: 22px; height: 22px; font-size: var(--fs-sm); }
+/* ====================================== end security view ====================================== */
