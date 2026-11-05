@@ -204,8 +204,16 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   const status = h('div', { class: 'sp-status muted small' });
   const horizonTabs = h('div', { class: 'segmented sp-horizons' }, ...HORIZONS.map((x) => h('button', { 'data-h': x.key, onclick: () => setPref('horizon', x.key) }, h('b', {}, x.label), h('span', { class: 'muted tiny' }, ` ${x.hold}`))));
   const notifyBtn = h('button', { class: 'btn', title: 'Let the platform show desktop notifications for entry alerts', onclick: askNotify }, 'Enable alerts');
-  const refreshBtn = h('button', { class: 'btn', title: 'Scan again now', onclick: () => refresh(true) }, 'Scan now');
-  const frame = pageFrame('Setups', 'Nasdaq-100 trade setups on three time frames. Every result is after costs and tested against 1,000 random entries.', [horizonTabs, notifyBtn, refreshBtn]);
+  const frame = pageFrame('Setups', 'Nasdaq-100 trade setups on three time frames. Every result is after costs and tested against 1,000 random entries.', [horizonTabs, notifyBtn]);
+  frame.functions(
+    [
+      { label: 'Scan now', icon: 'refresh', title: 'Scan again now', run: () => refresh(true) },
+      { label: 'Report card', title: 'How each strategy has done, and whether COT helps', run: () => ((evidence.open = true), evidence.scrollIntoView({ block: 'start' })) },
+      { label: 'Lab and rule tests', title: 'The strategy lab and the rule tests on your data', run: () => ((research.open = true), research.scrollIntoView({ block: 'start' })) },
+      { label: 'Backtest', icon: 'backtest', title: 'Test your own rules on history', run: () => (location.hash = '#backtest') },
+    ],
+    ['strategy', 'journal', 'chart'],
+  );
   const today = h('section', { class: 'sp-today' });
   const howTo = dailyRoutine();
   const evidenceBody = h('div', { class: 'sp-evidence' });

@@ -1,6 +1,6 @@
 /**
- * The start screen: greeting, the morning brief (overnight strip, my accounts, what needs attention), the three main
- * US indexes, news (my holdings first when there are any), the week's calendar and the watchlist.
+ * The start screen: the greeting hero with the overnight strip, then a widget dashboard the owner arranges (indexes,
+ * my accounts, what needs attention, setups, news, the week's calendar, the watchlist; src/home/widgets.ts).
  */
 import { CandlestickSeries, LineStyle, TickMarkType, createChart, type IPriceLine, type UTCTimestamp } from 'lightweight-charts';
 import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
@@ -16,7 +16,11 @@ import type { Portfolio } from '../portfolio/types';
 import { persist, state } from '../state';
 import { bucketStart, type Bar, type Timeframe } from '../types';
 import { formatPrice, h, timeAgo } from '../ui/dom';
-import { icon } from '../ui/icons';
+import { icon, type IconName } from '../ui/icons';
+import { functionBar } from '../ui/functionBar';
+import { panelHeader } from '../ui/panel';
+import { LAYOUT_KEY, WIDGETS, addWidget, defaultLayout, hiddenWidgets, moveWidget, nextSpan, parseLayout, removeWidget, updateWidget, type Layout, type WidgetId } from '../home/widgets';
+import type { ReadySetup } from '../home/brief';
 import { greeting, marketStatus } from '../ui/marketClock';
 import { createBridge } from '../home/bridge';
 import { THEME, chartThemeOptions, followTheme } from '../ui/theme';
@@ -258,7 +262,6 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     sortButtons.forEach((b, i) => b.classList.toggle('active', (['latest', 'impact'] as const)[i] === k));
     showNews();
   }
-  const refreshBtn = h('button', { class: 'icon-btn', title: 'Refresh news', 'aria-label': 'Refresh news', onclick: () => refreshNews(true) }, icon('refresh', 18));
 
   function setTab(id: NewsTab) {
     newsTab = id;
@@ -361,7 +364,6 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
   }
 
   const upcoming = createUpcomingPanel(onOpenCalendar);
-  const brief = createMorningBrief({ openChart: onOpenChart, openPage });
   const marketRead = insightButton(() => {
     const indexes = cards.map((c) => c.snapshot()).filter(Boolean);
     if (!indexes.length && !general) return null;
@@ -375,6 +377,223 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
 
   const watchlist = createWatchlist({ onSelect: onOpenChart });
 
+  // ---------- widgets (src/home/widgets.ts: layout saved per device) ----------
+
+  const setupsBody = h('div', { class: 'brief-body' }, h('p', { class: 'muted small' }, 'Setups appear here once the scanner has run.'));
+  function drawSetups(info: { ready: ReadySetup[]; waiting: number; loading: boolean }) {
+    const entry = info.ready.filter((r) => r.zone === 'entry').length;
+    setupsBody.replaceChildren(
+      h(
+        'a',
+        { class: 'wd-figure', href: '#setups', title: 'Open Setups' },
+        h('b', {}, String(info.ready.length)),
+        h('span', { class: 'muted small' }, info.loading ? 'the first scan is running' : `ready now${entry ? ` (${entry} in the entry zone)` : ''} · ${info.waiting} A/B waiting`),
+      ),
+      info.ready.length
+        ? h(
+            'ul',
+            { class: 'brief-list' },
+            ...info.ready.slice(0, 3).map((r) => {
+              const st = r.setup;
+              const id = `${st.horizon ?? r.horizon}:${st.strategy}:${st.symbol}:${st.signalDate}`;
+              return h(
+                'li',
+                {},
+                h(
+                  'button',
+                  { type: 'button', class: `brief-row ${r.zone === 'entry' ? 'up' : 'warn'}`, onclick: () => openPage('setups', 'open', id) },
+                  h('span', { class: 'brief-main' }, h('b', tickerAttr(st.symbol), st.symbol), ` ${st.tier} · ${r.label}`),
+                  h('span', { class: 'muted small' }, `$${formatPrice(st.plan.trigger)}`),
+                ),
+              );
+            }),
+          )
+        : h('p', { class: 'muted small' }, 'Nothing is in or near its entry zone right now.'),
+    );
+  }
+  const brief = createMorningBrief({ openChart: onOpenChart, openPage, onScan: drawSetups });
+
+  // the calendar and watchlist cards bring their own heads: their controls move into the widget's head
+  upcoming.el.querySelector(':scope > .panel-head')?.remove();
+  upcoming.el.classList.remove('panel');
+  const wlHead = watchlist.el.querySelector<HTMLElement>(':scope > .panel-head');
+  const wlExtra = wlHead ? [...wlHead.children].filter((c) => !c.matches('h3, .spacer')) : [];
+  wlHead?.remove();
+
+  interface WidgetParts {
+    body: Node[];
+    icon?: IconName;
+    extra?: Node[];
+    asOf?: Node;
+    onRefresh?: () => void;
+    open?: { label: string; go: () => void };
+    cls?: string;
+  }
+  const parts: Record<WidgetId, WidgetParts> = {
+    indexes: {
+      icon: 'chart',
+      body: [
+        h('div', { class: 'idx-row', role: 'group', 'aria-label': 'Market indexes' }, ...cards.map((c) => c.card)),
+        h('div', { class: 'home-ai-row' }, marketRead.button, h('span', { class: 'muted small' }, 'A quick read of the indexes and the biggest headlines.')),
+        marketRead.panel,
+      ],
+      onRefresh: () => cards.forEach((c) => c.loadSparkline()),
+      open: { label: 'Open Investments', go: () => (location.hash = '#invest') },
+      cls: 'wd-bare',
+    },
+    accounts: { icon: 'account', body: [brief.accountsBody], asOf: brief.stamp, onRefresh: () => void brief.refresh(), open: { label: 'Open Account', go: () => (location.hash = '#account') } },
+    brief: {
+      icon: 'bell',
+      body: [brief.attentionBody],
+      extra: [brief.attentionCount],
+      onRefresh: () => void brief.refresh(),
+      open: { label: 'Open alerts', go: () => void import('../ui/alerts').then((m) => m.openAlertsDialog()) },
+    },
+    setups: { icon: 'target', body: [setupsBody], onRefresh: () => void brief.refresh(), open: { label: 'Open Setups', go: () => (location.hash = '#setups') } },
+    news: {
+      icon: 'news',
+      body: [tabs, newsList, newsFooter],
+      extra: [newsLink.chip, h('div', { class: 'segmented small' }, ...sortButtons), h('label', { class: 'toggle', title: 'Show only stories likely to move the market' }, importantToggle, ' Important only')],
+      onRefresh: () => refreshNews(true),
+      cls: 'news-panel',
+    },
+    events: { icon: 'calendar', body: [upcoming.el], onRefresh: () => upcoming.refresh(), open: { label: 'Open the calendar', go: onOpenCalendar } },
+    watchlist: { icon: 'list', body: [watchlist.el], extra: wlExtra, open: { label: 'Open the chart', go: () => (location.hash = '#chart') }, cls: 'watch-panel' },
+  };
+
+  let layout = readLayout();
+  let editing = false;
+  const grid = h('div', { class: 'wd-grid' });
+  const editBar = h('div', { class: 'wd-editbar', hidden: true, role: 'region', 'aria-label': 'Customise Home' });
+  const frames = new Map<WidgetId, HTMLElement>();
+
+  function readLayout(): Layout {
+    try {
+      return parseLayout(localStorage.getItem(LAYOUT_KEY));
+    } catch {
+      return defaultLayout();
+    }
+  }
+  function saveLayout(next: Layout) {
+    layout = next;
+    try {
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+    } catch {
+      // private window: the layout lasts until the page closes
+    }
+    drawGrid();
+  }
+
+  function frameFor(id: WidgetId): HTMLElement {
+    const have = frames.get(id);
+    if (have) return have;
+    const def = WIDGETS.find((w) => w.id === id)!;
+    const p = parts[id];
+    const body = h('div', { class: 'wd-body' }, ...p.body);
+    const handle = h(
+      'button',
+      { type: 'button', class: 'icon-btn wd-handle wd-edit', title: 'Drag to move (or use the arrow keys)', 'aria-label': `Move ${def.title} (arrow keys)`, onkeydown: (e: Event) => keyMove(id, e as KeyboardEvent) },
+      icon('grid', 14),
+    );
+    const sizeBtn = h('button', {
+      type: 'button',
+      class: 'btn small ghost wd-edit wd-size',
+      title: 'Change the width',
+      onclick: () => {
+        const it = layout.items.find((i) => i.id === id);
+        if (it) saveLayout(updateWidget(layout, id, { span: nextSpan(it.span) }));
+      },
+    });
+    const removeBtn = h('button', { type: 'button', class: 'icon-btn wd-edit', title: 'Remove from Home', 'aria-label': `Remove ${def.title}`, onclick: () => saveLayout(removeWidget(layout, id)) }, icon('close', 14));
+    const head = panelHeader({
+      title: def.title,
+      icon: p.icon,
+      lead: handle,
+      asOf: p.asOf,
+      extra: [...(p.extra ?? []), sizeBtn, removeBtn],
+      onRefresh: p.onRefresh,
+      onPopOut: p.open?.go,
+      popOutLabel: p.open?.label,
+      collapse: { body, collapsed: !!layout.items.find((i) => i.id === id)?.collapsed, onToggle: (c) => saveLayout(updateWidget(layout, id, { collapsed: c })) },
+    });
+    const frame = h('section', { class: `panel wd ${p.cls ?? ''}`, 'data-widget': id, 'aria-label': def.title }, head, body);
+    // dragging starts only from the handle
+    handle.addEventListener('pointerdown', () => (frame.draggable = true));
+    frame.addEventListener('dragstart', (e) => {
+      e.dataTransfer?.setData('text/plain', id);
+      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+      frame.classList.add('dragging');
+    });
+    frame.addEventListener('dragend', () => {
+      frame.draggable = false;
+      frame.classList.remove('dragging');
+      grid.querySelectorAll('.drop-target').forEach((x) => x.classList.remove('drop-target'));
+    });
+    frame.addEventListener('dragover', (e) => {
+      if (!grid.querySelector('.dragging')) return;
+      e.preventDefault();
+      frame.classList.add('drop-target');
+    });
+    frame.addEventListener('dragleave', () => frame.classList.remove('drop-target'));
+    frame.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const from = layout.items.findIndex((i) => i.id === e.dataTransfer?.getData('text/plain'));
+      const to = layout.items.findIndex((i) => i.id === id);
+      if (from >= 0 && to >= 0 && from !== to) saveLayout(moveWidget(layout, from, to));
+    });
+    frames.set(id, frame);
+    return frame;
+  }
+
+  function keyMove(id: WidgetId, e: KeyboardEvent) {
+    const dir = e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : 0;
+    if (!dir) return;
+    e.preventDefault();
+    const from = layout.items.findIndex((i) => i.id === id);
+    saveLayout(moveWidget(layout, from, from + dir));
+    frames.get(id)?.querySelector<HTMLElement>('.wd-handle')?.focus();
+  }
+
+  function drawGrid() {
+    grid.replaceChildren(
+      ...layout.items.map((it) => {
+        const f = frameFor(it.id);
+        f.style.setProperty('--span', String(it.span));
+        f.dataset.span = String(it.span);
+        f.classList.toggle('wd-tall', !!WIDGETS.find((w) => w.id === it.id)?.tall && !it.collapsed);
+        const size = f.querySelector('.wd-size');
+        if (size) size.textContent = `${it.span}/12`;
+        return f;
+      }),
+    );
+    if (!layout.items.length) grid.append(h('p', { class: 'muted pad wd-empty' }, 'Home is empty. Press Customise (key 2) to add widgets back.'));
+    grid.classList.toggle('editing', editing);
+    const hidden = hiddenWidgets(layout);
+    editBar.replaceChildren(
+      h('div', {}, h('b', {}, 'Customise Home'), h('div', { class: 'muted small' }, 'Drag a handle (or use its arrow keys) to reorder, change widths or remove. Saved on this device.')),
+      h('span', { class: 'spacer' }),
+      ...hidden.map((w) => h('button', { type: 'button', class: 'btn small', title: w.about, onclick: () => saveLayout(addWidget(layout, w.id)) }, icon('plus', 14), ` ${w.title}`)),
+      h('button', { type: 'button', class: 'btn small ghost', onclick: () => saveLayout(defaultLayout()) }, 'Reset to default'),
+      h('button', { type: 'button', class: 'btn small primary', onclick: () => setEditing(false) }, 'Done'),
+    );
+  }
+  function setEditing(v: boolean) {
+    editing = v;
+    editBar.hidden = !v;
+    drawGrid();
+  }
+  drawGrid();
+
+  const fnBar = functionBar(
+    [
+      { label: 'Refresh', icon: 'refresh', title: 'Reload the brief, news, events and index charts', run: () => (void brief.refresh(), refreshNews(true), upcoming.refresh(), cards.forEach((c) => c.loadSparkline())) },
+      { label: 'Customise', icon: 'grid', title: 'Add, remove, reorder and resize widgets', run: () => setEditing(!editing) },
+      { label: 'AI market read', icon: 'spark', run: () => marketRead.button.click() },
+      { label: 'Calendar', icon: 'calendar', run: onOpenCalendar },
+    ],
+    { label: 'Home functions', related: ['invest', 'setups', 'account'] },
+  );
+
   const el = h(
     'div',
     { class: 'home' },
@@ -385,33 +604,10 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
       h('div', { class: 'hero-left' }, greetingEl, h('div', { class: 'hero-sub' }, dateEl, marketPill)),
       brief.strip,
     ),
+    fnBar,
     banner,
-    brief.el,
-    h('section', { class: 'idx-row', 'aria-label': 'Market indexes' }, ...cards.map((c) => c.card)),
-    h('div', { class: 'home-ai-row' }, marketRead.button, h('span', { class: 'muted small' }, 'A quick read of the indexes and the biggest headlines.')),
-    marketRead.panel,
-    h(
-      'div',
-      { class: 'home-grid' },
-      h(
-        'section',
-        { class: 'panel news-panel' },
-        h(
-          'div',
-          { class: 'panel-head' },
-          h('h3', {}, icon('news', 20), ' Market news'),
-          newsLink.chip,
-          h('span', { class: 'spacer' }),
-          h('div', { class: 'segmented small' }, ...sortButtons),
-          h('label', { class: 'toggle', title: 'Show only stories likely to move the market' }, importantToggle, ' Important only'),
-          refreshBtn,
-        ),
-        tabs,
-        newsList,
-        newsFooter,
-      ),
-      h('div', { class: 'home-side' }, upcoming.el, h('div', { class: 'panel watch-panel' }, watchlist.el)),
-    ),
+    editBar,
+    grid,
   );
 
   function renderClock() {

@@ -5,7 +5,7 @@
  */
 import { cleanBars, regroupBars, type Bar, type Timeframe } from '../types';
 import type { ConnectionStatus, DataProvider, Trade } from './provider';
-import { feedOf, markFetched, recordError, recordOk, requestProblem } from './health';
+import { beginRequest, feedOf, markFetched, recordError, recordOk, requestProblem } from './health';
 import type { Quote } from './quotes';
 import { recordEngineError } from '../diagnostics';
 
@@ -330,9 +330,11 @@ class HelperConnection {
         clearTimeout(timer);
         timer = setTimeout(() => finish(new Error('The helper took too long to answer. Try again.')), timeoutMs);
       };
+      const ended = beginRequest(); // the status bar's latency and READY / BUSY
       const finish = (err: Error | null, reply?: HelperMessage) => {
         clearTimeout(timer);
         this.pending.delete(id);
+        ended(!err);
         signal?.removeEventListener('abort', onAbort);
         if (err) reject(err);
         else resolve(reply!);

@@ -1,4 +1,5 @@
 /** Research: a company's financial statements, ratios, valuation (DCF) and SEC filings. */
+import { runId } from '../ui/command';
 import { cotSummary } from '../futures/cot';
 import { insightButton } from '../ai/insight';
 import { subscribeQuote } from '../data/quotes';
@@ -107,6 +108,17 @@ export function createResearchPage() {
   const userLoad = () => (load(), link.publish(symbolInput.value));
   const frame = pageFrame('Research', 'Company financials from SEC filings, key ratios and a valuation calculator.', [tabs, link.chip, symbolInput, h('button', { class: 'btn primary', onclick: userLoad }, 'Load'), ai.button]);
   markPanel(frame.el.querySelector('.ap-header')!, 'research', 'Research');
+  const symbolNow = () => symbolInput.value.trim().toUpperCase();
+  frame.functions(
+    [
+      { label: 'Load', icon: 'refresh', title: 'Load the company typed in the box', run: userLoad },
+      { label: 'Company', icon: 'search', title: 'Type another company', run: () => (symbolInput.focus(), symbolInput.select()) },
+      { label: 'AI summary', icon: 'spark', run: () => ai.button.click() },
+      { label: 'Security view', title: 'DES: the security view of this company', run: () => void runId(`tk:${symbolNow()}:DES`) },
+      { label: 'Chart', icon: 'chart', title: 'GP: chart this company', run: () => void runId(`tk:${symbolNow()}:GP`) },
+    ],
+    ['flow', 'setups', 'invest'],
+  );
   const livePrice = h('b', { class: 'big-value' });
   const liveChange = h('b', {});
   let stopQuote = () => {};

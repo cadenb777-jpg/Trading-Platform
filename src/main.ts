@@ -14,14 +14,17 @@ import { persist, state } from './state';
 import { TIMEFRAMES, type Timeframe } from './types';
 import { createPriceAlert, openAlertsDialog, startAlertWatcher } from './ui/alerts';
 import { h, toast } from './ui/dom';
-import { icon, type IconName } from './ui/icons';
+import { icon } from './ui/icons';
+import { PAGES as NAV_PAGES, SECTIONS, pageOf, sectionPages, sectionTarget, type NavPage, type PageRoute, type SectionId } from './ui/nav';
+import { openLaunchpad } from './ui/launchpad';
+import { createStatusBar } from './ui/statusBar';
 import { openSettings } from './ui/settings';
 import { initTheme } from './ui/theme';
 import { initAtmosphere, markRoute } from './ui/atmosphere';
 import { PAGE_SUGGESTIONS, screenText } from './ai/screen';
 import { followHealth, openDataHealth } from './ui/dataHealth';
 import { initTickerCards } from './ui/tickerCard';
-import { initCommandBar } from './ui/command';
+import { initCommandBar, openPalette, runId } from './ui/command';
 import { captureConsoleErrors } from './diagnostics';
 import { resolveHash } from './routes';
 import { createSecurityPage, initSecurity, openSecurity } from './security/open';
@@ -46,6 +49,8 @@ let chartPage: ReturnType<typeof createChartPage> | null = null;
 let appViews: HTMLElement | null = null;
 /** Counts page switches, so a slow-loading page doesn't appear after the user moved on. */
 let routeRequest = 0;
+/** Updates the rail and sub-tabs for the page shown (set once the shell is built). */
+let shellRoute: (route: string, hash: string) => void = () => {};
 /** The chart page is built on first use (opening a chart from anywhere, or the AI adding an indicator). */
 function getChartPage() {
   chartPage ??= createChartPage();
@@ -87,54 +92,46 @@ window.addEventListener('tp:open-cot', (e) => openPageWith('futures', 'openCot',
 
 /**
  * Each page is built the first time it's opened (and its code downloaded then), so the platform starts
- * quickly instead of building every page at launch.
+ * quickly instead of building every page at launch. Which pages exist, their section, label and code live in the
+ * nav registry (src/ui/nav.ts); LOADERS says how to build each one (typed by PageRoute, so a registered page
+ * without a loader fails the build).
  */
-interface PageEntry {
-  route: string;
-  /** Which part of the menu it sits in (a thin divider separates the groups). */
-  group: keyof typeof GROUPS;
-  label: string;
-  icon: IconName;
-  title: string;
+interface PageEntry extends NavPage {
   create: () => Page | Promise<Page>;
-  /** Not in the menu (reached by links and the command bar, e.g. the security view #sec/AAPL). */
-  hidden?: boolean;
   page?: Page;
   loading?: Promise<Page>;
 }
 
-const GROUPS = { markets: 'Markets', analyse: 'Analyse', money: 'My money', business: 'Business' } as const;
-
-const pages: PageEntry[] = [
-  { route: 'home', group: 'markets', label: 'Home', icon: 'home', title: 'Trading Platform', create: () => createHomePage(openChart, () => (location.hash = '#calendar'), openPageWith) },
-  {
-    route: 'invest',
-    group: 'markets',
-    label: 'Invest',
-    icon: 'invest',
-    title: 'Investments',
-    create: async () => (await import('./pages/investmentsPage')).createInvestmentsPage({ openChart, openResearch, openPage: openPageWith }),
-  },
-  { route: 'futures', group: 'markets', label: 'Futures', icon: 'futures', title: 'Futures', create: async () => (await import('./pages/futuresPage')).createFuturesPage() },
-  { route: 'macro', group: 'markets', label: 'Macro', icon: 'macro', title: 'Macro', create: async () => (await import('./pages/macroPage')).createMacroPage() },
-  { route: 'calendar', group: 'markets', label: 'Calendar', icon: 'calendar', title: 'Economic calendar', create: async () => (await import('./pages/calendarPage')).createCalendarPage() },
+const LOADERS: Record<PageRoute, () => Page | Promise<Page>> = {
+  home: () => createHomePage(openChart, () => (location.hash = '#calendar'), openPageWith),
+  invest: async () => (await import('./pages/investmentsPage')).createInvestmentsPage({ openChart, openResearch, openPage: openPageWith }),
+  futures: async () => (await import('./pages/futuresPage')).createFuturesPage(),
+  macro: async () => (await import('./pages/macroPage')).createMacroPage(),
+  calendar: async () => (await import('./pages/calendarPage')).createCalendarPage(),
+  flow: async () => (await import('./pages/flowPage')).createFlowPage(),
   // Chart | Multi | Scripts are modes of one page (#chart, #chart/multi, #chart/scripts; #multi and #scripts redirect)
-  { route: 'chart', group: 'analyse', label: 'Chart', icon: 'chart', title: '', create: async () => (await import('./pages/chartWorkspace')).createChartWorkspace(getChartPage(), openChart, openResearch) },
-  { route: 'setups', group: 'analyse', label: 'Setups', icon: 'target', title: 'Setups', create: async () => (await import('./pages/setupsPage')).createSetupsPage(openChart) },
-  { route: 'research', group: 'analyse', label: 'Research', icon: 'research', title: 'Research', create: async () => (await import('./pages/researchPage')).createResearchPage() },
-  { route: 'flow', group: 'analyse', label: 'Flow', icon: 'flow', title: 'Flow', create: async () => (await import('./pages/flowPage')).createFlowPage() },
-  { route: 'backtest', group: 'analyse', label: 'Backtest', icon: 'backtest', title: 'Backtest', create: async () => (await import('./pages/backtestPage')).createBacktestPage() },
-  { route: 'account', group: 'money', label: 'Account', icon: 'account', title: 'Account', create: async () => (await import('./pages/accountPage')).createAccountPage(openPortfolio, (id, kind) => openPageWith('trade', 'open', id, kind)) },
-  { route: 'portfolio', group: 'money', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', create: async () => (await import('./pages/portfolioPage')).createPortfolioPage() },
-  { route: 'trade', group: 'money', label: 'Trade', icon: 'trade', title: 'Trade', create: async () => (await import('./pages/tradePage')).createTradePage() },
-  { route: 'journal', group: 'money', label: 'Journal', icon: 'journal', title: 'Trading journal', create: async () => (await import('./pages/journalPage')).createJournalPage(openChart) },
-  { route: 'clients', group: 'money', label: 'Clients', icon: 'clients', title: 'Clients & Reports', create: async () => (await import('./pages/clientsPage')).createClientsPage() },
-  { route: 'prospect', group: 'business', label: 'Prospects', icon: 'prospect', title: 'Prospecting', create: async () => (await import('./pages/prospectPage')).createProspectPage() },
+  chart: async () => (await import('./pages/chartWorkspace')).createChartWorkspace(getChartPage(), openChart, openResearch),
+  research: async () => (await import('./pages/researchPage')).createResearchPage(),
+  setups: async () => (await import('./pages/setupsPage')).createSetupsPage(openChart),
+  backtest: async () => (await import('./pages/backtestPage')).createBacktestPage(),
+  // the Strategy Lab page plugs in here (built separately); until then a short placeholder
+  strategy: async () => {
+    const { pageFrame } = await import('./ui/charts');
+    const f = pageFrame('Strategy Lab', 'Build your own strategies and check them honestly before trusting them.', []);
+    f.body.append(h('div', { class: 'empty-state' }, h('b', {}, 'The Strategy Lab is on its way.'), h('span', {}, 'Meanwhile, Setups (SET) shows the tested strategies and Backtest (BTST) tests your own rules.')));
+    return { el: f.el, start() {} };
+  },
   // the security view (#sec/AAPL/FA): opened from any ticker (slide-over) and its "Full page" button
-  { route: 'sec', group: 'analyse', label: 'Security', icon: 'research', title: 'Security', hidden: true, create: () => createSecurityPage() },
-];
-/** The pages in the menu. */
-const MENU = () => pages.filter((p) => !p.hidden);
+  sec: () => createSecurityPage(),
+  account: async () => (await import('./pages/accountPage')).createAccountPage(openPortfolio, (id, kind) => openPageWith('trade', 'open', id, kind)),
+  portfolio: async () => (await import('./pages/portfolioPage')).createPortfolioPage(),
+  trade: async () => (await import('./pages/tradePage')).createTradePage(),
+  journal: async () => (await import('./pages/journalPage')).createJournalPage(openChart),
+  clients: async () => (await import('./pages/clientsPage')).createClientsPage(),
+  prospect: async () => (await import('./pages/prospectPage')).createProspectPage(),
+};
+
+const pages: PageEntry[] = (NAV_PAGES as readonly NavPage[]).map((p) => ({ ...p, create: LOADERS[p.route as PageRoute] }));
 
 // ---------- AI assistant ----------
 
@@ -354,21 +351,19 @@ if (isAiWindow) {
     else if (d.kind === 'undo') reply(await localActions.undo(d.ids ?? []));
   });
 
-  const healthDot = h('span', { class: 'health-badge', 'aria-hidden': 'true' });
-  const healthBtn = h(
-    'button',
-    { class: 'nav-btn health-nav', title: 'Data health: when each feed last updated', 'aria-label': 'Data health', onclick: () => openDataHealth(healthBtn) },
-    icon('pulse', 22),
-    healthDot,
-    h('span', { class: 'nav-label' }, 'Data'),
-  );
-  followHealth(healthDot);
   initSecurity({ openChart, openPage: openPageWith });
   initTickerCards({ openChart, openResearch, openSecurity: (s) => void openSecurity(s) });
-  const aiBtn = h('button', { class: 'nav-btn ai-nav', title: 'AI assistant (Ctrl+I)', 'aria-keyshortcuts': 'Control+I Meta+I', 'aria-label': 'AI assistant', onclick: () => toggleAssistant() }, icon('spark', 24), h('span', { class: 'nav-label' }, 'AI'));
+
+  // ---------- the shell: section rail, sub-tabs, command field, launchpad, status bar ----------
+
+  const railBtn = (cls: string, label: string, iconName: Parameters<typeof icon>[0], title: string, onclick: (e: Event) => void, extra: Record<string, string> = {}) =>
+    h('button', { type: 'button', class: `nav-btn ${cls}`, title, 'aria-label': label, onclick, ...extra }, icon(iconName, 20), h('span', { class: 'nav-label' }, label));
+
+  const aiBtn = railBtn('ai-nav rail-sec', 'AI', 'spark', 'AI assistant (Ctrl+I)', () => toggleAssistant(), { 'aria-keyshortcuts': 'Control+I Meta+I', 'data-section': 'ai' });
   function toggleAssistant(show: boolean = drawer.hidden === true) {
     drawer.hidden = !show;
     aiBtn.classList.toggle('active', show);
+    aiBtn.setAttribute('aria-pressed', String(show));
     document.body.classList.toggle('ai-open', show);
     if (show) {
       assistant.reload();
@@ -390,10 +385,17 @@ if (isAiWindow) {
       toggleAssistant(true);
     },
   });
-  // The command bar (/ or Ctrl/Cmd+K) and the global shortcuts (g h, n a, ?, Ctrl/Cmd+I for the AI)
-  const commandBtn = initCommandBar({
+
+  const healthDot = h('span', { class: 'health-badge', 'aria-hidden': 'true' });
+  const healthBtn = railBtn('health-nav rail-util', 'Data', 'pulse', 'Data health: when each feed last updated', () => openDataHealth(healthBtn));
+  healthBtn.append(healthDot);
+  followHealth(healthDot);
+  const launch = () => openLaunchpad((id) => void runId(id));
+
+  // The command bar (/ or Ctrl/Cmd+K), the launchpad (Ctrl/Cmd+L) and the global shortcuts (g h, n a, ?, Ctrl/Cmd+I)
+  initCommandBar({
     pages: [
-      ...MENU().map((p) => ({ route: p.route, label: p.label, group: GROUPS[p.group] })),
+      ...pages.filter((p) => !p.hidden).map((p) => ({ route: p.route, label: p.label, code: p.code, keywords: p.keywords, group: SECTIONS.find((s) => s.id === p.section)?.label })),
       // the Chart page's modes (they used to be pages)
       { route: 'chart/multi', label: 'Workspace (linked panels)', group: 'Chart mode' },
       { route: 'chart/scripts', label: 'Scripts (indicator editor)', group: 'Chart mode' },
@@ -406,29 +408,121 @@ if (isAiWindow) {
     openPage: openPageWith,
     toggleAssistant: () => toggleAssistant(),
     openHealth: () => openDataHealth(healthBtn),
+    openLaunchpad: launch,
   });
+
+  // The rail: the six sections (the AI is the fifth; Settings and Data sit at the bottom), collapsible to icons.
+  const RAIL_KEY = 'tp-rail-collapsed';
+  const LAST_KEY = 'tp-nav-last';
+  const readJson = <T,>(key: string, fallback: T): T => {
+    try {
+      return (JSON.parse(localStorage.getItem(key) ?? 'null') as T) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  const writeJson = (key: string, v: unknown) => {
+    try {
+      localStorage.setItem(key, JSON.stringify(v));
+    } catch {
+      // private window: not remembered
+    }
+  };
+  let lastBySection = readJson<Partial<Record<SectionId, string>>>(LAST_KEY, {});
+  const sectionLinks = SECTIONS.filter((s) => s.id !== 'ai').map((s) =>
+    h(
+      'a',
+      { class: 'nav-btn rail-sec', href: `#${sectionTarget(s.id, lastBySection)}`, 'data-section': s.id, title: `${s.label}: ${s.about}`, 'aria-label': s.label },
+      icon(s.icon, 20),
+      h('span', { class: 'nav-label' }, s.label),
+    ),
+  );
+  const rail = h(
+    'nav',
+    { class: 'rail', 'aria-label': 'Sections' },
+    h('div', { class: 'brand', title: 'Trading Platform' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }, '◆'), h('span', { class: 'brand-name' }, 'Terminal')),
+    ...sectionLinks,
+    aiBtn,
+    railBtn('rail-launch', 'Launchpad', 'grid', 'Launchpad: every page and function (Ctrl+L)', launch, { 'aria-keyshortcuts': 'Control+L Meta+L' }),
+    h(
+      'div',
+      { class: 'rail-bottom' },
+      railBtn('rail-util', 'Alerts', 'bell', 'Alerts', () => openAlertsDialog()),
+      healthBtn,
+      railBtn('rail-util', 'Settings', 'gear', 'Settings', () => openSettings()),
+      railBtn('rail-util rail-collapse', 'Collapse', 'chevron', 'Collapse or expand the menu', () => setRailCollapsed(!document.body.classList.contains('rail-collapsed'))),
+    ),
+  );
+  function setRailCollapsed(v: boolean) {
+    document.body.classList.toggle('rail-collapsed', v);
+    const b = rail.querySelector('.rail-collapse');
+    b?.setAttribute('aria-pressed', String(v));
+    b?.querySelector('.nav-label')?.replaceChildren(v ? 'Expand' : 'Collapse');
+    writeJson(RAIL_KEY, v);
+    window.dispatchEvent(new Event('resize'));
+  }
+  setRailCollapsed(readJson(RAIL_KEY, false));
+
+  // The top row: the section's pages as sub-tabs (with their codes as hints), the command field and the launchpad.
+  const sectionName = h('span', { class: 'shell-section' });
+  const subTabs = h('nav', { class: 'sub-tabs', 'aria-label': 'Pages in this section' });
+  let drawnSection: SectionId | null = null;
+  function drawSubTabs(route: string) {
+    const page = pageOf(route);
+    const section = page?.section ?? 'markets';
+    if (section !== drawnSection) {
+      drawnSection = section;
+      const sec = SECTIONS.find((s) => s.id === section)!;
+      sectionName.textContent = sec.label;
+      subTabs.setAttribute('aria-label', `${sec.label} pages`);
+      subTabs.replaceChildren(
+        ...sectionPages(section).map((p) => h('a', { class: 'sub-tab', href: `#${p.route}`, 'data-route': p.route, title: `${p.about} (code ${p.code})` }, h('span', {}, p.label), h('span', { class: 'code-hint', 'aria-hidden': 'true' }, p.code))),
+      );
+    }
+    subTabs.querySelectorAll<HTMLElement>('.sub-tab').forEach((t) => {
+      const on = t.dataset.route === route;
+      t.classList.toggle('active', on);
+      if (on) t.setAttribute('aria-current', 'page');
+      else t.removeAttribute('aria-current');
+    });
+    subTabs.querySelector<HTMLElement>('.sub-tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  const top = h(
+    'div',
+    { class: 'shell-top' },
+    sectionName,
+    subTabs,
+    h(
+      'button',
+      { type: 'button', class: 'cmd-field', title: 'Command bar: a ticker, a code like AAPL GP or WEI, or a page (press / or Ctrl+K)', 'aria-label': 'Command bar', 'aria-keyshortcuts': '/ Control+K Meta+K', onclick: () => openPalette() },
+      icon('search', 16),
+      h('span', { class: 'cmd-field-text' }, 'Ticker, code or page'),
+      h('kbd', {}, '/'),
+    ),
+  );
+
+  // Moving between pages: the rail's active section, its link (to the last page visited there) and the sub-tabs.
+  shellRoute = (route: string, hash: string) => {
+    const section = pageOf(route)?.section ?? 'markets';
+    if (pageOf(route) && !pageOf(route)!.hidden) {
+      lastBySection = { ...lastBySection, [section]: hash.replace(/^#/, '') };
+      writeJson(LAST_KEY, lastBySection);
+    }
+    for (const a of sectionLinks) {
+      const id = a.dataset.section as SectionId;
+      a.href = `#${sectionTarget(id, lastBySection)}`;
+      const on = id === section;
+      a.classList.toggle('active', on);
+      if (on) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    }
+    drawSubTabs(route);
+  };
 
   document.querySelector('#app')!.append(
     h('a', { class: 'skip-link', href: '#content', onclick: (e: Event) => (e.preventDefault(), focusPageHeading()) }, 'Skip to content'),
-    h(
-      'nav',
-      { class: 'rail', 'aria-label': 'Main' },
-      h('div', { class: 'brand', title: 'Trading Platform' }, '◆'),
-      commandBtn,
-      ...MENU().flatMap((p, i, menu) => [
-        p.group !== menu[i - 1]?.group ? h('div', { class: 'rail-group', role: 'separator', 'aria-label': GROUPS[p.group], title: GROUPS[p.group] }) : null,
-        h('a', { class: 'nav-btn', href: `#${p.route}`, 'data-route': p.route, title: p.label, 'aria-label': p.label }, icon(p.icon, 22), h('span', { class: 'nav-label' }, p.label)),
-      ]),
-      h(
-        'div',
-        { class: 'rail-bottom' },
-        aiBtn,
-        h('button', { class: 'nav-btn', title: 'Alerts', 'aria-label': 'Alerts', onclick: () => openAlertsDialog() }, icon('bell', 22), h('span', { class: 'nav-label' }, 'Alerts')),
-        healthBtn,
-        h('button', { class: 'nav-btn', title: 'Settings', 'aria-label': 'Settings', onclick: () => openSettings() }, icon('gear', 22), h('span', { class: 'nav-label' }, 'Settings')),
-      ),
-    ),
-    h('main', { class: 'app-main', id: 'content', tabindex: -1 }, updateBanner, views),
+    rail,
+    h('main', { class: 'app-main', id: 'content', tabindex: -1 }, top, updateBanner, views, createStatusBar({ openHealth: (a) => openDataHealth(a), openSettings: (s) => void openSettings(s) })),
     drawer,
   );
   helper.onAvailability(showUpdateBanner);
@@ -469,13 +563,7 @@ async function route() {
   const current = currentPage();
   markRoute(current.route);
   const mine = ++routeRequest;
-  document.querySelectorAll<HTMLElement>('.nav-btn[data-route]').forEach((b) => {
-    b.classList.toggle('active', b.dataset.route === current.route);
-    if (b.dataset.route === current.route) b.setAttribute('aria-current', 'page');
-    else b.removeAttribute('aria-current');
-  });
-  // On phones the menu is a sideways-scrolling bar: bring the current page's button into view.
-  if (matchMedia('(max-width: 700px)').matches) document.querySelector<HTMLElement>('.nav-btn.active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  shellRoute(current.route, where.hash);
   if (current.title) document.title = current.title === 'Trading Platform' ? current.title : `${current.title} · Trading Platform`;
   let page: Page;
   try {

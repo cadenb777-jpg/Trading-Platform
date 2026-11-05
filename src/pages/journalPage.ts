@@ -137,6 +137,16 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
   const tabs = h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Journal views' });
   const frame = pageFrame('Journal', 'Your own trades, from Webull, broker exports or typed in: what works, what doesn’t, and why.', [tabs]);
   frame.el.classList.add('jr-page');
+  frame.functions(
+    [
+      { label: 'Refresh', icon: 'refresh', title: 'Read the journal again', run: () => void reload() },
+      { label: 'Dashboard', run: () => setView('dashboard') },
+      { label: 'Trades', run: () => setView('trades') },
+      { label: 'Import', title: 'Import Webull trades or a broker file', run: () => setView('import') },
+      { label: 'Export CSV', title: 'Download the trades shown', run: () => download(`journal-trades-${todayNY()}.csv`, tradesCsv(shown())) },
+    ],
+    ['trade', 'account', 'setups'],
+  );
   const filterBar = h('div', { class: 'jr-filters', role: 'group', 'aria-label': 'Filters' });
   const body = h('div', { class: 'jr-body' });
   frame.body.replaceChildren(filterBar, body);

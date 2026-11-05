@@ -264,6 +264,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   command bar `CLIENT <name>`. None of these adds an order path.
   AI summary buttons (`insightButton`) are on Home, Flow, Research, Macro, Bonds, Investments boards, fund detail
   and Backtest; not on the Chart page or Portfolios (owner's choice).
+  Shell (docs/design.md "Navigation and the shell"): pages register once in src/ui/nav.ts (section, label, unique
+  code, keywords) and load via main.ts LOADERS; rail = sections, top row = sub-tabs + command field, launchpad
+  (src/ui/launchpad.ts, Ctrl+L), numbered function bar (src/ui/functionBar.ts, `pageFrame().functions`), status bar
+  (src/ui/statusBar.ts), panelHeader (src/ui/panel.ts). Home is a widget grid (src/home/widgets.ts, saved per device).
   Theme: light/dark via CSS variables (`:root[data-theme='light']`) and src/ui/theme.ts (THEME object updated in place,
   `followTheme(chart)` repaints canvases). Use variables, not hard-coded colours, in new CSS. Tokens, type and do/don't: docs/design.md.
   Chart engine (src/chart/): live ticks recompute indicators on the tail only (incremental.ts: last 512 bars, checked

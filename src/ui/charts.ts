@@ -1,4 +1,5 @@
 /** Small reusable charts for analysis pages: date line charts (Lightweight Charts) and bar lists. */
+import { functionBar, type FnAction } from './functionBar';
 import { ColorType, LineSeries, createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { THEME, followTheme } from './theme';
 import { attachTooltip, isDailySeries, openChartWindow, toUnix } from './chartWindow';
@@ -186,6 +187,13 @@ export function pageFrame(title: string, subtitle: string, controls: Node[]) {
     },
     error(err: unknown) {
       body.replaceChildren(h('div', { class: 'ap-error' }, (err as Error).message || String(err)));
+    },
+    /** Adds the numbered function bar under the title (src/ui/functionBar.ts); calling it again replaces it. */
+    functions(actions: FnAction[], related: string[] = []) {
+      const bar = functionBar(actions, { label: `${title} functions`, related });
+      el.querySelector(':scope > .fn-bar')?.remove();
+      el.querySelector(':scope > .ap-header')!.after(bar);
+      return bar;
     },
   };
 }

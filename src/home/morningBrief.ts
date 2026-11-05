@@ -42,6 +42,8 @@ interface BoardRow {
 export interface BriefDeps {
   openChart(ref: MarketRef): void;
   openPage(route: string, method?: string, ...args: unknown[]): void;
+  /** After each scan read: the ready setups and how many A/B setups wait (Home's Setups widget). */
+  onScan?(info: { ready: ReadySetup[]; waiting: number; loading: boolean }): void;
 }
 
 const money = (v: number) => `$${Math.abs(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
@@ -57,6 +59,11 @@ const localStore = () => {
 };
 const tone = (v: number | null | undefined) => (v == null ? '' : v >= 0 ? 'up' : 'down');
 const clock = (unix: number) => new Date(unix * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+/** A/B buy setups waiting for an entry, across time frames. */
+function scanWaiting(scan: { horizons?: Partial<Record<string, { setups: Setup[] }>> }): number {
+  return scan.horizons ? Object.values(scan.horizons).flatMap((x) => x?.setups ?? []).filter((s) => s.direction > 0 && (s.tier === 'A' || s.tier === 'B') && !s.trade && s.status !== 'forming').length : 0;
+}
 
 export function createMorningBrief(d: BriefDeps) {
   const strip = h('div', { class: 'brief-strip', role: 'list', 'aria-label': 'Overnight: futures, rates, currencies and commodities' });
@@ -273,10 +280,11 @@ export function createMorningBrief(d: BriefDeps) {
       }),
       ...events.slice(0, 3).map((e) => row('Event', 'event', e.title, clock(e.time), () => (location.hash = '#calendar'), 'Open the economic calendar')),
     ];
+    if (scan) d.onScan?.({ ready, waiting: scanWaiting(scan), loading: !!scan.loading });
     attentionCount.hidden = !items.length;
     attentionCount.textContent = String(items.length);
     const watching = list.filter((a) => a.active).length;
-    const waiting = scan?.horizons ? Object.values(scan.horizons).flatMap((x) => x?.setups ?? []).filter((s) => s.direction > 0 && (s.tier === 'A' || s.tier === 'B') && !s.trade && s.status !== 'forming').length : 0;
+    const waiting = scan ? scanWaiting(scan) : 0;
     attentionBody.replaceChildren(
       items.length ? h('ul', { class: 'brief-list' }, ...items) : h('p', { class: 'small' }, h('b', {}, 'Nothing needs you right now.')),
       h(
@@ -315,8 +323,8 @@ export function createMorningBrief(d: BriefDeps) {
     stamp.title = `Brief built ${timeAgo(loadedAt)}`;
   }
 
-  /** The overnight strip lives in Home's header (top right), not inside the brief. */
-  return { el, refresh, strip, loadedAt: () => loadedAt, repaint: () => repaint() };
+  /** The overnight strip lives in Home's header (top right), not inside the brief. The bodies and stamps are Home's widgets. */
+  return { el, refresh, strip, accountsBody, attentionBody, attentionCount, stamp, loadedAt: () => loadedAt, repaint: () => repaint() };
 }
 
 /**

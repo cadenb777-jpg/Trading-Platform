@@ -107,3 +107,42 @@ export function resetHealth() {
   states.clear();
   replies = new WeakMap();
 }
+
+// ---------- request activity (the status bar's latency, last update and READY / BUSY) ----------
+
+export interface Activity {
+  /** Requests waiting for the helper's answer right now. */
+  inflight: number;
+  /** How long the last answered request took (ms), or null. */
+  lastLatencyMs: number | null;
+  /** When the last answer arrived (ms), or null. */
+  lastAt: number | null;
+}
+const activity: Activity = { inflight: 0, lastLatencyMs: null, lastAt: null };
+const activityListeners = new Set<() => void>();
+
+export const getActivity = (): Activity => ({ ...activity });
+
+/** Calls `fn` whenever a request starts or ends. Returns an unsubscribe. */
+export function onActivity(fn: () => void): () => void {
+  activityListeners.add(fn);
+  return () => activityListeners.delete(fn);
+}
+
+/** Marks a request as started; call the returned function once when it ends (answered = it got a reply). */
+export function beginRequest(now: () => number = () => Date.now()): (answered: boolean) => void {
+  const started = now();
+  activity.inflight++;
+  for (const fn of activityListeners) fn();
+  let done = false;
+  return (answered) => {
+    if (done) return;
+    done = true;
+    activity.inflight = Math.max(0, activity.inflight - 1);
+    if (answered) {
+      activity.lastAt = now();
+      activity.lastLatencyMs = activity.lastAt - started;
+    }
+    for (const fn of activityListeners) fn();
+  };
+}

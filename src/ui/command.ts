@@ -21,6 +21,7 @@ import { LINK_LABELS, focusPanel, focusedPanel, links, visiblePanels } from './l
 import { normalizeTicker, tickerPreview } from './tickerCard';
 import { tabForCode } from '../security/codes';
 import { openSecurity } from '../security/open';
+import { FUNCTIONS, PAGES, type NavPage } from './nav';
 
 // ---------- function codes ----------
 
@@ -33,6 +34,8 @@ export interface FnCode {
   /** Needs a ticker (no page of its own). */
   tickerOnly?: boolean;
   keywords?: string;
+  /** A page's own code from the nav registry: matched by its code only (the page itself is found by name under Pages). */
+  page?: boolean;
 }
 
 export const CODES: FnCode[] = [
@@ -74,6 +77,20 @@ const CODE_ROUTE: Record<string, string> = {
   GP: 'chart', DES: 'research', FA: 'research', HDS: 'flow', CN: 'home', OMON: 'flow', DVD: 'account', BETA: 'account', TRADE: 'trade', WEI: 'home', ECO: 'calendar', FUT: 'futures',
   PORT: 'portfolio', ACCT: 'account', JRNL: 'journal', CLIENT: 'clients', PROS: 'prospect', MULTI: 'chart/multi', SCRIPT: 'chart/scripts', COT: 'futures/cot', BTST: 'backtest', SET: 'setups', MACRO: 'macro', INV: 'invest',
 };
+
+// The nav registry's pages and functions (src/ui/nav.ts) are codes too: BRF, RES, LAB, AI, DATA, PREF...
+for (const p of PAGES as readonly NavPage[]) {
+  if (!p.code) continue;
+  if (!CODES.some((c) => c.code === p.code || c.aliases?.includes(p.code))) CODES.push({ code: p.code, label: `${p.label}: ${p.about}`, keywords: p.keywords, page: true });
+  CODE_ROUTE[p.code] ??= p.route;
+}
+for (const f of FUNCTIONS) if (!CODES.some((c) => c.code === f.code || c.aliases?.includes(f.code))) CODES.push({ code: f.code, label: f.label, keywords: f.keywords });
+
+/** What a registry code without a ticker runs (a command id), when it isn't a page route above. */
+export function navTarget(code: string): string | null {
+  const f = FUNCTIONS.find((x) => x.code === code);
+  return f && !f.target.startsWith('fn:') ? f.target : null;
+}
 
 export function findCode(token: string): FnCode | null {
   const t = token.trim().toUpperCase();
@@ -163,7 +180,7 @@ export interface ActionEntry {
 
 export interface Sources {
   symbols: SymbolEntry[];
-  pages: { route: string; label: string; group?: string }[];
+  pages: { route: string; label: string; group?: string; code?: string; keywords?: string }[];
   portfolios: { id: string; name: string; mine: boolean }[];
   clients: { id: string; name: string }[];
   actions: ActionEntry[];
@@ -293,7 +310,7 @@ export function buildResults(input: string, src: Sources, recents: RecentEntry[]
     if (c.tickerOnly) continue;
     const names = [c.code, ...(c.aliases ?? [])];
     let score: number | null = names.includes(q) ? 900 : names.some((n) => n.startsWith(q)) ? 700 - Math.min(c.code.length - q.length, 50) : null;
-    const byName = fuzzyScore(q, `${c.label} ${c.keywords ?? ''}`);
+    const byName = c.page ? null : fuzzyScore(q, `${c.label} ${c.keywords ?? ''}`);
     if (byName != null && (score == null || byName > score)) score = byName;
     if (score != null && !(p.pair && p.code === c)) codeItems.push(codeItem(c, score));
   }
@@ -309,7 +326,7 @@ export function buildResults(input: string, src: Sources, recents: RecentEntry[]
       }),
       LIMIT.other,
     );
-  fuzzyGroup('Pages', src.pages.map((pg) => ({ id: `page:${pg.route}`, title: pg.label, subtitle: pg.group, keywords: pg.route })));
+  fuzzyGroup('Pages', src.pages.map((pg) => ({ id: `page:${pg.route}`, title: pg.label, subtitle: pg.group, hint: pg.code, keywords: `${pg.route} ${pg.code ?? ''} ${pg.keywords ?? ''}` })));
   fuzzyGroup('Accounts', [
     { id: 'page:account', title: 'All accounts (total value)', subtitle: 'Account: your real money, every account', keywords: 'account total holdings webull broker' },
     { id: 'page:trade', title: 'Webull ordering account', subtitle: 'Trade: one account’s buying power, positions and orders', keywords: 'account broker webull buying power orders' },
@@ -439,6 +456,7 @@ export function dispatchKey(pending: Pending | null, k: KeyInfo, now: number): D
     const key = k.key.toLowerCase();
     if (key === 'k') return run('palette');
     if (key === 'i') return run('ai');
+    if (key === 'l' && !k.shift) return run('launchpad');
     // Ctrl only: Cmd+[ and ] are the Mac browser's Back and Forward
     if (k.ctrl && !k.meta && !k.inField && k.hasPanels && (key === '[' || key === ']')) return run(key === ']' ? 'panel:next' : 'panel:prev');
     return none;
@@ -469,6 +487,8 @@ export const SHORTCUT_SHEET: { title: string; rows: [string, string][] }[] = [
       ['/  or  Ctrl/Cmd+K', 'Open the command bar'],
       ['?', 'This list of shortcuts'],
       ['Ctrl/Cmd+I', 'Open or close the AI assistant'],
+      ['Ctrl/Cmd+L', 'Launchpad: every page and function'],
+      ['1 … 9', 'Run the page’s numbered functions (the chips under its title)'],
       ...CHORDS.map((c) => [c.keys, c.label] as [string, string]),
       ['Esc', 'Close a dialog, pop-up or ticker card'],
     ],
@@ -579,13 +599,14 @@ export const ACTIONS: ActionEntry[] = [
 ];
 
 export interface CommandDeps {
-  pages: { route: string; label: string; group?: string }[];
+  pages: { route: string; label: string; group?: string; code?: string; keywords?: string }[];
   currentRoute(): string;
   openChart(ref: MarketRef): void;
   /** Goes to a page and, once it is built, calls one of its methods (e.g. Research open(symbol, tab)). */
   openPage(route: string, method?: string, ...args: unknown[]): void;
   toggleAssistant(): void;
   openHealth(): void;
+  openLaunchpad?(): void;
 }
 
 let deps: CommandDeps | null = null;
@@ -615,6 +636,7 @@ export function initCommandBar(d: CommandDeps): HTMLElement {
       if (r.action === 'palette') return closePalette ? closePalette() : openPalette({ scope: focusedPanel() });
       if (r.action === 'help') return openShortcutSheet();
       if (r.action === 'ai') return d.toggleAssistant();
+      if (r.action === 'launchpad') return closePalette ? undefined : d.openLaunchpad?.();
       if (closePalette) return;
       if (r.action === 'panel-type') return openPalette({ scope: focusedPanel(), text: r.text ?? e.key.toUpperCase() });
       if (r.action.startsWith('panel:')) {
@@ -745,6 +767,8 @@ async function runCode(code: string, symbol: string | null) {
     }
     if (c.code === 'BONDS') return d.openPage('invest', 'open', 'bonds');
     if (c.code === 'FO' || c.code === 'RIA') return d.openPage('prospect', 'preset', c.code.toLowerCase());
+    const nav = navTarget(c.code);
+    if (nav) return runId(nav);
     if (CODE_ROUTE[c.code]) location.hash = `#${CODE_ROUTE[c.code]}`;
     return;
   }

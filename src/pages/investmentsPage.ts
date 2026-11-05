@@ -51,8 +51,17 @@ export function createInvestmentsPage(ctx: InvestContext) {
 
   const frame = pageFrame('Investments', 'Stocks, ETFs, bonds, alternatives and private funds, with live market data. Click a section to see how that market is doing.', [
     searchWrap,
-    h('button', { class: 'btn', title: 'Load fresh data now', onclick: () => (clearEngineCache(), showSection(section)) }, 'Refresh'),
   ]);
+  frame.functions(
+    [
+      { label: 'Refresh', icon: 'refresh', title: 'Load fresh data now', run: () => (clearEngineCache(), showSection(section)) },
+      { label: 'Search', icon: 'search', title: 'Search stocks, ETFs, bonds and funds', run: () => search.focus() },
+      { label: 'Overview', run: () => showSection('overview') },
+      { label: 'Bonds', run: () => showSection('bonds') },
+      { label: 'Alternatives', run: () => showSection('alts') },
+    ],
+    ['research', 'macro', 'account'],
+  );
 
   const cards = h(
     'nav',

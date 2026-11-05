@@ -37,6 +37,46 @@ against every background for 4.5:1 in both themes, and against the page colour w
 `.table-wrap`, row hover with a sky edge, no zebra), `.modal` / `.popover` (rise in), `.toast` (glass, copper edge),
 `.empty-state`, `.ap-error`. Clickable cards (`.idx-card`, `.brief-chip`, `.fut-tile`) lift 1px on hover.
 
+## Navigation and the shell
+
+Ideas taken from Fincept Terminal and Bloomberg (never their code or exact layout): sections instead of a long list of
+tabs, a function bar, a launchpad, a status bar and a widget dashboard, all in our own colours, rounded edges and tokens.
+
+- **One registry.** `src/ui/nav.ts` lists every page once (route, section, label, a unique Bloomberg-style code,
+  keywords, one line about it) plus functions that aren't pages (WEI, COT, MULTI, AI, DATA, PREF...). The rail,
+  sub-tabs, command bar (`/`, Ctrl+K), launchpad (Ctrl+L) and the AI's page list all read it. A new page = one entry
+  here + its loader in main.ts `LOADERS` (typed, so a missing loader fails the build); `nav.test.ts` checks routes
+  and codes.
+- **Two levels.** The rail shows only the sections: Markets, Analyze, Money, Business, AI, then the launchpad;
+  Alerts, Data, Settings and Collapse sit at the bottom. A section opens the page last visited in it. The top row
+  shows the section's pages as sub-tabs (code as a quiet hint) and the command field on the right. Phones: the
+  sections become a bottom bar, the sub-tabs scroll sideways, the command field is an icon.
+- **Function bar.** Under a page title, numbered chips run that page's actions (keys 1-9, ignored while typing or with
+  a dialog open) and a "Related" row links its neighbours by code. Opt in with `pageFrame(...).functions(actions,
+  related)` or `functionBar()`. Actions live here, not as duplicate header buttons; the header keeps filters and
+  display choices.
+- **Status bar.** One thin row: helper and version, Schwab / Webull / SEC feeds, last latency, last update, the New York
+  session and READY / BUSY / OFFLINE. Every item opens its detail (Data health or Settings).
+- **Panels.** `panelHeader()` (src/ui/panel.ts): title, as-of, the panel's own controls, then refresh, open in full
+  and collapse, always in that order.
+- **Home widgets.** A 12-column grid (`src/home/widgets.ts`): indexes, my accounts, needs attention, setups, news,
+  events, watchlist. Customise (key 2) shows drag handles (arrow keys move too), widths 4/6/8/12, remove, add and
+  Reset to default; saved per device. The hero and bridge stay above the grid.
+
+## Usability principles (owner's brief)
+
+1. **Information hierarchy.** Each page leads with the few numbers that matter for a decision (its focal point).
+   Details, explanations and supporting tables are one click away, not on the surface.
+2. **Progressive disclosure.** Explanations, methods and "why" text live behind the "i" tips, folding sections and
+   a detail drawer: easy to find, never in the way.
+3. **Inter-page linking.** Every entity links to its home and related functions through the shared ticker card and
+   link helpers (tickers → security view, accounts → Account, funds → fund detail, clients → client, events →
+   calendar). Each page shows a small Related row in its function bar.
+4. **Codes are first-class.** Every page and function keeps its code (DES, GP, FA, WEI, ECO, JRNL...). The command
+   bar and launchpad search by code, name and keywords; codes show as subtle hints on tabs and menu items.
+5. **Consistency.** The same order on every page: title, function bar, filters, focal content, detail. The same
+   number formatting and the same empty, loading and error states.
+
 ## Principles (owner's brief: impactful, methodical, uncluttered)
 
 - **Atmosphere lives on the page background, nowhere else.** One fixed layer (`body::before`) carries the blueprint

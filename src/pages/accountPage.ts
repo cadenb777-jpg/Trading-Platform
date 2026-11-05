@@ -17,7 +17,7 @@ import { dayTotal, gainOf, methodLabel, methodOf, readPrefs, savePrefs, showChan
 import { fetchRisk, fetchTax, type RiskInput, type RiskReport, type TaxReport, type TaxType } from '../portfolio/risk';
 import { holdingGroup, riskCard, taxSection } from '../portfolio/riskView';
 import { isMine, type Holding, type Portfolio } from '../portfolio/types';
-import { renderWebullCard, syncButton } from '../portfolio/webullView';
+import { renderWebullCard, syncAccounts, syncButton } from '../portfolio/webullView';
 import { notice19aLink, periods, rocText, splitPeriod, yieldCheck, type YieldCheck } from '../portfolio/yieldQuality';
 import { loadSnapshot } from '../trade/webull';
 import { pct, pctU, statCards, pageFrame, dataTable } from '../ui/charts';
@@ -146,12 +146,17 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     );
   };
   drawSwitch();
-  const frame = pageFrame('Account', 'Your real money only: every account of yours, added together (or one at a time), with gains, dividends, risk and allocation.', [
-    showSwitch,
-    h('button', { class: 'btn', title: 'Upload a positions export (CSV or Excel) from your broker; it becomes one of your accounts here', onclick: () => openStatementImport(imported) }, 'Import statement'),
-    syncButton('Sync Webull', () => '', synced, syncNote),
-    h('button', { class: 'btn', onclick: () => (clearEngineCache('dividends.'), load()) }, 'Refresh'),
-  ]);
+  // the page's actions are the numbered function bar below the title; the header keeps only the display choice
+  const frame = pageFrame('Account', 'Your real money only: every account of yours, added together (or one at a time), with gains, dividends, risk and allocation.', [showSwitch]);
+  frame.functions(
+    [
+      { label: 'Refresh', icon: 'refresh', title: 'Reload prices, dividends and totals', run: () => (clearEngineCache('dividends.'), load()) },
+      { label: 'Import statement', title: 'Upload a positions export (CSV or Excel) from your broker', run: () => openStatementImport(imported) },
+      { label: 'Sync Webull', title: 'Read your Webull holdings into Account (never trades)', run: () => (toast('Syncing Webull accounts…'), void syncAccounts('', syncNote).then(synced)) },
+      { label: 'Analyse in Portfolios', icon: 'portfolio', title: 'Open the model portfolios (optimizer, what-ifs)', run: () => (location.hash = '#portfolio') },
+    ],
+    ['trade', 'journal', 'portfolio'],
+  );
   let loading = 0;
   let view = readKey(VIEW_KEY) ?? ALL_ACCOUNTS;
   /** The live risk card's refresh (new prices every 30 s while the page is open and visible). */
