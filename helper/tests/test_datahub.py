@@ -475,5 +475,58 @@ class AlpacaSeam(unittest.TestCase):
         self.assertEqual(alpaca.ADJUSTMENT, 'split')
 
 
+class Review(HubTest):
+    def test_retry_after_http_date_and_cap(self):
+        now = 1_700_000_000.0
+        when = 'Tue, 14 Nov 2023 22:13:40 GMT'  # 1_700_000_020
+        self.assertAlmostEqual(datahub.retry_after_seconds(when, now), 20, delta=1)
+        self.assertEqual(datahub.retry_after_seconds('7', now), 7)
+        self.assertIsNone(datahub.retry_after_seconds('soon', now))
+        self.assertIsNone(datahub.retry_after_seconds(None, now))
+        with self.assertLogs('engine.datahub', 'INFO'):
+            self.assertEqual(datahub._retry_after(Resp(429, {'Retry-After': '900'}), 0, 1.0), datahub.MAX_RETRY_WAIT)
+
+    def test_only_budgeted_sources_keep_send_times(self):
+        async def fn():
+            return Resp()
+
+        async def main():
+            for _ in range(5):
+                await datahub.call('fred', fn)
+                await datahub.call('schwab', fn)
+        asyncio.run(main())
+        self.assertEqual(len(datahub.gate('fred').sent), 0)
+        self.assertEqual(len(datahub.gate('schwab').sent), 5)
+
+    def test_cache_migrations_run_once(self):
+        disk = core.DiskCache(Path(tempfile.mkdtemp()) / 'c.db')
+        for key in (('alpaca', 'AAPL', '1h'), ('alpaca', 'AAPL', '1h', 'split'), ('scan-30m', 'AAPL', '2026-01'),
+                    ('scan-30m-months', 'AAPL'), ('scan-daily-15y', 'AAPL'), ('fred', 'X')):
+            disk.put(repr(key), 1.0, [1])
+        with self.assertLogs('engine.datahub', 'INFO'):
+            done = datahub.run_migrations(disk)
+        self.assertEqual(done, {'alpaca-split-only': 1, 'scan-30m-split-only': 2})
+        self.assertIsNone(disk.get(repr(('alpaca', 'AAPL', '1h'))))
+        self.assertIsNotNone(disk.get(repr(('alpaca', 'AAPL', '1h', 'split'))))
+        self.assertIsNotNone(disk.get(repr(('scan-daily-15y', 'AAPL'))))
+        self.assertIsNotNone(disk.get(repr(('fred', 'X'))))
+        disk.put(repr(('scan-30m', 'AAPL', '2026-02')), 2.0, [2])
+        self.assertEqual(datahub.run_migrations(disk), {})  # once only: new rows stay
+        self.assertIsNotNone(disk.get(repr(('scan-30m', 'AAPL', '2026-02'))))
+        disk._db.close()
+
+    def test_dividends_restated_after_a_split_are_not_adjusted_twice(self):
+        splits = {dt.date(2024, 6, 10): 4.0}
+        divs = {dt.date(2024, m, 15): 0.25 for m in (2, 5, 8, 11)}  # Yahoo: today's basis
+        restated = {'2024-12-31': {'start': '2024-01-01', 'end': '2024-12-31', 'value': 1.0,
+                                   'tag': 'CommonStockDividendsPerShareCashPaid', 'filed': '2025-02-01'}}
+        rows = datacheck.compare_dividends(restated, divs, splits)
+        self.assertEqual((rows[0]['sec'], rows[0]['status']), (1.0, 'agree'))
+        before = {'2023-12-31': {'start': '2023-01-01', 'end': '2023-12-31', 'value': 4.0,
+                                 'tag': 'CommonStockDividendsPerShareCashPaid', 'filed': '2024-02-01'}}
+        rows = datacheck.compare_dividends(before, {dt.date(2023, m, 15): 0.25 for m in (2, 5, 8, 11)}, splits)
+        self.assertEqual((rows[0]['sec'], rows[0]['status']), (1.0, 'agree'))  # filed before the split: adjusted once
+
+
 if __name__ == '__main__':
     unittest.main()

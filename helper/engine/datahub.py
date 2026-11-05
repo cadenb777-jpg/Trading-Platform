@@ -31,6 +31,7 @@ import asyncio
 import collections
 import contextvars
 import datetime as dt
+import email.utils
 import hashlib
 import logging
 import random
@@ -289,7 +290,9 @@ class Gate:
             wait = self._wait(now, background, gap, gap_from)
             if wait <= 0:
                 self.last_start = now
-                self.sent.append(now)
+                if self.src.per_minute:  # only a budgeted source needs the times (trimmed in used_last_minute)
+                    self.sent.append(now)
+                    self.used_last_minute(now)
                 self.active += 1
                 self.active_background += background
                 return
@@ -336,12 +339,40 @@ class Turn:
 _INFLIGHT = {}
 
 
-def _retry_after(response, attempt, base):
+#: the longest wait taken for one retry (a longer Retry-After is capped, and logged)
+MAX_RETRY_WAIT = 30.0
+
+
+def retry_after_seconds(value, now=None):
+    """Seconds from a Retry-After header: delta-seconds ('7') or an HTTP-date ('Wed, 21 Oct 2026 07:28:00 GMT').
+    None when absent or unreadable."""
+    if value is None or str(value).strip() == '':
+        return None
+    text = str(value).strip()
     try:
-        value = float(response.headers.get('Retry-After'))
-        return max(0.0, min(30.0, value))
-    except (AttributeError, TypeError, ValueError):
-        return min(30.0, base * (2 ** attempt)) * (0.75 + 0.5 * random.random())
+        return max(0.0, float(text))
+    except ValueError:
+        pass
+    try:
+        when = email.utils.parsedate_to_datetime(text)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=dt.timezone.utc)
+    now = CLOCK.wall() if now is None else now
+    return max(0.0, when.timestamp() - now)
+
+
+def _retry_after(response, attempt, base):
+    headers = getattr(response, 'headers', None) or {}
+    asked = retry_after_seconds(headers.get('Retry-After'))
+    if asked is None:
+        return min(MAX_RETRY_WAIT, base * (2 ** attempt)) * (0.75 + 0.5 * random.random())
+    if asked > MAX_RETRY_WAIT:
+        log.info('Retry-After of %.0f s capped at %.0f s', asked, MAX_RETRY_WAIT)
+    return min(MAX_RETRY_WAIT, asked)
 
 
 async def call(source, fn, *, key=None, background=False, gap=None, gap_from=None, retries=None, retry=True, timeout=None,
@@ -526,6 +557,45 @@ def provenance(record):
             'stale': any(r['stale'] for r in record.values()),
             'sources': {s: {'fetchedAt': round(r['fetchedAt']), 'stale': r['stale'], 'name': SOURCES[s].label}
                         for s, r in sorted(record.items())}}
+
+
+# ---------- one-time cache migrations ----------
+
+#: (name, key prefix, kept suffix or None): cache.db rows whose key starts with the prefix (and doesn't end with the
+#: kept suffix) are deleted once; a ('migration', name) row records that it ran.
+MIGRATIONS = (
+    # Alpaca bars used to be saved dividend-adjusted under ('alpaca', symbol, size); now ('alpaca', symbol, size, 'split').
+    ('alpaca-split-only', "('alpaca', '", ", 'split')"),
+    # The scanner's 30-minute record mixed those dividend-adjusted Alpaca bars into its months: rebuilt from Schwab
+    # (about 9 months) and split-only Alpaca (3 years) on the next scan.
+    ('scan-30m-split-only', "('scan-30m", None),
+)
+
+
+def run_migrations(disk, migrations=MIGRATIONS):
+    """Runs each cache migration once (safe to call at every start). Returns {name: rows deleted} for those that ran."""
+    import json
+    done = {}
+    try:
+        with disk._lock:
+            con = disk.db()
+            for name, prefix, keep in migrations:
+                marker = repr(('migration', name))
+                if con.execute('SELECT 1 FROM cache WHERE key = ?', (marker,)).fetchone():
+                    continue
+                sql = 'DELETE FROM cache WHERE substr(key, 1, ?) = ?'
+                args = [len(prefix), prefix]
+                if keep:
+                    sql += ' AND substr(key, -?) != ?'
+                    args += [len(keep), keep]
+                n = con.execute(sql, args).rowcount
+                con.execute('INSERT OR REPLACE INTO cache VALUES (?, ?, ?)', (marker, time.time(), json.dumps({'deleted': n})))
+                done[name] = n
+                log.info('Cache migration %s: removed %d row(s) from cache.db', name, n)
+            con.commit()
+    except Exception as err:  # never stop the helper over a clean-up; it is tried again next start
+        log.info('Cache migrations not run: %s', err)
+    return done
 
 
 # ---------- times and units ----------

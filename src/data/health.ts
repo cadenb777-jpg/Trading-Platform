@@ -80,15 +80,21 @@ export function markFetched(type: string, data?: unknown, at = Date.now()) {
   if (feed) recordOk(feed, at);
 }
 
+/** The helper's data-hub source name for each feed (reply provenance is keyed by these). */
+const FEED_SOURCE: Partial<Record<FeedId, string>> = { quotes: 'schwab', alpaca: 'alpaca', sec: 'sec', fred: 'fred', cftc: 'cftc', webull: 'webull' };
+
 /**
- * When this reply's data was fetched (ms), or null: the time it arrived from the helper, except when the helper
- * showed an older saved copy while refreshing (v44 `provenance.stale`), then that copy's own time, so the stamp
- * tells the truth and turns amber.
+ * When this reply's data was fetched (ms), or null. With reply provenance (v44) it is the helper's own fetch time of
+ * the cached inputs (the feed's source when given and present, else the oldest input), so a saved copy is stamped
+ * with its real age; older helpers: the time the reply arrived.
  */
-export const replyTime = (data: unknown): number | null => {
+export const replyTime = (data: unknown, feed?: FeedId | null): number | null => {
   if (!data || typeof data !== 'object') return null;
   const prov = replyProvenance(data);
-  if (prov?.stale) return prov.fetchedAt * 1000;
+  if (prov) {
+    const own = feed ? prov.sources?.[FEED_SOURCE[feed] ?? ''] : undefined;
+    return (own?.fetchedAt ?? prov.fetchedAt) * 1000;
+  }
   return replies.get(data) ?? null;
 };
 

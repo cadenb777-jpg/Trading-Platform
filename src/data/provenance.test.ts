@@ -16,14 +16,16 @@ describe('provenance', () => {
     expect(replyProvenance(null)).toBeNull();
   });
 
-  it('a stale saved copy stamps its own (older) time; a fresh reply its arrival', () => {
+  it('stamps the helper fetch time whenever provenance is present, the feed source first', () => {
     resetHealth();
-    const fresh = { a: 1, provenance: { fetchedAt: 1_000, stale: false, sources: {} } };
-    const stale = { a: 1, provenance: { fetchedAt: 1_000, stale: true, sources: {} } };
-    markFetched('x', fresh, 5_000_000);
-    markFetched('x', stale, 5_000_000);
-    expect(replyTime(fresh)).toBe(5_000_000);
-    expect(replyTime(stale)).toBe(1_000_000);
+    const plain = { a: 1 };
+    const prov = { a: 1, provenance: { fetchedAt: 1_000, stale: false, sources: { fred: { fetchedAt: 2_000, stale: false, name: 'FRED' } } } };
+    markFetched('x', plain, 5_000_000);
+    markFetched('x', prov, 5_000_000);
+    expect(replyTime(plain)).toBe(5_000_000);
+    expect(replyTime(prov)).toBe(1_000_000);
+    expect(replyTime(prov, 'fred')).toBe(2_000_000);
+    expect(replyTime(prov, 'sec')).toBe(1_000_000);
   });
 
   it('labels figures consistently', () => {

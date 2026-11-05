@@ -66,7 +66,10 @@ def compare_dividends(sec_years, yahoo_divs, splits, years=5):
     for end in sorted(sec_years, reverse=True)[:years]:
         y = sec_years[end]
         start_d, end_d = dt.date.fromisoformat(y['start']), dt.date.fromisoformat(y['end'])
-        sec_adj = y['value'] / split_factor_after(end_d, splits)
+        # A filing reports per-share figures on the basis of its filing date (a 10-K filed after a split restates the
+        # year), so only splits after the filing date are applied, never twice.
+        basis = dt.date.fromisoformat(y['filed']) if y.get('filed') else end_d
+        sec_adj = y['value'] / split_factor_after(basis, splits)
         if yahoo_divs is None:
             rows.append({'fiscalYearEnd': end, 'sec': round(sec_adj, 4), 'yahoo': None, 'status': 'not comparable',
                          'why': 'Yahoo had no dividend data', 'tag': y['tag'], 'filed': y['filed']})

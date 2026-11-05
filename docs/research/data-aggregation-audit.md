@@ -64,11 +64,16 @@ reply (checked), but there was no named helper; `datahub.fraction/percent/bp_to_
    120/min, of which background work (scanner) may use 90.
 2. **Alpaca history dividend-adjusted, Schwab not** — `alpaca.py:165` (`adjustment: 'all'`) merged at `alpaca.py:304`
    onto Schwab's split-only bars: older bars sat below Schwab's by the dividends paid since (1-3% steps on long
-   charts, also in the scanner's hourly record). **Fixed**: `ADJUSTMENT = 'split'`, new cache key, plus a seam check
-   (`align_to_schwab`) that rescales to Schwab if they still disagree by more than 3%.
+   charts, also in the scanner's hourly record). **Fixed**: `ADJUSTMENT = 'split'`, new cache key, plus a seam check:
+   Alpaca is fetched `SEAM_OVERLAP_DAYS` (3) past Schwab's first bar, r = median close ratio over the overlap (works
+   when Alpaca lacks the boundary bar), and beyond 3% the older bars are rescaled to Schwab (prices / r, volume x r).
+   The chart history and the scanner's 30-minute record both do this. One-time cache migrations
+   (`datahub.run_migrations`, logged, recorded as ('migration', name) rows) delete the old dividend-adjusted
+   ('alpaca', symbol, size) rows and the scanner's 'scan-30m' rows that mixed them in (rebuilt on the next scan).
 3. **Saved Alpaca bars never re-checked after a split** — `alpaca.py:223` merged new bars onto saved ones without
-   comparing the overlap, so a split after saving produced a 2x/4x/10x cliff. **Fixed**: `consistent()` compares the
-   overlap and re-downloads the range when it differs by more than 2%.
+   comparing the overlap, so a split after saving produced a 2x/4x/10x cliff. **Fixed**: on every request (also one
+   served entirely from the saved range) Yahoo's split dates are compared with the series' `built` time; a split
+   after it re-downloads the range. `consistent()` also compares overlaps when extending (2% tolerance).
 4. **Yahoo dividends memory-only, two requests per symbol, failures silent** — `core.py:234-270`: `('dividends', s)`
    cached in memory only (every restart re-asked Yahoo for every holding), a second identical request for splits, no
    pacing, `except Exception: return None`. **Fixed**: `ctx.yahoo_events` = one request (`events=div,split`), saved in
@@ -104,7 +109,7 @@ already persists its own 15-year copy.
   the split ratio means Schwab's history isn't adjusted (noted on the Schwab source).
 - **Dividend cross-check**: `data.dividends` compares Yahoo's dividends (what total return uses) per fiscal year with
   the company's own 10-K XBRL figure (`CommonStockDividendsPerShareCashPaid`, else `...Declared`), putting the SEC figure
-  on today's split basis. Only the small extracted part is cached (`sec-divfacts`).
+  on today's split basis (only splits after the filing date, since a filing after a split restates the year). Only the small extracted part is cached (`sec-divfacts`).
 - **Identifier map**: `data.identifiers` gives a symbol's spellings per source, SEC CIK and name, the company's other
   share classes (same CIK, from the cached SEC ticker list) and the CUSIP from Schwab's instrument data (cached 30 days).
 - **Alpaca/Schwab seam**: see defects 2-3.

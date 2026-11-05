@@ -510,7 +510,9 @@ async def thirty_minute_bars(ctx, symbol):
         start = time.time() - ALPACA_30M_YEARS * 365 * 86400 + 86400
         if not merged or merged[0]['time'] > start + 7 * 86400:
             try:
-                older = alpaca.regular_session(await alpaca.bars(ctx, symbol, '30m', start, merged[0]['time'] if merged else None))
+                end = merged[0]['time'] + alpaca.SEAM_OVERLAP_DAYS * 86400 if merged else None  # overlap for the seam check
+                older = alpaca.regular_session(await alpaca.bars(ctx, symbol, '30m', start, end))
+                older = alpaca.align_to_schwab(symbol, merged, older)  # Schwab's basis wins
                 merged = alpaca.merge_with_schwab(merged, older)
             except Exception as err:
                 log.info('Alpaca 30-minute history for %s not added: %s', symbol, err)
@@ -1434,6 +1436,7 @@ async def background_loop(ctx, news=None, first_delay=15):
     removed = await asyncio.to_thread(prune_old_cache, ctx.disk)
     if removed:
         log.info('Removed %d old dated scanner history rows from cache.db', removed)
+    await asyncio.to_thread(datahub.run_migrations, ctx.disk)  # one-time cache clean-ups (data hub v44)
     while True:
         try:
             await run_once(ctx, news)

@@ -72,7 +72,7 @@ export function asOfStamp(feed: FeedId | null, opts: AsOfOptions & { reply?: unk
       return api;
     },
   };
-  api.set(replyTime(opts.reply), { savedCopy: replyProvenance(opts.reply)?.stale ?? false });
+  api.set(replyTime(opts.reply, feed), { savedCopy: replyProvenance(opts.reply)?.stale ?? false });
   watch(s);
   return api;
 }

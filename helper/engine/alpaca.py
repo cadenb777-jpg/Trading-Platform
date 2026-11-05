@@ -41,8 +41,11 @@ PAGE_LIMIT = 10000
 ADJUSTMENT = 'split'
 #: Saved bars whose overlap with a fresh download differs by more than this were adjusted before a split since then.
 SPLIT_CHECK_TOLERANCE = 0.02
-#: Alpaca's bar at Schwab's first bar off by more than this: the older part is rescaled to Schwab (Schwab wins).
+#: Alpaca's bars over the overlap with Schwab off by more than this (median close ratio): the older part is rescaled
+#: to Schwab (Schwab wins).
 SEAM_TOLERANCE = 0.03
+#: Days of Alpaca bars fetched past Schwab's first bar, so the seam check compares many bars, not one.
+SEAM_OVERLAP_DAYS = 3
 #: Alpaca allows 200 history calls a minute on the free plan; stay a little under it.
 MIN_CALL_GAP = 60 / 180
 #: How long a saved range counts as up to date before the newest bars are checked again (seconds).
@@ -128,13 +131,39 @@ def consistent(saved, fresh, tolerance=SPLIT_CHECK_TOLERANCE):
 
 
 def align_to_schwab(symbol, schwab_bars, alpaca_bars, tolerance=SEAM_TOLERANCE):
-    """Alpaca's bars rescaled to Schwab's basis when they disagree at the seam (Schwab wins; noted in the data hub)."""
+    """Alpaca's bars rescaled to Schwab's basis when they disagree over the overlap (Schwab wins; noted in the data hub).
+
+    r = median of Alpaca close / Schwab close over every time both have (fetch SEAM_OVERLAP_DAYS past Schwab's first
+    bar so there are many). Prices are divided by r and volumes multiplied by r (a share count moves opposite to the
+    price, as in a split). No overlap: returned unchanged (nothing to compare)."""
     r = overlap_ratio(schwab_bars, alpaca_bars)
     if r is None or abs(r - 1) <= tolerance:
         return alpaca_bars
-    datahub.note('alpaca', f'{symbol}: older bars rescaled by {1 / r:.4f} to match Schwab at the seam')
+    datahub.note('alpaca', f'{symbol}: older bars rescaled by {1 / r:.4f} to match Schwab over the overlap')
     log.info('Alpaca %s: rescaled older bars by %.4f to match Schwab', symbol, 1 / r)
-    return [{**b, 'open': b['open'] / r, 'high': b['high'] / r, 'low': b['low'] / r, 'close': b['close'] / r} for b in alpaca_bars]
+    return [{**b, 'open': b['open'] / r, 'high': b['high'] / r, 'low': b['low'] / r, 'close': b['close'] / r,
+             'volume': b['volume'] * r} for b in alpaca_bars]
+
+
+async def _known_splits(ctx, symbol):
+    """Yahoo's split dates for the symbol ({date: ratio}; cached a day by ctx), {} when unknown."""
+    get = getattr(ctx, 'splits', None)
+    if get is None:
+        return {}
+    try:
+        return await get(symbol) or {}
+    except Exception:
+        return {}
+
+
+def split_since(splits, built, frm, now):
+    """The ISO date of a split that took effect after the bars were downloaded (`built`, unix s) and affects them
+    (bars exist before it), else None. A split counts from the start of its New York day."""
+    for day in sorted(splits or {}, reverse=True):
+        start = int(dt.datetime(day.year, day.month, day.day, tzinfo=NEW_YORK).timestamp())
+        if built < start <= now and frm < start:
+            return day.isoformat()
+    return None
 
 
 def _error_message(response):
@@ -223,10 +252,19 @@ async def bars(ctx, symbol, timeframe, start, end=None):
         return []
     key = ('alpaca', symbol, timeframe, ADJUSTMENT)
     lock = _locks.setdefault(key, asyncio.Lock())
+    splits = await _known_splits(ctx, symbol)
     async with lock:
         saved = await _saved(ctx, key)
         if saved:
             saved_bars, frm, to, checked = saved['bars'], saved['from'], saved['to'], saved['checked']
+            built = saved.get('built', 0)
+            split = split_since(splits, built, frm, now)
+            if split:
+                # Checked on every request (also inside the saved range): bars saved before a split are on the old basis.
+                datahub.note('alpaca', f'{symbol} {timeframe}: split on {split} after the bars were saved; downloaded again')
+                log.info('Alpaca %s %s: split on %s after saving; re-downloading', symbol, timeframe, split)
+                saved_bars, built = await _download(ctx, symbol, timeframe, frm, to), now
+                await _store(ctx, key, frm, to, checked, saved_bars, built)
             parts = []
             if start < frm:
                 parts.append(await _download(ctx, symbol, timeframe, start, frm))
@@ -241,16 +279,16 @@ async def bars(ctx, symbol, timeframe, start, end=None):
                 # A split since the bars were saved: the saved ones are on the old basis. Download the whole range again.
                 datahub.note('alpaca', f'{symbol} {timeframe}: saved bars no longer matched (a split?); downloaded again')
                 log.info('Alpaca %s %s: saved bars disagree with fresh ones (split?); re-downloading', symbol, timeframe)
-                saved_bars = await _download(ctx, symbol, timeframe, frm, to)
+                saved_bars, built = await _download(ctx, symbol, timeframe, frm, to), now
             if parts:
                 saved_bars = merge(saved_bars, *parts)
                 if timeframe in MAX_SPAN_DAYS:  # drop what has aged past the size's limit
                     frm = max(frm, now - MAX_SPAN_DAYS[timeframe] * 86400)
                     saved_bars = [b for b in saved_bars if b['time'] >= frm]
-                await _store(ctx, key, frm, to, checked, saved_bars)
+                await _store(ctx, key, frm, to, checked, saved_bars, built)
         else:
             saved_bars = await _download(ctx, symbol, timeframe, start, end)
-            await _store(ctx, key, start, end, now, saved_bars)
+            await _store(ctx, key, start, end, now, saved_bars, now)
     return [dict(b) for b in saved_bars if start <= b['time'] <= end]
 
 
@@ -286,16 +324,18 @@ async def _saved(ctx, key):
     if not stored:
         return None
     raw = stored[1]
-    value = {'from': raw['from'], 'to': raw['to'], 'checked': raw.get('checked', 0), 'bars': [_from_row(r) for r in raw['bars']]}
+    value = {'from': raw['from'], 'to': raw['to'], 'checked': raw.get('checked', 0), 'built': raw.get('built', 0),
+             'bars': [_from_row(r) for r in raw['bars']]}
     ctx._cache[key] = (stored[0], value)
     return value
 
 
-async def _store(ctx, key, frm, to, checked, saved_bars):
-    """Keeps the series in memory and writes it to disk on a worker thread (so a big save never stalls the helper)."""
+async def _store(ctx, key, frm, to, checked, saved_bars, built=0):
+    """Keeps the series in memory and writes it to disk on a worker thread (so a big save never stalls the helper).
+    `built` = when the oldest download still in the series was made (its split basis)."""
     now = time.time()
-    ctx._cache[key] = (now, {'from': frm, 'to': to, 'checked': checked, 'bars': saved_bars})
-    disk_value = {'from': frm, 'to': to, 'checked': checked, 'bars': [_row(b) for b in saved_bars]}
+    ctx._cache[key] = (now, {'from': frm, 'to': to, 'checked': checked, 'built': built, 'bars': saved_bars})
+    disk_value = {'from': frm, 'to': to, 'checked': checked, 'built': built, 'bars': [_row(b) for b in saved_bars]}
     await asyncio.to_thread(ctx.disk.put, repr(key), now, disk_value)
 
 
@@ -319,7 +359,7 @@ async def fill_older(ctx, symbol, resolution, days, schwab_bars):
     if first - start < 4 * 86400:  # Schwab already covers (nearly) the whole range: weekends/holidays aside
         return schwab_bars
     try:
-        older = await bars(ctx, symbol, resolution, start, first)
+        older = await bars(ctx, symbol, resolution, start, first + SEAM_OVERLAP_DAYS * 86400)  # overlap for the check
     except Exception as err:
         log.info('Alpaca history for %s %s not added: %s', symbol, resolution, err)
         return schwab_bars
