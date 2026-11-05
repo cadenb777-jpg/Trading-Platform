@@ -286,6 +286,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   BTST, SET, MACRO, BONDS/WB, INV, HELP) call pages' open() methods. Ranking: exact ticker > exact code > prefixes >
   fuzzy name. Global chords (CHORDS: g h/c/s/a/t/f/p, n a), ? sheet (SHORTCUT_SHEET lists every page's keys; keep it
   in step), Ctrl/Cmd+I = AI assistant; never inside fields or dialogs. TRADE only pre-fills. Recents in localStorage.
+  Security view (src/security/, v41 helper unchanged; docs/research/bloomberg-structure.md): #sec/SYM[/CODE] page and a
+  slide-over (`openSecurity(symbol, tab?)` in open.ts, also the `tp:open-security` event). Clicking any [data-ticker]
+  opens it (tickerCard.ts: the ticker text itself, even inside a clickable row; a ticker that is its own button keeps its action; hover keeps the quick card; AI replies are marked by ui/markTickers.ts). Tabs DES GP FA HDS CN OMON DVD BETA(HP) SET; the command bar's
+  "AAPL FA" opens a tab, bare "AAPL" opens DES. Shared Back/Forward history (Alt+←/→) and recents (codes.ts). Maths in
+  stats.ts (simple daily returns, 252 days, sample SD; tested against numpy), numbers via format.ts ("—" + reason,
+  never NaN). Peers come from related.ts (same lists as scanner._SECTOR_LISTS, tested). Account tickers open it; "Records"
+  opens the holding's records.
   Pop-out charts: `openChartWindow` (src/ui/chartWindow.ts); `createLineChart` adds hover values and an expand button;
   `openFredWindow` opens a FRED series' full history.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).

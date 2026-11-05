@@ -1,7 +1,8 @@
 /**
- * The ticker card: hover (desktop, 300 ms), tap or focus any element with `data-ticker="AAPL"` for a small card with
- * the name, price and day change, a 3-month line, your position across accounts, and actions (Open chart, Trade,
- * Research, Ask AI). Clicking a ticker that isn't inside a button or link pins the card. Esc closes it.
+ * The ticker card: hover (desktop, 300 ms) or keyboard focus on any element with `data-ticker="AAPL"` shows a small
+ * card with the name, price and day change, a 3-month line, your position across accounts, and actions (Details,
+ * Open chart, Trade, Ask AI). Clicking (or long-pressing on a touch screen) a ticker that isn't inside a button or
+ * link opens the security view slide-over (src/security/open.ts), the same everywhere. Esc closes the card.
  * One delegated set of listeners on document (initTickerCards in main.ts), so a page only adds the attribute.
  * Trade only pre-fills the Trade page's ticket; nothing is ever placed from here.
  */
@@ -62,15 +63,15 @@ const isInteractive = (el: TickerNode, hasClick: (el: TickerNode) => boolean) =>
 };
 
 /**
- * What a click or tap on a ticker does: 'pin' opens the pinned card (and stops the click), 'pass' leaves the page's
- * own click alone (a watchlist row still opens its chart, a Setups row still selects). On touch screens a long press
- * opens the card there instead. `data-ticker-click="pin|pass"` overrides.
+ * What a click or tap on a ticker does: 'open' opens the security view (and stops the click, so a row or link around
+ * the ticker text keeps its own action for clicks elsewhere on it); 'pass' leaves the click alone when the ticker is
+ * itself a button or link with its own action (Trade's "Load AAPL", Account's symbol button). `data-ticker-click=
+ * "open|pass"` overrides (the watchlist passes: its symbols switch the chart).
  */
-export function clickMode(ticker: TickerNode, hasClick: (el: TickerNode) => boolean = () => false): 'pin' | 'pass' {
+export function clickMode(ticker: TickerNode, hasClick: (el: TickerNode) => boolean = () => false): 'open' | 'pass' {
   const forced = ticker.getAttribute('data-ticker-click');
-  if (forced === 'pin' || forced === 'pass') return forced;
-  for (let el: TickerNode | null = ticker, i = 0; el && i < 8; el = el.parentElement, i++) if (isInteractive(el, hasClick)) return 'pass';
-  return 'pin';
+  if (forced === 'open' || forced === 'pass') return forced;
+  return isInteractive(ticker, hasClick) ? 'pass' : 'open';
 }
 
 /** Words in capitals that look like tickers but aren't, when matched without a "$" or exchange prefix. */
@@ -117,8 +118,10 @@ export function heldPosition(symbol: string, portfolios: Portfolio[]): HeldPosit
 export interface TickerActions {
   openChart(ref: MarketRef): void;
   openResearch(symbol: string): void;
+  /** The security view slide-over (a click on any ticker). */
+  openSecurity(symbol: string): void;
 }
-let actions: TickerActions = { openChart: () => {}, openResearch: () => {} };
+let actions: TickerActions = { openChart: () => {}, openResearch: () => {}, openSecurity: () => {} };
 
 let portfolios: { at: number; value: Promise<Portfolio[]> } | null = null;
 function myAccounts(): Promise<Portfolio[]> {
@@ -246,13 +249,13 @@ function buildCard(symbol: string, pinned: boolean, embedded = false) {
       : h(
       'div',
       { class: 'tc-actions' },
+      !future ? btn('Details', `${symbol}: description, chart, financials, holders, news, options, dividends and risk (click the ticker)`, () => actions.openSecurity(symbol)) : '',
       ref ? btn('Open chart', `Open ${symbol} on the Chart page`, () => actions.openChart(ref)) : '',
       !crypto && !index && !future
         ? btn('Trade', 'Opens the Trade page with this symbol filled in. You still preview and confirm; nothing is placed from here.', async () =>
             (await import('../trade/webull')).openOrderTicket({ symbol, side: 'BUY' }),
           )
         : '',
-      !crypto && !index && !future ? btn('Research', `Company research for ${symbol}`, () => actions.openResearch(symbol)) : '',
       btn('Ask AI', `Ask the assistant about ${symbol}`, () =>
         prefillAssistant(`Give me a quick read on ${symbol}: what it is, how it has been trading lately, and anything I should know before buying or selling.`),
       ),
@@ -373,8 +376,9 @@ export function initTickerCards(a: TickerActions) {
     if (!t || clickMode(t.el, (el) => clickTargets.has(el as unknown as Element)) === 'pass') return;
     e.preventDefault();
     e.stopPropagation();
-    if (open?.anchor === t.el && open.pinned) return close();
-    show(t.symbol, t.el, { pinned: true, byFocus: false });
+    clearTimeout(showTimer);
+    close();
+    actions.openSecurity(t.symbol); // one behaviour for every ticker: the security view (futures: the Futures page)
   }, true);
   // touch screens: a long press opens the card where a tap does the row's own action
   document.addEventListener('contextmenu', (e) => {
@@ -382,7 +386,8 @@ export function initTickerCards(a: TickerActions) {
     const t = findTicker(asEl(e.target));
     if (!t) return;
     e.preventDefault();
-    show(t.symbol, t.el, { pinned: true, byFocus: false });
+    close();
+    actions.openSecurity(t.symbol);
   });
   document.addEventListener('focusin', (e) => {
     const target = asEl(e.target);

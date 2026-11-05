@@ -29,34 +29,23 @@ describe('ticker attribute', () => {
     expect(findTicker(node('B', { 'data-ticker': 'not a symbol' }))).toBeNull();
   });
 
-  it('pins on click unless the ticker sits in something with its own click', () => {
-    const plain = node('B', { 'data-ticker': 'AAPL' }, node('TD', {}, node('TR')));
-    expect(clickMode(plain)).toBe('pin');
-    const inRow = node('B', { 'data-ticker': 'AAPL' }, node('TD', {}, node('TR', {}, null, ['clickable'])));
-    expect(clickMode(inRow)).toBe('pass'); // the row still opens its detail
-    expect(clickMode(node('SPAN', { 'data-ticker': 'AAPL' }, node('BUTTON')))).toBe('pass');
-    expect(clickMode(node('BUTTON', { 'data-ticker': 'AAPL' }))).toBe('pass');
-    expect(clickMode(node('SPAN', { 'data-ticker': 'AAPL' }, node('DIV', { role: 'button' })))).toBe('pass');
-  });
-
-  it('leaves a watchlist row its click (focusable list item opens the chart)', () => {
-    const row = node('DIV', { class: 'wl-row', role: 'listitem', tabindex: '0' });
-    const sym = node('B', { 'data-ticker': 'SPY' }, node('SPAN', { class: 'wl-sym' }, row));
-    expect(clickMode(sym)).toBe('pass');
-    // a focusable row without a role still counts; tabindex -1 doesn't
-    expect(clickMode(node('B', { 'data-ticker': 'SPY' }, node('DIV', { tabindex: '0' })))).toBe('pass');
-    expect(clickMode(node('B', { 'data-ticker': 'SPY' }, node('DIV', { tabindex: '-1' })))).toBe('pin');
-  });
-
-  it('leaves a Setups table row its click (a row with a click handler selects it)', () => {
+  it('the ticker text opens the security view, even inside a clickable row, card or link', () => {
+    expect(clickMode(node('B', { 'data-ticker': 'AAPL' }, node('TD', {}, node('TR'))))).toBe('open');
+    expect(clickMode(node('B', { 'data-ticker': 'AAPL' }, node('TD', {}, node('TR', {}, null, ['clickable']))))).toBe('open'); // the rest of the row keeps its action
+    expect(clickMode(node('SPAN', { 'data-ticker': 'AAPL' }, node('DIV', { role: 'button' })))).toBe('open'); // Home index card
     const tr = node('TR');
-    const sym = node('B', { 'data-ticker': 'NVDA' }, node('TD', {}, tr));
-    expect(clickMode(sym, (el) => el === tr)).toBe('pass');
-    expect(clickMode(sym)).toBe('pin');
+    expect(clickMode(node('B', { 'data-ticker': 'NVDA' }, node('TD', {}, tr)), (el) => el === tr)).toBe('open'); // Setups row
+  });
+
+  it('a ticker that is itself a button or link keeps its own click', () => {
+    expect(clickMode(node('BUTTON', { 'data-ticker': 'AAPL' }))).toBe('pass');
+    expect(clickMode(node('A', { 'data-ticker': 'AAPL' }))).toBe('pass');
+    const own = node('B', { 'data-ticker': 'AAPL' });
+    expect(clickMode(own, (el) => el === own)).toBe('pass');
   });
 
   it('data-ticker-click overrides', () => {
-    expect(clickMode(node('SPAN', { 'data-ticker': 'AAPL', 'data-ticker-click': 'pin' }, node('BUTTON')))).toBe('pin');
+    expect(clickMode(node('BUTTON', { 'data-ticker': 'AAPL', 'data-ticker-click': 'open' }))).toBe('open');
     expect(clickMode(node('SPAN', { 'data-ticker': 'AAPL', 'data-ticker-click': 'pass' }))).toBe('pass');
   });
 });

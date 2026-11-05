@@ -224,6 +224,11 @@ export class ChartView {
     this.overlay.remove();
   }
 
+  /** Same as dispose() (the security view calls it destroy). */
+  destroy() {
+    this.dispose();
+  }
+
   get barCount() {
     return this.bars.length;
   }

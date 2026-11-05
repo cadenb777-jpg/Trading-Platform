@@ -77,13 +77,13 @@ describe('parsing', () => {
 });
 
 describe('ranking', () => {
-  it('exact ticker first, with Chart as the Enter default and its actions after', () => {
+  it('exact ticker first, with the security view (DES) as the Enter default and its tabs and actions after', () => {
     const groups = buildResults('aapl', src());
     expect(groups[0].label).toBe('AAPL · Apple Inc');
-    expect(groups[0].items.map((i) => i.hint)).toEqual(['GP', 'DES', 'FA', 'CN', 'OMON', 'TRADE', 'ALRT', 'WL']);
-    expect(groups[0].items[0].id).toBe('tk:AAPL:GP');
+    expect(groups[0].items.map((i) => i.hint)).toEqual(['DES', 'GP', 'FA', 'HDS', 'CN', 'OMON', 'DVD', 'BETA', 'TRADE', 'ALRT', 'WL', 'SET']);
+    expect(groups[0].items[0].id).toBe('tk:AAPL:DES');
     // AAPL isn't listed twice
-    expect(flatten(groups).filter((i) => i.symbol === 'AAPL')).toHaveLength(8);
+    expect(flatten(groups).filter((i) => i.symbol === 'AAPL')).toHaveLength(12);
   });
   it('ticker prefix beats a code prefix and a fuzzy name', () => {
     const items = flatten(buildResults('aa', src()));
@@ -98,6 +98,8 @@ describe('ranking', () => {
     expect(top('aapl fa')).toMatchObject({ id: 'tk:AAPL:FA', score: 2000 });
     expect(top('MSFT GP').id).toBe('tk:MSFT:GP'); // unknown to the lists still works
     expect(top('ES GP').id).toBe('tk:/ES:GP'); // futures root without the slash
+    for (const code of ['HDS', 'DVD', 'BETA', 'OMON', 'CN']) expect(top(`nvda ${code}`).id).toBe(`tk:NVDA:${code}`);
+    expect(top('aapl hp').id).toBe('tk:AAPL:BETA'); // HP is an alias of the Risk tab
   });
   it('codes alone map to pages', () => {
     expect(top('wei').id).toBe('fn:WEI');
@@ -106,7 +108,7 @@ describe('ranking', () => {
   });
   it('fuzzy names find symbols, pages, accounts, clients and actions, in groups', () => {
     expect(top('gold').symbol).toBe('GLD'); // the name beats GOLD as an unknown ticker
-    expect(top('xyzq').id).toBe('tk:XYZQ:GP'); // an unknown ticker still works
+    expect(top('xyzq').id).toBe('tk:XYZQ:DES'); // an unknown ticker still works
     expect(top('jane').id).toBe('cl:c1');
     expect(top('roth').id).toBe('ac:p1');
     expect(buildResults('roth', src())[0].label).toBe('Accounts');
@@ -149,7 +151,7 @@ describe('ranking', () => {
     expect(groups[1].items.map((i) => i.hint)).not.toContain('WL'); // needs a ticker
   });
   it('Tab completion text', () => {
-    expect(top('aapl').complete).toBe('AAPL GP');
+    expect(top('aapl').complete).toBe('AAPL DES');
     expect(flatten(buildResults('aa', src()))[0].complete).toBe('AAP ');
     expect(top('we').complete).toBe('WEI');
   });
