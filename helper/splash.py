@@ -518,7 +518,7 @@ HERE = Path(__file__).resolve().parent
 DATA_DIR = Path.home() / '.trading-platform'
 PIP_ARGS = ['-m', 'pip', 'install', '--disable-pip-version-check', '--prefer-binary', '--timeout', '20', '--retries', '2']
 # Typical number of packages each requirements file pulls in, so the bar can estimate how far along it is.
-EXPECTED_PACKAGES = {'requirements.txt': 22, 'requirements-extra.txt': 14}
+EXPECTED_PACKAGES = {'requirements.txt': 22, 'requirements-extra.txt': 18}
 # Exit codes that mean the helper was stopped on purpose (Ctrl+C or window closed).
 STOPPED_CODES = {0, 130, -2, 3221225786, -1073741510}
 # Exit code from the helper after it installed an update: start everything again (the new splash.py and helper).

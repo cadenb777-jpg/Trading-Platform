@@ -7,6 +7,13 @@ import { openSettings } from '../ui/settings';
 import { ACCEPTED_FILES, readAttachment, type Attachment } from './files';
 import { renderMarkdown } from './markdown';
 import { markTickers } from '../ui/markTickers';
+import { AI_MODES, EQUILIBRIUM_STARTERS, modeLabel, type AiModeId } from './modes';
+
+/** Maths rendering (KaTeX) for Equilibrium-Prime answers: downloaded only when that mode is used. */
+type MathModule = typeof import('../strategy/math');
+let mathModule: MathModule | null = null;
+let mathLoad: Promise<MathModule> | null = null;
+const loadMath = () => (mathLoad ??= import('../strategy/math').then((m) => (mathModule = m)));
 
 export interface AssistantAction {
   action: 'open_chart' | 'open_page' | 'add_indicator' | 'create_alert' | 'refresh';
@@ -49,6 +56,8 @@ export interface AssistantActions {
 interface ChatState {
   conversation: string;
   messages: ChatMessage[];
+  /** The assistant mode this chat uses ('' = the platform assistant). */
+  mode?: AiModeId;
 }
 
 const STORE_KEY = 'tp:ai:chat';
@@ -61,9 +70,9 @@ const SUGGESTIONS = [
   'Compare AAPL and MSFT valuations',
 ];
 
-function loadState(): ChatState {
+function loadState(key = STORE_KEY): ChatState {
   try {
-    const raw = sessionStorage.getItem(STORE_KEY);
+    const raw = sessionStorage.getItem(key);
     if (raw) return JSON.parse(raw) as ChatState;
   } catch {
     // Storage can be unavailable (private windows); start fresh.
@@ -71,9 +80,9 @@ function loadState(): ChatState {
   return { conversation: '', messages: [] };
 }
 
-function saveState(s: ChatState) {
+function saveState(s: ChatState, key = STORE_KEY) {
   try {
-    sessionStorage.setItem(STORE_KEY, JSON.stringify(s));
+    sessionStorage.setItem(key, JSON.stringify(s));
   } catch {
     // Not critical.
   }
@@ -95,14 +104,55 @@ export interface AssistantOptions {
   actions?: AssistantActions;
   onClose?(): void;
   onPopOut?(): void;
+  /** Where this chat is kept (a page's own chat uses its own key). */
+  storeKey?: string;
+  /** A chat locked to one mode (no mode menu), e.g. the Strategy Lab's Equilibrium-Prime panel. */
+  fixedMode?: AiModeId;
+  /** Text describing the model on the page, sent with each question (Strategy Lab: the current game). */
+  getModel?(): string;
+  /** The heading (default "AI Assistant"). */
+  title?: string;
+  /** Called when the owner starts a new chat (or switches mode). */
+  onNewChat?(): void;
 }
 
 export function createAssistant(opts: AssistantOptions) {
-  let chat = loadState();
+  const storeKey = opts.storeKey ?? STORE_KEY;
+  let chat = loadState(storeKey);
+  if (opts.fixedMode !== undefined) chat.mode = opts.fixedMode;
+  const mode = (): AiModeId => opts.fixedMode ?? chat.mode ?? '';
+  const isMathMode = () => mode() === 'equilibrium_prime';
+  const md = (text: string) => (isMathMode() && mathModule ? mathModule.renderMarkdownMathSync(text) : renderMarkdown(text));
+  /** Typesets the maths in a finished answer (Equilibrium-Prime). */
+  const typeset = (el: HTMLElement, text: string) => {
+    if (!isMathMode()) return;
+    loadMath()
+      .then((m) => m.renderMarkdownMath(text))
+      .then((html) => {
+        el.innerHTML = html;
+      })
+      .catch(() => {});
+  };
+  if (isMathMode()) loadMath().catch(() => {});
+  const save = () => saveState(chat, storeKey);
   let busy = false;
   let controller: AbortController | null = null;
   let attachments: Attachment[] = [];
-  const suggestions = () => { const own = opts.getSuggestions?.() ?? []; return own.length ? own : SUGGESTIONS; };
+  const suggestions = () => {
+    if (mode() === 'equilibrium_prime') return EQUILIBRIUM_STARTERS;
+    const own = opts.getSuggestions?.() ?? [];
+    return own.length ? own : SUGGESTIONS;
+  };
+  const modeSelect = h(
+    'select',
+    { class: 'ai-mode', title: 'Assistant mode', 'aria-label': 'Assistant mode' },
+    ...AI_MODES.map((m) => h('option', { value: m.id, title: m.blurb }, m.label)),
+  );
+  modeSelect.value = mode();
+  const placeholder = () => (isMathMode() ? 'Describe the situation, or start with [SOLVE], [RED TEAM], [REDESIGN / MECHANISM], [TUTOR]…' : 'Ask anything… e.g. “Why is NVDA down today?”');
+  modeSelect.addEventListener('change', () => {
+    newChat(modeSelect.value as AiModeId);
+  });
 
   const list = h('div', { class: 'ai-messages', 'aria-live': 'polite' });
   const input = h('textarea', { class: 'ai-input', rows: 1, placeholder: 'Ask anything… e.g. “Why is NVDA down today?”', 'aria-label': 'Message the AI assistant' });
@@ -112,7 +162,8 @@ export function createAssistant(opts: AssistantOptions) {
   const header = h(
     'header',
     { class: 'ai-head' },
-    h('div', { class: 'ai-title' }, h('span', { class: 'ai-spark' }, '✦'), h('b', {}, 'AI Assistant')),
+    h('div', { class: 'ai-title' }, h('span', { class: 'ai-spark' }, '✦'), h('b', {}, opts.title ?? 'AI Assistant')),
+    opts.fixedMode === undefined ? modeSelect : null,
     h('span', { class: 'spacer' }),
     h('button', { class: 'icon-btn', title: 'New chat', 'aria-label': 'New chat', onclick: () => newChat() }, icon('plus', 18)),
     h('button', { class: 'icon-btn', title: 'AI settings', 'aria-label': 'AI settings', onclick: () => openSettings('ai') }, icon('gear', 18)),
@@ -200,8 +251,9 @@ export function createAssistant(opts: AssistantOptions) {
       );
     }
     const body = h('div', { class: `ai-bubble md${m.error ? ' error' : ''}` });
-    body.innerHTML = renderMarkdown(m.text);
-    if (!m.error) markTickers(body); // tickers open the security view, as everywhere
+    body.innerHTML = md(m.text);
+    if (!m.error && !isMathMode()) markTickers(body); // tickers open the security view, as everywhere
+    if (!m.error) typeset(body, m.text);
     return h('div', { class: 'ai-msg assistant' }, h('span', { class: 'ai-avatar' }, '✦'), h('div', { class: 'ai-msg-body' }, body, stepsLine(m)));
   }
 
@@ -223,7 +275,7 @@ export function createAssistant(opts: AssistantOptions) {
         try {
           await opts.actions!.undo(undoIds);
           m.undone = true;
-          saveState(chat);
+          save();
           el.replaceWith(stepsLine(m));
           toast('Undone');
         } catch (err) {
@@ -244,8 +296,14 @@ export function createAssistant(opts: AssistantOptions) {
           'div',
           { class: 'ai-empty' },
           h('div', { class: 'ai-empty-mark' }, '✦'),
-          h('h3', {}, 'How can I help?'),
-          h('p', { class: 'muted' }, 'I can see the page you’re on, so ask about anything on screen (“why is…”, “summarize this”). I also read live quotes, news, options flow, financials and the economy, build portfolios, open charts and set alerts.'),
+          h('h3', {}, isMathMode() ? 'Equilibrium-Prime' : 'How can I help?'),
+          h(
+            'p',
+            { class: 'muted' },
+            isMathMode()
+              ? 'Describe a strategic situation, or attach the documents behind it (PDF or text) as sources. Start with a mode tag: [SOLVE], [RED TEAM], [REDESIGN / MECHANISM], [TUTOR] or [SUMMARY MATRIX]. Every equilibrium it states is computed by the game engine and listed under the answer.'
+              : 'I can see the page you’re on, so ask about anything on screen (“why is…”, “summarize this”). I also read live quotes, news, options flow, financials and the economy, build portfolios, open charts and set alerts.',
+          ),
           h('div', { class: 'ai-suggestions' }, ...suggestions().map((s) => h('button', { class: 'ai-suggestion', onclick: () => ask(s) }, s))),
         ),
       );
@@ -255,10 +313,15 @@ export function createAssistant(opts: AssistantOptions) {
     list.scrollTop = list.scrollHeight;
   }
 
-  function newChat() {
+  function newChat(nextMode: AiModeId = mode()) {
     if (chat.conversation) engineRequest('ai.reset', { conversation: chat.conversation }).catch(() => {});
-    chat = { conversation: '', messages: [] };
-    saveState(chat);
+    chat = { conversation: '', messages: [], mode: opts.fixedMode ?? nextMode };
+    opts.onNewChat?.();
+    modeSelect.value = mode();
+    el.dataset.mode = mode();
+    input.placeholder = placeholder();
+    if (isMathMode()) loadMath().catch(() => {});
+    save();
     renderAll();
     input.focus();
   }
@@ -296,12 +359,13 @@ export function createAssistant(opts: AssistantOptions) {
     let showStatus = true;
     const paint = () => {
       frame = 0;
-      replyEl.innerHTML = renderMarkdown(reply.text);
-      markTickers(replyEl);
+      replyEl.innerHTML = md(reply.text);
+      if (!isMathMode()) markTickers(replyEl);
       if (showStatus) replyEl.append(status);
       list.scrollTop = list.scrollHeight;
     };
-    const useActions = !!opts.actions && aiActionsReady();
+    // a specialist mode (Equilibrium-Prime) never operates the platform, from any surface
+    const useActions = !!opts.actions && aiActionsReady() && !mode();
     let chatSignal: AbortSignal | undefined;
     const stopped = () => chatSignal?.aborted ?? false;
     /** Actions the helper gave up on (timed out): never run them late. */
@@ -335,7 +399,7 @@ export function createAssistant(opts: AssistantOptions) {
         (reply.steps ??= []).push({ ok: result.ok, message: result.message, ...(result.undoId ? { undoId: result.undoId } : {}) });
         const old = replyEl.parentElement?.querySelector('.ai-steps');
         old?.replaceWith(stepsLine(reply));
-        saveState(chat);
+        save();
       }
       await engineRequest('ai.ui_result', { callId, result }, 15000).catch(() => {});
     };
@@ -367,7 +431,15 @@ export function createAssistant(opts: AssistantOptions) {
     try {
       const result = await engineRequest<{ conversation: string; text: string; actions: AssistantAction[] }>(
         'ai.chat',
-        { conversation: chat.conversation, message: text, attachments: files.map(({ info: _info, ...a }) => a), context: opts.getContext(), ...(useActions ? { ui_actions: 1, stopToken } : {}) },
+        {
+          conversation: chat.conversation,
+          message: text,
+          attachments: files.map(({ info: _info, ...a }) => a),
+          context: opts.getContext(),
+          ...(useActions ? { ui_actions: 1, stopToken } : {}),
+          ...(mode() ? { mode: mode() } : {}),
+          ...(mode() && opts.getModel ? { model: opts.getModel() } : {}),
+        },
         180000,
         onEvent,
         controller.signal,
@@ -387,7 +459,7 @@ export function createAssistant(opts: AssistantOptions) {
     } finally {
       setBusy(false);
       cancelAnimationFrame(frame);
-      saveState(chat);
+      save();
       renderAll();
     }
   }
@@ -399,12 +471,16 @@ export function createAssistant(opts: AssistantOptions) {
 
   /** Continues a conversation started elsewhere (e.g. an AI analysis on the Flow page). */
   function continueConversation(conversation: string, title: string, answer: string) {
-    chat = { conversation, messages: [{ role: 'user', text: title }, { role: 'assistant', text: answer }] };
-    saveState(chat);
+    chat = { conversation, messages: [{ role: 'user', text: title }, { role: 'assistant', text: answer }], mode: opts.fixedMode ?? '' };
+    modeSelect.value = mode();
+    el.dataset.mode = mode();
+    save();
     renderAll();
     input.focus();
   }
 
+  el.dataset.mode = mode();
+  input.placeholder = placeholder();
   renderAll();
   /** Puts a question in the box without sending it (the owner presses Enter). */
   const prefill = (text: string) => {
@@ -413,9 +489,16 @@ export function createAssistant(opts: AssistantOptions) {
     input.focus();
     input.setSelectionRange(text.length, text.length);
   };
-  return { el, ask, prefill, continueConversation, focus: () => input.focus(), reload: () => {
+  /** Attaches files as if picked with the paperclip (e.g. the Strategy Lab's sources). */
+  const attach = (files: Attachment[]) => {
+    attachments.push(...files);
+    renderChips();
+  };
+  return { el, ask, prefill, attach, continueConversation, label: () => modeLabel(mode()), focus: () => input.focus(), reload: () => {
       if (!busy) {
-        chat = loadState();
+        chat = loadState(storeKey);
+        if (opts.fixedMode !== undefined) chat.mode = opts.fixedMode;
+        modeSelect.value = mode();
         renderAll();
       }
     },

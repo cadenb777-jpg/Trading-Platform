@@ -28,6 +28,7 @@ import { initCommandBar, openPalette, runId } from './ui/command';
 import { captureConsoleErrors } from './diagnostics';
 import { resolveHash } from './routes';
 import { createSecurityPage, initSecurity, openSecurity } from './security/open';
+import { STRATEGY_PAGE } from './strategy/nav';
 
 captureConsoleErrors(); // kept for Settings > Send diagnostics
 
@@ -114,13 +115,8 @@ const LOADERS: Record<PageRoute, () => Page | Promise<Page>> = {
   research: async () => (await import('./pages/researchPage')).createResearchPage(),
   setups: async () => (await import('./pages/setupsPage')).createSetupsPage(openChart),
   backtest: async () => (await import('./pages/backtestPage')).createBacktestPage(),
-  // the Strategy Lab page plugs in here (built separately); until then a short placeholder
-  strategy: async () => {
-    const { pageFrame } = await import('./ui/charts');
-    const f = pageFrame('Strategy Lab', 'Build your own strategies and check them honestly before trusting them.', []);
-    f.body.append(h('div', { class: 'empty-state' }, h('b', {}, 'The Strategy Lab is on its way.'), h('span', {}, 'Meanwhile, Setups (SET) shows the tested strategies and Backtest (BTST) tests your own rules.')));
-    return { el: f.el, start() {} };
-  },
+  // the Strategy Lab (game theory + Equilibrium-Prime)
+  strategy: STRATEGY_PAGE.load,
   // the security view (#sec/AAPL/FA): opened from any ticker (slide-over) and its "Full page" button
   sec: () => createSecurityPage(),
   account: async () => (await import('./pages/accountPage')).createAccountPage(openPortfolio, (id, kind) => openPageWith('trade', 'open', id, kind)),

@@ -26,6 +26,8 @@ chart), and this notice is linked from Settings → About.
 | lightweight-charts | 5.2.1 | Apache-2.0 | Charts (shipped in the site) |
 | fancy-canvas | 2.1.0 | MIT | Dependency of lightweight-charts (shipped) |
 | fflate | 0.8.3 | MIT | Reading Excel/ZIP imports (shipped) |
+| katex | 0.19.0 | MIT | Maths (LaTeX) in Equilibrium-Prime answers, loaded only on the Strategy Lab (shipped) |
+| commander | 15.0.0 | MIT | Dependency of katex (its command-line tool only; not shipped) |
 | typescript | 7.0.2 | Apache-2.0 | Build tool only (not shipped) |
 | vite | 8.3.5 | MIT | Build tool only (not shipped) |
 | vitest | 5.0.5 | MIT | Tests only (not shipped) |
@@ -41,6 +43,7 @@ chart), and this notice is linked from Settings → About.
 | numpy (optional) | 2.5.4 | BSD-3-Clause (bundles 0BSD, MIT, Zlib, CC0-1.0 parts) |
 | scipy (optional) | 1.18.1 | BSD-3-Clause |
 | anthropic (optional) | 2.1.0 | Apache-2.0 (as stated in the package metadata) |
+| nashpy (optional) | 0.0.43 | MIT (pulls networkx 3.7 BSD-3-Clause, Deprecated 3.0.1 MIT, wrapt 2.5.2 BSD-2-Clause) |
 
 Their own dependencies (installed by pip) carry their own licences; run `pip-licenses` in the helper's
 Python environment for the full list.
