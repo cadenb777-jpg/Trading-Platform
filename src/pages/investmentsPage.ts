@@ -8,7 +8,9 @@ import { clearEngineCache, engineRequest, helper } from '../data/schwab';
 import { createAltsView } from '../invest/altsView';
 import { createBondsView } from '../invest/bondsView';
 import { BOARDS, CRYPTO_COINS, SECTIONS, searchCatalog, type Section } from '../invest/catalog';
-import { boardInsight, boardTable, errorBox, loadBoard, openSymbolDetail, showSymbol, skeletonBoard, tone, type BoardRow, type InvestContext } from '../invest/shared';
+import { boardInsight, boardItem, boardTable, errorBox, loadBoard, openSymbol, showSymbol, skeletonBoard, tone, type BoardRow, type InvestContext } from '../invest/shared';
+import { closeFloating, interactive, resetInteractions, type MiniItem } from '../invest/rowInteract';
+import { coinActions } from '../invest/goTo';
 import { pageFrame, pct } from '../ui/charts';
 import { activatable, formatPrice, h } from '../ui/dom';
 import { tableTools } from '../ui/tableTools';
@@ -93,7 +95,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
         h('div', { class: 'inv-result-group' }, 'On this page'),
         ...symbols.map((s) =>
           resultItem(`${showSymbol(s.symbol)} · ${s.label}`, SECTIONS.find((x) => x.id === s.section)?.label ?? '', () =>
-            s.section === 'crypto' && s.symbol.includes('-') ? ctx.openChart({ provider: 'coinbase', symbol: s.symbol }) : openSymbolDetail(s.symbol, s.label, headlineRows.get(s.symbol), ctx),
+            s.section === 'crypto' && s.symbol.includes('-') ? ctx.openChart({ provider: 'coinbase', symbol: s.symbol }) : openSymbol(s.symbol, s.label, headlineRows.get(s.symbol), ctx),
           ),
         ),
       );
@@ -108,7 +110,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
     else if (remote?.length)
       groups.push(
         ...remote.slice(0, 10).map((r) =>
-          resultItem(`${r.symbol} · ${r.name}`, r.assetType.replace('_', ' ').toLowerCase(), () => openSymbolDetail(r.symbol, r.name || r.symbol, undefined, ctx)),
+          resultItem(`${r.symbol} · ${r.name}`, r.assetType.replace('_', ' ').toLowerCase(), () => openSymbol(r.symbol, r.name || r.symbol, undefined, ctx)),
         ),
       );
     else if (remote) groups.push(h('div', { class: 'muted small inv-result-note' }, 'No matches at Schwab.'));
@@ -173,6 +175,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
       // private window: just don't remember it
     }
     cards.querySelectorAll<HTMLElement>('.inv-card').forEach((c) => c.classList.toggle('active', c.dataset.section === next));
+    closeFloating();
     for (const stop of stopCrypto) stop();
     stopCrypto = [];
     if (next === 'bonds') {
@@ -195,7 +198,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
     const draw = (rows: Map<string, BoardRow>) => {
       if (section !== id) return;
       ai.setRows(rows);
-      boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbolDetail(s, l, rows.get(s), ctx))).filter((x): x is HTMLElement => !!x));
+      boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbol(s, l, rows.get(s), ctx), ctx)).filter((x): x is HTMLElement => !!x));
     };
     loadBoard(groups)
       .then(draw)
@@ -207,29 +210,31 @@ export function createInvestmentsPage(ctx: InvestContext) {
     engineRequest<{ up: Mover[]; down: Mover[] }>('invest.movers', { index: '$SPX' }, 30000)
       .then(({ up, down }) => {
         if (!up.length && !down.length) return;
-        const list = (title: string, rows: Mover[]) =>
-          h(
-            'section',
-            { class: 'panel' },
-            h('div', { class: 'panel-head' }, h('h3', {}, title)),
+        const list = (title: string, rows: Mover[]) => {
+          const entries: [HTMLElement, MiniItem][] = [];
+          const table = h(
+            'table',
+            { class: 'data-table inv-table' },
             h(
-              'table',
-              { class: 'data-table inv-table' },
-              h(
-                'tbody',
-                {},
-                ...rows.map((m) =>
-                  activatable(h(
-                    'tr',
-                    { class: 'clickable', onclick: () => openSymbolDetail(m.symbol, m.name || m.symbol, { ...m, price: m.price, change: m.change }, ctx) },
-                    h('td', { class: 'label' }, h('div', { class: 'inv-name' }, h('b', {}, m.symbol), h('span', { class: 'muted small' }, m.name))),
-                    h('td', {}, formatPrice(m.price)),
-                    h('td', { class: tone(m.change) }, pct(m.change)),
-                  )),
-                ),
-              ),
+              'tbody',
+              {},
+              ...rows.map((m) => {
+                const row: BoardRow = { ...m, price: m.price, change: m.change };
+                const tr = activatable(h(
+                  'tr',
+                  { class: 'clickable' },
+                  h('td', { class: 'label' }, h('div', { class: 'inv-name' }, h('b', {}, m.symbol), h('span', { class: 'muted small' }, m.name))),
+                  h('td', {}, formatPrice(m.price)),
+                  h('td', { class: tone(m.change) }, pct(m.change)),
+                ));
+                entries.push([tr, { ...boardItem(m.symbol, m.name || m.symbol, row, () => openSymbol(m.symbol, m.name || m.symbol, row, ctx), ctx), sub: m.symbol }]);
+                return tr;
+              }),
             ),
           );
+          interactive(table, entries, { boardId: `movers:${title}`, expandable: true, defaultRange: () => '1M' });
+          return h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, title)), table);
+        };
         box.replaceChildren(h('h2', { class: 'group-title' }, 'Biggest movers today (S&P 500)'), h('div', { class: 'two-col' }, list('Gainers', up), list('Losers', down)));
       })
       .catch(() => box.replaceChildren());
@@ -237,6 +242,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
 
   function renderCrypto() {
     const rows = new Map<string, HTMLTableRowElement>();
+    const entries: [HTMLElement, MiniItem][] = [];
     const table = h(
       'table',
       { class: 'data-table inv-table' },
@@ -247,17 +253,19 @@ export function createInvestmentsPage(ctx: InvestContext) {
         ...CRYPTO_COINS.map(([symbol, label]) => {
           const tr = activatable(h(
             'tr',
-            { class: 'clickable', onclick: () => ctx.openChart({ provider: 'coinbase', symbol }) },
+            { class: 'clickable' },
             h('td', { class: 'label', 'data-value': `${label} ${symbol}` }, h('div', { class: 'inv-name' }, h('b', {}, label), h('span', { class: 'muted small' }, symbol))),
-            h('td', {}, '—'),
-            h('td', {}, '—'),
+            h('td', { class: 'muted', title: 'Waiting for the first price from Coinbase' }, '—'),
+            h('td', { class: 'muted', title: 'Waiting for the first price from Coinbase' }, '—'),
           ));
           rows.set(symbol, tr);
+          entries.push([tr, { key: symbol, label, sub: symbol, source: { kind: 'coin', symbol }, mode: 'price', open: () => ctx.openChart({ provider: 'coinbase', symbol }), actions: () => coinActions(symbol, label, ctx) }]);
           return tr;
         }),
       ),
     );
     tableTools(table, { id: 'invest:crypto' }); // live prices re-sort and re-filter as they arrive
+    interactive(table, entries, { boardId: 'invest:crypto', expandable: true, defaultRange: () => '1M' });
     const boards = h('div', { class: 'inv-boards' }, ...BOARDS.crypto.map(skeletonBoard));
     const ai = boardInsight('Crypto', BOARDS.crypto);
     view.replaceChildren(ai.row, ai.panel, h('section', { class: 'panel inv-board' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Coins (live from Coinbase)'), h('span', { class: 'muted small' }, 'Click one to open its chart')), h('div', { class: 'table-wrap' }, table)), boards);
@@ -268,12 +276,16 @@ export function createInvestmentsPage(ctx: InvestContext) {
         if (!tr) return;
         const c = quoteChange(q);
         tr.children[1].textContent = formatPrice(q.last);
+        tr.children[1].className = '';
+        tr.children[1].removeAttribute('title');
         tr.children[2].textContent = c ? pct(c.percent / 100) : '—';
-        tr.children[2].className = c ? tone(c.percent) : '';
+        tr.children[2].className = c ? tone(c.percent) : 'muted';
+        if (c) tr.children[2].removeAttribute('title');
+        else tr.children[2].setAttribute('title', 'Coinbase has not sent a 24-hour open yet');
       });
     });
     loadBoard(BOARDS.crypto)
-      .then((r) => section === 'crypto' && (ai.setRows(r), true) && boards.replaceChildren(...BOARDS.crypto.map((g) => boardTable(g, r, (s, l) => openSymbolDetail(s, l, r.get(s), ctx)))))
+      .then((r) => section === 'crypto' && (ai.setRows(r), true) && boards.replaceChildren(...BOARDS.crypto.map((g) => boardTable(g, r, (s, l) => openSymbol(s, l, r.get(s), ctx), ctx))))
       .catch((err) => section === 'crypto' && boards.replaceChildren(errorBox(err, renderCrypto)));
   }
 
@@ -289,7 +301,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
         .then((rows) => {
           const boards = view.querySelector('.inv-boards');
           if (boards && section !== 'crypto' && section !== 'bonds' && section !== 'alts' && BOARDS[section] === groups)
-            boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbolDetail(s, l, rows.get(s), ctx))).filter((x): x is HTMLElement => !!x));
+            boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbol(s, l, rows.get(s), ctx), ctx)).filter((x): x is HTMLElement => !!x));
         })
         .catch(() => {});
     }
@@ -315,6 +327,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
     },
     stop() {
       clearInterval(timer);
+      resetInteractions();
       for (const stop of stopCrypto) stop();
       stopCrypto = [];
     },

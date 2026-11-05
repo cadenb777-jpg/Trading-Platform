@@ -68,6 +68,15 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   holds hand-researched latest published figures (dated, sourced, verified flag; shown unless the SEC data is newer). Bond maths is
   src/invest/bonds.ts. The owner's own alternatives are store collection alt_holdings (iCapital has no public API:
   they import a CSV/Excel export, src/invest/holdings.ts).
+  Rows and tiles share one interaction model (src/invest/rowInteract.ts, notes in docs/research/investments-interaction.md):
+  hover/focus 150 ms = mini chart popover (1M..5Y; a board's range = its sorted period column), click = full view
+  (`openSymbol` -> security view `openSecurity`, symbol window if that fails), Space/chevron = expand
+  in place (tableTools keeps `tt-follow` rows under their row), Shift+click = Compare (max 4). Maths/cache: miniMath.ts.
+  "Go to" (src/invest/goTo.ts): one ordered action list per kind (stock/fund/index/future/coin/rate/private fund), 5
+  buttons + More in the popover and expanded row, all of it on right-click/Menu key; security view tabs (DES GP FA CN
+  HDS OMON DVD), Trade = ticket pre-fill only; keys F N R C. Popover headline = the row's live price; 52-week = Schwab's
+  high/low (else "52-week closing range"); "You hold" from your own portfolios. ETF vs stock: invest.board's assetSubType
+  (helper change ships with the next helper, no version bump), else catalog.ts CATALOG_ETFS.
   Futures page (v31, read-only; src/pages/futuresPage.ts, #futures, engine/futures_market.py): futures.board = 39 markets in
   8 sectors from the static SPECS table (CME/ICE/Cboe contract specs, cited there: multiplier, tick value, month cycle,
   expiry rule, CFTC code; micros use the parent's COT), Schwab quotes for root symbols ("/ES"), 1w/1m/YTD and the σ move
@@ -279,6 +288,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   BTST, SET, MACRO, BONDS/WB, INV, HELP) call pages' open() methods. Ranking: exact ticker > exact code > prefixes >
   fuzzy name. Global chords (CHORDS: g h/c/s/a/t/f/p, n a), ? sheet (SHORTCUT_SHEET lists every page's keys; keep it
   in step), Ctrl/Cmd+I = AI assistant; never inside fields or dialogs. TRADE only pre-fills. Recents in localStorage.
+  Security view (src/security/, v41 helper unchanged; docs/research/bloomberg-structure.md): #sec/SYM[/CODE] page and a
+  slide-over (`openSecurity(symbol, tab?)` in open.ts, also the `tp:open-security` event). Clicking any [data-ticker]
+  opens it (tickerCard.ts: the ticker text itself, even inside a clickable row; a ticker that is its own button keeps its action; hover keeps the quick card; AI replies are marked by ui/markTickers.ts). Tabs DES GP FA HDS CN OMON DVD BETA(HP) SET; the command bar's
+  "AAPL FA" opens a tab, bare "AAPL" opens DES. Shared Back/Forward history (Alt+←/→) and recents (codes.ts). Maths in
+  stats.ts (simple daily returns, 252 days, sample SD; tested against numpy), numbers via format.ts ("—" + reason,
+  never NaN). Peers come from related.ts (same lists as scanner._SECTOR_LISTS, tested). Account tickers open it; "Records"
+  opens the holding's records.
   Pop-out charts: `openChartWindow` (src/ui/chartWindow.ts); `createLineChart` adds hover values and an expand button;
   `openFredWindow` opens a FRED series' full history.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).

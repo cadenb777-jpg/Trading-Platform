@@ -71,7 +71,7 @@ export function createWatchlist(opts: { onSelect: (ref: MarketRef) => void; isAc
             h(
               'span',
               { class: 'wl-sym' },
-              h('b', tickerAttr(ref.symbol), displaySymbol(ref.symbol)),
+              h('b', { ...tickerAttr(ref.symbol), 'data-ticker-click': 'pass' }, displaySymbol(ref.symbol)), // the watchlist's symbols switch the chart
               h('span', { class: 'wl-sub' }, DISPLAY_NAMES[ref.symbol] ?? (ref.provider === 'coinbase' ? 'Crypto' : 'Stock')),
             ),
             h('span', { class: 'wl-last' }),

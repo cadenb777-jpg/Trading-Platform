@@ -23,6 +23,7 @@ import { initTickerCards } from './ui/tickerCard';
 import { initCommandBar } from './ui/command';
 import { captureConsoleErrors } from './diagnostics';
 import { resolveHash } from './routes';
+import { createSecurityPage, initSecurity, openSecurity } from './security/open';
 
 captureConsoleErrors(); // kept for Settings > Send diagnostics
 
@@ -91,6 +92,8 @@ interface PageEntry {
   icon: IconName;
   title: string;
   create: () => Page | Promise<Page>;
+  /** Not in the menu (reached by links and the command bar, e.g. the security view #sec/AAPL). */
+  hidden?: boolean;
   page?: Page;
   loading?: Promise<Page>;
 }
@@ -105,7 +108,7 @@ const pages: PageEntry[] = [
     label: 'Invest',
     icon: 'invest',
     title: 'Investments',
-    create: async () => (await import('./pages/investmentsPage')).createInvestmentsPage({ openChart, openResearch }),
+    create: async () => (await import('./pages/investmentsPage')).createInvestmentsPage({ openChart, openResearch, openPage: openPageWith }),
   },
   { route: 'futures', group: 'markets', label: 'Futures', icon: 'futures', title: 'Futures', create: async () => (await import('./pages/futuresPage')).createFuturesPage() },
   { route: 'macro', group: 'markets', label: 'Macro', icon: 'macro', title: 'Macro', create: async () => (await import('./pages/macroPage')).createMacroPage() },
@@ -121,7 +124,11 @@ const pages: PageEntry[] = [
   { route: 'trade', group: 'money', label: 'Trade', icon: 'trade', title: 'Trade', create: async () => (await import('./pages/tradePage')).createTradePage() },
   { route: 'clients', group: 'money', label: 'Clients', icon: 'clients', title: 'Clients & Reports', create: async () => (await import('./pages/clientsPage')).createClientsPage() },
   { route: 'prospect', group: 'business', label: 'Prospects', icon: 'prospect', title: 'Prospecting', create: async () => (await import('./pages/prospectPage')).createProspectPage() },
+  // the security view (#sec/AAPL/FA): opened from any ticker (slide-over) and its "Full page" button
+  { route: 'sec', group: 'analyse', label: 'Security', icon: 'research', title: 'Security', hidden: true, create: () => createSecurityPage() },
 ];
+/** The pages in the menu. */
+const MENU = () => pages.filter((p) => !p.hidden);
 
 // ---------- AI assistant ----------
 
@@ -350,7 +357,8 @@ if (isAiWindow) {
     h('span', { class: 'nav-label' }, 'Data'),
   );
   followHealth(healthDot);
-  initTickerCards({ openChart, openResearch });
+  initSecurity({ openChart, openPage: openPageWith });
+  initTickerCards({ openChart, openResearch, openSecurity: (s) => void openSecurity(s) });
   const aiBtn = h('button', { class: 'nav-btn ai-nav', title: 'AI assistant (Ctrl+I)', 'aria-keyshortcuts': 'Control+I Meta+I', 'aria-label': 'AI assistant', onclick: () => toggleAssistant() }, icon('spark', 24), h('span', { class: 'nav-label' }, 'AI'));
   function toggleAssistant(show: boolean = drawer.hidden === true) {
     drawer.hidden = !show;
@@ -379,7 +387,7 @@ if (isAiWindow) {
   // The command bar (/ or Ctrl/Cmd+K) and the global shortcuts (g h, n a, ?, Ctrl/Cmd+I for the AI)
   const commandBtn = initCommandBar({
     pages: [
-      ...pages.map((p) => ({ route: p.route, label: p.label, group: GROUPS[p.group] })),
+      ...MENU().map((p) => ({ route: p.route, label: p.label, group: GROUPS[p.group] })),
       // the Chart page's modes (they used to be pages)
       { route: 'chart/multi', label: 'Workspace (linked panels)', group: 'Chart mode' },
       { route: 'chart/scripts', label: 'Scripts (indicator editor)', group: 'Chart mode' },
@@ -401,8 +409,8 @@ if (isAiWindow) {
       { class: 'rail', 'aria-label': 'Main' },
       h('div', { class: 'brand', title: 'Trading Platform' }, '◆'),
       commandBtn,
-      ...pages.flatMap((p, i) => [
-        p.group !== pages[i - 1]?.group ? h('div', { class: 'rail-group', role: 'separator', 'aria-label': GROUPS[p.group], title: GROUPS[p.group] }) : null,
+      ...MENU().flatMap((p, i, menu) => [
+        p.group !== menu[i - 1]?.group ? h('div', { class: 'rail-group', role: 'separator', 'aria-label': GROUPS[p.group], title: GROUPS[p.group] }) : null,
         h('a', { class: 'nav-btn', href: `#${p.route}`, 'data-route': p.route, title: p.label, 'aria-label': p.label }, icon(p.icon, 22), h('span', { class: 'nav-label' }, p.label)),
       ]),
       h(

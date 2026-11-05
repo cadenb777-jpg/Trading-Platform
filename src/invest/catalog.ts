@@ -110,6 +110,17 @@ export const BOARDS: Record<Exclude<Section, 'crypto'>, BoardGroup[]> & { crypto
   ],
 };
 
+/**
+ * Symbols on these boards that are ETFs (or ETNs): the fallback for telling funds from stocks when the helper is older
+ * than the one that sends Schwab's assetSubType. Mixed groups list their funds in ETF_EXTRAS.
+ */
+const ETF_GROUPS = new Set(['Sectors', 'Core US', 'International', 'Dividends & income', 'Themes', 'Bond ETFs', 'Treasuries', 'Core & corporate', 'Municipal', 'Loans, CLOs & global', 'Private equity & venture (listed)', 'Infrastructure', 'Hedge-fund style', 'Metals', 'Energy', 'Agriculture', 'Broad baskets']);
+const ETF_EXTRAS = ['VXUS', 'VWO', 'AGG', 'TLT', 'HYG', 'MUB', 'BIZD', 'PSP', 'VNQ', 'QAI', 'GLD', 'USO', 'IBIT', 'FBTC', 'ETHA'];
+export const CATALOG_ETFS: ReadonlySet<string> = new Set([
+  ...Object.values(BOARDS).flatMap((groups) => groups.filter((g) => ETF_GROUPS.has(g.title)).flatMap((g) => g.symbols.map(([s]) => s).filter((s) => !s.startsWith('/')))),
+  ...ETF_EXTRAS,
+]);
+
 /** Live crypto prices from Coinbase (24-hour change). */
 export const CRYPTO_COINS: [string, string][] = [
   ['BTC-USD', 'Bitcoin'], ['ETH-USD', 'Ethereum'], ['SOL-USD', 'Solana'], ['XRP-USD', 'XRP'], ['DOGE-USD', 'Dogecoin'],

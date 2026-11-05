@@ -18,6 +18,8 @@ import { h, openModal, timeAgo, toast } from './dom';
 import { icon } from './icons';
 import { LINK_LABELS, focusPanel, focusedPanel, links, visiblePanels } from './linkGroups';
 import { normalizeTicker, tickerPreview } from './tickerCard';
+import { tabForCode } from '../security/codes';
+import { openSecurity } from '../security/open';
 
 // ---------- function codes ----------
 
@@ -33,11 +35,15 @@ export interface FnCode {
 }
 
 export const CODES: FnCode[] = [
-  { code: 'GP', label: 'Chart', ticker: true, keywords: 'graph price chart candles' },
-  { code: 'DES', label: 'Description (Research overview)', ticker: true, keywords: 'research company profile' },
+  // the security view's tabs (src/security/codes.ts): "AAPL FA" opens AAPL on Financials; bare "AAPL" opens DES
+  { code: 'DES', label: 'Security view (description, key stats)', ticker: true, keywords: 'research company profile security overview' },
+  { code: 'GP', aliases: ['GIP'], label: 'Chart', ticker: true, keywords: 'graph price chart candles' },
   { code: 'FA', label: 'Financials', ticker: true, keywords: 'financial analysis income balance cash flow sec' },
+  { code: 'HDS', label: 'Holders (13F institutions, insiders)', ticker: true, keywords: 'holders institutions 13f insiders ownership' },
   { code: 'CN', label: 'News', ticker: true, keywords: 'company news headlines' },
-  { code: 'OMON', aliases: ['FLOW'], label: 'Options and flow', ticker: true, keywords: 'options monitor flow insiders short' },
+  { code: 'OMON', aliases: ['FLOW', 'OMST'], label: 'Options and flow', ticker: true, keywords: 'options monitor flow insiders short' },
+  { code: 'DVD', label: 'Dividends (yield, history, total return)', ticker: true, keywords: 'dividend yield payout income ex-date' },
+  { code: 'BETA', aliases: ['HP', 'HRA'], label: 'Risk (beta, volatility, drawdown)', ticker: true, keywords: 'beta risk volatility drawdown sharpe sortino correlation' },
   { code: 'TRADE', aliases: ['TRD'], label: 'Order ticket (pre-fills only)', ticker: true, keywords: 'buy sell order ticket webull' },
   { code: 'ALRT', label: 'Alerts', ticker: true, keywords: 'alert notify price' },
   { code: 'WL', label: 'Add to watchlist', ticker: true, tickerOnly: true, keywords: 'watchlist favourite' },
@@ -51,7 +57,7 @@ export const CODES: FnCode[] = [
   { code: 'SCRIPT', aliases: ['PINE'], label: 'Scripts (Chart mode)', keywords: 'script pine editor indicator code' },
   { code: 'COT', label: 'Futures positioning (COT)', keywords: 'cot commitment traders positioning hedgers cftc' },
   { code: 'BTST', label: 'Backtest', keywords: 'backtest strategy test' },
-  { code: 'SET', label: 'Setups', keywords: 'setups scanner signals' },
+  { code: 'SET', label: 'Setups', ticker: true, keywords: 'setups scanner signals' },
   { code: 'MACRO', label: 'Macro', keywords: 'economy fred rates' },
   { code: 'BONDS', aliases: ['WB'], label: 'Bonds (world bonds)', keywords: 'yields treasuries bonds' },
   { code: 'INV', label: 'Investments', keywords: 'investments etfs funds alternatives' },
@@ -63,7 +69,7 @@ export const CODES: FnCode[] = [
 
 /** Where a code without a ticker goes. */
 const CODE_ROUTE: Record<string, string> = {
-  GP: 'chart', DES: 'research', FA: 'research', CN: 'home', OMON: 'flow', TRADE: 'trade', WEI: 'home', ECO: 'calendar', FUT: 'futures',
+  GP: 'chart', DES: 'research', FA: 'research', HDS: 'flow', CN: 'home', OMON: 'flow', DVD: 'account', BETA: 'account', TRADE: 'trade', WEI: 'home', ECO: 'calendar', FUT: 'futures',
   PORT: 'portfolio', ACCT: 'account', CLIENT: 'clients', PROS: 'prospect', MULTI: 'chart/multi', SCRIPT: 'chart/scripts', COT: 'futures/cot', BTST: 'backtest', SET: 'setups', MACRO: 'macro', INV: 'invest',
 };
 
@@ -251,7 +257,7 @@ export function buildResults(input: string, src: Sources, recents: RecentEntry[]
     groups.push({ label: 'Run', items: [tickerItem(sym, p.code, 2000, known(sym)?.name)] });
   }
 
-  // a single word that is a ticker: its actions (Chart first, the Enter default)
+  // a single word that is a ticker: its actions (the security view's DES first, the Enter default; Chart for indexes/crypto)
   let shownTicker: string | null = null;
   // (a function code typed alone, like CLIENT or MULTI, is that function, not an unknown ticker or futures root)
   if (!p.pair && p.ticker && !q.includes(' ') && (known(p.ticker) || !p.code)) {
@@ -273,7 +279,8 @@ export function buildResults(input: string, src: Sources, recents: RecentEntry[]
       const byName = s.name && q.length >= 2 ? fuzzyScore(q, s.name) : null;
       if (byName != null && (score == null || byName > score)) score = byName;
       if (score == null) continue;
-      symItems.push({ id: `tk:${s.symbol}:GP`, title: s.symbol.replace(/^\$/, ''), subtitle: [s.name, SOURCE_LABEL[s.source]].filter(Boolean).join(' · '), hint: 'GP', symbol: s.symbol, complete: `${s.symbol} `, score });
+      const enter = codesFor(s.symbol)[0]?.code ?? 'GP'; // DES (the security view) for companies, the chart otherwise
+      symItems.push({ id: `tk:${s.symbol}:${enter}`, title: s.symbol.replace(/^\$/, ''), subtitle: [s.name, SOURCE_LABEL[s.source]].filter(Boolean).join(' · '), hint: enter, symbol: s.symbol, complete: `${s.symbol} `, score });
     }
   }
   pushGroup(groups, 'Symbols', symItems, LIMIT.symbols);
@@ -470,6 +477,21 @@ export const SHORTCUT_SHEET: { title: string; rows: [string, string][] }[] = [
       ['Ctrl+[  or  Shift+F6', 'Previous panel'],
       ['Alt+1 … Alt+6', 'Jump to panel 1-6 (in Firefox on Linux, Alt+number may switch browser tabs instead)'],
       ['A-Z (on a panel)', 'Type a ticker: the command bar opens for that panel’s colour group (Shift+Enter opens the Chart instead)'],
+    ],
+  },
+  {
+    title: 'Investments rows',
+    rows: [
+      ['↑ ↓', 'Move between rows (a mini chart opens on the focused row)'],
+      ['← →', 'Change the chart range (1M … 5Y)'],
+      ['Enter', 'Open the full view'],
+      ['Space', 'Expand the row in place'],
+      ['Shift+Enter  or  Shift+click', 'Add to or remove from Compare (up to 4)'],
+      ['F', 'Financials (FA)'],
+      ['N', 'News (CN)'],
+      ['R', 'Research page'],
+      ['C', 'Chart (GP)'],
+      ['Menu key  or  Shift+F10', 'Every place this row can go (also right-click)'],
     ],
   },
   {
@@ -725,11 +747,12 @@ async function runCode(code: string, symbol: string | null) {
   }
   if (symbol.startsWith('/')) return d.openPage('futures', 'open', symbol.slice(1));
   const ref = refFor(symbol);
+  // a company's tab codes open the security view on that tab (src/security/codes.ts); indexes and crypto chart
+  const tab = tabForCode(c.code);
+  const company = codesFor(symbol).some((x) => x.code === 'DES');
+  if (tab && company) return openSecurity(symbol, tab);
   if (c.code === 'GP') return ref && d.openChart(ref);
-  if (c.code === 'DES') return d.openPage('research', 'open', symbol, 'overview');
-  if (c.code === 'FA') return d.openPage('research', 'open', symbol, 'financials');
   if (c.code === 'CN') return openNews(symbol);
-  if (c.code === 'OMON') return d.openPage('flow', 'open', symbol, 'options');
   if (c.code === 'TRADE') return (await import('../trade/webull')).openOrderTicket({ symbol, side: 'BUY' });
   if (c.code === 'ALRT') return (await import('./alerts')).openAlertsDialog(ref ?? undefined);
   if (c.code === 'WL' && ref) {

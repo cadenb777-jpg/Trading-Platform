@@ -46,6 +46,9 @@ def quote_row(symbol, data):
         'symbol': symbol,
         'name': ref.get('description') or '',
         'assetType': data.get('assetMainType') or data.get('assetType') or '',
+        # 'ETF', 'COE' (common stock), 'ADR' ...: tells ETFs from stocks (Schwab calls both EQUITY). Browsers before
+        # this helper fall back to the Investments catalog's ETF groups.
+        'assetSubType': data.get('assetSubType') or '',
         'price': price,
         'change': change,
         'high52': _num(q.get('52WeekHigh')),

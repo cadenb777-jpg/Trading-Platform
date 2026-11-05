@@ -5,6 +5,7 @@ import { openSettings } from '../ui/settings';
 import { friendlyAiError } from './assistant';
 import { continueInAssistant } from './hub';
 import { renderMarkdown } from './markdown';
+import { markTickers } from '../ui/markTickers';
 
 export interface InsightRequest {
   topic: 'options' | 'insiders' | 'cot' | 'positioning' | 'research' | 'indicator' | 'chart' | 'scanner' | 'market' | 'macro' | 'bonds' | 'board' | 'fund' | 'backtest' | 'futures' | 'prospect';
@@ -46,6 +47,7 @@ export async function runInsight(target: HTMLElement, req: InsightRequest) {
     });
     cancelAnimationFrame(frame);
     body.innerHTML = renderMarkdown(result.text);
+    markTickers(body);
     actions.replaceChildren(
       h('button', { class: 'btn', onclick: () => continueInAssistant(result.conversation, req.title, result.text) }, 'Ask a follow-up'),
       h('span', { class: 'muted small' }, 'AI analysis of the data above. Not financial advice.'),

@@ -6,6 +6,7 @@ import { icon } from '../ui/icons';
 import { openSettings } from '../ui/settings';
 import { ACCEPTED_FILES, readAttachment, type Attachment } from './files';
 import { renderMarkdown } from './markdown';
+import { markTickers } from '../ui/markTickers';
 
 export interface AssistantAction {
   action: 'open_chart' | 'open_page' | 'add_indicator' | 'create_alert' | 'refresh';
@@ -200,6 +201,7 @@ export function createAssistant(opts: AssistantOptions) {
     }
     const body = h('div', { class: `ai-bubble md${m.error ? ' error' : ''}` });
     body.innerHTML = renderMarkdown(m.text);
+    if (!m.error) markTickers(body); // tickers open the security view, as everywhere
     return h('div', { class: 'ai-msg assistant' }, h('span', { class: 'ai-avatar' }, '✦'), h('div', { class: 'ai-msg-body' }, body, stepsLine(m)));
   }
 
@@ -295,6 +297,7 @@ export function createAssistant(opts: AssistantOptions) {
     const paint = () => {
       frame = 0;
       replyEl.innerHTML = renderMarkdown(reply.text);
+      markTickers(replyEl);
       if (showStatus) replyEl.append(status);
       list.scrollTop = list.scrollHeight;
     };
