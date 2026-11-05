@@ -6,6 +6,7 @@
 import type { IPrimitivePaneView, ISeriesPrimitive, ISeriesPrimitiveAxisView, SeriesAttachedParameter, Time } from 'lightweight-charts';
 import type { ChartView } from './ChartView';
 import { THEME } from '../ui/theme';
+import { approach, reducedMotion, withAlpha } from './frame';
 
 export type DrawingType = 'trend' | 'ray' | 'hline' | 'vline' | 'rect' | 'fib' | 'long' | 'short';
 export type Tool = DrawingType | 'cursor';
@@ -122,6 +123,11 @@ export class DrawingManager {
   private drag: { hit: Hit; start: Screen; original: Screen[] } | null = null;
   private consuming = false;
   private requestUpdate: (() => void) | null = null;
+  /** The point handle under the mouse (it grows), and each drawing's handle size as it eases in and out (0-1). */
+  private hoverHandle: Hit | null = null;
+  private readonly grow = new Map<string, number>();
+  private lastDraw = 0;
+  private animating = false;
 
   /** Called after drawings are added, moved or removed, so they can be saved. */
   onChange: (drawings: Drawing[]) => void = () => {};
@@ -288,7 +294,9 @@ export class DrawingManager {
     }
     if (this.tool === 'cursor') {
       const hit = pos.inside ? this.hitTest(pos) : null;
-      if ((hit?.id ?? null) !== this.hoverId) {
+      const handleChanged = (hit && hit.handle >= 0 ? `${hit.id}:${hit.handle}` : '') !== (this.hoverHandle ? `${this.hoverHandle.id}:${this.hoverHandle.handle}` : '');
+      this.hoverHandle = hit && hit.handle >= 0 ? hit : null;
+      if ((hit?.id ?? null) !== this.hoverId || handleChanged) {
         this.hoverId = hit?.id ?? null;
         this.redraw();
       }
@@ -398,17 +406,45 @@ export class DrawingManager {
 
   private draw(ctx: CanvasRenderingContext2D, width: number, height: number) {
     const all = this.draft ? [...this.drawings, this.draft] : this.drawings;
+    const now = performance.now();
+    const dt = Math.min(64, now - this.lastDraw);
+    this.lastDraw = now;
+    const instant = reducedMotion();
+    let moving = false;
     for (const d of all) {
+      const active = d.id === this.selectedId || d.id === this.hoverId || d === this.draft;
+      // Handles grow in when a drawing is hovered or selected and shrink away after.
+      const target = active ? 1 : 0;
+      const g = instant ? target : approach(this.grow.get(d.id) ?? 0, target, dt, 40, 0.02);
+      if (g === 0) this.grow.delete(d.id);
+      else this.grow.set(d.id, g);
+      moving ||= g !== target;
       const pts = d.points.map((p) => this.toScreen(p));
       if (pts.some((p) => !p)) continue;
       const s = pts as Screen[];
-      const active = d.id === this.selectedId || d.id === this.hoverId || d === this.draft;
       ctx.save();
       ctx.strokeStyle = d.color;
       ctx.lineWidth = active ? 2 : 1.5;
+      if (d.id === this.selectedId) {
+        // The selected drawing glows softly.
+        ctx.shadowColor = withAlpha(d.color, 0.8);
+        ctx.shadowBlur = 10 * g;
+      }
       this.drawShape(ctx, d, s, width, height);
       ctx.restore();
-      if (active) for (const p of s) this.drawHandle(ctx, p, d.color);
+      if (g > 0) {
+        s.forEach((p, i) => {
+          const hovered = this.hoverHandle?.id === d.id && this.hoverHandle.handle === i;
+          this.drawHandle(ctx, p, d.color, g, hovered);
+        });
+      }
+    }
+    if (moving && !this.animating) {
+      this.animating = true;
+      requestAnimationFrame(() => {
+        this.animating = false;
+        this.redraw();
+      });
     }
   }
 
@@ -511,14 +547,24 @@ export class DrawingManager {
     label(`${d.type === 'long' ? 'Long' : 'Short'} · R:R ${stats.ratio.toFixed(2)}`, entry.y, '#2a2e39', targetAbove);
   }
 
-  private drawHandle(ctx: CanvasRenderingContext2D, p: Screen, color: string) {
+  private drawHandle(ctx: CanvasRenderingContext2D, p: Screen, color: string, grow: number, hovered: boolean) {
+    const r = (hovered ? 6 : 4.5) * (0.4 + 0.6 * grow);
+    if (hovered) {
+      // A soft halo shows the point can be grabbed.
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r + 5, 0, Math.PI * 2);
+      ctx.fillStyle = withAlpha(color, 0.18);
+      ctx.fill();
+    }
+    ctx.globalAlpha = Math.min(1, grow * 1.5);
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 4.5, 0, Math.PI * 2);
-    ctx.fillStyle = THEME.background;
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = hovered ? color : THEME.background;
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = color;
     ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 
   private primitive(): ISeriesPrimitive<Time> {

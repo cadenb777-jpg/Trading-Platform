@@ -8148,3 +8148,195 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
     gap: 0;
   }
 }
+
+/* ===== Chart engine: motion and hover (src/chart/frame.ts, livePrice.ts, hoverCard.ts). Colours from variables. ===== */
+.chart-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.chart-crossfade {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.legend-ohlc .legend-num {
+  color: var(--c);
+}
+
+.legend-row.indicator {
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.chart-wrap.has-lit .legend-row.indicator:not(.lit) {
+  opacity: 0.45;
+}
+
+.legend-row.indicator.lit {
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+/* Ring that pulses on the latest candle at each live tick. */
+.live-pulse {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+
+.live-pulse i,
+.live-pulse b {
+  position: absolute;
+  border-radius: 50%;
+}
+
+.live-pulse i {
+  left: -3px;
+  top: -3px;
+  width: 6px;
+  height: 6px;
+  background: var(--pulse);
+  box-shadow: 0 0 8px var(--pulse);
+}
+
+.live-pulse b {
+  left: -7px;
+  top: -7px;
+  width: 14px;
+  height: 14px;
+  opacity: 0;
+  background: color-mix(in srgb, var(--pulse) 45%, transparent);
+}
+
+.crosshair-glow {
+  position: absolute;
+  left: -14px;
+  top: -14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 55%, transparent) 0, color-mix(in srgb, var(--accent) 18%, transparent) 35%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.crosshair-glow::after {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 11px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg-chart);
+}
+
+.crosshair-glow.on {
+  opacity: 1;
+}
+
+.hover-card {
+  position: absolute;
+  left: 0;
+  top: 0;
+  min-width: 168px;
+  max-width: 280px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow-md);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  opacity: 0;
+  scale: 0.96;
+  transition: opacity 0.14s ease, scale 0.14s ease;
+  will-change: transform;
+}
+
+.hover-card.on {
+  opacity: 1;
+  scale: 1;
+}
+
+.hc-title {
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.hc-rows {
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 14px;
+  row-gap: 1px;
+}
+
+.hc-label {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.hc-value {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.hc-notes {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 4px;
+}
+
+.hc-notes:empty {
+  display: none;
+}
+
+.hc-note {
+  color: var(--muted);
+  line-height: 1.35;
+  border-left: 3px solid var(--c);
+  padding-left: 6px;
+}
+
+.hc-note b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+@media (max-width: 600px) {
+  .hover-card {
+    min-width: 0;
+    max-width: 200px;
+    padding: 6px 8px;
+    font-size: var(--fs-xs);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hover-card,
+  .crosshair-glow,
+  .legend-row.indicator {
+    transition: none;
+  }
+
+  .live-pulse {
+    display: none;
+  }
+}
+/* ===== end chart engine ===== */

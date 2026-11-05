@@ -27,6 +27,10 @@ import {
 } from 'lightweight-charts';
 import { externalData } from '../indicators/external';
 import { THEME, followTheme } from '../ui/theme';
+import { easeOutCubic, reducedMotion, withAlpha } from './frame';
+import { firstDifference, newTailState, tailUpdate, type TailState } from './incremental';
+import { LivePrice } from './livePrice';
+import { expectedCost, indicatorWorker, recordCost } from './workerClient';
 import { defaultParams, getIndicator } from '../indicators/library';
 import type { IndicatorDef, IndicatorInstance, PlotDef } from '../indicators/types';
 import { TIMEFRAME_SECONDS, bucketStart, regroupBars, type Bar, type Timeframe } from '../types';
@@ -53,7 +57,39 @@ interface RenderedIndicator {
   series: Record<string, PlotSeries>;
   values: Record<string, number[]>;
   levels: IPriceLine[];
+  /** Live-tick tail recompute state (incremental.ts). */
+  tail: TailState;
+  /** Worker calculation in flight (its token, 0 = none), and the first bar changed since it was sent. */
+  request: number;
+  dirtyFrom: number | null;
+  /** Hover highlight: 1 = normal, lower = dimmed while another indicator is highlighted. */
+  opacity: number;
+  /** Drawn thicker because it is the highlighted one. */
+  lifted?: boolean;
+  /** The opacity its per-point histogram colours were last drawn with. */
+  colored?: number;
 }
+
+/** What the crosshair is over, for hover cards and highlights. */
+export interface PointerInfo {
+  /** Bar index under the crosshair. */
+  index: number;
+  x: number;
+  y: number;
+  paneIndex: number;
+  /** The crosshair point snapped to the bar's nearest open/high/low/close (price pane only). */
+  snappedY: number | null;
+  /** The indicator whose line is under the cursor, if any. */
+  hoveredUid: string | null;
+}
+
+/** Bars from which heavy indicators move to the worker, and how slow (ms) counts as heavy. */
+const WORKER_MIN_BARS = 2000;
+const HEAVY_MS = 12;
+/** Live ticks redraw indicator lines at most this often (the candle itself redraws every frame). */
+const INDICATOR_INTERVAL_MS = 100;
+/** Opacity of the other indicators while one is highlighted. */
+const DIM = 0.22;
 
 export { THEME } from '../ui/theme';
 
@@ -82,15 +118,34 @@ export class ChartView {
   private readonly primitives: ISeriesPrimitive<Time>[] = [];
   private markersApi: ISeriesMarkersPluginApi<Time> | null = null;
   private readonly paneObserver: ResizeObserver;
+  private readonly stopTheme: () => void;
+  /** Layer over the chart canvas for DOM effects (pulse, hover card); never takes the mouse. */
+  readonly overlay: HTMLElement;
+  private readonly livePrice: LivePrice;
+  private readonly useWorker: boolean;
+  /** Bumped by every setBars so late worker results for old data are dropped. */
+  private dataGeneration = 0;
+  private highlighted: string | null = null;
+  private highlightKey = '';
+  private fitFrame = 0;
+  private disposed = false;
+  private indicatorFrom: number | null = null;
+  private indicatorTimer: ReturnType<typeof setTimeout> | 0 = 0;
+  private lastIndicatorFlush = 0;
 
   /** Called with the bar index under the mouse (or the latest bar when the mouse leaves). */
   onHover: (index: number) => void = () => {};
+  /** Called with what the crosshair is over (null when it leaves the chart). */
+  onPointer: (info: PointerInfo | null) => void = () => {};
+  /** Called after live ticks updated the indicator values (they follow ticks a little behind the candle). */
+  onValues: () => void = () => {};
   /** Called when the chart can't draw its data (with the reason), so the page can say so instead of staying blank. */
   onDataError: (message: string) => void = (message) => console.error(message);
   /** Called when panes are added, removed or resized, so legends can be repositioned. */
   onLayout: () => void = () => {};
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, options: { worker?: boolean } = {}) {
+    this.useWorker = options.worker ?? true;
     this.chart = createChart(container, {
       autoSize: true,
       layout: {
@@ -101,18 +156,68 @@ export class ChartView {
         panes: { separatorColor: THEME.border, separatorHoverColor: '#2962ff55', enableResize: true },
       },
       grid: { vertLines: { color: THEME.grid }, horzLines: { color: THEME.grid } },
-      crosshair: { mode: CrosshairMode.Normal },
+      // The crosshair snaps to the nearest open/high/low/close; a flick of the chart glides to a stop.
+      crosshair: { mode: CrosshairMode.MagnetOHLC },
+      kineticScroll: { mouse: true, touch: true },
       // Denser price labels (smaller steps between them) than the library's default.
       rightPriceScale: { borderColor: THEME.border, tickMarkDensity: 1.6 },
       timeScale: { borderColor: THEME.border, timeVisible: true, secondsVisible: false, rightOffset: 8 },
     });
-    followTheme(this.chart, { onChange: () => this.chart.applyOptions({ layout: { panes: { separatorColor: THEME.border } } }) });
+    this.stopTheme = followTheme(this.chart, {
+      onChange: () => {
+        this.chart.applyOptions({ layout: { panes: { separatorColor: THEME.border } } });
+        this.recolorMain();
+      },
+    });
+    this.overlay = document.createElement('div');
+    this.overlay.className = 'chart-fx';
+    container.append(this.overlay);
+    this.livePrice = new LivePrice(
+      {
+        priceToY: (p) => this.priceToY(p),
+        timeToX: (t) => this.chart.timeScale().timeToCoordinate(t as UTCTimestamp),
+        formatPrice: (p) => this.formatPrice(p),
+        lastBar: () => this.bars[this.bars.length - 1] ?? null,
+      },
+      this.overlay,
+    );
     this.main = this.createMainSeries('candles');
+    this.attachPrimitive(this.livePrice.primitive);
     this.chart.subscribeCrosshairMove((param) => {
       const idx = param.time === undefined ? undefined : this.timeIndex.get(param.time as number);
       this.onHover(idx ?? this.bars.length - 1);
+      this.onPointer(idx === undefined || !param.point ? null : this.pointerInfo(idx, param.point, param.paneIndex ?? 0, param.hoveredInfo?.series));
     });
     this.paneObserver = new ResizeObserver(() => this.onLayout());
+  }
+
+  private pointerInfo(index: number, point: { x: number; y: number }, paneIndex: number, hovered: unknown): PointerInfo {
+    const bar = this.bars[index];
+    let snappedY: number | null = null;
+    if (paneIndex === 0 && bar) {
+      for (const price of [bar.open, bar.high, bar.low, bar.close]) {
+        const y = this.priceToY(price);
+        if (y !== null && (snappedY === null || Math.abs(y - point.y) < Math.abs(snappedY - point.y))) snappedY = y;
+      }
+    }
+    let hoveredUid: string | null = null;
+    if (hovered) {
+      for (const r of this.indicators.values()) if (Object.values(r.series).includes(hovered as PlotSeries)) hoveredUid = r.instance.uid;
+    }
+    return { index, x: point.x, y: point.y, paneIndex, snappedY, hoveredUid };
+  }
+
+  /** Removes the chart and everything it listens to (for pages that throw a chart away). */
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    cancelAnimationFrame(this.fitFrame);
+    this.cancelIndicatorFlush();
+    this.paneObserver.disconnect();
+    this.stopTheme();
+    this.indicators.clear();
+    this.chart.remove();
+    this.overlay.remove();
   }
 
   get barCount() {
@@ -135,6 +240,10 @@ export class ChartView {
   }
 
   setBars(bars: Bar[], timeframe: Timeframe, refit = true) {
+    // A new symbol or timeframe cross-fades from a snapshot of the old chart instead of flashing.
+    if (refit && this.bars.length && bars !== this.bars) this.crossFade();
+    this.dataGeneration++;
+    this.cancelIndicatorFlush();
     this.bars = bars;
     this.timeframe = timeframe;
     this.timeIndex.clear();
@@ -149,6 +258,7 @@ export class ChartView {
       this.onDataError(`The chart couldn't draw this data: ${(err as Error).message}`);
     }
     for (const r of this.indicators.values()) {
+      r.tail = newTailState();
       try {
         this.renderAll(r, false);
       } catch (err) {
@@ -161,8 +271,25 @@ export class ChartView {
     } catch (err) {
       console.error('Indicator signals failed', err);
     }
-    if (refit) this.fit();
+    if (refit) this.fit(false);
+    this.livePrice.update(false);
     this.refreshPrimitives();
+  }
+
+  /** Lays a snapshot of the current chart over it and fades it out while the new data draws underneath. */
+  private crossFade() {
+    if (reducedMotion() || this.disposed) return;
+    let shot: HTMLCanvasElement;
+    try {
+      shot = this.chart.takeScreenshot();
+    } catch {
+      return;
+    }
+    shot.className = 'chart-crossfade';
+    this.overlay.append(shot);
+    const fade = shot.animate?.([{ opacity: 1 }, { opacity: 0 }], { duration: 260, easing: 'ease-out' });
+    if (fade) fade.onfinish = () => shot.remove();
+    else shot.remove();
   }
 
   /**
@@ -170,12 +297,24 @@ export class ChartView {
    * (and its price steps) fit the candles. Dragging the price axis turns auto-scale off, so this
    * runs on every new symbol or timeframe and from the toolbar's Fit button.
    */
-  fit() {
+  fit(animate = true) {
     const n = this.bars.length;
-    this.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 150), to: n + 8 });
+    const target = { from: Math.max(0, n - 150), to: n + 8 };
     for (const pane of this.chart.panes()) {
       for (const series of pane.getSeries()) series.priceScale().applyOptions({ autoScale: true });
     }
+    cancelAnimationFrame(this.fitFrame);
+    const ts = this.chart.timeScale();
+    const from = ts.getVisibleLogicalRange();
+    if (!animate || !from || reducedMotion() || !n) return ts.setVisibleLogicalRange(target);
+    // Glide to the latest bars instead of jumping.
+    const start = performance.now();
+    const step = () => {
+      const k = easeOutCubic((performance.now() - start) / 320);
+      ts.setVisibleLogicalRange({ from: from.from + (target.from - from.from) * k, to: from.to + (target.to - from.to) * k });
+      if (k < 1) this.fitFrame = requestAnimationFrame(step);
+    };
+    this.fitFrame = requestAnimationFrame(step);
   }
 
   /**
@@ -196,15 +335,84 @@ export class ChartView {
     const start = Math.max(0, startIndex);
     if (start === 0 && this.bars.length === 1) this.applyPriceFormat();
     this.updateHeikin(start);
-    for (const r of this.indicators.values()) r.values = this.compute(r);
     for (let i = start; i < this.bars.length; i++) {
       this.timeIndex.set(this.bars[i].time, i);
       this.main.update(this.mainPoint(i) as never);
-      for (const r of this.indicators.values()) {
-        for (const plot of r.def.plots) r.series[plot.key]?.update(this.point(r, plot, i));
+    }
+    this.livePrice.update(true);
+    this.queueIndicators(start);
+  }
+
+  /**
+   * Indicator lines follow live ticks at most every INDICATOR_INTERVAL_MS. The library rebuilds a series' whole point
+   * list on every update, so with 20 indicator series and fast trades this is most of the per-frame cost; the candle
+   * and the last price still move every frame.
+   */
+  private queueIndicators(start: number) {
+    this.indicatorFrom = Math.min(this.indicatorFrom ?? start, start);
+    const wait = INDICATOR_INTERVAL_MS - (performance.now() - this.lastIndicatorFlush);
+    if (wait <= 0) this.flushIndicators();
+    else if (!this.indicatorTimer) {
+      this.indicatorTimer = setTimeout(() => {
+        this.indicatorTimer = 0;
+        this.flushIndicators();
+      }, wait);
+    }
+  }
+
+  private cancelIndicatorFlush() {
+    clearTimeout(this.indicatorTimer);
+    this.indicatorTimer = 0;
+    this.indicatorFrom = null;
+  }
+
+  private flushIndicators() {
+    const start = this.indicatorFrom;
+    this.cancelIndicatorFlush();
+    if (start === null || this.disposed) return;
+    this.lastIndicatorFlush = performance.now();
+    try {
+      this.updateIndicators(start);
+    } catch (err) {
+      console.warn('Live indicator update failed, redrawing them', err);
+      for (const r of this.indicators.values()) this.renderAll(r, false);
+      this.refreshMarkers();
+    }
+    this.onValues();
+  }
+
+  private updateIndicators(start: number) {
+    let markers = false;
+    for (const r of this.indicators.values()) {
+      if (r.request) {
+        // A worker calculation is running: it is redone for these bars when it lands.
+        r.dirtyFrom = Math.min(r.dirtyFrom ?? start, start);
+        continue;
+      }
+      if (this.runsInWorker(r)) {
+        this.computeInWorker(r);
+        continue;
+      }
+      const old = r.values;
+      // Live ticks only change the end: recompute just the tail when that gives the same answer, else everything.
+      const tail = start > 0 ? this.computeTail(r, start) : null;
+      const next = tail ?? this.computeTimed(r);
+      r.values = next;
+      const from = tail ? start : Math.min(start, firstDifference(old, next));
+      if (from < start) this.drawIndicator(r); // an indicator that rewrote older bars (e.g. a confirmed pivot)
+      else {
+        for (let i = start; i < this.bars.length; i++) {
+          for (const plot of r.def.plots) r.series[plot.key]?.update(this.point(r, plot, i));
+        }
+      }
+      // Signals are re-collected only when one appeared, moved or went away.
+      const markerKeys = r.def.plots.filter((p) => p.type === 'marker').map((p) => p.key);
+      if (!markers && markerKeys.length) {
+        const pick = (v: Record<string, number[]>) => Object.fromEntries(markerKeys.map((k) => [k, v[k] ?? []]));
+        markers = firstDifference(pick(old), pick(next), from) !== Infinity;
       }
     }
-    this.refreshMarkers();
+    if (markers) this.refreshMarkers();
   }
 
   setChartType(type: ChartType) {
@@ -318,7 +526,7 @@ export class ChartView {
     if (!def) return;
     const markersOnly = def.plots.every((p) => p.type === 'marker');
     const placement: Placement = def.placement === 'volume' ? 'volume' : markersOnly ? 'overlay' : (instance.placement ?? def.placement);
-    const r: RenderedIndicator = { instance, def, placement, series: {}, values: {}, levels: [] };
+    const r: RenderedIndicator = { instance, def, placement, series: {}, values: {}, levels: [], tail: newTailState(), request: 0, dirtyFrom: null, opacity: 1 };
     const paneIndex = placement === 'separate' ? this.chart.panes().length : 0;
     // An oscillator moved onto the price chart gets its own invisible scale so it doesn't squash the candles.
     const ownScale = placement === 'overlay' && def.placement === 'separate';
@@ -378,16 +586,21 @@ export class ChartView {
       this.addIndicator(instance);
       return;
     }
+    // Only what changed: new colours or visibility restyle the series without recomputing or recreating them.
+    const inputs = (i: IndicatorInstance) => JSON.stringify([i.params, i.timeframe ?? null]);
+    const looks = (i: IndicatorInstance) => JSON.stringify([i.visible, i.hiddenPlots ?? [], i.colors]);
+    const recompute = inputs(r.instance) !== inputs(instance);
+    const restyled = looks(r.instance) !== looks(instance);
     r.instance = instance;
-    for (const plot of r.def.plots) {
-      r.series[plot.key]?.applyOptions({
-        color: instance.colors[plot.key] ?? plot.color,
-        visible: plotVisible(instance, plot.key),
-        ...(plot.type === 'line' ? { lineWidth: this.lineWidth(instance, plot) } : {}),
-      });
-    }
+    this.styleIndicator(r);
     for (const level of r.levels) level.applyOptions({ lineVisible: instance.visible && !instance.hideLevels });
-    this.renderAll(r);
+    if (recompute) {
+      r.tail = newTailState();
+      this.renderAll(r);
+    } else if (restyled) {
+      if (r.def.plots.some((p) => p.type === 'histogram' && p.colorBy)) this.drawIndicator(r);
+      if (r.def.plots.some((p) => p.type === 'marker')) this.refreshMarkers();
+    }
   }
 
   isSeparatePane(uid: string): boolean {
@@ -402,8 +615,10 @@ export class ChartView {
   removeIndicator(uid: string) {
     const r = this.indicators.get(uid);
     if (!r) return;
+    r.request = 0;
     for (const s of Object.values(r.series)) this.chart.removeSeries(s);
     this.indicators.delete(uid);
+    if (this.highlighted === uid) this.highlight(null);
     this.refreshMarkers();
     this.observePanes();
   }
@@ -419,6 +634,17 @@ export class ChartView {
       color: r.instance.colors[p.key] ?? p.color,
       hidden: !!r.instance.hiddenPlots?.includes(p.key),
     }));
+  }
+
+  /** A signal plot's value at a bar (0 or NaN = no signal there). */
+  markerValueAt(uid: string, key: string, index: number): number {
+    const v = this.indicators.get(uid)?.values[key]?.[index];
+    return v !== undefined && Number.isFinite(v) ? v : 0;
+  }
+
+  /** Crosshair snapping to open/high/low/close (on by default; off while drawing freehand). */
+  setCrosshairMagnet(on: boolean) {
+    this.chart.applyOptions({ crosshair: { mode: on ? CrosshairMode.MagnetOHLC : CrosshairMode.Normal } });
   }
 
   /** Everything needed to explain an indicator on this chart: its bars and the full value series per plot. */
@@ -438,11 +664,67 @@ export class ChartView {
       .reduce((sum, p) => sum + p.getHeight() + 1, 0);
   }
 
+  /**
+   * Highlights one indicator: its lines get thicker and, with `dimOthers`, the other indicators fade back (hovering a
+   * legend row). null restores everything. One restyle, no animation: every restyle makes the library rebuild each
+   * series' points, so the legend does the easing in CSS instead.
+   */
+  highlight(uid: string | null, dimOthers = true) {
+    if (uid !== null && !this.indicators.has(uid)) uid = null;
+    const key = uid === null ? '' : `${uid}:${dimOthers}`;
+    if (key === this.highlightKey) return;
+    this.highlightKey = key;
+    this.highlighted = uid;
+    for (const r of this.indicators.values()) {
+      const opacity = uid === null || r.instance.uid === uid || !dimOthers ? 1 : DIM;
+      const lifted = r.instance.uid === uid;
+      if (opacity === r.opacity && lifted === !!r.lifted) continue;
+      r.opacity = opacity;
+      r.lifted = lifted;
+      this.styleIndicator(r);
+    }
+  }
+
   // ---------- Internals ----------
+
+  /**
+   * Colours, widths and visibility of an indicator's series, with the hover highlight applied. Coloured histogram
+   * bars carry their colour per point, so they are redrawn when their opacity changes.
+   */
+  private styleIndicator(r: RenderedIndicator) {
+    for (const plot of r.def.plots) {
+      const color = r.instance.colors[plot.key] ?? plot.color;
+      r.series[plot.key]?.applyOptions({
+        color: r.opacity < 1 ? withAlpha(color, r.opacity) : color,
+        visible: plotVisible(r.instance, plot.key),
+        ...(plot.type === 'line' ? { lineWidth: Math.min(4, this.lineWidth(r.instance, plot) + (r.lifted ? 1 : 0)) as 1 | 2 | 3 | 4 } : {}),
+      });
+    }
+    if (r.colored !== r.opacity) {
+      r.colored = r.opacity;
+      if (r.def.plots.some((p) => p.type === 'histogram' && p.colorBy)) this.drawIndicator(r);
+    }
+  }
+
+  /** Re-applies THEME colours to the price series after a light/dark switch. */
+  private recolorMain() {
+    const { up, down, accent } = THEME;
+    const options: Record<ChartType, object> = {
+      candles: { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down },
+      heikin: { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down },
+      hollow: { downColor: down, borderUpColor: up, borderDownColor: down, wickUpColor: up, wickDownColor: down },
+      bars: { upColor: up, downColor: down },
+      line: { color: accent },
+      area: { lineColor: accent, topColor: withAlpha(accent, 0.35), bottomColor: withAlpha(accent, 0) },
+    };
+    this.main.applyOptions(options[this.chartType] as never);
+    this.livePrice.update(false);
+  }
 
   private createMainSeries(type: ChartType): ISeriesApi<SeriesType> {
     const { up, down, accent } = THEME;
-    const common = { priceLineVisible: true };
+    // LivePrice draws the last-price line and label (animated), so the library's own stay off.
+    const common = { priceLineVisible: false, lastValueVisible: false };
     switch (type) {
       case 'hollow':
         return this.chart.addSeries(
@@ -455,7 +737,7 @@ export class ChartView {
       case 'line':
         return this.chart.addSeries(LineSeries, { ...common, color: accent, lineWidth: 2 }, 0);
       case 'area':
-        return this.chart.addSeries(AreaSeries, { ...common, lineColor: accent, topColor: 'rgba(41,98,255,0.35)', bottomColor: 'rgba(41,98,255,0)', lineWidth: 2 }, 0);
+        return this.chart.addSeries(AreaSeries, { ...common, lineColor: accent, topColor: withAlpha(accent, 0.35), bottomColor: withAlpha(accent, 0), lineWidth: 2 }, 0);
       default:
         return this.chart.addSeries(
           CandlestickSeries,
@@ -505,7 +787,7 @@ export class ChartView {
   private compute(r: RenderedIndicator): Record<string, number[]> {
     if (!this.bars.length) return {};
     // Any setting missing from a saved layout (e.g. a script gained a new input) uses its default.
-    const params = { ...defaultParams(r.def), ...r.instance.params, [MARKET_PARAM]: this.market };
+    const params = this.params(r);
     const symbol = this.symbol;
     const ext = externalData(r.def, symbol, () => {
       // Redraw when the outside data arrives, if the chart still shows the same symbol.
@@ -530,11 +812,95 @@ export class ChartView {
   }
 
   private renderAll(r: RenderedIndicator, markers = true) {
-    r.values = this.compute(r);
+    r.request = 0;
+    r.dirtyFrom = null;
+    if (this.runsInWorker(r)) {
+      // A heavy indicator on a long history: drawn when the worker is done instead of freezing the page.
+      r.values = {};
+      this.drawIndicator(r);
+      this.computeInWorker(r);
+      if (markers) this.refreshMarkers();
+      return;
+    }
+    r.values = this.computeTimed(r);
+    this.drawIndicator(r);
+    if (markers) this.refreshMarkers();
+  }
+
+  private drawIndicator(r: RenderedIndicator) {
     for (const plot of r.def.plots) {
       r.series[plot.key]?.setData(this.bars.map((_, i) => this.point(r, plot, i)) as never);
     }
-    if (markers) this.refreshMarkers();
+  }
+
+  private params(r: RenderedIndicator) {
+    return { ...defaultParams(r.def), ...r.instance.params, [MARKET_PARAM]: this.market };
+  }
+
+  /** A full calculation, timed so the next long history can tell whether it belongs in the worker. */
+  private computeTimed(r: RenderedIndicator): Record<string, number[]> {
+    const t0 = performance.now();
+    const values = this.compute(r);
+    if (!r.instance.timeframe && this.bars.length) recordCost(r.def.id, performance.now() - t0, this.bars.length);
+    return values;
+  }
+
+  private higherTimeframe(r: RenderedIndicator) {
+    const tf = r.instance.timeframe;
+    return !!tf && TIMEFRAME_SECONDS[tf] > TIMEFRAME_SECONDS[this.timeframe];
+  }
+
+  /** The live-tick shortcut (incremental.ts); null when a full calculation is needed. */
+  private computeTail(r: RenderedIndicator, start: number): Record<string, number[]> | null {
+    if (r.def.external || this.higherTimeframe(r)) return null;
+    const params = this.params(r);
+    try {
+      return tailUpdate((bars) => r.def.compute(bars, params), this.bars, r.values, start, r.tail);
+    } catch {
+      r.tail.fullOnly = true;
+      return null;
+    }
+  }
+
+  /** Built-in indicators that are slow on this many bars (or not measured yet) run in the worker. */
+  private runsInWorker(r: RenderedIndicator): boolean {
+    if (!this.useWorker || !indicatorWorker.available || this.bars.length < WORKER_MIN_BARS) return false;
+    if (r.def.external || r.def.category === 'My scripts' || this.higherTimeframe(r)) return false;
+    const cost = expectedCost(r.def.id, this.bars.length);
+    return cost === undefined || cost > HEAVY_MS;
+  }
+
+  private computeInWorker(r: RenderedIndicator) {
+    const token = (r.request = (r.request % 1e9) + 1);
+    const generation = this.dataGeneration;
+    const n = this.bars.length;
+    r.dirtyFrom = null;
+    const job = indicatorWorker.run(this.bars, [{ key: r.instance.uid, defId: r.def.id, params: this.params(r) }]).get(r.instance.uid)!;
+    const current = () => !this.disposed && r.request === token && this.dataGeneration === generation && this.indicators.get(r.instance.uid) === r;
+    job.then(
+      (values) => {
+        if (!current()) return;
+        r.request = 0;
+        // Bars added while it ran keep their previous values until the follow-up calculation lands.
+        for (const key of Object.keys(values)) {
+          for (let i = n; i < this.bars.length; i++) values[key].push(r.values[key]?.[i] ?? NaN);
+        }
+        r.values = values;
+        this.drawIndicator(r);
+        if (r.def.plots.some((p) => p.type === 'marker')) this.refreshMarkers();
+        this.onLayout(); // legends show the new values
+        if (r.dirtyFrom !== null) this.computeInWorker(r);
+      },
+      () => {
+        if (!current()) return;
+        // No worker after all: calculate here.
+        r.request = 0;
+        r.values = this.computeTimed(r);
+        this.drawIndicator(r);
+        this.refreshMarkers();
+        this.onLayout();
+      },
+    );
   }
 
   private point(r: RenderedIndicator, plot: PlotDef, i: number) {
@@ -547,7 +913,7 @@ export class ChartView {
       const positive =
         plot.colorBy === 'sign' ? value >= 0 : plot.colorBy === 'change' ? !(prev !== undefined && value < prev) : bar.close >= bar.open;
       const color = positive ? (r.instance.colors[plot.key] ?? plot.color) : (plot.negativeColor ?? plot.color);
-      return { time: t, value, color };
+      return { time: t, value, color: r.opacity < 1 ? withAlpha(color, r.opacity) : color };
     }
     return { time: t, value };
   }
