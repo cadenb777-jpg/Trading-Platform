@@ -5,6 +5,13 @@ project ZIP again and restart it.
 
 ## Unreleased
 
+- v44 (helper not yet bumped; the site asks for it): the Strategy Lab (Analyse > Strategy, #strategy). A payoff-matrix
+  editor (2-4 players, textbook presets) solved exactly by the helper's game engine (dominance, pure and mixed Nash
+  equilibria, best replies, Pareto, price of anarchy, grim-trigger patience), a game-tree editor (backward induction,
+  empty threats) and coalitions (Shapley value, core, Nash bargaining), each explained in plain words. The AI gains an
+  Equilibrium-Prime mode (Strategy Lab panel and the assistant's mode menu) that uses uploaded documents as sources
+  and computes every equilibrium with the engine (listed under each answer); maths is typeset with KaTeX. Optional
+  `nashpy` cross-checks mixed equilibria. Download the helper again to use it.
 - v31: a read-only Futures page: the main US futures by sector (heat tiles, what's moving in % and in standard
   deviations, specs and roll dates), term structure when Schwab prices single contracts, and COT positioning per market.
 - Charts show the TradingView attribution again (required by the Lightweight Charts licence).

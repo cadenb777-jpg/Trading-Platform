@@ -25,6 +25,7 @@ import { initCommandBar } from './ui/command';
 import { captureConsoleErrors } from './diagnostics';
 import { resolveHash } from './routes';
 import { createSecurityPage, initSecurity, openSecurity } from './security/open';
+import { STRATEGY_PAGE } from './strategy/nav';
 
 captureConsoleErrors(); // kept for Settings > Send diagnostics
 
@@ -124,6 +125,8 @@ const pages: PageEntry[] = [
   { route: 'research', group: 'analyse', label: 'Research', icon: 'research', title: 'Research', create: async () => (await import('./pages/researchPage')).createResearchPage() },
   { route: 'flow', group: 'analyse', label: 'Flow', icon: 'flow', title: 'Flow', create: async () => (await import('./pages/flowPage')).createFlowPage() },
   { route: 'backtest', group: 'analyse', label: 'Backtest', icon: 'backtest', title: 'Backtest', create: async () => (await import('./pages/backtestPage')).createBacktestPage() },
+  // the Strategy Lab (game theory + Equilibrium-Prime); its descriptor is ready for a nav registry
+  { route: STRATEGY_PAGE.route, group: 'analyse', label: STRATEGY_PAGE.short, icon: STRATEGY_PAGE.icon, title: STRATEGY_PAGE.title, create: STRATEGY_PAGE.load },
   { route: 'account', group: 'money', label: 'Account', icon: 'account', title: 'Account', create: async () => (await import('./pages/accountPage')).createAccountPage(openPortfolio, (id, kind) => openPageWith('trade', 'open', id, kind)) },
   { route: 'portfolio', group: 'money', label: 'Portfolios', icon: 'portfolio', title: 'Portfolios', create: async () => (await import('./pages/portfolioPage')).createPortfolioPage() },
   { route: 'trade', group: 'money', label: 'Trade', icon: 'trade', title: 'Trade', create: async () => (await import('./pages/tradePage')).createTradePage() },

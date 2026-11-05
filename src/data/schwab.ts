@@ -60,6 +60,10 @@ export const prospectCompleteReady = () => !helper.tooOld && (helper.version ?? 
 export const JOURNAL_HELPER_VERSION = 43;
 /** True when the connected helper has the trading journal (v43+). */
 export const journalReady = () => !helper.tooOld && (helper.version ?? 0) >= JOURNAL_HELPER_VERSION;
+/** The Strategy Lab's game.* requests and the Equilibrium-Prime assistant mode (ai.chat with `mode`) need this version. */
+export const GAME_HELPER_VERSION = 44;
+/** True when the connected helper has the game-theory engine (v44+). */
+export const gameReady = () => !helper.tooOld && (helper.version ?? 0) >= GAME_HELPER_VERSION;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
@@ -321,6 +325,7 @@ class HelperConnection {
     if (SMART_MONEY_REQUESTS.has(type) && (this.version ?? 0) < SMART_MONEY_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (PROSPECT_CONTACTS_REQUEST.test(type) && (this.version ?? 0) < PROSPECT_CONTACTS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('journal.') && (this.version ?? 0) < JOURNAL_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if ((type.startsWith('game.') || (type === 'ai.chat' && msg.mode)) && (this.version ?? 0) < GAME_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type === 'ai.ui_result' || type === 'ai.stop') && (this.version ?? 0) < AI_ACTIONS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('scanner.') || (type === 'ai.insight' && NEW_INSIGHTS.has(String(msg.topic)))) && (this.version ?? 0) < SCANNER_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;
