@@ -36,3 +36,13 @@ describe('ticker tape', () => {
     expect(tapeChange(undefined).text).toBe('—');
   });
 });
+
+import { COATS, pixelRects } from './buddy';
+describe('pixel dog', () => {
+  it('merges runs into rects and skips empty pixels', () => {
+    expect(pixelRects(['.OO.', 'FW..'])).toBe('<rect class="p-o" x="1" y="0" width="2" height="1"/><rect class="p-f" x="0" y="1" width="1" height="1"/><rect class="p-w" x="1" y="1" width="1" height="1"/>');
+  });
+  it('every coat has fur, ears and outline colours', () => {
+    for (const c of Object.values(COATS)) expect(c.every((x) => /^#[0-9a-f]{6}$/i.test(x))).toBe(true);
+  });
+});

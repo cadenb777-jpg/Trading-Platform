@@ -10667,23 +10667,71 @@ body[data-route='chart'] .buddy {
 .buddy:not(.petting)[data-mood='sad'] .f-sad {
   display: inline;
 }
+.buddy svg { image-rendering: pixelated; overflow: visible; }
+.buddy .p-o { fill: var(--b-line, #3b2416); }
+.buddy .p-e { fill: var(--b-ear, #8a4a26); }
+.buddy .p-f { fill: var(--b-fur, #e39a5c); }
+.buddy .p-w { fill: #fbf6ee; }
+.buddy .p-p { fill: #f4a3b4; }
+.buddy .p-k { fill: #1b1b22; }
+.buddy .p-t { fill: #123b68; }
+.buddy .p-tongue { fill: #e8607a; }
+.buddy .p-tear { fill: #7ac3ee; }
+.buddy .p-shine { fill: #ffffff; opacity: 0; }
 .buddy .b-tail {
-  transform-origin: 76px 70px;
-  animation: buddy-wag 1.6s ease-in-out infinite;
+  transform-origin: 14px 12px;
+  animation: buddy-wag 1.6s steps(2) infinite;
 }
 .buddy[data-mood='happy'] .b-tail,
 .buddy.petting .b-tail {
-  animation-duration: 0.35s;
+  animation-duration: 0.4s;
 }
 .buddy[data-mood='sad']:not(.petting) .b-tail {
   animation: none;
-  transform: rotate(40deg);
+  transform: translateY(1px);
 }
-.buddy[data-mood='sad']:not(.petting) .b-ear {
-  transform: translateY(3px);
+.buddy-edit {
+  position: absolute;
+  right: 18px;
+  top: -4px;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-2) var(--ease);
 }
+.buddy:hover .buddy-edit,
+.buddy-edit:focus-visible {
+  opacity: 1;
+}
+.buddy-panel {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow-md);
+}
+.buddy-panel-k { color: var(--label); font-size: var(--fs-xs); letter-spacing: 0.1em; }
+.buddy-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.buddy-swatch { width: 24px; height: 24px; padding: 0; border: 2px solid var(--border); border-radius: 6px; cursor: pointer; }
+.buddy-swatch.on { border-color: var(--text-strong); }
 .buddy.petting .b-head {
-  transform-origin: 50px 60px;
+  transform-origin: 9px 12px;
   animation: buddy-nuzzle 0.4s ease-in-out 3;
 }
 .buddy.walking svg {
@@ -10734,8 +10782,8 @@ body[data-route='chart'] .buddy {
   animation: buddy-heart 1.3s ease-out forwards;
 }
 @keyframes buddy-wag {
-  0%, 100% { transform: rotate(-10deg); }
-  50% { transform: rotate(14deg); }
+  from { transform: translateY(0); }
+  to { transform: translateY(-1px); }
 }
 @keyframes buddy-nuzzle {
   0%, 100% { transform: rotate(0); }

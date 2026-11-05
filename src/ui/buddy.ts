@@ -1,5 +1,5 @@
 /**
- * Bull, the market buddy: a small dog (our own drawing) who lives on every page except the Chart page. His face
+ * The market buddy (Bull by default; name and coat colours are yours to change with the ✎ button): a small pixel dog (our own drawing) who lives on every page except the Chart page. His face
  * follows the S&P 500 (SPY) today: happy above +0.3%, calm in between, worried below -0.3%. Click to pet him
  * (hearts, a wag and a word about the market), drag him anywhere (remembered), double-click and he trots somewhere
  * new. Every minute or so he wanders a little on his own (not with reduced motion, not while the tab is hidden).
@@ -38,36 +38,72 @@ export function clampPos(x: number, y: number, w: number, hgt: number): [number,
   return [Math.round(Math.min(Math.max(4, x), Math.max(4, w - SIZE - 4))), Math.round(Math.min(Math.max(4, y), Math.max(4, hgt - SIZE - 30)))];
 }
 
+/** Coat colours: fur, ears and outline. */
+export const COATS: Record<string, [string, string, string]> = {
+  Beagle: ['#e39a5c', '#8a4a26', '#3b2416'],
+  Golden: ['#e8b04a', '#b97a22', '#4a3010'],
+  Chocolate: ['#8a5634', '#4f2c16', '#24140a'],
+  Grey: ['#aab4c0', '#6b7684', '#2a2f38'],
+  Midnight: ['#454b58', '#2a2e38', '#101218'],
+  Cream: ['#f1dcb5', '#c9a06a', '#4a3a24'],
+};
+
+// 18 x 17 pixel dog (our own drawing, after the owner's sketch). O outline, E ear, F fur, W white, P cheek, K nose,
+// T tie. Eyes and mouth are drawn per mood on top; the tail is its own group so it can wag.
+const MAP = [
+  '......OOOOOO......',
+  '.....OFFWWFFO.....',
+  '..OOOFFFWWFFFOOO..',
+  '.OEEOFFFWWFFFOEEO.',
+  '.OEEFFFFWWFFFFEEO.',
+  '.OEEFFFFWWFFFFEEO.',
+  '.OEEFFFWWWWFFFEEO.',
+  '.OEEPFWWKKWWFPEEO.',
+  '..OOFFWWWWWWFFOO..',
+  '....OFFWWWWFFO....',
+  '....OOTTTTTTOO....',
+  '.....OFFTTFFO.....',
+  '....OFFWWTWFFO....',
+  '....OFFWWWWFFO....',
+  '....OFWWWWWWFO....',
+  '....OFFOOOOFFO....',
+  '....OOO....OOO....',
+];
+const CLASS: Record<string, string> = { O: 'p-o', E: 'p-e', F: 'p-f', W: 'p-w', P: 'p-p', K: 'p-k', T: 'p-t' };
+
+/** Pixel rows as rects (runs of one colour merged), for an SVG. Pure, tested. */
+export function pixelRects(map: string[]): string {
+  let out = '';
+  map.forEach((row, y) => {
+    let x = 0;
+    while (x < row.length) {
+      const c = row[x];
+      let w = 1;
+      while (row[x + w] === c) w++;
+      if (CLASS[c]) out += `<rect class="${CLASS[c]}" x="${x}" y="${y}" width="${w}" height="1"/>`;
+      x += w;
+    }
+  });
+  return out;
+}
+
+const px = (cls: string, pts: [number, number][]) => pts.map(([x, y]) => `<rect class="${cls}" x="${x}" y="${y}" width="1" height="1"/>`).join('');
+
 const SVG = `
-<svg viewBox="0 0 100 100" width="${SIZE}" height="${SIZE}" aria-hidden="true">
-  <g class="b-tail"><path d="M76 70 q14 -6 12 -22" fill="none" stroke="#b9773f" stroke-width="7" stroke-linecap="round"/></g>
-  <ellipse cx="50" cy="76" rx="27" ry="19" fill="#d9a066"/>
-  <ellipse cx="50" cy="82" rx="15" ry="11" fill="#f2d3ad"/>
-  <path d="M44 60 l6 6 l6 -6 l-3 22 l-3 4 l-3 -4 z" fill="#123b68"/><path d="M47.6 70 l5 -2 M47 75 l6 -2" stroke="#e0803f" stroke-width="1.6"/>
-  <g class="b-head">
-    <path class="b-ear" d="M24 22 q-10 4 -8 26 q2 10 10 6 q4 -16 6 -26 z" fill="#8a5a33"/>
-    <path class="b-ear b-ear-r" d="M76 22 q10 4 8 26 q-2 10 -10 6 q-4 -16 -6 -26 z" fill="#8a5a33"/>
-    <ellipse cx="50" cy="38" rx="26" ry="24" fill="#d9a066"/>
-    <ellipse cx="50" cy="48" rx="14" ry="10" fill="#f2d3ad"/>
-    <ellipse cx="50" cy="42" rx="5" ry="3.6" fill="#1b1b22"/>
-    <g class="f-happy">
-      <path d="M36 33 q4 -5 8 0 M56 33 q4 -5 8 0" fill="none" stroke="#1b1b22" stroke-width="2.6" stroke-linecap="round"/>
-      <path d="M42 48 q8 9 16 0" fill="#7a2230" stroke="#1b1b22" stroke-width="2"/><path d="M47 51 q3 5 6 0" fill="#ff8fa3"/>
-      <circle cx="33" cy="44" r="3" fill="#ff8fa3" opacity=".55"/><circle cx="67" cy="44" r="3" fill="#ff8fa3" opacity=".55"/>
-    </g>
-    <g class="f-calm">
-      <circle cx="40" cy="33" r="3.2" fill="#1b1b22"/><circle cx="60" cy="33" r="3.2" fill="#1b1b22"/>
-      <circle cx="41" cy="32" r="1" fill="#fff"/><circle cx="61" cy="32" r="1" fill="#fff"/>
-      <path d="M44 49 q6 4 12 0" fill="none" stroke="#1b1b22" stroke-width="2" stroke-linecap="round"/>
-    </g>
-    <g class="f-sad">
-      <path d="M34 27 l9 3 M66 27 l-9 3" stroke="#1b1b22" stroke-width="2" stroke-linecap="round"/>
-      <circle cx="40" cy="34" r="3.2" fill="#1b1b22"/><circle cx="60" cy="34" r="3.2" fill="#1b1b22"/>
-      <path d="M44 52 q6 -5 12 0" fill="none" stroke="#1b1b22" stroke-width="2" stroke-linecap="round"/>
-      <path class="b-tear" d="M63 39 q2 4 0 6 q-2 -2 0 -6" fill="#7ac3ee"/>
-    </g>
+<svg viewBox="0 0 18 17" width="${SIZE}" height="${Math.round((SIZE * 17) / 18)}" shape-rendering="crispEdges" aria-hidden="true">
+  <g class="b-tail">${px('p-o', [[14, 11], [15, 11], [16, 12], [16, 13]])}${px('p-f', [[14, 12], [15, 12], [15, 13], [14, 13]])}</g>
+  <g class="b-head">${pixelRects(MAP)}
+    <g class="f-calm">${px('p-k', [[6, 4], [6, 5], [11, 4], [11, 5], [8, 9], [9, 9]])}${px('p-w', [[6, 4], [11, 4]]).replace(/p-w/g, 'p-shine')}</g>
+    <g class="f-happy">${px('p-k', [[5, 5], [6, 4], [7, 5], [10, 5], [11, 4], [12, 5], [7, 8], [10, 8]])}${px('p-tongue', [[8, 8], [9, 8], [8, 9], [9, 9]])}</g>
+    <g class="f-sad">${px('p-k', [[6, 5], [6, 6], [11, 5], [11, 6], [5, 4], [12, 4], [7, 9], [10, 9], [8, 8], [9, 8]])}${px('p-tear', [[12, 7], [12, 8]])}</g>
   </g>
 </svg>`;
+
+interface Look {
+  name: string;
+  coat: string;
+}
+const LOOK_KEY = 'tp-buddy-look';
 
 let root: HTMLElement | null = null;
 
@@ -98,12 +134,47 @@ export function initBuddy() {
   if (root || readJson(HIDE_KEY, false)) return;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const bubble = h('div', { class: 'buddy-bubble', role: 'status', 'aria-live': 'polite', hidden: true });
-  const close = h('button', { type: 'button', class: 'buddy-close', title: 'Hide Bull (bring him back with the code PUP)', 'aria-label': 'Hide the market buddy' }, '×');
+  const close = h('button', { type: 'button', class: 'buddy-close', title: 'Hide your buddy (bring him back with the code PUP)', 'aria-label': 'Hide the market buddy' }, '×');
   const dog = h('button', { type: 'button', class: 'buddy-dog', title: 'Bull, your market buddy: click to pet, drag to move, double-click to send him off', 'aria-label': 'Pet the market buddy' });
   dog.innerHTML = SVG;
-  root = h('div', { class: 'buddy', 'data-mood': 'calm' }, bubble, close, dog);
+  const edit = h('button', { type: 'button', class: 'buddy-edit', title: 'Name and colours', 'aria-label': 'Change the buddy’s name and colours' }, '✎');
+  root = h('div', { class: 'buddy', 'data-mood': 'calm' }, bubble, edit, close, dog);
   document.body.append(root);
   const el = root;
+  let look: Look = { name: 'Bull', coat: 'Beagle', ...readJson<Partial<Look>>(LOOK_KEY, {}) };
+  const applyLook = () => {
+    const [fur, ear, line] = COATS[look.coat] ?? COATS.Beagle;
+    el.style.setProperty('--b-fur', fur);
+    el.style.setProperty('--b-ear', ear);
+    el.style.setProperty('--b-line', line);
+    dog.title = `${look.name}, your market buddy: click to pet, drag to move, double-click to send him off`;
+    dog.setAttribute('aria-label', `Pet ${look.name}`);
+  };
+  applyLook();
+  edit.addEventListener('click', () => {
+    const panel = h('div', { class: 'buddy-panel', role: 'dialog', 'aria-label': 'Buddy name and colours' });
+    const name = h('input', { class: 'input', value: look.name, maxlength: '16', 'aria-label': 'Name' }) as HTMLInputElement;
+    name.addEventListener('input', () => {
+      look = { ...look, name: name.value.trim() || 'Bull' };
+      writeJson(LOOK_KEY, look);
+      applyLook();
+    });
+    const swatches = Object.entries(COATS).map(([k, [fur, ear]]) => {
+      const b = h('button', { type: 'button', class: `buddy-swatch${k === look.coat ? ' on' : ''}`, title: k, 'aria-label': k, style: `background: linear-gradient(135deg, ${fur} 55%, ${ear} 55%)` });
+      b.addEventListener('click', () => {
+        look = { ...look, coat: k };
+        writeJson(LOOK_KEY, look);
+        applyLook();
+        panel.querySelectorAll('.buddy-swatch').forEach((x) => x.classList.toggle('on', x === b));
+      });
+      return b;
+    });
+    const done = h('button', { type: 'button', class: 'btn', onclick: () => panel.remove() }, 'Done');
+    panel.append(h('label', { class: 'buddy-panel-k' }, 'NAME'), name, h('div', { class: 'buddy-panel-k' }, 'COLOURS'), h('div', { class: 'buddy-swatches' }, ...swatches), done);
+    el.querySelector('.buddy-panel')?.remove();
+    el.append(panel);
+    name.focus();
+  });
 
   let percent: number | null = null;
   subscribeQuote({ provider: 'schwab', symbol: 'SPY' } as MarketRef, (q) => {
@@ -142,7 +213,7 @@ export function initBuddy() {
       el.append(heart);
       window.setTimeout(() => heart.remove(), 1400);
     }
-    say(petLine(percent, pets++));
+    say(`${look.name}: ${petLine(percent, pets++)}`);
   };
 
   const trot = (dx: number, dy: number) => {
