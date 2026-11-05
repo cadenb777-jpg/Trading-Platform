@@ -148,7 +148,8 @@ def keyed(fills, source):
         if f.get('execId'):
             fid = f"{base_src}:x:{f['execId']}"
         elif f['orderId']:
-            fid = f"{base_src}:{f['orderId']}:{f['side']}:{f['qty']:g}:{f['price']:.4f}:{int(f['time'])}"
+            # #n: two partial fills of one order with the same size, price and second stay apart
+            fid = f"{base_src}:{f['orderId']}:{f['side']}:{f['qty']:g}:{f['price']:.4f}:{int(f['time'])}#{seen[base]}"
         else:
             row = f"{dup}|{int(f['time'])}"
             fid = f"{source}:{hashlib.sha1(row.encode()).hexdigest()[:16]}"

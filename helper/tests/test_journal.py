@@ -131,6 +131,10 @@ class Journal(tw.Base):
         self.assertEqual(r['added'], 3)
         t = journal.all_trades()[0]
         self.assertEqual(sum(e['qty'] for e in t['entries']), 8)
+        # two partial fills with the same size, price and second (no execution id) both count; the same file again adds 0
+        twins = [{**part, 'orderId': 'O8', 'qty': 1, 'price': 401, 'time': T0 + 60}] * 2
+        self.assertEqual(journal.import_batch(twins, 'csv:webull')['added'], 2)
+        self.assertEqual(journal.import_batch(twins, 'csv:webull')['added'], 0)
 
     def test_same_second_fills_keep_their_arrival_order(self):
         # the sell's id sorts before the buy's, but the buy came first: one closed long, not an orphan sell

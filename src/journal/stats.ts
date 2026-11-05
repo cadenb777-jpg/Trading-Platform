@@ -268,7 +268,8 @@ export function dailyPnl(trades: Trade[]): Map<string, DayCell> {
   return out;
 }
 
-/** Net P&L for every weekday (Mon-Fri) from the first to the last day with a closed trade; days without one are $0
+/** Net P&L for every weekday (Mon-Fri, plus weekend days with a closed trade) from the first to the last day with a
+ * closed trade; days without one are $0
  * (market holidays are counted as $0 days too: a small, conservative effect). */
 export function dailySeries(trades: Trade[]): { day: string; net: number }[] {
   const daily = dailyPnl(trades);
@@ -278,8 +279,9 @@ export function dailySeries(trades: Trade[]): { day: string; net: number }[] {
   const end = Date.parse(`${days[days.length - 1]}T00:00:00Z`);
   for (let t = Date.parse(`${days[0]}T00:00:00Z`); t <= end; t += 86400000) {
     const d = new Date(t);
-    if (d.getUTCDay() === 0 || d.getUTCDay() === 6) continue;
     const day = d.toISOString().slice(0, 10);
+    // weekends only when something closed then (futures trade Sunday evening)
+    if ((d.getUTCDay() === 0 || d.getUTCDay() === 6) && !daily.has(day)) continue;
     out.push({ day, net: daily.get(day)?.net ?? 0 });
   }
   return out;

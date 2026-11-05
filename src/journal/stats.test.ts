@@ -98,6 +98,8 @@ describe('statistics', () => {
     // mean 15, sample sd sqrt((85² + 15² + 15² + 55²) / 3) = 59.722
     expect(st.sharpe).toBeCloseTo((15 / 59.7216) * Math.sqrt(252), 2);
     expect(dailySeries([trade(100, 101, { day: 6 }), trade(100, 101, { day: 9 })]).map((d) => d.day)).toEqual(['2026-03-06', '2026-03-09']);
+    // a futures trade closed on Sunday evening (day 8) stays in the series
+    expect(dailySeries([trade(100, 101, { day: 6 }), trade(100, 101, { day: 8, hour: 19 }), trade(100, 101, { day: 9 })]).map((d) => d.day)).toEqual(['2026-03-06', '2026-03-08', '2026-03-09']);
   });
   it('leaves out open trades and trades from before the journal', () => {
     const more = [...list, { ...trade(1, 2), status: 'open' as const, exits: [] }, { ...trade(1, 50), openedBefore: true }];
