@@ -1,18 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { nextPose } from './atmosphere';
+import styleCss from '../style.css?raw';
+import { SPOTS } from './atmosphere';
 
-describe('colour spots', () => {
-  it('wander within reach of home, with gentle size and brightness changes', () => {
-    let seed = 7;
-    const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    for (let i = 0; i < 200; i++) {
-      const p = nextPose([50, 50], rand, 16);
-      expect(Math.abs(p.x - 50)).toBeLessThanOrEqual(16);
-      expect(Math.abs(p.y - 50)).toBeLessThanOrEqual(16);
-      expect(p.scale).toBeGreaterThanOrEqual(0.85);
-      expect(p.scale).toBeLessThanOrEqual(1.2);
-      expect(p.opacity).toBeGreaterThanOrEqual(0.65);
-      expect(p.opacity).toBeLessThanOrEqual(1);
+describe('flowing background', () => {
+  it('every shape has a colour, a path and slow timings', () => {
+    for (const cls of SPOTS) {
+      const rule = styleCss.match(new RegExp(`\\.atmos \\.${cls} \\{([^}]*)\\}`))?.[1] ?? '';
+      expect(rule, cls).toMatch(/--spot-/);
+      const move = Number(rule.match(/--move: (\d+)s/)?.[1]);
+      const pulse = Number(rule.match(/--pulse: (\d+)s/)?.[1]);
+      expect(move, cls).toBeGreaterThanOrEqual(45); // calm: nothing faster than 45 s to cross
+      expect(pulse, cls).toBeGreaterThanOrEqual(15);
     }
+  });
+  it('stands still for reduced motion', () => {
+    expect(styleCss).toMatch(/prefers-reduced-motion: reduce\)\s*\{\s*\.atmos i \{ animation-play-state: paused; \}/);
   });
 });

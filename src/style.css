@@ -44,9 +44,12 @@
      Spots are #rrggbbaa so tokens.test.ts can check text contrast where they are strongest. */
   --grid-minor: color-mix(in srgb, var(--accent) 3.5%, transparent);
   --grid-major: color-mix(in srgb, var(--accent) 7.5%, transparent);
-  --spot-sky: #6fb8ea47;
-  --spot-copper: #e5823e5c;
-  --spot-deep: #2a74c445;
+  /* the flowing background (atmosphere.ts): dark blue, blue, sky, orange, amber; alphas keep page text readable */
+  --spot-sky: #5fb2ea30;
+  --spot-copper: #e8793a42;
+  --spot-deep: #0b3a8a70;
+  --spot-blue: #1f6fc450;
+  --spot-amber: #f0a05a2c;
   /* Type. */
   --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Cormorant Garamond', 'Iowan Old Style', Georgia, serif;
@@ -163,9 +166,11 @@
   --glass: color-mix(in srgb, var(--surface) 88%, transparent);
   --grid-minor: color-mix(in srgb, var(--accent) 3%, transparent);
   --grid-major: color-mix(in srgb, var(--accent) 6%, transparent);
-  --spot-sky: #6fb8ea38;
-  --spot-copper: #ff9a402e;
-  --spot-deep: #123b680d;
+  --spot-sky: #6fb8ea30;
+  --spot-copper: #ff9a4026;
+  --spot-deep: #123b6812;
+  --spot-blue: #3f86c222;
+  --spot-amber: #f0a05a1e;
   --accent-soft: color-mix(in srgb, var(--accent) 9%, transparent);
   --row-hover: color-mix(in srgb, var(--accent) 4%, transparent);
   --viz-1: #1f5fa8;
@@ -224,9 +229,7 @@ body::before {
   will-change: transform;
   background:
     linear-gradient(var(--grid-major) 1px, transparent 1px) -1px -1px / 120px 120px,
-    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px) -1px -1px / 120px 120px,
-    linear-gradient(var(--grid-minor) 1px, transparent 1px) -1px -1px / 24px 24px,
-    linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px) -1px -1px / 24px 24px;
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px) -1px -1px / 120px 120px;
 }
 
 #app {
@@ -9235,20 +9238,28 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   position: absolute;
   left: 0;
   top: 0;
-  width: 84vmax;
+  width: 90vmax;
   height: 70vmax;
-  margin: -35vmax 0 0 -42vmax;
+  margin: -35vmax 0 0 -45vmax;
   border-radius: 50%;
-  opacity: var(--o, 0.85);
-  transform: translate(var(--x, 50vw), var(--y, 50vh)) scale(var(--s, 1));
-  transition: transform 24s cubic-bezier(0.45, 0, 0.55, 1), opacity 11s ease-in-out;
   will-change: transform, opacity;
+  animation: var(--path) var(--move) ease-in-out infinite alternate, atmos-breathe var(--pulse) ease-in-out infinite alternate;
 }
-.atmos .a-copper { background: radial-gradient(closest-side, var(--spot-copper), transparent); --x: 6vw; --y: 92vh; }
-.atmos .a-sky { background: radial-gradient(closest-side, var(--spot-sky), transparent); --x: 94vw; --y: 6vh; }
-.atmos .a-deep { background: radial-gradient(closest-side, var(--spot-deep), transparent); --x: 58vw; --y: 52vh; }
+/* Five soft shapes of colour, each on its own slow loop (50-95 s to move, 17-29 s to brighten and dim), so they flow
+   past each other like the owner's reference picture, but dark and calm. */
+.atmos .a-deep { background: radial-gradient(closest-side, var(--spot-deep), transparent 72%); --path: atmos-a; --move: 70s; --pulse: 23s; }
+.atmos .a-blue { background: radial-gradient(closest-side, var(--spot-blue), transparent 70%); --path: atmos-b; --move: 85s; --pulse: 19s; }
+.atmos .a-sky { background: radial-gradient(closest-side, var(--spot-sky), transparent 70%); --path: atmos-c; --move: 60s; --pulse: 29s; }
+.atmos .a-copper { background: radial-gradient(closest-side, var(--spot-copper), transparent 70%); --path: atmos-d; --move: 95s; --pulse: 17s; }
+.atmos .a-amber { background: radial-gradient(closest-side, var(--spot-amber), transparent 68%); --path: atmos-e; --move: 52s; --pulse: 26s; }
+@keyframes atmos-a { from { transform: translate(55vw, 55vh) scale(1.1) rotate(0deg); } to { transform: translate(35vw, 40vh) scale(1.25) rotate(25deg); } }
+@keyframes atmos-b { from { transform: translate(15vw, 20vh) scale(0.95); } to { transform: translate(45vw, 75vh) scale(1.15); } }
+@keyframes atmos-c { from { transform: translate(90vw, 10vh) scale(0.8); } to { transform: translate(65vw, 35vh) scale(1.05); } }
+@keyframes atmos-d { from { transform: translate(8vw, 95vh) scale(0.9) rotate(-10deg); } to { transform: translate(40vw, 60vh) scale(1.1) rotate(15deg); } }
+@keyframes atmos-e { from { transform: translate(95vw, 80vh) scale(0.7); } to { transform: translate(70vw, 50vh) scale(0.95); } }
+@keyframes atmos-breathe { from { opacity: 0.55; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .atmos i { transition: none; }
+  .atmos i { animation-play-state: paused; }
 }
 
 /* The Chart page is a pure working surface: no grid, no glows behind it. */

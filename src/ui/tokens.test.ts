@@ -61,12 +61,10 @@ describe('design tokens', () => {
 
   for (const [name, theme] of [['dark', dark], ['light', light]] as const) {
     it(`${name}: page text stays readable where the background colour spots overlap`, () => {
-      const spots = ['spot-sky', 'spot-copper', 'spot-deep'].map((k) => theme[k]);
+      const spots = ['spot-sky', 'spot-copper', 'spot-deep', 'spot-blue', 'spot-amber'].map((k) => theme[k]);
       for (const sp of spots) expect(sp).toMatch(/^#[0-9a-f]{8}$/i);
-      // Copper (low left) and sky (top right) live in opposite corners and meet only at their faint edges; deep blue drifts mid-page and
-      // can sit over either, so the worst cases are each spot alone and deep blue over each corner spot.
-      const [sky, copper, deep] = spots;
-      const worst = [...spots.map((sp) => over(theme.bg, sp)), over(over(theme.bg, sky), deep), over(over(theme.bg, copper), deep)];
+      // The shapes drift past each other, so any two can overlap: check each alone and every pair.
+      const worst = [...spots.map((sp) => over(theme.bg, sp)), ...spots.flatMap((a, i) => spots.slice(i + 1).map((b) => over(over(theme.bg, a), b)))];
       // Only text that sits straight on the page background (titles, intros, links); figures in colour live on cards.
       const onPage = ['text', 'text-strong', 'muted', 'accent-text'];
       const failing = onPage.flatMap((t) => worst.filter((bg) => contrast(theme[t], bg) < 4.5).map((bg) => `${t} on ${bg}`));
