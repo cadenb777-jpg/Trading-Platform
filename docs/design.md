@@ -36,6 +36,19 @@ against every background for 4.5:1 in both themes.
 `.table-wrap`, row hover with a sky edge, no zebra), `.modal` / `.popover` (rise in), `.toast` (glass, copper edge),
 `.empty-state`, `.ap-error`. Clickable cards (`.idx-card`, `.brief-chip`, `.fut-tile`) lift 1px on hover.
 
+## Principles (owner's brief: impactful, methodical, uncluttered)
+
+- **Every element earns its place.** Decoration only where it carries meaning: the arch and glow belong to the Home
+  hero (the "front door"), the grid and glow to page headers only. Never on cards, tables, tickets or charts.
+- **One focal point per view.** Each page has one hero figure or chart; everything else supports it. One accent
+  colour at a time per region: sky for interaction, copper for the single most important highlight.
+- **Calm space and alignment.** Content sits on the 4/8px grid with shared edges; groups are separated by space
+  before lines; lines before boxes. Related things are close, unrelated things apart.
+- **Hierarchy by size and weight, not colour.** Colour is reserved for meaning (up/down, status, selection).
+- **Motion explains.** Animate only what changed or what the pointer touches; ≤ 200 ms, eased; nothing loops.
+- **Remove before adding.** A new visual touch replaces an old one or proves it helps a task; review new pages
+  against this list before merging.
+
 ## Do
 
 - Use tokens for every colour; add a token (both themes) rather than a hex in a rule.
