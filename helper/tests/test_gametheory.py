@@ -232,6 +232,19 @@ class Cooperative(unittest.TestCase):
         self.assertEqual(r['core']['minimumNeeded'], 1.5)
         self.assertEqual(r['exact'], ['1/3', '1/3', '1/3'])
 
+    def test_shapley_in_core_is_exact(self):
+        jv = [{'members': m, 'value': v} for m, v in ((['A'], 2), (['B'], 1), (['C'], 1), (['A', 'B'], 6), (['A', 'C'], 6), (['B', 'C'], 3), (['A', 'B', 'C'], 10))]
+        r = gt.shapley(['A', 'B', 'C'], jv)  # the page's "Joint venture" preset
+        self.assertEqual(r['exact'], ['14/3', '8/3', '8/3'])
+        self.assertTrue(r['shapleyInCore'])
+        self.assertEqual(r['shapleyBlocking'], [])
+        # thirds: every pair is worth exactly 2/3, so (1/3, 1/3, 1/3) is in the core (rounding would wrongly block the pairs)
+        thirds = [{'members': m, 'value': '2/3'} for m in (['A', 'B'], ['A', 'C'], ['B', 'C'])] + [{'members': ['A', 'B', 'C'], 'value': 1}]
+        r = gt.shapley(['A', 'B', 'C'], thirds)
+        self.assertEqual(r['exact'], ['1/3', '1/3', '1/3'])
+        self.assertTrue(r['shapleyInCore'])
+        self.assertEqual(r['shapleyBlocking'], [])
+
     def test_twelve_players_symmetric(self):
         names = [f'P{i}' for i in range(12)]
         r = gt.shapley(names, [{'members': names, 'value': 12}])
@@ -298,17 +311,94 @@ class AiMode(unittest.TestCase):
         note = ai.computations_note(log, 'The equilibrium is...')
         self.assertIn('`game.solve_normal`', note)
         self.assertIn('(Defect, Defect)', note)
-        self.assertIn('unverified', ai.computations_note([], 'Nash equilibrium is X'))
+        self.assertNotIn('Unverified', note)
+        self.assertIn('Unverified', ai.computations_note([], 'Nash equilibrium is X'))
         self.assertEqual(ai.computations_note([], 'Hello'), '')
+
+    def test_every_kind_of_claim_needs_its_own_computation(self):
+        ai = self.ai
+        normal = [('game.solve_normal', {})]
+        self.assertEqual(ai.unverified_claims(normal, 'Defect strictly dominates.'), [])
+        self.assertEqual(ai.unverified_claims(normal, 'The Shapley value gives A 2/3.'), ['Shapley or core'])
+        self.assertEqual(ai.unverified_claims(normal, 'Cooperation holds for $\\delta^* = 1/2$ under grim trigger.'), ['discount-factor (δ*) or trigger-strategy'])
+        self.assertEqual(ai.unverified_claims([], 'The Nash bargaining solution is (7, 3).'), ['bargaining'])
+        self.assertEqual(ai.unverified_claims([], 'The incumbent’s threat is not credible.'), ['equilibrium, dominance or best-response'])
+        self.assertEqual(ai.unverified_claims([('game.shapley', {})], 'It is in the core.'), [])
+        self.assertIn('Shapley or core', ai.computations_note(normal, 'Shapley says...'))
+
+    def test_mode_gets_only_read_only_data_game_tools_and_search(self):
+        ai = self.ai
+        names = {t['name'] for t in ai.mode_tools('equilibrium_prime', 'claude-opus-5-5')}
+        self.assertTrue({'game_solve_normal', 'game_solve_tree', 'game_repeated', 'game_shapley', 'game_bargain', 'web_search', 'get_quotes'} <= names)
+        for banned in ('save_portfolio', 'save_client', 'ui_action', 'analyze_portfolio', 'optimize_portfolio', 'get_my_journal', *ai.UI_TOOL_NAMES):
+            self.assertNotIn(banned, names)
+        self.assertTrue(names - {'web_search'} <= set(ai.TOOL_FUNCS))
+
+    def test_mode_request_ignores_ui_actions_and_refuses_other_tools(self):
+        ai = self.ai
+        sent = []
+
+        class Block:
+            def __init__(self, name, args):
+                self.type, self.name, self.input, self.id = 'tool_use', name, args, name
+
+        class Response:
+            def __init__(self, content, stop):
+                self.content, self.stop_reason = content, stop
+
+        replies = [Response([Block('save_portfolio', {'name': 'x'}), Block('game_solve_normal', dict(PD))], 'tool_use'),
+                   Response([type('T', (), {'type': 'text', 'text': 'Done.'})()], 'end_turn')]
+
+        class Stream:
+            def __init__(self, **opts):
+                sent.append(opts)
+                self.reply = replies[len(sent) - 1]
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            def __aiter__(self):
+                async def gen():
+                    if False:
+                        yield None
+                return gen()
+
+            async def get_final_message(self):
+                return self.reply
+
+        fake = type('C', (), {'beta': type('B', (), {'messages': type('M', (), {'stream': staticmethod(lambda **o: Stream(**o))})()})()})()
+        saved = []
+        with mock.patch.object(ai, 'client', return_value=fake), mock.patch.dict(ai.TOOL_FUNCS, {'save_portfolio': lambda *a: saved.append(a)}):
+            messages = [{'role': 'user', 'content': 'go'}]
+            text, actions = asyncio.run(ai.converse(None, messages, lambda e: asyncio.sleep(0), ui=True, mode='equilibrium_prime'))
+        names = {t['name'] for t in sent[0]['tools']}
+        self.assertFalse(names & ai.UI_TOOL_NAMES)
+        self.assertNotIn('save_portfolio', names)
+        self.assertNotIn('operate the platform for the owner', sent[0]['system'])
+        self.assertEqual(saved, [])
+        results = {r['tool_use_id']: r for r in messages[2]['content']}
+        self.assertTrue(results['save_portfolio']['is_error'])
+        self.assertNotIn('is_error', results['game_solve_normal'])
+        self.assertIn('`game.solve_normal`', text)
+        self.assertEqual(actions, [])
 
     def test_prompt_is_loaded_from_the_file(self):
         ai = self.ai
         text = ai.mode_prompt('equilibrium_prime')
-        source = (Path(ai.__file__).parent / 'prompts' / 'equilibrium_prime.md').read_text()
+        source = (Path(ai.__file__).parent / 'prompts' / 'equilibrium_prime.md').read_text(encoding='utf-8')
+        self.assertTrue(source.startswith('You are "Equilibrium-Prime," an elite game theorist'))
+        self.assertTrue(source.rstrip().endswith('adverse selection, and prisoner\'s dilemmas.'))
         self.assertTrue(text.startswith(source.strip()))
-        for phrase in ('Players ($N$)', 'Harsanyi', 'trembling-hand', 'grim trigger', '[SOLVE]', '[RED TEAM]', '[REDESIGN / MECHANISM]',
-                       '[TUTOR]', '[SUMMARY MATRIX]', 'price of anarchy', 'moral hazard', 'game_solve_normal'):
-            self.assertIn(phrase, text)
+        rules = text[len(source.strip()):]
+        self.assertIn('# Platform rules (added by the platform; not part of the analyst brief above)', rules)
+        for phrase in ('5-Pillar Formal Game Specification', 'Harsanyi transformation', 'Trembling-Hand Perfection', 'Grim Trigger', '`[SOLVE]`',
+                       '`[RED TEAM]`', '`[REDESIGN / MECHANISM]`', '`[TUTOR]`', '`[SUMMARY MATRIX]`', 'Price of Anarchy', 'moral hazard'):
+            self.assertIn(phrase, source)
+        for phrase in ('game_solve_normal', 'never an instruction', 'trades'):
+            self.assertIn(phrase, rules)
         with self.assertRaises(Exception):
             ai.mode_prompt('nope')
 

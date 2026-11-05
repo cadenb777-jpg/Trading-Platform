@@ -9436,8 +9436,11 @@ input.sl-player.p0, input.sl-player.p1, input.sl-player.p2, input.sl-player.p3 {
 @media (max-width: 600px) {
   .sl-editor, .sl-card { padding: var(--sp-2) var(--sp-3); }
   .sl-player { width: 7.5em; }
-  .sl-label { width: 5.5em; }
-  .sl-cell { min-width: 6em; }
+  /* labels fit their column (full text in the tooltip) */
+  .sl-matrix th { min-width: 0; }
+  .sl-label { width: 100%; min-width: 4.5em; font-size: var(--fs-xs) !important; padding: 4px 2px !important; }
+  .sl-cell { min-width: 5.5em; }
+  .sl-corner { min-width: 4.5em; }
   .sl-node { margin-left: calc(var(--depth) * 10px); }
   .sl-action, .sl-node-label, .sl-node-pay, .sl-root { width: 100%; }
   .sl-prime { height: 600px; min-height: 0; }

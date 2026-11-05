@@ -20,6 +20,7 @@ Payoffs are utilities: more is better. Dominance is checked against pure strateg
 is not tested; the result says so). Handlers: game.solve_normal, game.solve_tree, game.repeated, game.shapley,
 game.bargain. Parameter names never use `id` or `type` (reserved in helper messages).
 """
+import asyncio
 import itertools
 import math
 import warnings
@@ -745,7 +746,7 @@ def shapley(players, coalitions, allocation=None):
     phi = shapley_values(n, v)
     full = (1 << n) - 1
     core = core_check(n, v, allocation) if n <= MAX_CORE_PLAYERS or allocation is not None else {'nonEmpty': None}
-    shap_core = core_check(n, v, [out(p, 12) for p in phi]) if n <= MAX_CORE_PLAYERS else None
+    shap_core = core_check(n, v, phi) if n <= MAX_CORE_PLAYERS else None  # exact fractions: no rounding can block
     notes = ['Coalitions not listed are worth 0.']
     superadditive = all(v.get(a | b, 0) >= v.get(a, 0) + v.get(b, 0) for a in range(1, full + 1) for b in range(1, full + 1) if not a & b) if n <= 8 else None
     if superadditive is False:
@@ -819,30 +820,32 @@ def _flag(value):
     return bool(value) and value not in ('0', 'false', 'no')
 
 
+# The solvers run on a worker thread, so a large game never stalls quotes and charts on the helper's event loop.
+
 @handler('game.solve_normal')
 async def h_solve_normal(ctx, msg):
-    return solve_normal(msg.get('players'), msg.get('strategies'), msg.get('payoffs'), weak=_flag(msg.get('weak')),
+    return await asyncio.to_thread(solve_normal, msg.get('players'), msg.get('strategies'), msg.get('payoffs'), weak=_flag(msg.get('weak')),
                         welfare=msg.get('welfare'), mixed=msg.get('mixed', True) is not False)
 
 
 @handler('game.solve_tree')
 async def h_solve_tree(ctx, msg):
-    return solve_tree(msg.get('tree'), msg.get('players'))
+    return await asyncio.to_thread(solve_tree, msg.get('tree'), msg.get('players'))
 
 
 @handler('game.repeated')
 async def h_repeated(ctx, msg):
-    return repeated(msg.get('players'), msg.get('strategies'), msg.get('payoffs'), msg.get('cooperate'), msg.get('punish'), msg.get('delta'))
+    return await asyncio.to_thread(repeated, msg.get('players'), msg.get('strategies'), msg.get('payoffs'), msg.get('cooperate'), msg.get('punish'), msg.get('delta'))
 
 
 @handler('game.shapley')
 async def h_shapley(ctx, msg):
-    return shapley(msg.get('players'), msg.get('coalitions'), msg.get('allocation'))
+    return await asyncio.to_thread(shapley, msg.get('players'), msg.get('coalitions'), msg.get('allocation'))
 
 
 @handler('game.bargain')
 async def h_bargain(ctx, msg):
-    return bargain(msg.get('points'), msg.get('disagreement'), msg.get('power'))
+    return await asyncio.to_thread(bargain, msg.get('points'), msg.get('disagreement'), msg.get('power'))
 
 
 #: The parameters each request reads (checked by a test: none may be `id` or `type`).

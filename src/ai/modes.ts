@@ -13,10 +13,10 @@ export const AI_MODES: { id: AiModeId; label: string; blurb: string }[] = [
 
 /** Starter requests for Equilibrium-Prime (the mode tags at the start pick how it answers). */
 export const EQUILIBRIUM_STARTERS = [
-  '[SOLVE] Model the pricing game between Firm A and Firm B from the uploaded Q3 reports',
-  '[REDESIGN] Fix the moral hazard in this vendor agreement',
-  '[RED TEAM] How credible is the negotiator’s walk-away threat?',
-  '[SOLVE] Three members choosing whether to adopt a new technology (a Stag Hunt): what is the focal point that resolves it?',
+  '[SOLVE] Model the pricing game between Firm A and Firm B using the Q3 reports uploaded as sources.',
+  '[REDESIGN / MECHANISM] Analyze the moral hazard in the vendor agreement (Source 2) and redesign it to align incentives.',
+  '[RED TEAM] Stress-test the credibility of Party X’s walk-away threat (Source 4).',
+  '[SOLVE] Model the 3-member technology adoption decision (Source 1) as a Stag Hunt and find the focal point that resolves it.',
 ];
 
 export const modeLabel = (id: AiModeId) => AI_MODES.find((m) => m.id === id)?.label ?? 'Assistant';

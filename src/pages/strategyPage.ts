@@ -131,6 +131,11 @@ export function createStrategyPage() {
     getContext: () => ({ page: 'Strategy Lab', route: 'strategy' }),
     getModel: currentModel,
     onAction: () => {},
+    // a new chat has none of the sources: they are attached again with the next question
+    onNewChat: () => {
+      sentSources.clear();
+      drawSources();
+    },
   });
   assistant.el.classList.add('sl-ai');
   const sourceList = h('div', { class: 'sl-sources-list' });
@@ -220,6 +225,10 @@ export function createStrategyPage() {
   // ---------- requests ----------
   let seq = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** The solve in flight: aborted when a newer edit starts another, so stale re-solves don't queue up. */
+  let inflight: AbortController | null = null;
+  /** A game.* request for the current solve (cancelled by the next one). */
+  const gameRequest = <T,>(type: string, params: Record<string, unknown>) => engineRequest<T>(type, params, 30000, undefined, inflight?.signal);
   /** Solves after a short pause (typing), ignoring replies that arrive after a newer edit. */
   function solveSoon(delay = 250) {
     clearTimeout(timer);
@@ -230,13 +239,15 @@ export function createStrategyPage() {
   }
   async function solve() {
     const mine = ++seq;
+    inflight?.abort();
+    inflight = new AbortController();
     persist();
     try {
       if (view === 'matrix') await solveMatrix(mine);
       else if (view === 'tree') await solveTree(mine);
       else await solveCoalition(mine);
     } catch (err) {
-      if (mine === seq) showError((err as Error).message || String(err));
+      if (mine === seq && (err as Error).name !== 'AbortError') showError((err as Error).message || String(err));
     }
   }
 
@@ -342,9 +353,11 @@ export function createStrategyPage() {
             h('input', {
               class: 'sl-label p1',
               value: label,
+              title: label,
               'aria-label': `${matrix.players[1]} move ${j + 1}`,
               oninput: (e: Event) => {
                 matrix.strategies[1][j] = (e.target as HTMLInputElement).value;
+                (e.target as HTMLInputElement).title = matrix.strategies[1][j];
                 solveSoon();
               },
             }),
@@ -361,9 +374,11 @@ export function createStrategyPage() {
             h('input', {
               class: 'sl-label p0',
               value: label,
+              title: label,
               'aria-label': `${matrix.players[0]} move ${i + 1}`,
               oninput: (e: Event) => {
                 matrix.strategies[0][i] = (e.target as HTMLInputElement).value;
+                (e.target as HTMLInputElement).title = matrix.strategies[0][i];
                 solveSoon();
               },
             }),
@@ -482,7 +497,7 @@ export function createStrategyPage() {
       return showError(read.error);
     }
     const n = read.payload.players.length;
-    const r = await engineRequest<NormalResult>('game.solve_normal', { ...read.payload, weak, welfare: 'sum' }, 30000);
+    const r = await gameRequest<NormalResult>('game.solve_normal', { ...read.payload, weak, welfare: 'sum' });
     if (mine !== seq) return;
     normal = r;
     paintMatrix();
@@ -491,11 +506,10 @@ export function createStrategyPage() {
     const candidates = r.cells.filter((c) => c.pareto && !c.nash).sort((a, b) => b.payoffs.reduce((x, y) => x + y, 0) - a.payoffs.reduce((x, y) => x + y, 0));
     if (n === 2 && candidates.length && r.pureNash.length) {
       try {
-        const rep = await engineRequest<{ threshold: number | null; cooperateLabels: string[]; punishLabels: string[]; players: { name: string; deviation: string; exact: string | null }[] }>(
-          'game.repeated',
-          { ...read.payload, cooperate: candidates[0].profile.map((s, p) => read.payload.strategies[p][s]) },
-          30000,
-        );
+        const rep = await gameRequest<{ threshold: number | null; cooperateLabels: string[]; punishLabels: string[] }>('game.repeated', {
+          ...read.payload,
+          cooperate: candidates[0].profile.map((s, p) => read.payload.strategies[p][s]),
+        });
         if (mine !== seq) return;
         repeated = h(
           'div',
@@ -514,6 +528,7 @@ export function createStrategyPage() {
       } catch {
         repeated = null;
       }
+      if (mine !== seq) return;
     }
     const mixed = (r.mixedNash ?? []).filter((e) => !e.pure);
     results.replaceChildren(
@@ -733,7 +748,7 @@ export function createStrategyPage() {
       treeView = null;
       return showError(read.error);
     }
-    const r = await engineRequest<TreeResult>('game.solve_tree', { tree: read.tree, players: tree.players }, 30000);
+    const r = await gameRequest<TreeResult>('game.solve_tree', { tree: read.tree, players: tree.players });
     if (mine !== seq) return;
     const before = JSON.stringify(treeView && [...treeView.onPath, ...treeView.chosen, ...treeView.threats]);
     treeView = treeHighlights(r, read.paths);
@@ -850,16 +865,16 @@ export function createStrategyPage() {
     const d = parseCell(bargainState.disagreement, 2);
     const bargainReq =
       points.every((p) => 'values' in p) && 'values' in d
-        ? engineRequest<{ solution: number[] | null; gains?: number[]; notes: string[] }>(
-            'game.bargain',
-            { points: points.map((p) => (p as { values: string[] }).values), disagreement: d.values, power: bargainState.power },
-            30000,
-          ).catch((err: Error) => ({ solution: null, notes: [err.message] }))
+        ? gameRequest<{ solution: number[] | null; gains?: number[]; notes: string[] }>('game.bargain', {
+            points: points.map((p) => (p as { values: string[] }).values),
+            disagreement: d.values,
+            power: bargainState.power,
+          }).catch((err: Error) => ({ solution: null, notes: [err.message] }))
         : Promise.resolve({ solution: null, notes: ['Type each deal and the no-deal point as two numbers.'] });
     if ('error' in read) {
       showError(read.error);
     } else {
-      const r = await engineRequest<ShapleyResult>('game.shapley', read, 30000);
+      const r = await gameRequest<ShapleyResult>('game.shapley', read);
       if (mine !== seq) return;
       const max = Math.max(...r.shapley.map(Math.abs), 1e-9);
       results.replaceChildren(
@@ -918,6 +933,7 @@ export function createStrategyPage() {
     },
     stop() {
       clearTimeout(timer);
+      inflight?.abort();
     },
     /** Opens Equilibrium-Prime with a question (from elsewhere on the platform). */
     ask: (question: string) => askPrime(question),

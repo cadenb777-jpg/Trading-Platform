@@ -112,6 +112,8 @@ export interface AssistantOptions {
   getModel?(): string;
   /** The heading (default "AI Assistant"). */
   title?: string;
+  /** Called when the owner starts a new chat (or switches mode). */
+  onNewChat?(): void;
 }
 
 export function createAssistant(opts: AssistantOptions) {
@@ -147,7 +149,7 @@ export function createAssistant(opts: AssistantOptions) {
     ...AI_MODES.map((m) => h('option', { value: m.id, title: m.blurb }, m.label)),
   );
   modeSelect.value = mode();
-  const placeholder = () => (isMathMode() ? 'Describe the situation, or start with [SOLVE], [RED TEAM], [REDESIGN], [TUTOR]…' : 'Ask anything… e.g. “Why is NVDA down today?”');
+  const placeholder = () => (isMathMode() ? 'Describe the situation, or start with [SOLVE], [RED TEAM], [REDESIGN / MECHANISM], [TUTOR]…' : 'Ask anything… e.g. “Why is NVDA down today?”');
   modeSelect.addEventListener('change', () => {
     newChat(modeSelect.value as AiModeId);
   });
@@ -299,7 +301,7 @@ export function createAssistant(opts: AssistantOptions) {
             'p',
             { class: 'muted' },
             isMathMode()
-              ? 'Describe a strategic situation, or attach the documents behind it (PDF or text) as sources. Start with a mode tag: [SOLVE], [RED TEAM], [REDESIGN], [TUTOR] or [SUMMARY MATRIX]. Every equilibrium it states is computed by the game engine and listed under the answer.'
+              ? 'Describe a strategic situation, or attach the documents behind it (PDF or text) as sources. Start with a mode tag: [SOLVE], [RED TEAM], [REDESIGN / MECHANISM], [TUTOR] or [SUMMARY MATRIX]. Every equilibrium it states is computed by the game engine and listed under the answer.'
               : 'I can see the page you’re on, so ask about anything on screen (“why is…”, “summarize this”). I also read live quotes, news, options flow, financials and the economy, build portfolios, open charts and set alerts.',
           ),
           h('div', { class: 'ai-suggestions' }, ...suggestions().map((s) => h('button', { class: 'ai-suggestion', onclick: () => ask(s) }, s))),
@@ -314,6 +316,7 @@ export function createAssistant(opts: AssistantOptions) {
   function newChat(nextMode: AiModeId = mode()) {
     if (chat.conversation) engineRequest('ai.reset', { conversation: chat.conversation }).catch(() => {});
     chat = { conversation: '', messages: [], mode: opts.fixedMode ?? nextMode };
+    opts.onNewChat?.();
     modeSelect.value = mode();
     el.dataset.mode = mode();
     input.placeholder = placeholder();
@@ -361,7 +364,8 @@ export function createAssistant(opts: AssistantOptions) {
       if (showStatus) replyEl.append(status);
       list.scrollTop = list.scrollHeight;
     };
-    const useActions = !!opts.actions && aiActionsReady();
+    // a specialist mode (Equilibrium-Prime) never operates the platform, from any surface
+    const useActions = !!opts.actions && aiActionsReady() && !mode();
     let chatSignal: AbortSignal | undefined;
     const stopped = () => chatSignal?.aborted ?? false;
     /** Actions the helper gave up on (timed out): never run them late. */
