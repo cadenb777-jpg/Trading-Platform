@@ -561,40 +561,64 @@ def provenance(record):
 
 # ---------- one-time cache migrations ----------
 
-#: (name, key prefix, kept suffix or None): cache.db rows whose key starts with the prefix (and doesn't end with the
-#: kept suffix) are deleted once; a ('migration', name) row records that it ran.
+def backup_rows(con, migration, keys):
+    """Copies cache.db rows into the side table cache_backup (with the migration's name and time) before a
+    migration changes or removes them. Returns how many were copied. Restore by copying them back into `cache`."""
+    con.execute('CREATE TABLE IF NOT EXISTS cache_backup (key TEXT, saved REAL, data TEXT, migration TEXT, at REAL)')
+    n = 0
+    for key in keys:
+        n += con.execute('INSERT INTO cache_backup SELECT key, saved, data, ?, ? FROM cache WHERE key = ?',
+                         (migration, time.time(), key)).rowcount
+    return n
+
+
+def delete_prefix(prefix, keep=None):
+    """A migration that backs up, then deletes, rows whose key starts with `prefix` (and doesn't end with `keep`)."""
+    def run(con, name):
+        sql = 'SELECT key FROM cache WHERE substr(key, 1, ?) = ?'
+        args = [len(prefix), prefix]
+        if keep:
+            sql += ' AND substr(key, -?) != ?'
+            args += [len(keep), keep]
+        keys = [r[0] for r in con.execute(sql, args).fetchall()]
+        saved = backup_rows(con, name, keys)
+        for key in keys:
+            con.execute('DELETE FROM cache WHERE key = ?', (key,))
+        log.info('Cache migration %s: backed up %d row(s) to cache_backup, removed %d', name, saved, len(keys))
+        return len(keys)
+    return run
+
+
+#: (name, function(con, name) -> rows changed). Each runs once (a ('migration', name) row records it), in order.
+#: Old Alpaca bars were saved dividend-adjusted under ('alpaca', symbol, size); now ('alpaca', symbol, size, 'split').
+#: The scanner runs its own 30-minute migration first (it reads these rows to tell Alpaca bars from Schwab ones).
 MIGRATIONS = (
-    # Alpaca bars used to be saved dividend-adjusted under ('alpaca', symbol, size); now ('alpaca', symbol, size, 'split').
-    ('alpaca-split-only', "('alpaca', '", ", 'split')"),
-    # The scanner's 30-minute record mixed those dividend-adjusted Alpaca bars into its months: rebuilt from Schwab
-    # (about 9 months) and split-only Alpaca (3 years) on the next scan.
-    ('scan-30m-split-only', "('scan-30m", None),
+    ('alpaca-split-only', delete_prefix("('alpaca', '", ", 'split')")),
 )
 
 
 def run_migrations(disk, migrations=MIGRATIONS):
-    """Runs each cache migration once (safe to call at every start). Returns {name: rows deleted} for those that ran."""
+    """Runs each cache migration once (safe to call at every start), each in its own transaction after backing up
+    what it touches. Returns {name: rows changed} for those that ran."""
     import json
     done = {}
-    try:
-        with disk._lock:
-            con = disk.db()
-            for name, prefix, keep in migrations:
+    for name, fn in migrations:
+        try:
+            with disk._lock:
+                con = disk.db()
                 marker = repr(('migration', name))
                 if con.execute('SELECT 1 FROM cache WHERE key = ?', (marker,)).fetchone():
                     continue
-                sql = 'DELETE FROM cache WHERE substr(key, 1, ?) = ?'
-                args = [len(prefix), prefix]
-                if keep:
-                    sql += ' AND substr(key, -?) != ?'
-                    args += [len(keep), keep]
-                n = con.execute(sql, args).rowcount
-                con.execute('INSERT OR REPLACE INTO cache VALUES (?, ?, ?)', (marker, time.time(), json.dumps({'deleted': n})))
+                n = fn(con, name)
+                con.execute('INSERT OR REPLACE INTO cache VALUES (?, ?, ?)', (marker, time.time(), json.dumps({'changed': n})))
+                con.commit()
                 done[name] = n
-                log.info('Cache migration %s: removed %d row(s) from cache.db', name, n)
-            con.commit()
-    except Exception as err:  # never stop the helper over a clean-up; it is tried again next start
-        log.info('Cache migrations not run: %s', err)
+        except Exception as err:  # never stop the helper over a clean-up; it is tried again next start
+            try:
+                disk.db().rollback()
+            except Exception:
+                pass
+            log.info('Cache migration %s not run: %s', name, err)
     return done
 
 

@@ -498,22 +498,84 @@ class Review(HubTest):
         self.assertEqual(len(datahub.gate('fred').sent), 0)
         self.assertEqual(len(datahub.gate('schwab').sent), 5)
 
-    def test_cache_migrations_run_once(self):
+    def test_cache_migrations_back_up_then_run_once(self):
         disk = core.DiskCache(Path(tempfile.mkdtemp()) / 'c.db')
         for key in (('alpaca', 'AAPL', '1h'), ('alpaca', 'AAPL', '1h', 'split'), ('scan-30m', 'AAPL', '2026-01'),
-                    ('scan-30m-months', 'AAPL'), ('scan-daily-15y', 'AAPL'), ('fred', 'X')):
+                    ('scan-daily-15y', 'AAPL'), ('fred', 'X')):
             disk.put(repr(key), 1.0, [1])
         with self.assertLogs('engine.datahub', 'INFO'):
             done = datahub.run_migrations(disk)
-        self.assertEqual(done, {'alpaca-split-only': 1, 'scan-30m-split-only': 2})
+        self.assertEqual(done, {'alpaca-split-only': 1})
         self.assertIsNone(disk.get(repr(('alpaca', 'AAPL', '1h'))))
-        self.assertIsNotNone(disk.get(repr(('alpaca', 'AAPL', '1h', 'split'))))
-        self.assertIsNotNone(disk.get(repr(('scan-daily-15y', 'AAPL'))))
-        self.assertIsNotNone(disk.get(repr(('fred', 'X'))))
-        disk.put(repr(('scan-30m', 'AAPL', '2026-02')), 2.0, [2])
+        for key in (('alpaca', 'AAPL', '1h', 'split'), ('scan-30m', 'AAPL', '2026-01'), ('scan-daily-15y', 'AAPL'), ('fred', 'X')):
+            self.assertIsNotNone(disk.get(repr(key)), key)  # nothing else touched (the 30-minute record never deleted)
+        backup = disk.db().execute('SELECT key, migration FROM cache_backup').fetchall()
+        self.assertEqual(backup, [(repr(('alpaca', 'AAPL', '1h')), 'alpaca-split-only')])
+        disk.put(repr(('alpaca', 'MSFT', '1h')), 2.0, [2])
         self.assertEqual(datahub.run_migrations(disk), {})  # once only: new rows stay
-        self.assertIsNotNone(disk.get(repr(('scan-30m', 'AAPL', '2026-02'))))
+        self.assertIsNotNone(disk.get(repr(('alpaca', 'MSFT', '1h'))))
         disk._db.close()
+
+
+class ThirtyMinuteMigration(unittest.TestCase):
+    """The kept 30-minute record: Alpaca's old dividend-adjusted bars are cleaned, Schwab's bars are never removed."""
+    DAY = 86400
+    NOW = 1_790_000_000  # mid 2026
+
+    def setUp(self):
+        from engine import scanner
+        self.scanner = scanner
+        self.disk = core.DiskCache(Path(tempfile.mkdtemp()) / 'c.db')
+        self.addCleanup(lambda: self.disk._db and self.disk._db.close())
+        # Alpaca era: 900-800 days ago (dividend-adjusted: 98% of Schwab's basis). Schwab era kept for good: from 700
+        # days ago (older than Schwab's 9 months, so it can't be downloaded again) to today.
+        self.alp = [(self.NOW - (900 - i) * self.DAY, 98.0, 99.0, 97.0, 98.0, 5000.0) for i in range(0, 100, 10)]
+        self.sch = [(self.NOW - (700 - i) * self.DAY, 100.0, 101.0, 99.0, 100.0, 4000.0) for i in range(0, 700, 10)]
+        # The old Alpaca download also covered some Schwab days (a chart asked for them): there it is 98 vs Schwab's 100.
+        overlap = [(t, 98.0, 99.0, 97.0, 98.0, 5100.0) for t, *_ in self.sch[:5]]
+        self.disk.put(repr(('alpaca', 'AAPL', '30m')), 1.0, {'from': 0, 'to': 1, 'checked': 0, 'bars': [list(r) for r in self.alp + overlap]})
+        months = {}
+        for r in self.alp + self.sch:
+            months.setdefault(self.scanner._month(r[0]), []).append(list(r))
+        for m, rows in months.items():
+            self.disk.put(repr(('scan-30m', 'AAPL', m)), 1.0, rows)
+        self.disk.put(repr(('scan-30m-months', 'AAPL')), 1.0, sorted(months))
+        # A stock with no saved Alpaca download: its origin can't be told, so it is left exactly as it is.
+        self.disk.put(repr(('scan-30m', 'MSFT', '2024-01')), 1.0, [list(self.sch[0])])
+
+    def rows(self, symbol='AAPL'):
+        months = self.disk.get(repr(('scan-30m-months', symbol)))[1]
+        return sorted(tuple(r) for m in months for r in self.disk.get(repr(('scan-30m', symbol, m)))[1])
+
+    def migrate(self, keys):
+        migrations = (('scan-30m-split-only', lambda con, name: self.scanner.migrate_30m_split_only(con, name, keys)),
+                      *datahub.MIGRATIONS)
+        return datahub.run_migrations(self.disk, migrations)
+
+    def test_schwab_rows_older_than_nine_months_survive_and_alpaca_rows_go_with_keys(self):
+        done = self.migrate(keys=True)
+        self.assertEqual(done['scan-30m-split-only'], len(self.alp))
+        self.assertEqual(self.rows(), sorted(self.sch))  # every Schwab bar kept, unchanged, also those 700 days old
+        self.assertTrue(any(r[0] < self.NOW - 270 * self.DAY for r in self.rows()))
+        self.assertEqual(self.disk.get(repr(('scan-30m', 'MSFT', '2024-01')))[1], [list(self.sch[0])])
+        backed = {k for (k,) in self.disk.db().execute("SELECT key FROM cache_backup WHERE migration = 'scan-30m-split-only'")}
+        self.assertIn(repr(('scan-30m-months', 'AAPL')), backed)
+        self.assertTrue(all("'AAPL'" in k for k in backed))
+        self.assertIsNone(self.disk.get(repr(('alpaca', 'AAPL', '30m'))))  # then the old Alpaca rows (backed up)
+
+    def test_without_keys_alpaca_rows_are_rescaled_not_deleted(self):
+        self.migrate(keys=False)
+        rows = self.rows()
+        self.assertEqual(len(rows), len(self.alp) + len(self.sch))
+        self.assertEqual([r for r in rows if r[0] >= self.sch[0][0]], sorted(self.sch))  # Schwab untouched
+        first = rows[0]
+        self.assertAlmostEqual(first[4], 100.0)  # 98 / (98 / 100)
+        self.assertAlmostEqual(first[5], 5000.0 * 0.98)
+
+    def test_runs_once(self):
+        self.migrate(keys=True)
+        self.disk.put(repr(('scan-30m', 'AAPL', '1999-01')), 1.0, [list(self.alp[0])])
+        self.assertEqual(self.migrate(keys=True), {})
 
     def test_dividends_restated_after_a_split_are_not_adjusted_twice(self):
         splits = {dt.date(2024, 6, 10): 4.0}

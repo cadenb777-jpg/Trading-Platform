@@ -88,6 +88,7 @@ class AlpacaBase(unittest.TestCase):
         settings._cache = dict(KEYS)
         self.addCleanup(setattr, settings, '_cache', None)
         alpaca._locks.clear()
+        alpaca._SPLIT_MEMO.clear()
         alpaca._pace_lock = None
         gap = mock.patch.object(alpaca, 'MIN_CALL_GAP', 0)
         gap.start()
@@ -460,6 +461,20 @@ class SplitAfterSaving(AlpacaBase):
         self.assertIsNone(alpaca.split_since(splits, now, june, now))  # downloaded after the split
         self.assertIsNone(alpaca.split_since({dt.date(2026, 9, 1): 4.0}, june, now, now))  # no bars before it
         self.assertIsNone(alpaca.split_since({}, 0, 0, now))
+
+    def test_split_dates_are_asked_once_per_symbol_per_day(self):
+        calls = []
+
+        class C:
+            async def splits(self, symbol):
+                calls.append(symbol)
+                raise RuntimeError('Yahoo down')  # a failure is remembered for the day too
+
+        async def main():
+            for _ in range(5):
+                self.assertEqual(await alpaca._known_splits(C(), 'AAPL'), {})
+        asyncio.run(main())
+        self.assertEqual(calls, ['AAPL'])
 
 
 class Seam(unittest.TestCase):

@@ -145,15 +145,26 @@ def align_to_schwab(symbol, schwab_bars, alpaca_bars, tolerance=SEAM_TOLERANCE):
              'volume': b['volume'] * r} for b in alpaca_bars]
 
 
+#: (symbol, New York date) -> Yahoo's split dates, so the check costs at most one lookup per symbol per day (a failed
+#: lookup too: a Yahoo outage doesn't add a call to every chart load)
+_SPLIT_MEMO = {}
+
+
 async def _known_splits(ctx, symbol):
-    """Yahoo's split dates for the symbol ({date: ratio}; cached a day by ctx), {} when unknown."""
+    """Yahoo's split dates for the symbol ({date: ratio}), asked once per symbol per day; {} when unknown."""
     get = getattr(ctx, 'splits', None)
     if get is None:
         return {}
-    try:
-        return await get(symbol) or {}
-    except Exception:
-        return {}
+    memo = (symbol, dt.datetime.now(NEW_YORK).date())
+    if memo not in _SPLIT_MEMO:
+        try:
+            found = await get(symbol) or {}
+        except Exception:
+            found = {}
+        if len(_SPLIT_MEMO) > 2000:
+            _SPLIT_MEMO.clear()
+        _SPLIT_MEMO[memo] = found
+    return _SPLIT_MEMO[memo]
 
 
 def split_since(splits, built, frm, now):
