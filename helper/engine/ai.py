@@ -827,7 +827,7 @@ async def run_ui_tool(block, emit, stop_token=''):
     reply = {'done': True, 'message': result.get('message'), 'undoable': bool(result.get('undoId'))}
     if result.get('data') is not None:
         reply['data'] = result['data']
-    return {'type': 'tool_result', 'tool_use_id': block.id, 'content': _clip(reply)}
+    return {'type': 'tool_result', 'tool_use_id': block.id, 'content': f'<tool_data name="{block.name}">\n{_clip(reply)}\n</tool_data>'}
 
 
 @handler('ai.ui_result')
