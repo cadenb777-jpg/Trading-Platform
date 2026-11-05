@@ -4,14 +4,19 @@
  * mini chart popover, the expanded row and the right-click / ⋯ menu (src/invest/rowInteract.ts). Reasoning in
  * docs/research/investments-interaction.md ("Go to").
  *
- * The security view (src/security/open.ts, `openSecurity(symbol, code)`) is used when this build has it; otherwise
- * each item falls back to the page that already covers it, and items with no page at all are left out.
+ * Security items open the security view (src/security/open.ts, `openSecurity(symbol, code)`); if it fails they fall
+ * back to the page that already covers it (symbol window, Chart, Research, Flow).
  */
 import { openAssistant } from '../ai/hub';
 import { guessMarket, type MarketRef } from '../data/quotes';
 import { persist, state } from '../state';
 import { openAlertsDialog } from '../ui/alerts';
+import { openSecurity as openSecurityView } from '../security/open';
 import { h, toast } from '../ui/dom';
+import { CATALOG_ETFS } from './catalog';
+import { listDocs } from '../data/store';
+import type { Portfolio } from '../portfolio/types';
+import { heldPosition } from '../ui/tickerCard';
 import { icon, type IconName } from '../ui/icons';
 
 export interface GoAction {
@@ -39,23 +44,30 @@ export interface GoContext {
 /** How many actions show as buttons; the rest go under "More". */
 export const PRIMARY = 5;
 
-const securityModule = import.meta.glob<{ openSecurity?: (symbol: string, tab?: string) => unknown }>('../security/open.ts');
-const loadSecurity = Object.values(securityModule)[0];
-/** True when this build has the security view. */
-export const hasSecurity = () => !!loadSecurity;
-
-/** Opens the security view on a tab (DES, GP, FA ...); `fallback` when it isn't there or fails. */
+/** Opens the security view on a tab (DES, GP, FA ...); `fallback` if that fails. */
 export function openSecurity(symbol: string, code: string | undefined, fallback: () => void) {
-  if (!loadSecurity) return fallback();
-  loadSecurity()
-    .then(async (m) => {
-      if (typeof m.openSecurity !== 'function') throw new Error('no security view');
-      await m.openSecurity(symbol, code);
-    })
+  Promise.resolve()
+    .then(() => openSecurityView(symbol, code))
     .catch(fallback);
 }
 
 const routeExists = (route: string) => !!document.querySelector(`.nav-btn[data-route="${route}"]`);
+
+// ---------- your position (the ticker card's "You hold") ----------
+
+let portfolios: { at: number; value: Promise<Portfolio[]> } | null = null;
+const money = (v: number) => v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: v >= 1000 ? 0 : 2 });
+
+/** "You hold 12 sh · $2,760" across your own accounts (client portfolios excluded), or null when not held. */
+export async function heldText(symbol: string, price: number | null): Promise<string | null> {
+  if (!portfolios || Date.now() - portfolios.at > 60_000) portfolios = { at: Date.now(), value: listDocs<Portfolio>('portfolios').catch(() => [] as Portfolio[]) };
+  const held = heldPosition(symbol, await portfolios.value);
+  if (!held) return null;
+  const parts = [held.shares ? `${+held.shares.toFixed(4)} sh` : '', held.amount ? money(held.amount) : ''].filter(Boolean).join(' + ');
+  const value = held.amount + (price != null ? held.shares * price : 0);
+  const where = held.accounts.length > 1 ? ` in ${held.accounts.length} accounts` : held.accounts[0]?.account ? ` in ${held.accounts[0].account}` : '';
+  return `You hold ${parts}${price != null && value ? ` · ${money(value)}` : ''}${where}`;
+}
 
 // ---------- shared items ----------
 
@@ -94,14 +106,16 @@ export function aiAction(question: string): GoAction {
 
 export type SymbolKind = 'stock' | 'fund' | 'index' | 'future';
 
-/** Schwab calls ETFs "EQUITY" too, so a fund is also recognised by its description ("SPDR S&P 500 ETF TRUST"). */
-const FUND_NAME = /\b(ETF|ETN|FUND|TRUST|ISHARES|SPDR|VANGUARD|INVESCO|PROSHARES|INDEX)\b/i;
-
-export function symbolKind(symbol: string, assetType?: string, name?: string): SymbolKind {
+/**
+ * Schwab calls ETFs "EQUITY" too; its assetSubType ('ETF', 'ETN', 'COE' ...) tells them apart (helpers that send it).
+ * Without it, the catalog's ETF groups decide. Mutual funds and other non-equity types are funds.
+ */
+export function symbolKind(symbol: string, assetType?: string, assetSubType?: string): SymbolKind {
   if (symbol.startsWith('/')) return 'future';
   if (symbol.startsWith('$') || assetType === 'INDEX') return 'index';
-  if ((assetType && assetType !== 'EQUITY') || FUND_NAME.test(name ?? '')) return 'fund'; // ETF, MUTUAL_FUND, ...
-  return 'stock';
+  if (assetType && assetType !== 'EQUITY') return 'fund'; // MUTUAL_FUND, ...
+  if (assetSubType) return /^(ETF|ETN)$/i.test(assetSubType) ? 'fund' : 'stock';
+  return CATALOG_ETFS.has(symbol.toUpperCase()) ? 'fund' : 'stock';
 }
 
 /**
@@ -110,15 +124,14 @@ export function symbolKind(symbol: string, assetType?: string, name?: string): S
  */
 export function symbolActions(symbol: string, label: string, kind: SymbolKind, ctx: GoContext, detail: () => void, price?: number | null): GoAction[] {
   const shown = symbol.replace(/^\$/, '');
-  const sec = hasSecurity();
   const ref = symbol.startsWith('/') ? null : guessMarket(symbol);
   const page = (route: string, method: string, ...args: unknown[]) => (ctx.openPage ? ctx.openPage(route, method, ...args) : (location.hash = `#${route}`));
   const go = (code: string, fallback: () => void) => () => openSecurity(symbol, code, fallback);
   const chartPage = () => ctx.openChart({ provider: 'schwab', symbol });
 
-  const overview: GoAction = { id: 'des', label: 'Overview', icon: 'info', code: 'DES', hint: sec ? 'Security overview' : 'Price, returns and 52-week range', run: go('DES', detail) };
-  const chart: GoAction = { id: 'gp', label: 'Chart', icon: 'chart', code: 'GP', key: 'c', hint: sec ? 'Price chart (security view)' : 'Open on the Chart page', run: go('GP', chartPage) };
-  const financials: GoAction = { id: 'fa', label: 'Financials', icon: 'profile', code: 'FA', key: 'f', hint: sec ? 'Income, balance sheet, cash flow' : 'Financials on the Research page', run: go('FA', () => page('research', 'open', symbol, 'financials')) };
+  const overview: GoAction = { id: 'des', label: 'Overview', icon: 'info', code: 'DES', hint: 'Security overview', run: go('DES', detail) };
+  const chart: GoAction = { id: 'gp', label: 'Chart', icon: 'chart', code: 'GP', key: 'c', hint: 'Price chart (security view)', run: go('GP', chartPage) };
+  const financials: GoAction = { id: 'fa', label: 'Financials', icon: 'profile', code: 'FA', key: 'f', hint: 'Income, balance sheet, cash flow', run: go('FA', () => page('research', 'open', symbol, 'financials')) };
   const research: GoAction = { id: 'research', label: 'Research', icon: 'research', key: 'r', hint: `Company research for ${shown}`, run: () => ctx.openResearch(symbol) };
   const news: GoAction = {
     id: 'cn',
@@ -126,20 +139,22 @@ export function symbolActions(symbol: string, label: string, kind: SymbolKind, c
     icon: 'news',
     code: 'CN',
     key: 'n',
-    hint: sec ? `News on ${shown}` : `News on ${shown} (Google News, new tab)`,
+    hint: `News on ${shown}`,
     run: go('CN', () => window.open(`https://news.google.com/search?q=${encodeURIComponent(`${shown} ${label}`)}`, '_blank', 'noopener')),
   };
-  const holders: GoAction = { id: 'hds', label: 'Holders', icon: 'account', code: 'HDS', hint: sec ? 'Institutional holders and insiders' : 'Insider trades on the Flow page', run: go('HDS', () => page('flow', 'open', symbol, 'insiders')) };
-  const options: GoAction = { id: 'omon', label: 'Options', icon: 'flow', code: 'OMON', hint: sec ? 'Options monitor' : 'Options flow on the Flow page', run: go('OMON', () => page('flow', 'open', symbol, 'options')) };
-  const dividends: GoAction | null = sec ? { id: 'dvd', label: 'Dividends', icon: 'calendar', code: 'DVD', hint: 'Dividend history and yield', run: go('DVD', detail) } : null;
+  const holders: GoAction = { id: 'hds', label: 'Holders', icon: 'account', code: 'HDS', hint: 'Institutional holders and insiders', run: go('HDS', () => page('flow', 'open', symbol, 'insiders')) };
+  const options: GoAction = { id: 'omon', label: 'Options', icon: 'flow', code: 'OMON', hint: 'Options monitor', run: go('OMON', () => page('flow', 'open', symbol, 'options')) };
+  const dividends: GoAction = { id: 'dvd', label: 'Dividends', icon: 'calendar', code: 'DVD', hint: 'Dividend history and yield', run: go('DVD', detail) };
+  // Pre-fills the Trade page's ticket only; nothing is placed from here (preview and confirm happen there).
+  const trade: GoAction = { id: 'trade', label: 'Trade', icon: 'trade', hint: `Open the order ticket with ${shown} filled in (you still preview and confirm)`, run: () => void import('../trade/webull').then((m) => m.openOrderTicket({ symbol, side: 'BUY' })) };
   const chartPageAction: GoAction = { id: 'chartpage', label: 'Chart page', icon: 'candles', hint: 'Open on the Chart page (indicators, drawings)', run: chartPage };
   const journal: GoAction | null = routeExists('journal') ? { id: 'journal', label: 'Journal', icon: 'clients', hint: `Your journal trades in ${shown}`, run: () => page('journal', 'open', symbol) } : null;
   const ai = aiAction(`How is ${label} (${shown}) doing lately, and why? Use live data.`);
-  const rest = [compareAction(), watchlistAction(ref), alertAction(ref, price), ai, journal];
+  const rest = [compareAction(), watchlistAction(ref), alertAction(ref, price), trade, ai, journal];
 
   let list: (GoAction | null)[];
   if (kind === 'stock') list = [overview, chart, financials, news, research, holders, options, dividends, chartPageAction, ...rest];
-  else if (kind === 'fund') list = [overview, chart, news, dividends, compareAction(), holders, options, chartPageAction, watchlistAction(ref), alertAction(ref, price), ai, journal];
+  else if (kind === 'fund') list = [overview, chart, news, dividends, compareAction(), holders, options, chartPageAction, watchlistAction(ref), alertAction(ref, price), trade, ai, journal];
   else if (kind === 'index') list = [overview, chart, news, compareAction(), ai, chartPageAction, watchlistAction(ref), alertAction(ref, price)];
   else
     list = [

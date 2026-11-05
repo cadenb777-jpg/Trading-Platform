@@ -39,7 +39,7 @@ Every row and tile on the page now behaves the same way (src/invest/rowInteract.
 | Gesture | Result |
 |---|---|
 | Hover or keyboard focus, ~150 ms | Mini chart popover anchored to the row: range switch (1M/3M/YTD/1Y/5Y), change over the range, 52-week range bar, source and as-of date. One at a time; flips above near the bottom edge; Esc closes it. |
-| Click / Enter | The full view: security view when the build has one (src/security/open.ts, found at build time with `import.meta.glob`), else the existing symbol window. Coins open their chart, yields the FRED window, funds the fund page. |
+| Click / Enter | The full view: the security view (`openSecurity` from src/security/open.ts; the symbol window if it fails). Coins open their chart, yields the FRED window, funds the fund page. |
 | Space or the chevron | The row expands in place: larger chart with a hover readout, range high/low, key facts, "Open full view" and "Add to compare". One expanded row at a time; it stays attached to its row when the board is sorted or refreshed. |
 | Shift+click / Shift+Enter | Adds to Compare (up to 4): an overlaid % chart in a side panel (bottom sheet on phones). Prices compare with prices, yields with yields (in bp). |
 | ↑ / ↓, ← / → | Move between rows across boards; change the range. |
@@ -68,24 +68,41 @@ so it's more interactive with the site". Options weighed:
 | A few links in the popover only | Not enough: keyboard and touch users live in the expanded row. |
 | **One list, shown three ways (chosen)** | The same ordered list (src/invest/goTo.ts) appears as up to 5 labelled icon buttons + "More" in the popover and the expanded row, and in full in the right-click / Menu-key / Shift+F10 / ⋯ menu. One mental model; nothing extra on the rows themselves. |
 
-What the list holds, best first (the first five become buttons, the rest go under More). The security view is used
-when this build has it (`openSecurity(symbol, code)` from src/security/open.ts, found at build time); until then each
-item falls back to the page that already does that job, and items with no page are left out rather than dead:
+What the list holds, best first (the first five become buttons, the rest go under More). Security items open the
+security view (`openSecurity(symbol, code)`, imported from src/security/open.ts); if that fails they fall back to the
+page that already does that job:
 
-| Kind | Buttons | More | Fallback without the security view |
+| Kind | Buttons | More | Fallback if the security view fails |
 |---|---|---|---|
-| Stock | Overview (DES), Chart (GP, key C), Financials (FA, key F), News (CN, key N), Research (key R) | Holders (HDS), Options (OMON), Dividends (DVD), Chart page, Compare, Watchlist, Alert, Ask AI, Journal (when that route exists) | DES = the symbol window; GP = Chart page; FA = Research > Financials; CN = Google News (new tab); HDS = Flow > Insiders; OMON = Flow > Options; DVD hidden |
-| ETF / fund | Overview, Chart, News, Dividends, Compare | Holders, Options, Chart page, Watchlist, Alert, Ask AI, Journal | as above |
+| Stock | Overview (DES), Chart (GP, key C), Financials (FA, key F), News (CN, key N), Research (key R) | Holders (HDS), Options (OMON), Dividends (DVD), Chart page, Compare, Watchlist, Alert, Trade (ticket pre-fill), Ask AI, Journal (when that route exists) | DES and DVD = the symbol window; GP = Chart page; FA = Research > Financials; CN = Google News; HDS = Flow > Insiders; OMON = Flow > Options |
+| ETF / fund | Overview, Chart, News, Dividends, Compare | Holders, Options, Chart page, Watchlist, Alert, Trade, Ask AI, Journal | as above |
 | Index | Overview, Chart, News, Compare, Ask AI | Chart page, Watchlist, Alert | as above |
 | Future | Chart, Futures page, Ask AI | | |
 | Coin | Chart, Compare, Watchlist, Alert, Ask AI | | |
 | Rate (FRED) | Full history, Yield curve, Auctions, Compare, Ask AI | Macro page | |
 | Private fund | Fund detail, NAV history (chart window), SEC filings (EDGAR), Compare, Ask AI | Manager's stock, fund website | |
 
-Schwab reports ETFs as "EQUITY", so a fund is also recognised by its description (ETF, FUND, TRUST, iShares, SPDR ...).
+Schwab reports ETFs as "EQUITY"; its assetSubType (or the catalog's ETF groups) tells funds from stocks.
 Shortcuts (F financials, N news, R research, C chart) work on a focused row and while its popover is open; each button
 shows its Bloomberg code as a small hint and its key in the tooltip (`aria-keyshortcuts`). Watchlist and Alert reuse the
 platform's own state and alert dialog; Ask AI prefills the assistant; nothing here trades.
+
+## Review fixes (independent review)
+
+- **One source of truth for the headline.** The popover's value and change use the row's live price (change = live
+  price over the range's base close, as the board columns do), so row and popover always agree; the daily closes only
+  draw the line.
+- **52-week range.** Schwab's 52-week high/low from the quote when the row has them; otherwise the range of daily closes,
+  labelled "52-week closing range". Positions read as words ("at the top of its 1-year range"), never a bare "100%".
+- **ETF or stock.** Name matching (TRUST, FUND ...) misfiled stocks such as Northern Trust and Digital Realty Trust. The
+  helper's invest.board now passes Schwab's `assetSubType` ('ETF', 'COE' ...); it ships with the next helper (no
+  version bump: older helpers just don't send it) and until then the catalog's ETF groups (`CATALOG_ETFS`) decide.
+- **What the ticker card gave, kept.** "You hold N sh · $X" (your own accounts) in the popover and expanded row when
+  held, and Trade (order-ticket pre-fill only) under More.
+- **Layout.** The expanded row is sized to the table's visible width (it was clipped at 390 px). Compare is now a
+  collapsible sheet along the bottom of the content column, and the page keeps that height free at its end, so it no
+  longer covers columns or blocks clicks.
+- The popover is `role="dialog"` (it holds buttons); the Investments keys are in the ? shortcut sheet.
 
 ## 3. Numbers
 

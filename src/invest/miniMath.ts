@@ -73,6 +73,15 @@ export function lowHigh(points: readonly Point[]): { low: number; high: number; 
   return { low, high, last, position: high > low ? (last - low) / (high - low) : null };
 }
 
+/** Where a value sits in its range, in words (never a bare "100%"). `span`: "52-week", "1-year". */
+export function positionWords(position: number, span: string): string {
+  if (!Number.isFinite(position)) return '';
+  const p = Math.min(1, Math.max(0, position));
+  if (p >= 0.98) return `at the top of its ${span} range`;
+  if (p <= 0.02) return `at the bottom of its ${span} range`;
+  return `${Math.round(p * 100)}% up its ${span} range`;
+}
+
 /** Each point as the % change from the first one (for the compare chart). */
 export function rebase(points: readonly Point[], mode: ChangeMode = 'price'): Point[] {
   if (!points.length) return [];

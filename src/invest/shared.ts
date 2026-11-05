@@ -19,6 +19,8 @@ export interface BoardRow {
   symbol: string;
   name: string;
   assetType?: string;
+  /** Schwab's assetSubType ('ETF', 'COE', ...); sent by newer helpers only. */
+  assetSubType?: string;
   price: number | null;
   /** Today's change as a fraction (0.012 = +1.2%). */
   change: number | null;
@@ -106,10 +108,12 @@ export function openSymbol(symbol: string, label: string, row: BoardRow | undefi
 /** What a board row shows in its mini chart and expanded view. */
 export function boardItem(symbol: string, label: string, r: BoardRow | undefined, open: () => void, ctx?: InvestContext): MiniItem {
   return {
-    actions: ctx ? () => symbolActions(symbol, label, symbolKind(symbol, r?.assetType, r?.name), ctx, () => openSymbolDetail(symbol, label, r, ctx), r?.price) : undefined,
+    actions: ctx ? () => symbolActions(symbol, label, symbolKind(symbol, r?.assetType, r?.assetSubType), ctx, () => openSymbolDetail(symbol, label, r, ctx), r?.price) : undefined,
     key: symbol,
     label,
     sub: showSymbol(symbol),
+    live: r ? { price: r.price, high52: r.high52, low52: r.low52 } : undefined,
+    held: symbol.startsWith('$') || symbol.startsWith('/') ? undefined : symbol,
     source: symbol.startsWith('/') ? { kind: 'none', reason: 'Schwab has no daily history for futures; the price here is live only.' } : { kind: 'symbol', symbol },
     mode: 'price',
     open,

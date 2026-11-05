@@ -480,6 +480,21 @@ export const SHORTCUT_SHEET: { title: string; rows: [string, string][] }[] = [
     ],
   },
   {
+    title: 'Investments rows',
+    rows: [
+      ['↑ ↓', 'Move between rows (a mini chart opens on the focused row)'],
+      ['← →', 'Change the chart range (1M … 5Y)'],
+      ['Enter', 'Open the full view'],
+      ['Space', 'Expand the row in place'],
+      ['Shift+Enter  or  Shift+click', 'Add to or remove from Compare (up to 4)'],
+      ['F', 'Financials (FA)'],
+      ['N', 'News (CN)'],
+      ['R', 'Research page'],
+      ['C', 'Chart (GP)'],
+      ['Menu key  or  Shift+F10', 'Every place this row can go (also right-click)'],
+    ],
+  },
+  {
     title: 'Command bar',
     rows: [
       ['↑ ↓', 'Move through the results'],

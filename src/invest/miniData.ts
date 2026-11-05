@@ -38,6 +38,10 @@ export interface MiniItem {
   format?: (v: number) => string;
   /** Extra facts for the expanded row (P/E, dividend yield, ...). */
   facts?: () => { label: string; value: string }[];
+  /** The row's live quote: leads the headline value and change, and Schwab's 52-week high/low when present. */
+  live?: { price: number | null; high52?: number | null; low52?: number | null };
+  /** Symbol to look up in your own accounts ("You hold ..."). */
+  held?: string;
   /** Where it leads in the rest of the platform (goTo.ts), best first. */
   actions?: () => GoAction[];
 }

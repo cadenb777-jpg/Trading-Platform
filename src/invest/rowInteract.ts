@@ -16,10 +16,10 @@
  */
 import { pct, rangeBar } from '../ui/charts';
 import { formatPrice, h, toast } from '../ui/dom';
-import { actionBar, closeGoMenu, openGoMenu, type GoAction } from './goTo';
+import { actionBar, closeGoMenu, heldText, openGoMenu, type GoAction } from './goTo';
 import { lineChart, valueAt } from './miniChart';
 import { seriesCache, seriesKey, type MiniItem, type Series } from './miniData';
-import { RANGES, createIntent, lowHigh, range52, rangeChange, rebase, sliceRange, stepRange, type ChangeMode, type Range } from './miniMath';
+import { RANGES, createIntent, lowHigh, positionWords, range52, rangeChange, rebase, sliceRange, stepRange, type ChangeMode, type Range } from './miniMath';
 
 export type { MiniItem } from './miniData';
 
@@ -53,6 +53,24 @@ const day = (t: number) => new Date(t * 1000).toLocaleDateString('en-US', { mont
 
 // ---------- the view (shared by the popover and the expanded row) ----------
 
+/** The range bar's "93%" becomes words: "at the top of its 52-week range", "40% up its 1-year range". */
+function rangeWords(bar: HTMLElement, yr: { low: number; high: number; last: number | null }, span: string) {
+  const pos = bar.querySelector('.range-pos');
+  if (pos) pos.textContent = yr.last != null && yr.high > yr.low ? positionWords((yr.last - yr.low) / (yr.high - yr.low), span) : '';
+  return bar;
+}
+
+/** "You hold 12 sh · $2,760" when the symbol is in your own accounts (filled in when the portfolios arrive). */
+function heldLine(symbol: string, price: number | null): HTMLElement {
+  const el = h('div', { class: 'mc-held small', hidden: true });
+  heldText(symbol, price).then((t) => {
+    if (!t) return;
+    el.textContent = t;
+    el.hidden = false;
+  });
+  return el;
+}
+
 /**
  * Draws an item's chart for one range into `box` (a skeleton of the same size first, so nothing jumps). Returns the
  * series key it asked for (null when there is no history).
@@ -69,7 +87,9 @@ function drawView(box: HTMLElement, item: MiniItem, range: Range, size: 'pop' | 
     if (box.dataset.tok !== token) return;
     const all = s && !(s instanceof Error) ? s.points : [];
     const { points, partial } = sliceRange(all, range);
-    const change = rangeChange(points, item.mode);
+    // The row's live price leads (so the row and the popover always agree); the closes only draw the line.
+    const livePrice = item.live?.price ?? null;
+    const change = livePrice != null && item.mode === 'price' && points.length && points[0][1] > 0 ? livePrice / points[0][1] - 1 : rangeChange(points, item.mode);
     // Yields and spreads going up are neither good nor bad: no green/red for them (design: colour only for meaning).
     const toneOf = (c: number | null) => (item.mode === 'level' ? '' : toneFor(c));
     const last = all.length ? all[all.length - 1] : null;
@@ -79,7 +99,7 @@ function drawView(box: HTMLElement, item: MiniItem, range: Range, size: 'pop' | 
       'div',
       { class: 'mc-head' },
       h('div', { class: 'mc-title' }, h('b', {}, item.label), item.sub ? h('span', { class: 'muted small' }, item.sub) : null),
-      h('div', { class: 'mc-now' }, h('b', { class: 'mc-last' }, s === null && key ? '…' : fmtValue(item, last?.[1])), h('span', { class: `small ${toneOf(change)}` }, change == null ? '' : `${fmtChange(item.mode, change)} ${range}`)),
+      h('div', { class: 'mc-now' }, h('b', { class: 'mc-last' }, livePrice != null ? fmtValue(item, livePrice) : s === null && key ? '…' : fmtValue(item, last?.[1])), h('span', { class: `small ${toneOf(change)}` }, change == null ? '' : `${fmtChange(item.mode, change)} ${range}`)),
     );
     const seg = h(
       'div',
@@ -112,14 +132,19 @@ function drawView(box: HTMLElement, item: MiniItem, range: Range, size: 'pop' | 
         }),
       );
 
-    const yr = range52(all);
+    // Schwab's 52-week high/low (intraday) when the row has them; otherwise the range of daily closes, labelled so.
+    const span = item.mode === 'level' ? '1-year' : '52-week';
+    const quoted = item.live?.high52 != null && item.live?.low52 != null && item.live.high52 > item.live.low52 ? { low: item.live.low52, high: item.live.high52, last: livePrice ?? last?.[1] ?? null } : null;
+    const yr = quoted ?? range52(all);
+    const yrLabel = quoted ? `${span} range` : item.mode === 'level' ? '1-year range' : '52-week closing range';
     const lines: Node[] = [];
     // The head already shows the change; say so only when the history is shorter than the range (and for the hover readout).
     if (key && s && !(s instanceof Error) && points.length >= 2 && (partial || size === 'big'))
       lines.push(h('div', { class: 'mc-line-text small' }, h('span', { class: toneOf(change) }, fmtChange(item.mode, change)), partial ? ` since ${day(points[0][0])}: the history starts there` : ` over ${RANGE_WORDS[range]}`, readout));
     if (yr && yr.high > yr.low)
-      lines.push(h('div', { class: 'mc-52' }, h('span', { class: 'muted small' }, '52-week range'), rangeBar(yr.low, yr.high, yr.last, (v) => fmtValue(item, v))));
-    else if (key && s && !(s instanceof Error)) lines.push(h('div', { class: 'muted small' }, '52-week range: — not enough history'));
+      lines.push(h('div', { class: 'mc-52' }, h('span', { class: 'muted small' }, yrLabel), rangeWords(rangeBar(yr.low, yr.high, yr.last, (v) => fmtValue(item, v)), yr, span)));
+    else if (key && s && !(s instanceof Error)) lines.push(h('div', { class: 'muted small' }, `${yrLabel}: — not enough history`));
+    if (item.held) lines.push(heldLine(item.held, livePrice ?? last?.[1] ?? null));
     if (size === 'big' && points.length >= 2) {
       const hl = lowHigh(points);
       if (hl) lines.push(h('div', { class: 'mc-hl small' }, h('span', {}, h('span', { class: 'muted' }, 'Range high '), fmtValue(item, hl.high)), h('span', {}, h('span', { class: 'muted' }, 'Range low '), fmtValue(item, hl.low))));
@@ -203,7 +228,7 @@ const intent = createIntent(INTENT_MS);
 
 function popEl() {
   if (pop) return pop;
-  pop = h('div', { class: 'inv-pop', id: 'inv-pop', role: 'tooltip', hidden: true });
+  pop = h('div', { class: 'inv-pop', id: 'inv-pop', role: 'dialog', 'aria-modal': 'false', hidden: true });
   pop.addEventListener('pointerenter', cancelHide);
   pop.addEventListener('pointerleave', (e) => e.pointerType !== 'touch' && scheduleHide());
   document.body.append(pop);
@@ -214,7 +239,11 @@ function popEl() {
     if (shownEl && !pop!.contains(t) && !t?.closest?.('[data-mini]')) hide();
   }, true);
   window.addEventListener('scroll', (e) => shownEl && !(e.target instanceof Node && pop!.contains(e.target)) && hide(true), true);
-  window.addEventListener('resize', () => hide());
+  window.addEventListener('resize', () => {
+    hide();
+    if (expanded) fitExpanded();
+    if (panel) placeCompare();
+  });
   document.addEventListener('keydown', (e) => {
     if (!shownEl) return;
     if (e.key === 'Escape') return (hide(), e.stopPropagation());
@@ -324,7 +353,18 @@ function expand(el: HTMLElement) {
   chev?.setAttribute('aria-expanded', 'true');
   chev?.setAttribute('aria-controls', id);
   expanded = { el, tr, item: m.item, board: m.board, box };
+  fitExpanded();
   drawBig();
+}
+
+/** The expanded row is as wide as the table's visible area (the table may scroll sideways on a phone). */
+function fitExpanded() {
+  if (!expanded) return;
+  const wrap = expanded.el.closest<HTMLElement>('.table-wrap') ?? expanded.el.closest('table');
+  const td = expanded.box.parentElement;
+  if (!wrap || !td) return;
+  const pad = parseFloat(getComputedStyle(td).paddingLeft) + parseFloat(getComputedStyle(td).paddingRight);
+  expanded.box.style.width = `${Math.max(220, wrap.clientWidth - pad)}px`;
 }
 
 function drawBig() {
@@ -353,6 +393,25 @@ function collapse() {
 const compare: MiniItem[] = [];
 let cmpRange: Range = '3M';
 let panel: HTMLElement | null = null;
+let cmpCollapsed = false;
+
+/**
+ * Compare is a sheet along the bottom of the page's content column. The page keeps that much room free at its end
+ * (--inv-cmp-space), so every row can still be scrolled above it and clicked.
+ */
+function placeCompare() {
+  if (!panel) return;
+  const col = document.querySelector<HTMLElement>('.inv-view');
+  const r = col?.getBoundingClientRect();
+  if (r && r.width && window.innerWidth > 700) {
+    panel.style.left = `${Math.round(r.left)}px`;
+    panel.style.width = `${Math.round(r.width)}px`;
+  } else {
+    panel.style.left = '';
+    panel.style.width = '';
+  }
+  document.documentElement.style.setProperty('--inv-cmp-space', `${panel.offsetHeight + 16}px`);
+}
 const live = h('div', { class: 'sr-only', 'aria-live': 'polite' });
 
 function toggleCompare(item: MiniItem) {
@@ -396,12 +455,15 @@ function drawCompare() {
   if (!compare.length) {
     panel?.remove();
     panel = null;
+    document.documentElement.style.removeProperty('--inv-cmp-space');
     return;
   }
   if (!panel || !panel.isConnected) {
     panel = h('aside', { class: 'inv-cmp', role: 'region', 'aria-label': 'Compare' });
     document.body.append(panel, live);
+    new ResizeObserver(() => placeCompare()).observe(panel); // the legend arrives later and changes its height
   }
+  panel.classList.toggle('collapsed', cmpCollapsed);
   const box = panel;
   const token = String(++drawSeq);
   box.dataset.tok = token;
@@ -413,15 +475,14 @@ function drawCompare() {
     h(
       'div',
       { class: 'cmp-head' },
-      h('h3', {}, 'Compare'),
+      h('h3', {}, 'Compare', h('span', { class: 'muted small' }, ` · ${compare.length} of ${MAX_COMPARE}`)),
       h('div', { class: 'segmented mc-ranges', role: 'group', 'aria-label': 'Compare range' }, ...RANGES.map((r) => h('button', { type: 'button', class: r === cmpRange ? 'active' : '', 'aria-pressed': String(r === cmpRange), 'aria-label': RANGE_WORDS[r], onclick: () => ((cmpRange = r), drawCompare()) }, r))),
+      h('button', { type: 'button', class: 'btn small ghost', 'aria-expanded': String(!cmpCollapsed), onclick: () => ((cmpCollapsed = !cmpCollapsed), drawCompare()) }, cmpCollapsed ? 'Show' : 'Hide'),
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Close Compare and clear it', onclick: () => (compare.splice(0), markCompared(), drawCompare(), expanded && drawBig()) }, '✕'),
     ),
-    chartBox,
-    readout,
-    legend,
-    h('p', { class: 'muted tiny' }, `${mode === 'level' ? 'Change in percentage points' : '% change'} over ${RANGE_WORDS[cmpRange]}. Shift+click (or Shift+Enter) a row to add or remove; up to ${MAX_COMPARE}.`),
+    h('div', { class: 'cmp-body', hidden: cmpCollapsed }, h('div', { class: 'cmp-chart' }, chartBox, readout), h('div', { class: 'cmp-side' }, legend, h('p', { class: 'muted tiny' }, `${mode === 'level' ? 'Change in percentage points' : '% change'} over ${RANGE_WORDS[cmpRange]}. Shift+click (or Shift+Enter) a row to add or remove; up to ${MAX_COMPARE}.`))),
   );
+  placeCompare();
   const items = [...compare];
   Promise.all(items.map((it) => seriesCache.get(seriesKey(it.source, cmpRange)!).then((s) => s, (e: Error) => e))).then((results) => {
     if (box.dataset.tok !== token) return;

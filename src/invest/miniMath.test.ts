@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanPoints, createIntent, createSeriesCache, lowHigh, range52, rangeChange, rangeForColumn, rangeStart, rebase, sliceRange, stepRange, type Point } from './miniMath';
+import { positionWords, cleanPoints, createIntent, createSeriesCache, lowHigh, range52, rangeChange, rangeForColumn, rangeStart, rebase, sliceRange, stepRange, type Point } from './miniMath';
 
 const DAY = 86400;
 const END = Date.UTC(2026, 10, 4) / 1000; // 4 Nov 2026
@@ -86,6 +86,16 @@ describe('range maths', () => {
     expect(stepRange('1M', -1)).toBe('1M');
     expect(stepRange('1M', 1)).toBe('3M');
     expect(stepRange('5Y', 1)).toBe('5Y');
+  });
+});
+
+describe('range position in words', () => {
+  it('says top and bottom instead of 100% and 0%', () => {
+    expect(positionWords(1, '1-year')).toBe('at the top of its 1-year range');
+    expect(positionWords(0.99, '52-week')).toBe('at the top of its 52-week range');
+    expect(positionWords(0, '52-week')).toBe('at the bottom of its 52-week range');
+    expect(positionWords(0.4, '52-week')).toBe('40% up its 52-week range');
+    expect(positionWords(NaN, '52-week')).toBe('');
   });
 });
 
