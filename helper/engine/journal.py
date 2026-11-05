@@ -716,7 +716,7 @@ def _cost(model, prompt_chars, out_tokens=1500):
 @handler('journal.coach')
 async def coach(ctx, msg):
     """{mode: 'trade', tradeId} or {mode: 'period', start, end, label, stats}; without run -> the cost estimate only."""
-    from . import ai, settings
+    from . import settings
     mode = msg.get('mode')
     if mode == 'trade':
         t = _trade_doc(msg.get('tradeId'))
@@ -733,6 +733,7 @@ async def coach(ctx, msg):
     estimate = _cost(model, len(text))
     if not msg.get('run'):
         return {'estimate': estimate}
+    from . import ai
     emit = msg.get('_emit') or (lambda e: asyncio.sleep(0))
     messages = [{'role': 'user', 'content': [{'type': 'text', 'text': text}]}]
     answer, _ = await ai.converse(ctx, messages, emit, tools=False)
