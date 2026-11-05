@@ -8,7 +8,13 @@ updater). The website keeps its helper on port 8765; both can run at the same ti
 ## Start it
 
 - Windows: double-click `start-desktop-windows.bat`. Mac: double-click `start-desktop-mac.command`.
-- The first start installs what it needs (a few minutes); after that it opens straight away.
+- A start screen with a loading bar (the same one as the website helper's) checks GitHub for a newer desktop app and
+  installs it, sets up Python (shared with the helper: `helper/.venv`) and anything missing, then opens the app. The
+  first start downloads about 80 MB extra (a few minutes); after that it opens straight away.
+- The app shows its own loading bar until its helper has logged in to Schwab and connected.
+- **Updates are automatic**: every start installs a newer version if GitHub has one (your settings and the installed
+  parts are never touched; the old version is kept in `desktop_backup` and put back if the new one won't start).
+  While it's open, the app checks every hour and shows an "Update to ..." button (or Help > Check for updates).
 - Set up Schwab once with the website's helper first (keys and login live in `~/.trading-platform`).
 
 ## Using it

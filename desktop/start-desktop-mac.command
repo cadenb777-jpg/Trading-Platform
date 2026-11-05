@@ -1,10 +1,10 @@
 #!/bin/bash
-# Trading Platform desktop app: sets up its own Python environment the first time, then opens the app.
+# Double-click to open the Trading Platform desktop app: a start screen with a loading bar sets everything up,
+# checks for a newer version, then opens the app.
 cd "$(dirname "$0")"
-if [ ! -d .venv ]; then
-  echo "Setting up the desktop app the first time - this takes a few minutes..."
-  python3 -m venv .venv
-  .venv/bin/python -m pip install -q --upgrade pip
-  .venv/bin/python -m pip install -q -r ../helper/requirements.txt -r requirements.txt
+if ! command -v python3 >/dev/null; then
+  echo "Python was not found: install it from https://www.python.org/downloads/"; read -r -p "Press Enter to close."; exit 1
 fi
-.venv/bin/python -m tp_desktop
+python3 launch.py
+code=$?
+if [ "$code" = "1" ]; then read -r -p "Press Enter to close."; fi

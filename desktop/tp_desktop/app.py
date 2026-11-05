@@ -11,10 +11,12 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from PySide6.QtCore import Qt, QTimer
+import threading
+
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QApplication, QDockWidget, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                               QPlainTextEdit, QPushButton, QStackedWidget, QTabBar, QTableWidget, QTableWidgetItem,
+                               QPlainTextEdit, QProgressBar, QPushButton, QStackedWidget, QTabBar, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget, QHeaderView)
 
 from . import APP_VERSION
@@ -250,6 +252,77 @@ class AccountPage(QWidget):
                 self.t.setItem(r, c, item(text, colour, Qt.AlignLeft | Qt.AlignVCenter if c == 0 else Qt.AlignRight | Qt.AlignVCenter))
 
 
+class LoadingScreen(QWidget):
+    """Shown while the desktop helper starts and logs in to Schwab; closes when it connects (or after 40 s, when the
+    window opens anyway and its status bar says what's wrong). The bar follows the helper's own messages."""
+
+    STEPS = (('Logging in to Schwab', 35, 'Logging in to Schwab...'), ('Schwab helper (version', 80, 'Helper ready, connecting...'),
+             ('Port', 90, 'Another helper is using the port...'))
+
+    def __init__(self):
+        super().__init__(None, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        self.setObjectName('root')
+        self.setFixedSize(520, 240)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(32, 28, 32, 28)
+        brand = QLabel('◆ TERMINAL')
+        brand.setStyleSheet(f"color: {C['accent']}; font-size: 20px; font-weight: 700; letter-spacing: 6px")
+        sub = QLabel(f'TRADING PLATFORM · DESKTOP {APP_VERSION}')
+        sub.setObjectName('label')
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 100)
+        self.bar.setTextVisible(True)
+        self.bar.setStyleSheet(f"QProgressBar {{ background: {C['raised']}; border: 1px solid {C['line']}; border-radius: 6px; height: 18px; text-align: center; }}"
+                               f"QProgressBar::chunk {{ background: {C['accent']}; border-radius: 5px; }}")
+        self.status = QLabel('Starting the desktop helper...')
+        self.status.setStyleSheet(f"color: {C['muted']}")
+        lay.addWidget(brand)
+        lay.addWidget(sub)
+        lay.addStretch(1)
+        lay.addWidget(self.bar)
+        lay.addWidget(self.status)
+        self.target = 25
+        self.value = 0.0
+        t = QTimer(self)
+        t.timeout.connect(self._creep)
+        t.start(80)
+
+    def _creep(self):
+        # always moving, slowing as it nears the current step's target
+        self.value += max(0.05, (self.target - self.value) * 0.04)
+        self.bar.setValue(int(min(self.value, self.target, 99)))
+
+    def helper_said(self, text):
+        for key, pct, label in self.STEPS:
+            if key in text:
+                self.target = max(self.target, pct)
+                self.status.setText(label)
+
+    def done(self):
+        self.bar.setValue(100)
+        self.status.setText('Connected.')
+        QTimer.singleShot(250, self.close)
+
+
+class UpdateCheck(QObject):
+    """Asks GitHub for the newest desktop version in the background (desktop_update.py)."""
+    found = Signal(str)
+
+    def check(self):
+        def work():
+            try:
+                import desktop_update
+                latest = desktop_update.latest_version()
+                if desktop_update.is_newer(latest, desktop_update.local_version()):
+                    self.found.emit('.'.join(map(str, latest)))
+            except Exception:  # noqa: BLE001 - offline or not started by the launcher: no update offer
+                pass
+        threading.Thread(target=work, daemon=True).start()
+
+
+RESTART_CODE = 75  # launch.py installs the update and opens the app again
+
+
 class MainWindow(QMainWindow):
     def __init__(self, port=8766, start_helper=True):
         super().__init__()
@@ -356,12 +429,24 @@ class MainWindow(QMainWindow):
             go.addAction(f'{p.label}    {p.code}', lambda k=p.key: self.go(k))
         view = m.addMenu('&View')
         view.addAction('Switch 12/24-hour clock', self.pages['chart'].toggle_clock)
-        m.addMenu('&Help').addAction('Keys and codes', self.show_help)
+        hm = m.addMenu('&Help')
+        hm.addAction('Keys and codes', self.show_help)
+        hm.addAction('Check for updates', lambda: (self.statusBar().showMessage('Checking GitHub for a newer desktop app...', 4000), self.updates.check()))
+        self.updates = UpdateCheck()
+        self.update_btn = QPushButton()
+        self.update_btn.hide()
+        self.update_btn.clicked.connect(lambda: QApplication.exit(RESTART_CODE))
+        self.updates.found.connect(self.offer_update)
+        QTimer.singleShot(15_000, self.updates.check)
+        hourly = QTimer(self)
+        hourly.timeout.connect(self.updates.check)
+        hourly.start(60 * 60 * 1000)
 
         # status bar
         self.st_helper = QLabel('Helper: connecting…')
         self.st_session = QLabel()
         self.statusBar().addWidget(self.st_helper)
+        self.statusBar().addPermanentWidget(self.update_btn)
         self.statusBar().addPermanentWidget(self.st_session)
         self.client.connected.connect(self.on_connected)
         self.client.quote.connect(self.on_quote)
@@ -375,6 +460,11 @@ class MainWindow(QMainWindow):
         self.go(self.prefs.get('page', 'home'), self.prefs.get('symbol'))
         if start_helper:
             self.helper.start()
+
+    def offer_update(self, version):
+        self.update_btn.setText(f'Update to {version} (restarts the app)')
+        self.update_btn.setStyleSheet(f"color: {C['label']}; border-color: {C['label']}")
+        self.update_btn.show()
 
     # ----- navigation -----
 
@@ -482,7 +572,22 @@ def main(argv=None):
     app = QApplication(sys.argv[:1])
     app.setStyleSheet(QSS)
     win = MainWindow(args.port, not args.no_helper)
-    win.show()
+    if args.screenshot or args.no_helper:
+        win.show()
+    else:
+        loading = LoadingScreen()
+        loading.show()
+        win.helper.output.connect(loading.helper_said)
+        opened = []
+
+        def open_main(_ok=True):
+            if opened or not _ok:
+                return
+            opened.append(1)
+            loading.done()
+            win.show()
+        win.client.connected.connect(open_main)
+        QTimer.singleShot(40_000, lambda: (loading.close(), opened or (opened.append(1), win.show())))
     if args.screenshot:
         def shot():
             win.grab().save(args.screenshot)

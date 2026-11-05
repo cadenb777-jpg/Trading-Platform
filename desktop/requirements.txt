@@ -1,5 +1,7 @@
 # The desktop app (on top of the helper's own requirements in ../helper/requirements.txt).
 # Vetted: PySide6 = Qt for Python (The Qt Company, LGPL, used unmodified as a library); pyqtgraph (MIT).
-PySide6-Essentials==6.8.1
-pyqtgraph==0.13.7
+# Ranges, not exact pins, so the newest Python (3.14) gets a matching build.
+PySide6-Essentials>=6.10,<7
+pyqtgraph>=0.13.7
 numpy
+websockets

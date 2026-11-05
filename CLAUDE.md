@@ -304,7 +304,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   dotted grid primitive (src/chart/grid.ts) on every chart via followTheme; the library grid and time labels stay off.
   Desktop app (desktop/, PySide6 + pyqtgraph, `python -m tp_desktop`): its own helper = `schwab_helper.py --desktop`
   (port 8766, origin tp-desktop://app only, no scanner/updater/prospecting/browser, order requests refused via
-  DESKTOP_BLOCKED). Read-only; pure parts in desktop/tp_desktop/nav.py and chartmath.py, tests in desktop/tests.
+  desktop_blocked()). Start files run desktop/launch.py (splash.py screen + bar, helper/.venv shared, desktop parts
+  marker installed-desktop.txt); desktop_update.py self-updates desktop/ only when APP_VERSION (tp_desktop/__init__.py)
+  on GitHub main is newer: bump APP_VERSION on every desktop change. Read-only; pure parts in desktop/tp_desktop/nav.py and chartmath.py, tests in desktop/tests.
   Chart clock (src/chart/clock.ts): 12-hour by default, 12h/24h button on the Chart page (`tp:clock` repaints every chart).
   Session look (src/chart/session.ts sessionPhase, axisChrome.ts): pre-market shaded sky, after-hours copper, overnight
   grey; open (green) and close (red) lines with their times in colour on the time axis' second row. The square grid
