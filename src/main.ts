@@ -3,7 +3,8 @@ import './style.css';
 import { createChartPage } from './pages/chartPage';
 import { createHomePage } from './pages/homePage';
 import { createAssistant, type AssistantAction, type AssistantActions } from './ai/assistant';
-import { confirmationFor, runAction as runUiAction, undoActions, type ActionResult } from './ai/actions';
+import { confirmationFor, needsConfirmation, runAction as runUiAction, setUndoPrefix, undoActions, type ActionResult } from './ai/actions';
+import { ACTION_TAB_KEY, addressedTo, groupByOwner } from './ai/tabs';
 import { createActionEnv } from './ai/actionsEnv';
 import { setAssistantHub } from './ai/hub';
 import { guessMarket, type MarketRef } from './data/quotes';
@@ -195,9 +196,12 @@ const actionEnv = createActionEnv({
   currentRoute: routeKey,
   routes: ROUTES,
 });
+/** This tab's id: the pop-out AI window sends its actions to the main tab the owner focused last (src/ai/tabs.ts). */
+const tabId = Math.random().toString(36).slice(2, 10);
+setUndoPrefix(tabId);
 const localActions: AssistantActions = {
   run: (name, args) => runUiAction(actionEnv, name, args),
-  confirmation: (name, args) => confirmationFor(actionEnv, name, args),
+  confirmation: async (name, args) => confirmationFor(actionEnv, name, args),
   undo: undoActions,
 };
 
@@ -211,17 +215,31 @@ function channelActions(ch: BroadcastChannel): AssistantActions {
       waiting.delete(d.reqId);
     }
   });
-  const ask = <T>(msg: Record<string, unknown>, fallback: T, ms = 30000) =>
+  const target = () => {
+    try {
+      return localStorage.getItem(ACTION_TAB_KEY) ?? '';
+    } catch {
+      return '';
+    }
+  };
+  const ask = <T>(msg: Record<string, unknown>, fallback: T, to = target(), ms = 30000) =>
     new Promise<T>((resolve) => {
+      if (!to) return resolve(fallback);
       const reqId = Math.random().toString(36).slice(2);
       waiting.set(reqId, resolve as (v: unknown) => void);
-      ch.postMessage({ ...msg, reqId });
+      ch.postMessage({ ...msg, reqId, target: to });
       setTimeout(() => waiting.delete(reqId) && resolve(fallback), ms);
     });
+  const notDone = (name: string): ActionResult => ({ ok: false, name, message: 'The main platform window didn’t answer (is it open?), so nothing changed' });
   return {
-    run: (name, args) => ask<ActionResult>({ kind: 'run', name, args }, { ok: false, name, message: 'The main platform window didn’t answer (is it open?), so nothing changed' }),
-    confirmation: (name, args) => confirmationFor(actionEnv, name, args),
-    undo: (ids) => ask<number>({ kind: 'undo', ids }, 0),
+    run: (name, args) => ask<ActionResult>({ kind: 'run', name, args }, notDone(name)),
+    // Asked of the tab that will run it (its own state); if it can't answer, the owner is still asked.
+    confirmation: (name, args) => ask<string | null>({ kind: 'confirm', name, args }, needsConfirmation(name) ? `Let the AI run "${name.replace(/_/g, ' ')}"?` : null, target(), 10000),
+    undo: async (ids) => {
+      let done = 0;
+      for (const [owner, own] of groupByOwner(ids)) done += await ask<number>({ kind: 'undo', ids: own }, 0, owner);
+      return done;
+    },
   };
 }
 
@@ -298,11 +316,29 @@ if (isAiWindow) {
   });
   drawer.append(assistant.el);
   // The pop-out AI window's requests: platform actions (with a reply) or, from older pages, one-way actions.
+  // Only the main tab the owner focused last answers the pop-out (so nothing runs twice in two tabs).
+  const claimActions = () => {
+    try {
+      localStorage.setItem(ACTION_TAB_KEY, tabId);
+    } catch {
+      // private window: the pop-out then can't reach this tab
+    }
+  };
+  window.addEventListener('focus', claimActions);
+  try {
+    if (document.hasFocus() || !localStorage.getItem(ACTION_TAB_KEY)) claimActions();
+  } catch {
+    // storage unavailable
+  }
+  // The pop-out AI window's requests: platform actions (with a reply) or, from older pages, one-way actions.
   channel?.addEventListener('message', async (e) => {
-    const d = e.data as { kind?: string; reqId?: string; name?: string; args?: Record<string, unknown>; ids?: string[] };
-    if (d?.kind === 'run') channel?.postMessage({ kind: 'reply', reqId: d.reqId, value: await localActions.run(String(d.name), d.args ?? {}) });
-    else if (d?.kind === 'undo') channel?.postMessage({ kind: 'reply', reqId: d.reqId, value: await localActions.undo(d.ids ?? []) });
-    else if (!d?.kind) runAction(e.data as AssistantAction);
+    const d = e.data as { kind?: string; reqId?: string; target?: string; name?: string; args?: Record<string, unknown>; ids?: string[] };
+    if (!d?.kind) return runAction(e.data as AssistantAction);
+    if (!addressedTo(d, tabId)) return;
+    const reply = (value: unknown) => channel?.postMessage({ kind: 'reply', reqId: d.reqId, value });
+    if (d.kind === 'run') reply(await localActions.run(String(d.name), d.args ?? {}));
+    else if (d.kind === 'confirm') reply(await localActions.confirmation(String(d.name), d.args ?? {}));
+    else if (d.kind === 'undo') reply(await localActions.undo(d.ids ?? []));
   });
 
   const healthDot = h('span', { class: 'health-badge', 'aria-hidden': 'true' });

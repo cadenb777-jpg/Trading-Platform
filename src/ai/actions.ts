@@ -239,7 +239,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
       const ref = market(env, str(args, 'symbol'));
       const tfRaw = str(args, 'timeframe', false);
       const tf = tfRaw ? parseTimeframe(tfRaw) : env.state.timeframe;
-      const before = { provider: env.state.provider, symbol: env.state.symbols[ref.provider], timeframe: env.state.timeframe };
+      const before = { provider: env.state.provider, symbol: env.state.symbols[ref.provider], timeframe: env.state.timeframe, route: env.currentRoute() };
       env.state.timeframe = tf;
       env.persist();
       env.openChart(ref);
@@ -253,6 +253,7 @@ export const ACTIONS: Record<string, ActionSpec> = {
           env.state.timeframe = before.timeframe;
           env.persist();
           env.syncChart();
+          if (env.currentRoute() !== before.route) env.navigate(before.route);
         },
       };
     },
@@ -450,6 +451,8 @@ export const ACTIONS: Record<string, ActionSpec> = {
   },
 
   remove_from_watchlist: {
+    // Removing is easy to slip in through text on a page, so the owner always confirms it.
+    confirm: (_env, args) => `Remove ${typeof args.symbol === 'string' ? args.symbol.toUpperCase() : 'this symbol'} from the watchlist?`,
     run(env, args) {
       const ref = market(env, str(args, 'symbol'));
       const index = env.state.watchlist.findIndex((r) => r.provider === ref.provider && r.symbol === ref.symbol);
@@ -576,6 +579,11 @@ export const ACTION_NAMES = Object.keys(ACTIONS);
 
 const undoStack = new Map<string, { name: string; message: string; undo: () => Promise<void> | void }>();
 let undoCounter = 0;
+/** Undo ids start with this window's id ("<tab>.<n>"), so ids from different tabs never clash. */
+let undoPrefix = 'local';
+export function setUndoPrefix(prefix: string) {
+  undoPrefix = prefix;
+}
 const MAX_UNDO = 100;
 
 /** Runs one action. Never throws: problems come back as { ok: false, message }. */
@@ -587,7 +595,7 @@ export async function runAction(env: ActionEnv, name: string, raw: unknown): Pro
     const out = await spec.run(env, args);
     const result: ActionResult = { ok: true, name, message: out.message, ...(out.data !== undefined ? { data: out.data } : {}), ...(spec.readOnly ? { readOnly: true } : {}) };
     if (out.undo) {
-      const undoId = `u${++undoCounter}`;
+      const undoId = `${undoPrefix}.${++undoCounter}`;
       undoStack.set(undoId, { name, message: out.message, undo: out.undo });
       if (undoStack.size > MAX_UNDO) undoStack.delete(undoStack.keys().next().value!);
       result.undoId = undoId;
@@ -606,6 +614,11 @@ export function confirmationFor(env: ActionEnv, name: string, raw: unknown): str
 }
 
 export const canUndo = (undoId: string) => undoStack.has(undoId);
+
+/** Actions the owner must always confirm (used when the window that runs them can't be asked). */
+export function needsConfirmation(name: string): boolean {
+  return !!ACTIONS[name]?.confirm;
+}
 
 /** Undoes the given actions, newest first (one chat message's actions). Returns how many were undone. */
 export async function undoActions(undoIds: string[]): Promise<number> {

@@ -4,7 +4,8 @@ import { getProvider } from '../data';
 import { guessMarket, type MarketRef } from '../data/quotes';
 import { allIndicators } from '../indicators/library';
 import { loadDrawings, persist, saveDrawings, state } from '../state';
-import { createPriceAlert, deleteHelperAlert, helperAlerts } from '../ui/alerts';
+import { createPriceAlert, deleteHelperAlert, helperAlertsAvailable, saveHelperAlert } from '../ui/alerts';
+import { formAlert } from '../ui/alertsLogic';
 import { openChartWindow } from '../ui/chartWindow';
 import { openSettings } from '../ui/settings';
 import { currentTheme, setTheme } from '../ui/theme';
@@ -44,19 +45,22 @@ export function createActionEnv(deps: EnvDeps): ActionEnv {
     newUid: () => Math.random().toString(36).slice(2, 10),
     chartTypes: CHART_TYPES.map((c) => c.id),
     async createAlert(ref, condition, price, note) {
-      const before = new Set(helperAlerts().map((a) => a.id));
-      const localBefore = new Set(state.alerts.map((a) => a.id));
-      const where = await createPriceAlert(ref, condition, price, note);
-      const undo = async () => {
-        if (where === 'helper') {
-          const added = helperAlerts().find((a) => !before.has(a.id) && a.symbol === ref.symbol);
-          if (added) await deleteHelperAlert({ docId: added.id });
-        } else {
-          state.alerts = state.alerts.filter((a) => localBefore.has(a.id));
+      // Undo removes exactly the alert this action created (its own id), never another one.
+      if (ref.provider === 'schwab' && (await helperAlertsAvailable())) {
+        const saved = await saveHelperAlert(formAlert(ref.symbol, condition, price, note, false));
+        return { where: 'helper', undo: async () => void (await deleteHelperAlert({ docId: saved.id })) };
+      }
+      const before = new Set(state.alerts.map((a) => a.id));
+      await createPriceAlert(ref, condition, price, note);
+      const id = state.alerts.find((a) => !before.has(a.id))?.id;
+      return {
+        where: 'browser',
+        undo: () => {
+          if (!id) return;
+          state.alerts = state.alerts.filter((a) => a.id !== id);
           persist();
-        }
+        },
       };
-      return { where, undo };
     },
     loadDrawings,
     saveDrawings,

@@ -1,5 +1,5 @@
 /** The AI assistant chat: a panel docked on the right of any page, or its own pop-out window. */
-import { aiActionsReady, engineRequest, type EngineEvent, type UiActionEvent } from '../data/schwab';
+import { aiActionsReady, engineRequest, type EngineEvent, type UiActionEvent, type UiCancelEvent } from '../data/schwab';
 import type { ActionResult } from './actions';
 import { h, toast } from '../ui/dom';
 import { icon } from '../ui/icons';
@@ -40,7 +40,7 @@ interface ChatMessage {
 export interface AssistantActions {
   run(name: string, args: Record<string, unknown>): Promise<ActionResult>;
   /** A question to confirm with the owner before running, or null. */
-  confirmation(name: string, args: Record<string, unknown>): string | null;
+  confirmation(name: string, args: Record<string, unknown>): Promise<string | null>;
   /** Undoes these actions (newest first); resolves to how many were undone. */
   undo(undoIds: string[]): Promise<number>;
 }
@@ -261,8 +261,11 @@ export function createAssistant(opts: AssistantOptions) {
     input.focus();
   }
 
+  /** Identifies the running chat to the helper, so Stop also cancels its platform actions there (helper v42+). */
+  let stopToken = '';
   function stop() {
     controller?.abort();
+    if (stopToken && aiActionsReady()) engineRequest('ai.stop', { stopToken }, 10000).catch(() => {});
   }
 
   function setBusy(b: boolean) {
@@ -296,16 +299,33 @@ export function createAssistant(opts: AssistantOptions) {
       list.scrollTop = list.scrollHeight;
     };
     const useActions = !!opts.actions && aiActionsReady();
-    /** Carries out one platform action the AI asked for, shows it, and sends the result back to the helper. */
-    const doAction = async (callId: string, name: string, args: Record<string, unknown>) => {
+    let chatSignal: AbortSignal | undefined;
+    const stopped = () => chatSignal?.aborted ?? false;
+    /** Actions the helper gave up on (timed out): never run them late. */
+    const cancelled = new Set<string>();
+    /**
+     * Carries out one platform action the AI asked for, shows it, and sends the result back to the helper. It never
+     * runs after Stop, after the helper gave up on it, or when a confirmation was answered after the helper's deadline.
+     */
+    const doAction = async (ev: UiActionEvent, received: number) => {
+      const { callId, name, args } = ev;
+      const late = () => cancelled.has(callId) || (ev.timeoutMs ? Date.now() - received > ev.timeoutMs - 2000 : false);
       let result: ActionResult;
-      const question = opts.actions!.confirmation(name, args);
-      if (question && !confirm(question)) result = { ok: false, name, message: 'The owner said no, so nothing changed' };
+      if (stopped()) result = { ok: false, name, message: 'Stopped, so nothing changed' };
+      else if (late()) result = { ok: false, name, message: 'Timed out before it ran, so nothing changed' };
       else {
-        try {
-          result = await opts.actions!.run(name, args);
-        } catch (err) {
-          result = { ok: false, name, message: (err as Error).message };
+        const asked = await opts.actions!.confirmation(name, args).catch(() => null);
+        const question = asked ?? (ev.confirm ? `Let the AI run "${name.replace(/_/g, ' ')}"?` : null);
+        const allowed = !question || confirm(question);
+        if (!allowed) result = { ok: false, name, message: 'The owner said no, so nothing changed' };
+        else if (stopped()) result = { ok: false, name, message: 'Stopped, so nothing changed' };
+        else if (late()) result = { ok: false, name, message: 'The confirmation came too late, so nothing changed. Ask again if you still want it' };
+        else {
+          try {
+            result = await opts.actions!.run(name, args);
+          } catch (err) {
+            result = { ok: false, name, message: (err as Error).message };
+          }
         }
       }
       if (!result.readOnly || !result.ok) {
@@ -318,9 +338,14 @@ export function createAssistant(opts: AssistantOptions) {
     };
     let actionChain = Promise.resolve();
     const onEvent = (e: EngineEvent) => {
-      const ui = e as EngineEvent | UiActionEvent;
+      const ui = e as EngineEvent | UiActionEvent | UiCancelEvent;
+      if (ui.type === 'ui_cancel') {
+        cancelled.add(ui.callId);
+        return;
+      }
       if (ui.type === 'ui_action') {
-        if (useActions) actionChain = actionChain.then(() => doAction(ui.callId, ui.name, ui.args));
+        const received = Date.now();
+        if (useActions) actionChain = actionChain.then(() => doAction(ui, received));
         return;
       }
       if (e.type === 'text') {
@@ -334,10 +359,12 @@ export function createAssistant(opts: AssistantOptions) {
     };
     setBusy(true);
     controller = new AbortController();
+    chatSignal = controller.signal;
+    stopToken = Math.random().toString(36).slice(2);
     try {
       const result = await engineRequest<{ conversation: string; text: string; actions: AssistantAction[] }>(
         'ai.chat',
-        { conversation: chat.conversation, message: text, attachments: files.map(({ info: _info, ...a }) => a), context: opts.getContext(), ...(useActions ? { ui_actions: 1 } : {}) },
+        { conversation: chat.conversation, message: text, attachments: files.map(({ info: _info, ...a }) => a), context: opts.getContext(), ...(useActions ? { ui_actions: 1, stopToken } : {}) },
         180000,
         onEvent,
         controller.signal,

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Drawing } from '../chart/drawings';
 import type { MarketRef } from '../data/quotes';
 import { allIndicators, defaultColors, defaultParams, getIndicator } from '../indicators/library';
-import { ACTIONS, ACTION_NAMES, canUndo, checkParams, confirmationFor, parseTimeframe, resetUndo, runAction, searchIndicators, undoActions, type ActionEnv, type ActionState } from './actions';
+import { ACTIONS, ACTION_NAMES, canUndo, checkParams, confirmationFor, needsConfirmation, parseTimeframe, resetUndo, runAction, searchIndicators, undoActions, type ActionEnv, type ActionState } from './actions';
 
 function fakeEnv() {
   let uid = 0;
@@ -183,5 +183,32 @@ describe('read-only actions', () => {
 
   it('every action has a run function', () => {
     for (const spec of Object.values(ACTIONS)) expect(typeof spec.run).toBe('function');
+  });
+});
+
+describe('review fixes', () => {
+  it('open_chart undo also goes back to the page the owner was on', async () => {
+    const { env, route } = fakeEnv();
+    expect(route()).toBe('home');
+    const opened = await runAction(env, 'open_chart', { symbol: 'NVDA', timeframe: '5m' });
+    expect(route()).toBe('chart');
+    await undoActions([opened.undoId!]);
+    expect(route()).toBe('home');
+  });
+
+  it('removing from the watchlist and clearing indicators always ask first', () => {
+    const { env } = fakeEnv();
+    expect(confirmationFor(env, 'remove_from_watchlist', { symbol: 'aapl' })).toBe('Remove AAPL from the watchlist?');
+    expect(needsConfirmation('remove_from_watchlist')).toBe(true);
+    expect(needsConfirmation('clear_indicators')).toBe(true);
+    expect(needsConfirmation('add_indicator')).toBe(false);
+  });
+
+  it('alert undo removes only the alert that action created', async () => {
+    const { env, alerts } = fakeEnv();
+    const first = await runAction(env, 'create_alert', { symbol: 'AAPL', condition: 'above', price: 250 });
+    await runAction(env, 'create_alert', { symbol: 'AAPL', condition: 'below', price: 200 });
+    await undoActions([first.undoId!]);
+    expect(alerts).toEqual(['AAPLbelow200']);
   });
 });

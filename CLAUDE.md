@@ -55,7 +55,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   `ai.ui_result {callId,result}`; UI tools run in order, 60 s timeout. find_indicators runs in the browser (live
   library) with recommended settings from src/ai/tuning.ts (rule-of-thumb table per 1m/5m/15m/1h/1D/1W + fallback
   scaling; docs/research/indicator-tuning.md). The chat shows "✓ step · Undo" lines; the pop-out window runs actions
-  in the main window over BroadcastChannel. Older helpers keep the one-way ui_action. No action can trade.
+  in the main tab focused last (src/ai/tabs.ts: ACTION_TAB_KEY, undo ids "<tab>.<n>"). Safety: screen/tool text is
+  data (DATA_RULE, <tool_data>); UI_CONFIRM actions (remove_from_watchlist, clear_indicators) always ask the owner;
+  on timeout the helper sends ui_cancel and the browser checks the deadline after a confirm; Stop sends ai.stop.
+  Older helpers keep the one-way ui_action. No action can trade.
   Investments page (src/pages/investmentsPage.ts, src/invest/): boards via invest.board (quotes + 1m/3m/YTD/1y from
   daily closes), invest.history/movers/search; bonds.market (FRED yields/spreads), bonds.auctions (Treasury Fiscal Data),
   bonds.cusip (Schwab get_instrument_by_cusip); alts.fund (SEC: XBRL NAV per share, N-PORT, Form D, NAV sentences from
