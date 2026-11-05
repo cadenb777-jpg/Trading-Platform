@@ -598,8 +598,8 @@ MIGRATIONS = (
 
 
 def run_migrations(disk, migrations=MIGRATIONS):
-    """Runs each cache migration once (safe to call at every start), each in its own transaction after backing up
-    what it touches. Returns {name: rows changed} for those that ran."""
+    """Runs each cache migration once, in order (safe to call at every start), each in its own transaction after
+    backing up what it touches; a failure stops the chain there. Returns {name: rows changed} for those that ran."""
     import json
     done = {}
     for name, fn in migrations:
@@ -618,7 +618,10 @@ def run_migrations(disk, migrations=MIGRATIONS):
                 disk.db().rollback()
             except Exception:
                 pass
-            log.info('Cache migration %s not run: %s', name, err)
+            # Later steps may depend on this one (the 30-minute step reads the rows the Alpaca step removes), so
+            # none of them runs and none is marked done: the next start redoes the chain in order.
+            log.info('Cache migration %s failed (%s); later migrations wait for the next start', name, err)
+            break
     return done
 
 

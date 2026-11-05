@@ -518,7 +518,8 @@ class Review(HubTest):
 
 
 class ThirtyMinuteMigration(unittest.TestCase):
-    """The kept 30-minute record: Alpaca's old dividend-adjusted bars are cleaned, Schwab's bars are never removed."""
+    """The kept 30-minute record: Alpaca's old dividend-adjusted bars are rescaled; no bar is ever deleted and Schwab's
+    bars (which can't be downloaded again after ~9 months) are never changed."""
     DAY = 86400
     NOW = 1_790_000_000  # mid 2026
 
@@ -527,13 +528,13 @@ class ThirtyMinuteMigration(unittest.TestCase):
         self.scanner = scanner
         self.disk = core.DiskCache(Path(tempfile.mkdtemp()) / 'c.db')
         self.addCleanup(lambda: self.disk._db and self.disk._db.close())
-        # Alpaca era: 900-800 days ago (dividend-adjusted: 98% of Schwab's basis). Schwab era kept for good: from 700
-        # days ago (older than Schwab's 9 months, so it can't be downloaded again) to today.
+        # Alpaca era: 900-810 days ago (dividend-adjusted: 98% of Schwab's basis). Schwab era kept for good: from 700
+        # days ago (older than Schwab's 9 months) to today. The fill asked Alpaca to end at Schwab's first bar (`to`).
         self.alp = [(self.NOW - (900 - i) * self.DAY, 98.0, 99.0, 97.0, 98.0, 5000.0) for i in range(0, 100, 10)]
         self.sch = [(self.NOW - (700 - i) * self.DAY, 100.0, 101.0, 99.0, 100.0, 4000.0) for i in range(0, 700, 10)]
-        # The old Alpaca download also covered some Schwab days (a chart asked for them): there it is 98 vs Schwab's 100.
-        overlap = [(t, 98.0, 99.0, 97.0, 98.0, 5100.0) for t, *_ in self.sch[:5]]
-        self.disk.put(repr(('alpaca', 'AAPL', '30m')), 1.0, {'from': 0, 'to': 1, 'checked': 0, 'bars': [list(r) for r in self.alp + overlap]})
+        # The download also has Schwab days: two identical to Schwab's (OHLCV), three on its 98% basis.
+        overlap = [list(r) for r in self.sch[:2]] + [[t, 98.0, 99.0, 97.0, 98.0, 5100.0] for t, *_ in self.sch[2:5]]
+        self.save_old(self.alp, overlap, to=self.sch[0][0])
         months = {}
         for r in self.alp + self.sch:
             months.setdefault(self.scanner._month(r[0]), []).append(list(r))
@@ -543,40 +544,65 @@ class ThirtyMinuteMigration(unittest.TestCase):
         # A stock with no saved Alpaca download: its origin can't be told, so it is left exactly as it is.
         self.disk.put(repr(('scan-30m', 'MSFT', '2024-01')), 1.0, [list(self.sch[0])])
 
+    def save_old(self, alp, overlap, to):
+        self.disk.put(repr(('alpaca', 'AAPL', '30m')), 1.0, {'from': 0, 'to': to, 'checked': 0, 'bars': [list(r) for r in alp] + overlap})
+
     def rows(self, symbol='AAPL'):
         months = self.disk.get(repr(('scan-30m-months', symbol)))[1]
         return sorted(tuple(r) for m in months for r in self.disk.get(repr(('scan-30m', symbol, m)))[1])
 
-    def migrate(self, keys):
-        migrations = (('scan-30m-split-only', lambda con, name: self.scanner.migrate_30m_split_only(con, name, keys)),
-                      *datahub.MIGRATIONS)
+    def migrate(self, first=None):
+        migrations = (('scan-30m-split-only', first or self.scanner.migrate_30m_split_only), *datahub.MIGRATIONS)
         return datahub.run_migrations(self.disk, migrations)
 
-    def test_schwab_rows_older_than_nine_months_survive_and_alpaca_rows_go_with_keys(self):
-        done = self.migrate(keys=True)
-        self.assertEqual(done['scan-30m-split-only'], len(self.alp))
-        self.assertEqual(self.rows(), sorted(self.sch))  # every Schwab bar kept, unchanged, also those 700 days old
-        self.assertTrue(any(r[0] < self.NOW - 270 * self.DAY for r in self.rows()))
+    def test_alpaca_bars_rescaled_and_old_schwab_bars_survive_unchanged(self):
+        done = self.migrate()
+        self.assertEqual(done, {'scan-30m-split-only': len(self.alp), 'alpaca-split-only': 1})
+        rows = self.rows()
+        self.assertEqual(len(rows), len(self.alp) + len(self.sch))  # nothing deleted
+        self.assertEqual([r for r in rows if r[0] >= self.sch[0][0]], sorted(self.sch))  # Schwab's, 700 days old too
+        self.assertTrue(any(r[0] < self.NOW - 270 * self.DAY for r in rows if r[0] >= self.sch[0][0]))
+        self.assertAlmostEqual(rows[0][4], 100.0)  # 98 / 0.98
+        self.assertAlmostEqual(rows[0][5], 5000.0 * 0.98)
         self.assertEqual(self.disk.get(repr(('scan-30m', 'MSFT', '2024-01')))[1], [list(self.sch[0])])
         backed = {k for (k,) in self.disk.db().execute("SELECT key FROM cache_backup WHERE migration = 'scan-30m-split-only'")}
-        self.assertIn(repr(('scan-30m-months', 'AAPL')), backed)
-        self.assertTrue(all("'AAPL'" in k for k in backed))
+        self.assertTrue(backed and all("'AAPL'" in k for k in backed))
         self.assertIsNone(self.disk.get(repr(('alpaca', 'AAPL', '30m'))))  # then the old Alpaca rows (backed up)
 
-    def test_without_keys_alpaca_rows_are_rescaled_not_deleted(self):
-        self.migrate(keys=False)
-        rows = self.rows()
-        self.assertEqual(len(rows), len(self.alp) + len(self.sch))
-        self.assertEqual([r for r in rows if r[0] >= self.sch[0][0]], sorted(self.sch))  # Schwab untouched
-        first = rows[0]
-        self.assertAlmostEqual(first[4], 100.0)  # 98 / (98 / 100)
-        self.assertAlmostEqual(first[5], 5000.0 * 0.98)
+    def test_schwab_days_identical_to_the_download_survive_unchanged(self):
+        # The reviewer's case: no Alpaca era at all, and the download equals Schwab's bars exactly on its days.
+        self.disk.db().execute("DELETE FROM cache WHERE key LIKE '(''scan-30m'', ''AAPL''%'")
+        self.disk.db().commit()
+        self.disk.put(repr(('scan-30m', 'AAPL', '2024-06')), 1.0, [list(r) for r in self.sch[:3]])
+        self.disk.put(repr(('scan-30m-months', 'AAPL')), 1.0, ['2024-06'])
+        self.save_old([], [list(r) for r in self.sch[:3]], to=self.sch[0][0])
+        self.migrate()
+        self.assertEqual(self.rows(), sorted(self.sch[:3]))
+
+    def test_without_an_overlap_nothing_changes(self):
+        self.save_old(self.alp, [], to=self.sch[0][0])
+        before = self.rows()
+        self.migrate()
+        self.assertEqual(self.rows(), before)
+
+    def test_a_failure_stops_the_chain_and_nothing_is_marked_done(self):
+        def boom(con, name):
+            raise RuntimeError('disk hiccup')
+        with self.assertLogs('engine.datahub', 'INFO'):
+            self.assertEqual(self.migrate(first=boom), {})
+        self.assertIsNotNone(self.disk.get(repr(('alpaca', 'AAPL', '30m'))))  # the later step didn't run
+        marks = self.disk.db().execute("SELECT key FROM cache WHERE key LIKE '(''migration''%'").fetchall()
+        self.assertEqual(marks, [])
+        done = self.migrate()  # the retry redoes everything in order
+        self.assertEqual(set(done), {'scan-30m-split-only', 'alpaca-split-only'})
+        self.assertAlmostEqual(self.rows()[0][4], 100.0)
 
     def test_runs_once(self):
-        self.migrate(keys=True)
-        self.disk.put(repr(('scan-30m', 'AAPL', '1999-01')), 1.0, [list(self.alp[0])])
-        self.assertEqual(self.migrate(keys=True), {})
+        self.migrate()
+        self.assertEqual(self.migrate(), {})
 
+
+class DividendRestatement(unittest.TestCase):
     def test_dividends_restated_after_a_split_are_not_adjusted_twice(self):
         splits = {dt.date(2024, 6, 10): 4.0}
         divs = {dt.date(2024, m, 15): 0.25 for m in (2, 5, 8, 11)}  # Yahoo: today's basis

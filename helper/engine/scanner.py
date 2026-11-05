@@ -476,12 +476,14 @@ def _row(b):
     return (b['time'], b['open'], b['high'], b['low'], b['close'], b['volume'])
 
 
-def _alpaca_prefix(rows, old):
+def _alpaca_prefix(rows, old, to):
     """How many of the symbol's oldest 30-minute rows came from the old dividend-adjusted Alpaca download: the longest
-    run from the start whose every value (volume included) equals that download's bar at the same time. Schwab's own
-    bars never match all six values (its volume differs from Alpaca's full-market count), so they are never counted."""
+    run from the start, strictly before that download's end `to` (the fill asked it to end at Schwab's first bar), whose
+    every value (volume included) equals the download's bar at the same time."""
     n = 0
     for r in rows:
+        if r[0] >= to:
+            break
         a = old.get(r[0])
         if a is None or any(abs(float(x) - float(y)) > 1e-9 * max(1.0, abs(float(y))) for x, y in zip(r[1:6], a[1:6])):
             break
@@ -489,14 +491,14 @@ def _alpaca_prefix(rows, old):
     return n
 
 
-def migrate_30m_split_only(con, name, keys_available):
-    """Cleans the dividend-adjusted Alpaca bars out of the kept 30-minute record without touching Schwab's.
+def migrate_30m_split_only(con, name, keys_available=None):
+    """Puts the old dividend-adjusted Alpaca bars of the kept 30-minute record on Schwab's basis. It never deletes a bar.
 
-    Per stock: the rows that came from the old Alpaca download (`_alpaca_prefix`) are, with Alpaca keys saved, removed
-    (the next scan adds them again split-adjusted and aligned to Schwab); without keys they are rescaled by the median
-    close ratio between Schwab's rows and the old Alpaca bars where both exist, or left as they are (logged) when
-    there is no overlap. Rows whose origin can't be told (no old Alpaca download saved) are left alone. Every month
-    row it changes is first copied to cache_backup. Returns the number of bars removed or rescaled."""
+    Per stock with a saved old Alpaca download: the Alpaca run (`_alpaca_prefix`) is rescaled (prices / r, volume x r)
+    by r = median of download close / record close over the record's other bars the download also has (Schwab's
+    bars). Without such an overlap, or when r is 1, nothing changes (logged). Bars outside the run, Schwab's, are never
+    changed. Stocks without a saved download are left alone. Each month row it changes is first copied to
+    cache_backup. Returns the number of bars rescaled. (`keys_available` is not used: rescaling never needs Alpaca.)"""
     import ast
     import json
     prefix = "('scan-30m', '"
@@ -513,41 +515,31 @@ def migrate_30m_split_only(con, name, keys_available):
         if not row:
             continue  # never had an Alpaca download (or it is gone): nothing to tell apart, nothing changed
         try:
-            old = {r[0]: r for r in json.loads(row[0]).get('bars') or []}
-        except (ValueError, AttributeError):
+            saved = json.loads(row[0])
+            old = {r[0]: r for r in saved.get('bars') or []}
+            to = float(saved.get('to') or 0)
+        except (ValueError, AttributeError, TypeError):
             continue
         rows = sorted(r for m in months.values() for r in m)
-        n = _alpaca_prefix(rows, old)
+        n = _alpaca_prefix(rows, old, to)
         if not n:
             continue
         cut = rows[n - 1][0]
-        schwab = {r[0]: r[4] for r in rows[n:]}
-        ratios = sorted(old[t][4] / c for t, c in schwab.items() if t in old and c)
-        if not keys_available and not ratios:
-            log.info('30-minute record %s: %d older Alpaca bars kept as they are (no keys, no overlap to align)', symbol, n)
-            continue
+        ratios = sorted(old[r[0]][4] / r[4] for r in rows[n:] if r[0] in old and r[4])
         r = ratios[len(ratios) // 2] if ratios else None
-        touched = sorted(m for m, rs in months.items() if any(x[0] <= cut for x in rs))
-        datahub.backup_rows(con, name, [repr(('scan-30m', symbol, m)) for m in touched] + [repr(('scan-30m-months', symbol))])
-        kept_months = set(months)
+        if r is None or abs(r - 1) <= 1e-9:
+            log.info('30-minute record %s: %d older Alpaca bars left as they are (%s)', symbol, n,
+                     'no Schwab overlap to align them' if r is None else 'already on Schwab\'s basis')
+            continue
+        run = {x[0] for x in rows[:n]}
+        touched = sorted(m for m, rs in months.items() if any(x[0] in run for x in rs))
+        datahub.backup_rows(con, name, [repr(('scan-30m', symbol, m)) for m in touched])
         for m in touched:
-            new = []
-            for x in months[m]:
-                if x[0] > cut:
-                    new.append(list(x))
-                elif not keys_available:  # rescale to Schwab's basis (prices / r, volume x r)
-                    new.append([x[0], x[1] / r, x[2] / r, x[3] / r, x[4] / r, x[5] * r])
-            key = repr(('scan-30m', symbol, m))
-            if new:
-                con.execute('UPDATE cache SET data = ? WHERE key = ?', (json.dumps(new), key))
-            else:
-                con.execute('DELETE FROM cache WHERE key = ?', (key,))
-                kept_months.discard(m)
-        if kept_months != set(months):
-            con.execute('UPDATE cache SET data = ? WHERE key = ?', (json.dumps(sorted(kept_months)), repr(('scan-30m-months', symbol))))
+            new = [[x[0], x[1] / r, x[2] / r, x[3] / r, x[4] / r, x[5] * r] if x[0] in run else list(x) for x in months[m]]
+            con.execute('UPDATE cache SET data = ? WHERE key = ?', (json.dumps(new), repr(('scan-30m', symbol, m))))
         changed_total += n
-        log.info('30-minute record %s: %s %d older Alpaca bars (backed up in cache_backup); Schwab bars untouched',
-                 symbol, 'removed (re-added split-adjusted on the next scan)' if keys_available else f'rescaled by {1 / r:.4f}', n)
+        log.info('30-minute record %s: rescaled %d older Alpaca bars (up to %s) by %.4f to Schwab\'s basis (backed up in '
+                 'cache_backup); Schwab bars untouched', symbol, n, _month(cut), 1 / r)
     return changed_total
 
 
@@ -1512,7 +1504,7 @@ async def background_loop(ctx, news=None, first_delay=15):
     if removed:
         log.info('Removed %d old dated scanner history rows from cache.db', removed)
     # One-time cache clean-ups (data hub v44): the 30-minute record first, while the old Alpaca rows still exist.
-    migrations = (('scan-30m-split-only', lambda con, name: migrate_30m_split_only(con, name, alpaca.available())),
+    migrations = (('scan-30m-split-only', migrate_30m_split_only),
                   *datahub.MIGRATIONS)
     await asyncio.to_thread(datahub.run_migrations, ctx.disk, migrations)
     while True:

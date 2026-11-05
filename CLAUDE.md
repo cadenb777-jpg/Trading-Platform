@@ -325,8 +325,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Data window's Sources table and the diagnostics file. Checks (engine/datacheck.py): data.identifiers (spellings, CIK,
   share classes, CUSIP), data.dividends (Yahoo vs 10-K XBRL), data.splits (Yahoo splits vs Schwab closes). Alpaca bars
   are split-adjusted only (like Schwab), re-downloaded when Yahoo shows a split after they were saved, and rescaled to
-  Schwab over a 3-day overlap (charts and the scanner). One-time cache clean-ups go in `datahub.MIGRATIONS` (each backs up
-  what it touches to the cache_backup table first; never delete the kept 30-minute Schwab bars). Browser gate: DATAHUB_HELPER_VERSION = 44 for `data.*`.
+  Schwab over a 3-day overlap (charts and the scanner). One-time cache clean-ups go in `datahub.MIGRATIONS` (in order; each backs
+  up what it touches to the cache_backup table first; a failure stops the chain; never delete kept 30-minute bars). Browser gate: DATAHUB_HELPER_VERSION = 44 for `data.*`.
   Alpaca (engine/alpaca.py, optional free keys in Settings): market-data-only history back to 2016 via
   `alpaca.bars(ctx, symbol, tf, start, end)` (intraday only, saved in cache.db, extended incrementally). With keys set,
   30m-4h charts ask for 3 years and the helper fills what Schwab lacks (Schwab wins); the AI reads regular-session

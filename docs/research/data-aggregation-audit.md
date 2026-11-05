@@ -69,11 +69,12 @@ reply (checked), but there was no named helper; `datahub.fraction/percent/bp_to_
    when Alpaca lacks the boundary bar), and beyond 3% the older bars are rescaled to Schwab (prices / r, volume x r).
    The chart history and the scanner's 30-minute record both do this. One-time cache migrations
    (`datahub.run_migrations`, logged, recorded as ('migration', name) rows, every touched row first copied to the
-   `cache_backup` table in cache.db): the scanner's kept 30-minute record loses only the bars that came from the old
-   Alpaca download (the oldest run whose every value, volume included, equals that download; Schwab's bars never
-   match), removed when Alpaca keys are saved (re-added split-adjusted) or rescaled by the overlap ratio without
-   keys. Schwab-origin bars, which can't be downloaded again after ~9 months, are never deleted; a stock without a
-   saved Alpaca download is left untouched. Then the old ('alpaca', symbol, size) rows are removed. The Yahoo split
+   `cache_backup` table in cache.db; a failed step stops the chain unmarked, so the next start redoes it in order):
+   in the scanner's kept 30-minute record only the bars that came from the old Alpaca download (the oldest run,
+   strictly before that download's end, whose every value, volume included, equals it) are rescaled by the median
+   ratio over the download's overlap with Schwab's bars. No bar is ever deleted; Schwab-origin bars, which can't be
+   downloaded again after ~9 months, are never changed; without an overlap, or for a stock without a saved Alpaca
+   download, nothing changes. Then the old ('alpaca', symbol, size) rows are removed. The Yahoo split
    check is asked once per symbol per New York day (failures included).
 3. **Saved Alpaca bars never re-checked after a split** — `alpaca.py:223` merged new bars onto saved ones without
    comparing the overlap, so a split after saving produced a 2x/4x/10x cliff. **Fixed**: on every request (also one
