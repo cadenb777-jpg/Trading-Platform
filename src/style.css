@@ -10626,10 +10626,16 @@ body.rail-collapsed .rail .rail-bottom {
   top: 0;
   z-index: 60;
   width: 78px;
-  transition: transform 1.2s cubic-bezier(0.3, 0.7, 0.3, 1);
+  transition: transform 1.2s linear;
 }
 .buddy.dragging {
   transition: none;
+}
+/* no room on this page: he fades out (still there, so he comes back when the page has space) */
+.buddy.away {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
 }
 .buddy[hidden],
 body[data-route='chart'] .buddy {
@@ -10735,7 +10741,7 @@ body[data-route='chart'] .buddy {
   animation: buddy-nuzzle 0.4s ease-in-out 3;
 }
 .buddy.walking svg {
-  animation: buddy-hop 0.3s ease-in-out 4;
+  animation: buddy-hop 0.3s ease-in-out infinite;
 }
 .buddy-close {
   position: absolute;
@@ -10820,4 +10826,17 @@ body[data-route='chart'] .buddy {
 }
 .ticker-tape [data-ticker]:hover .tape-sym {
   text-decoration: underline;
+}
+
+/* Home news fills its card: the body grows with the card (it sits beside the tall watchlist), the list scrolls
+   inside it, so there is no empty space under the stories. */
+.wd.news-panel > .wd-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wd.wd-tall.news-panel .news-list {
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }

@@ -3,7 +3,8 @@
  * follows the S&P 500 (SPY) today: happy above +0.3%, calm in between, worried below -0.3%. Click to pet him
  * (hearts, a wag and a word about the market), drag him anywhere (remembered), double-click and he trots somewhere
  * new. Every minute or so he wanders a little on his own (not with reduced motion, not while the tab is hidden).
- * The × on hover hides him; the code PUP (or the launchpad) brings him back. Mood maths is pure and tested.
+ * He never covers what you read or press: he walks to the nearest empty spot, and on a page with no room he
+ * steps away until one has room. The × on hover hides him; the code PUP (or the launchpad) brings him back. Mood maths is pure and tested.
  */
 import { quoteChange, subscribeQuote, type MarketRef } from '../data/quotes';
 import { h } from './dom';
@@ -31,6 +32,37 @@ export function petLine(percent: number | null, n: number): string {
         ? [`Rough one… S&P ${p}. Stick to your stops.`, `S&P ${p}. Pets help. Thanks.`, 'Red days happen. Size down, stay calm.']
         : [`Quiet market: S&P ${p}.`, `Steady today (S&P ${p}). Patience pays.`, 'Nothing wild. Good time to review your plan.'];
   return lines[n % lines.length];
+}
+
+/** Areas he never sits in at all (the menu, the bars, toolbars and dialogs). */
+const OFF_LIMITS = '.rail, .shell-top, .status-bar, .fn-bar, .toolbar, .ticker-tape, .modal, [role="dialog"], .cmd-palette, .ai-drawer';
+/** Content: anything you read or press. Empty space (page gaps, padding, blank parts of a card) is fine. */
+const CONTENT = 'a, button, input, select, textarea, table, canvas, svg, img, li, p, h1, h2, h3, h4, label, [role="button"], [role="tab"], [data-ticker]';
+
+/** True when the top element at a point (under the dog) is empty space, not content. */
+export function isEmptyAt(el: Element | null): boolean {
+  if (!el) return true;
+  if (el.closest(OFF_LIMITS) || el.closest(CONTENT)) return false;
+  // a container with its own text right there (a label or a value written straight into a div) counts as content
+  return ![...el.childNodes].some((n) => n.nodeType === 3 && (n.textContent ?? '').trim());
+}
+
+/** True when nothing you read or press is under the box (sampled on a 3 x 3 grid of points). */
+export function spotIsFree(x: number, y: number, w: number, hgt: number, topAt: (px: number, py: number) => Element | null): boolean {
+  for (const fx of [0.1, 0.5, 0.9]) for (const fy of [0.1, 0.5, 0.9]) if (!isEmptyAt(topAt(x + w * fx, y + hgt * fy))) return false;
+  return true;
+}
+
+/** The free spot nearest to (x, y), searched in rings of 24 px; null when the whole screen is busy. */
+export function nearestFree(x: number, y: number, vw: number, vh: number, free: (x: number, y: number) => boolean): [number, number] | null {
+  if (free(x, y)) return [x, y];
+  for (let r = 24; r < Math.max(vw, vh); r += 24) {
+    for (let a = 0; a < 360; a += 15) {
+      const [cx, cy] = clampPos(x + r * Math.cos((a * Math.PI) / 180), y + r * Math.sin((a * Math.PI) / 180), vw, vh);
+      if (free(cx, cy)) return [cx, cy];
+    }
+  }
+  return null;
 }
 
 /** Keeps a position on screen (with the dog's size). */
@@ -190,7 +222,23 @@ export function initBuddy() {
     if (save) writeJson(POS_KEY, [x, y]);
   };
   place(x, y, false);
-  addEventListener('resize', () => place(x, y, false));
+  // never on top of anything important: move to the nearest empty spot (after a drag, a trot, a resize or a new page)
+  const settle = () => {
+    if (el.hidden || start || el.classList.contains('walking') || document.body.dataset.route === 'chart') return;
+    const boxH = dog.getBoundingClientRect().height || SIZE;
+    // the top element under each point, looking through the dog himself and the background layer
+    const topAt = (px: number, py: number) => document.elementsFromPoint(px, py).find((e) => !e.closest('.buddy, .atmos')) ?? null;
+    const spot = nearestFree(x, y, innerWidth, innerHeight, (cx, cy) => spotIsFree(cx, cy, SIZE, boxH, topAt));
+    // no room on this page (too busy): he steps away until a page with space; otherwise he walks to the spot
+    el.classList.toggle('away', !spot);
+    if (spot && (Math.abs(spot[0] - x) > 2 || Math.abs(spot[1] - y) > 2)) walkTo(spot[0], spot[1]);
+  };
+  // content loads and scrolls under him: look again every few seconds (9 point checks, cheap)
+  window.setInterval(() => !document.hidden && settle(), 3000);
+  const settleSoon = () => window.setTimeout(settle, 1400);
+  addEventListener('resize', () => (place(x, y, false), settleSoon()));
+  addEventListener('hashchange', settleSoon);
+  window.setTimeout(settle, 2500);
 
   let bubbleTimer = 0;
   const say = (text: string) => {
@@ -216,12 +264,23 @@ export function initBuddy() {
     say(`${look.name}: ${petLine(percent, pets++)}`);
   };
 
-  const trot = (dx: number, dy: number) => {
+  /** Walks (with a hop) to a spot; the walk takes longer the further it is. */
+  let walkTimer = 0;
+  const walkTo = (nx: number, ny: number) => {
+    const dist = Math.hypot(nx - x, ny - y);
+    const secs = Math.min(5, Math.max(0.8, dist / 110));
+    el.style.transitionDuration = `${secs}s`;
     el.classList.add('walking');
-    el.classList.toggle('facing-left', dx < 0);
-    place(x + dx, y + dy);
-    window.setTimeout(() => el.classList.remove('walking'), 1300);
+    el.classList.toggle('facing-left', nx < x);
+    place(nx, ny);
+    clearTimeout(walkTimer);
+    walkTimer = window.setTimeout(() => {
+      el.classList.remove('walking');
+      el.style.transitionDuration = '';
+      settle();
+    }, secs * 1000 + 50);
   };
+  const trot = (dx: number, dy: number) => walkTo(x + dx, y + dy);
 
   // drag (pointer), with a click when it barely moved
   let start: { px: number; py: number; x: number; y: number; moved: boolean } | null = null;
@@ -243,8 +302,10 @@ export function initBuddy() {
     const moved = start.moved;
     start = null;
     el.classList.remove('dragging');
-    if (moved) writeJson(POS_KEY, [x, y]);
-    else pet();
+    if (moved) {
+      writeJson(POS_KEY, [x, y]);
+      settle();
+    } else pet();
   });
   dog.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {

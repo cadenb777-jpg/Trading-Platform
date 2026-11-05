@@ -46,3 +46,15 @@ describe('pixel dog', () => {
     for (const c of Object.values(COATS)) expect(c.every((x) => /^#[0-9a-f]{6}$/i.test(x))).toBe(true);
   });
 });
+
+import { nearestFree } from './buddy';
+describe('buddy keeps clear of the page', () => {
+  it('moves to the nearest free spot, or stays when already free', () => {
+    const busy = (x: number) => x < 500; // everything left of 500 px is content
+    expect(nearestFree(600, 300, 1440, 900, (x) => !busy(x))).toEqual([600, 300]);
+    const spot = nearestFree(400, 300, 1440, 900, (x) => !busy(x))!;
+    expect(spot[0]).toBeGreaterThanOrEqual(500);
+    expect(spot[0]).toBeLessThan(560);
+    expect(nearestFree(400, 300, 1440, 900, () => false)).toBeNull();
+  });
+});
