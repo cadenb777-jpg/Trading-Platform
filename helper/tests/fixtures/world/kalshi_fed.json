@@ -1,0 +1,55 @@
+{
+ "cursor": "",
+ "events": [
+  {
+   "event_ticker": "KXFEDDECISION-26DEC",
+   "series_ticker": "KXFEDDECISION",
+   "title": "Fed decision in Dec 2026?",
+   "category": "Economics",
+   "markets": [
+    {
+     "ticker": "KXFEDDECISION-26DEC-C25",
+     "title": "Fed decision in Dec 2026?",
+     "yes_sub_title": "Cut 25bps",
+     "status": "active",
+     "yes_bid_dollars": "0.5900",
+     "yes_ask_dollars": "0.6100",
+     "last_price_dollars": "0.6000",
+     "volume": 150000,
+     "close_time": "2026-12-09T18:55:00Z",
+     "updated_time": "2026-11-05T13:50:00Z"
+    },
+    {
+     "ticker": "KXFEDDECISION-26DEC-H0",
+     "title": "Fed decision in Dec 2026?",
+     "yes_sub_title": "Hold",
+     "status": "active",
+     "yes_bid": 36,
+     "yes_ask": 38,
+     "last_price": 37,
+     "volume": 120000,
+     "close_time": "2026-12-09T18:55:00Z"
+    },
+    {
+     "ticker": "KXFEDDECISION-26DEC-H25",
+     "title": "Fed decision in Dec 2026?",
+     "yes_sub_title": "Hike 25bps",
+     "status": "active",
+     "yes_bid": 0,
+     "yes_ask": 0,
+     "last_price": 2,
+     "volume": 9000,
+     "close_time": "2026-12-09T18:55:00Z"
+    },
+    {
+     "ticker": "KXFEDDECISION-26DEC-X",
+     "title": "Fed decision in Dec 2026?",
+     "yes_sub_title": "Settled",
+     "status": "settled",
+     "last_price": 1,
+     "volume": 1
+    }
+   ]
+  }
+ ]
+}

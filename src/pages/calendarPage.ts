@@ -1,8 +1,11 @@
-/** Economic calendar: Fed decisions, CPI, jobs reports and more, with forecast, previous and actual. */
+/** Economic calendar: Fed decisions, CPI, jobs reports and more, with forecast, previous and actual, prediction-market
+ * odds next to the events they price (calendarOdds.ts) and, with a free Finnhub key, upcoming earnings. */
 import { HELPER_NOT_RUNNING, helper, loadCalendar, loadNews, type CalendarEvent } from '../data/schwab';
 import { h, openModal, timeAgo } from '../ui/dom';
 import { icon } from '../ui/icons';
 import { openNewsSummary } from '../ui/newsSummary';
+import { matchOdds, type EventOdds, type PredictionsReply } from '../macro/odds';
+import { createEarningsPanel, createMarketsPanel, getPredictions, oddsCell, oddsDetails } from './calendarOdds';
 
 const REFRESH_MS = 10 * 60 * 1000;
 const COUNTRIES = ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'CAD', 'AUD', 'CHF', 'NZD'];
@@ -80,7 +83,7 @@ function valueCell(e: CalendarEvent) {
   return h('span', { class: `cal-actual ${cmp ?? ''}`, 'data-label': 'Actual', title: [cmp ? `Actual came in ${cmp === 'inline' ? 'in line with' : cmp === 'above' ? 'higher than' : 'lower than'} the forecast.` : '', e.actualSource ? `Official figure from ${e.actualSource}.` : ''].join(' ').trim() }, e.actual || '—');
 }
 
-export function openEventDetails(e: CalendarEvent) {
+export function openEventDetails(e: CalendarEvent, odds: EventOdds = null) {
   const cmp = compareActual(e);
   const info = explainEvent(e.title);
   const related = h('div', { class: 'related-news' }, h('div', { class: 'muted small' }, 'Finding related headlines…'));
@@ -116,6 +119,7 @@ export function openEventDetails(e: CalendarEvent) {
       ),
       h('p', { class: `event-verdict ${cmp ?? ''}` }, verdict),
       info ? h('p', {}, info) : null,
+      oddsDetails(odds),
       h('div', { class: 'summary-head' }, 'Related news'),
       related,
     ),
@@ -140,11 +144,15 @@ export function openEventDetails(e: CalendarEvent) {
     .catch(() => related.replaceChildren(h('div', { class: 'muted small' }, 'Related news appears when the Schwab helper is running.')));
 }
 
+/** Prediction markets last loaded (the Odds column); null until loaded or on older helpers. */
+let predictions: PredictionsReply | null = null;
+
 function eventRow(e: CalendarEvent, compact = false) {
   const past = e.time <= Date.now() / 1000;
+  const odds = matchOdds(e, predictions);
   return h(
     'button',
-    { class: `cal-row${past ? ' past' : ''}${compact ? ' compact' : ''}`, onclick: () => openEventDetails(e) },
+    { class: `cal-row${past ? ' past' : ''}${compact ? ' compact' : ''}`, onclick: () => openEventDetails(e, odds) },
     h('span', { class: 'cal-time' }, timeText(e.time), compact ? h('span', { class: 'muted small' }, ` ${countdown(e.time)}`) : null),
     h('span', { class: 'cal-country' }, e.country),
     impactDots(e.impact),
@@ -152,6 +160,7 @@ function eventRow(e: CalendarEvent, compact = false) {
     compact ? null : valueCell(e),
     compact ? null : h('span', { class: 'cal-num cal-forecast', 'data-label': 'Forecast' }, e.forecast || '—'),
     compact ? null : h('span', { class: 'cal-num cal-previous muted', 'data-label': 'Previous' }, e.previous || '—'),
+    compact ? null : oddsCell(odds),
   );
 }
 
@@ -230,10 +239,12 @@ export function createCalendarPage() {
   const listPanel = h(
     'div',
     { class: 'panel cal-panel' },
-    h('div', { class: 'cal-columns muted small' }, h('span', {}, 'Time'), h('span', {}, 'Ccy'), h('span', {}, 'Impact'), h('span', {}, 'Event'), h('span', {}, 'Actual'), h('span', {}, 'Forecast'), h('span', {}, 'Previous')),
+    h('div', { class: 'cal-columns muted small' }, h('span', {}, 'Time'), h('span', {}, 'Ccy'), h('span', {}, 'Impact'), h('span', {}, 'Event'), h('span', {}, 'Actual'), h('span', {}, 'Forecast'), h('span', {}, 'Previous'), h('span', { title: 'Prediction-market odds (Polymarket, Kalshi)' }, 'Odds')),
     body,
   );
   const monthPanel = h('div', { class: 'month-view' });
+  const markets = createMarketsPanel();
+  const earnings = createEarningsPanel();
 
   const el = h(
     'div',
@@ -247,6 +258,8 @@ export function createCalendarPage() {
     listPanel,
     monthPanel,
     foot,
+    markets.el,
+    earnings.el,
   );
 
   let events: CalendarEvent[] = [];
@@ -337,7 +350,19 @@ export function createCalendarPage() {
     else renderMonth(shown);
   }
 
+  async function refreshOdds(force = false) {
+    try {
+      predictions = await getPredictions(force);
+      markets.set(predictions);
+      render();
+    } catch (err) {
+      markets.set(null, (err as Error).message);
+    }
+  }
+
   async function refresh(force = false) {
+    void refreshOdds(force);
+    void earnings.refresh();
     try {
       const result = await getCalendar(force);
       events = result.events;

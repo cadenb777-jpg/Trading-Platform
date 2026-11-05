@@ -1,0 +1,27 @@
+{
+ "data": [
+  {
+   "record_date": "2026-11-03",
+   "account_type": "Treasury General Account (TGA) Opening Balance",
+   "open_today_bal": "850000"
+  },
+  {
+   "record_date": "2026-11-03",
+   "account_type": "Treasury General Account (TGA) Closing Balance",
+   "open_today_bal": "862345"
+  },
+  {
+   "record_date": "2026-10-27",
+   "account_type": "Treasury General Account (TGA) Closing Balance",
+   "open_today_bal": "820000"
+  },
+  {
+   "record_date": "2026-10-27",
+   "account_type": "Total TGA Deposits (Table II)",
+   "open_today_bal": "45000"
+  }
+ ],
+ "meta": {
+  "count": 4
+ }
+}

@@ -1,0 +1,204 @@
+[
+ {
+  "page": 1,
+  "pages": 1,
+  "per_page": 2000,
+  "total": 12,
+  "sourceid": "2",
+  "lastupdated": "2026-10-15"
+ },
+ [
+  {
+   "indicator": {
+    "id": "NY.GDP.MKTP.KD.ZG",
+    "value": "GDP growth (annual %)"
+   },
+   "country": {
+    "id": "US",
+    "value": "United States"
+   },
+   "countryiso3code": "USA",
+   "date": "2025",
+   "value": null,
+   "unit": "",
+   "obs_status": "",
+   "decimal": 1
+  },
+  {
+   "indicator": {
+    "id": "NY.GDP.MKTP.KD.ZG",
+    "value": "GDP growth (annual %)"
+   },
+   "country": {
+    "id": "US",
+    "value": "United States"
+   },
+   "countryiso3code": "USA",
+   "date": "2024",
+   "value": 2.8,
+   "unit": "",
+   "obs_status": "",
+   "decimal": 1
+  },
+  {
+   "indicator": {
+    "id": "NY.GDP.MKTP.KD.ZG",
+    "value": "GDP growth (annual %)"
+   },
+   "country": {
+    "id": "US",
+    "value": "United States"
+   },
+   "countryiso3code": "USA",
+   "date": "2023",
+   "value": 2.9,
+   "unit": "",
+   "obs_status": "",
+   "decimal": 1
+  },
+  {
+   "indicator": {
+    "id": "NY.GDP.MKTP.KD.ZG",
+    "value": "GDP growth (annual %)"
+   },
+   "country": {
+    "id": "US",
+    "value": "United States"
+   },
+   "countryiso3code": "USA",
+   "date": "2022",
+   "value": 2.5,
+   "unit": "",
+   "obs_status": "",
+   "decimal": 1
+  },
+  {
+   "indicator": {
+    "id": "NY.GDP.MKTP.KD.ZG",
+    "value": "GDP growth (annual %)"
+   },
+   "country": {
+    "id": "DE",
+    "value": "Germany"
+   },
+   "countryiso3code": "DEU",
+   "date": "2025",
+   "value": -0.1,
+   "unit": "",
+   "obs_status": "",
+   "decimal": 1
+  },
+  {
+   "indicator": {
+    "id": "NY.GDP.MKTP.KD.ZG",
+    "value": "GDP growth (annual %)"
+   },
+   "country": {
+    "id": "DE",
+    "value": "Germany"
+   },
+   "countryiso3code": "DEU",
+   "date": "2024",
+   "value": -0.2,
+   "unit": "",
+   "obs_status": "",
+   "decimal": 1
+  },
+  {
+   "indicator": {
+    "id": "NY.GDP.MKTP.KD.ZG",
+    "value": "GDP growth (annual %)"
+   },
+   "country": {
+    "id": "DE",
+    "value": "Germany"
+   },
+   "countryiso3code": "DEU",
+   "date": "2023",
+   "value": -0.3,
+   "unit": "",
+   "obs_status": "",
+   "decimal": 1
+  },
+  {
+   "indicator": {
+    "id": "NY.GDP.MKTP.KD.ZG",
+    "value": "GDP growth (annual %)"
+   },
+   "country": {
+    "id": "DE",
+    "value": "Germany"
+   },
+   "countryiso3code": "DEU",
+   "date": "2022",
+   "value": 1.4,
+   "unit": "",
+   "obs_status": "",
+   "decimal": 1
+  },
+  {
+   "indicator": {
+    "id": "NY.GDP.MKTP.KD.ZG",
+    "value": "GDP growth (annual %)"
+   },
+   "country": {
+    "id": "JP",
+    "value": "Japan"
+   },
+   "countryiso3code": "JPN",
+   "date": "2025",
+   "value": 0.6,
+   "unit": "",
+   "obs_status": "",
+   "decimal": 1
+  },
+  {
+   "indicator": {
+    "id": "NY.GDP.MKTP.KD.ZG",
+    "value": "GDP growth (annual %)"
+   },
+   "country": {
+    "id": "JP",
+    "value": "Japan"
+   },
+   "countryiso3code": "JPN",
+   "date": "2024",
+   "value": 0.1,
+   "unit": "",
+   "obs_status": "",
+   "decimal": 1
+  },
+  {
+   "indicator": {
+    "id": "NY.GDP.MKTP.KD.ZG",
+    "value": "GDP growth (annual %)"
+   },
+   "country": {
+    "id": "JP",
+    "value": "Japan"
+   },
+   "countryiso3code": "JPN",
+   "date": "2023",
+   "value": 1.7,
+   "unit": "",
+   "obs_status": "",
+   "decimal": 1
+  },
+  {
+   "indicator": {
+    "id": "NY.GDP.MKTP.KD.ZG",
+    "value": "GDP growth (annual %)"
+   },
+   "country": {
+    "id": "JP",
+    "value": "Japan"
+   },
+   "countryiso3code": "JPN",
+   "date": "2022",
+   "value": 1.0,
+   "unit": "",
+   "obs_status": "",
+   "decimal": 1
+  }
+ ]
+]

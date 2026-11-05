@@ -1,0 +1,755 @@
+{
+ "status": "REQUEST_SUCCEEDED",
+ "responseTime": 120,
+ "message": [
+  "No Data Available for Series CUSR0000SETA02 Year: 2026"
+ ],
+ "Results": {
+  "series": [
+   {
+    "seriesID": "CUSR0000SA0",
+    "data": [
+     {
+      "year": "2025",
+      "period": "M13",
+      "periodName": "Annual",
+      "value": "999",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M09",
+      "periodName": "x",
+      "value": "328.750",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M08",
+      "periodName": "x",
+      "value": "328.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M07",
+      "periodName": "x",
+      "value": "327.250",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M06",
+      "periodName": "x",
+      "value": "326.500",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M05",
+      "periodName": "x",
+      "value": "325.750",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M04",
+      "periodName": "x",
+      "value": "325.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M03",
+      "periodName": "x",
+      "value": "324.250",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M02",
+      "periodName": "x",
+      "value": "323.500",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M01",
+      "periodName": "x",
+      "value": "322.750",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M12",
+      "periodName": "x",
+      "value": "322.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M11",
+      "periodName": "x",
+      "value": "321.250",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M10",
+      "periodName": "x",
+      "value": "320.500",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M09",
+      "periodName": "x",
+      "value": "319.750",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M08",
+      "periodName": "x",
+      "value": "319.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M07",
+      "periodName": "x",
+      "value": "318.250",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M06",
+      "periodName": "x",
+      "value": "317.500",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M05",
+      "periodName": "x",
+      "value": "316.750",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M04",
+      "periodName": "x",
+      "value": "316.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M03",
+      "periodName": "x",
+      "value": "315.250",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M02",
+      "periodName": "x",
+      "value": "314.500",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M01",
+      "periodName": "x",
+      "value": "313.750",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M12",
+      "periodName": "x",
+      "value": "313.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M11",
+      "periodName": "x",
+      "value": "312.250",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M10",
+      "periodName": "x",
+      "value": "311.500",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M09",
+      "periodName": "x",
+      "value": "310.750",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M08",
+      "periodName": "x",
+      "value": "310.000",
+      "footnotes": [
+       {}
+      ]
+     }
+    ]
+   },
+   {
+    "seriesID": "CES0000000001",
+    "data": [
+     {
+      "year": "2025",
+      "period": "M13",
+      "periodName": "Annual",
+      "value": "999",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M09",
+      "periodName": "x",
+      "value": "161750.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M08",
+      "periodName": "x",
+      "value": "161600.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M07",
+      "periodName": "x",
+      "value": "161450.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M06",
+      "periodName": "x",
+      "value": "161300.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M05",
+      "periodName": "x",
+      "value": "161150.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M04",
+      "periodName": "x",
+      "value": "161000.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M03",
+      "periodName": "x",
+      "value": "160850.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M02",
+      "periodName": "x",
+      "value": "160700.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M01",
+      "periodName": "x",
+      "value": "160550.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M12",
+      "periodName": "x",
+      "value": "160400.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M11",
+      "periodName": "x",
+      "value": "160250.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M10",
+      "periodName": "x",
+      "value": "160100.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M09",
+      "periodName": "x",
+      "value": "159950.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M08",
+      "periodName": "x",
+      "value": "159800.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M07",
+      "periodName": "x",
+      "value": "159650.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M06",
+      "periodName": "x",
+      "value": "159500.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M05",
+      "periodName": "x",
+      "value": "159350.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M04",
+      "periodName": "x",
+      "value": "159200.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M03",
+      "periodName": "x",
+      "value": "159050.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M02",
+      "periodName": "x",
+      "value": "158900.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M01",
+      "periodName": "x",
+      "value": "158750.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M12",
+      "periodName": "x",
+      "value": "158600.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M11",
+      "periodName": "x",
+      "value": "158450.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M10",
+      "periodName": "x",
+      "value": "158300.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M09",
+      "periodName": "x",
+      "value": "158150.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M08",
+      "periodName": "x",
+      "value": "158000.000",
+      "footnotes": [
+       {}
+      ]
+     }
+    ]
+   },
+   {
+    "seriesID": "JTS000000000000000JOL",
+    "data": [
+     {
+      "year": "2025",
+      "period": "M13",
+      "periodName": "Annual",
+      "value": "999",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M09",
+      "periodName": "x",
+      "value": "7100.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M08",
+      "periodName": "x",
+      "value": "7120.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M07",
+      "periodName": "x",
+      "value": "7140.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M06",
+      "periodName": "x",
+      "value": "7160.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M05",
+      "periodName": "x",
+      "value": "7180.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M04",
+      "periodName": "x",
+      "value": "7200.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M03",
+      "periodName": "x",
+      "value": "7220.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M02",
+      "periodName": "x",
+      "value": "7240.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2026",
+      "period": "M01",
+      "periodName": "x",
+      "value": "7260.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M12",
+      "periodName": "x",
+      "value": "7280.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M11",
+      "periodName": "x",
+      "value": "7300.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M10",
+      "periodName": "x",
+      "value": "7320.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M09",
+      "periodName": "x",
+      "value": "7340.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M08",
+      "periodName": "x",
+      "value": "7360.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M07",
+      "periodName": "x",
+      "value": "7380.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M06",
+      "periodName": "x",
+      "value": "7400.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M05",
+      "periodName": "x",
+      "value": "7420.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M04",
+      "periodName": "x",
+      "value": "7440.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M03",
+      "periodName": "x",
+      "value": "7460.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M02",
+      "periodName": "x",
+      "value": "7480.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2025",
+      "period": "M01",
+      "periodName": "x",
+      "value": "7500.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M12",
+      "periodName": "x",
+      "value": "7520.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M11",
+      "periodName": "x",
+      "value": "7540.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M10",
+      "periodName": "x",
+      "value": "7560.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M09",
+      "periodName": "x",
+      "value": "7580.000",
+      "footnotes": [
+       {}
+      ]
+     },
+     {
+      "year": "2024",
+      "period": "M08",
+      "periodName": "x",
+      "value": "7600.000",
+      "footnotes": [
+       {}
+      ]
+     }
+    ]
+   }
+  ]
+ }
+}

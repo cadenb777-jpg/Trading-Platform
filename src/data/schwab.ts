@@ -60,6 +60,19 @@ export const prospectCompleteReady = () => !helper.tooOld && (helper.version ?? 
 export const JOURNAL_HELPER_VERSION = 43;
 /** True when the connected helper has the trading journal (v43+). */
 export const journalReady = () => !helper.tooOld && (helper.version ?? 0) >= JOURNAL_HELPER_VERSION;
+/** World macro (world.*), prediction-market odds (predictions.*), Finnhub (finnhub.*) and the Settings
+ * connection tests (connections.test) need at least this version. */
+export const WORLD_HELPER_VERSION = 44;
+/** Request types that need WORLD_HELPER_VERSION. */
+export const isWorldRequest = (type: string, msg: Record<string, unknown> = {}) =>
+  /^(world|predictions|finnhub|connections)\./.test(type) || (type === 'ai.insight' && msg.topic === 'world');
+/** True when the connected helper has world macro, prediction markets and the data-connection tests (v44+). */
+export const worldReady = () => !helper.tooOld && (helper.version ?? 0) >= WORLD_HELPER_VERSION;
+/** worldReady() after waiting for the helper connection (false when it isn't running). */
+export async function worldAvailable(): Promise<boolean> {
+  await helper.connect().catch(() => undefined);
+  return worldReady();
+}
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
@@ -321,6 +334,7 @@ class HelperConnection {
     if (SMART_MONEY_REQUESTS.has(type) && (this.version ?? 0) < SMART_MONEY_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (PROSPECT_CONTACTS_REQUEST.test(type) && (this.version ?? 0) < PROSPECT_CONTACTS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('journal.') && (this.version ?? 0) < JOURNAL_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if (isWorldRequest(type, msg) && (this.version ?? 0) < WORLD_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type === 'ai.ui_result' || type === 'ai.stop') && (this.version ?? 0) < AI_ACTIONS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('scanner.') || (type === 'ai.insight' && NEW_INSIGHTS.has(String(msg.topic)))) && (this.version ?? 0) < SCANNER_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;
@@ -501,6 +515,11 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'macro.series': 10 * 60_000,
   'macro.curve': 10 * 60_000,
   'macro.catalog': 60 * 60_000,
+  'world.table': 30 * 60_000,
+  'world.panel': 30 * 60_000,
+  'predictions.markets': 60_000,
+  'finnhub.recommendations': 60 * 60_000,
+  'finnhub.earnings': 30 * 60_000,
   'flow.cot': 30 * 60_000,
   'flow.cot_markets': 60 * 60_000,
   'flow.cot_for_symbol': 30 * 60_000,

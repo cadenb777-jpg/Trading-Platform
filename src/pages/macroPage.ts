@@ -1,4 +1,5 @@
-/** Macro: the economy at a glance (rates, inflation, jobs, growth, markets) and the Treasury yield curve. */
+/** Macro: the US economy at a glance (rates, inflation, jobs, growth, markets) and the Treasury yield curve, plus a
+ * World tab (macroWorld.ts: countries by region, US and euro-area detail from free official sources). */
 import { insightButton } from '../ai/insight';
 import { clearEngineCache, engineRequest } from '../data/schwab';
 import { createLineChart, pageFrame } from '../ui/charts';
@@ -7,6 +8,7 @@ import { openChartWindow } from '../ui/chartWindow';
 import { openFredWindow } from '../ui/fredWindow';
 import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
 import { asOfStamp } from '../ui/dataHealth';
+import { createWorldTab } from './macroWorld';
 
 interface Series {
   id: string;
@@ -90,6 +92,46 @@ export function createMacroPage() {
     h('div', { class: 'segmented' }, ...rangeButtons),
     h('button', { class: 'btn', title: 'Load fresh data now', onclick: () => (clearEngineCache('macro.'), load()) }, 'Refresh'),
   ]);
+
+  // Tabs: the US dashboard (FRED) and World (macroWorld.ts). The choice is remembered in this browser.
+  type Tab = 'us' | 'world';
+  const world = createWorldTab();
+  world.el.hidden = true;
+  let tab: Tab = /world/.test(location.hash) ? 'world' : (() => {
+    try {
+      return localStorage.getItem('tp-macro-tab') === 'world' ? 'world' : 'us';
+    } catch {
+      return 'us';
+    }
+  })();
+  const tabButtons = (['us', 'world'] as Tab[]).map((t) =>
+    h('button', { class: 'tab', role: 'tab', 'data-tab': t, onclick: () => setTab(t) }, t === 'us' ? 'United States' : 'World'),
+  );
+  const tabBar = h('div', { class: 'tabs macro-tabs', role: 'tablist', 'aria-label': 'Macro views' }, ...tabButtons);
+  frame.el.insertBefore(tabBar, frame.body);
+  frame.el.append(world.el);
+  function setTab(t: Tab) {
+    tab = t;
+    try {
+      localStorage.setItem('tp-macro-tab', t);
+    } catch {
+      /* not saved */
+    }
+    tabButtons.forEach((b) => {
+      b.classList.toggle('active', b.dataset.tab === t);
+      b.setAttribute('aria-selected', String(b.dataset.tab === t));
+    });
+    frame.body.hidden = t !== 'us';
+    world.el.hidden = t !== 'world';
+    // The header's range, AI and Refresh buttons belong to the US dashboard; World has its own.
+    const controls = frame.el.querySelector<HTMLElement>('.ap-header .ap-controls');
+    if (controls) controls.hidden = t !== 'us';
+    if (t === 'world') world.start();
+    else if (!started) {
+      started = true;
+      load();
+    }
+  }
 
   function setRange(r: Range) {
     range = r;
@@ -245,10 +287,7 @@ export function createMacroPage() {
     el: frame.el,
     start() {
       rangeButtons.forEach((b) => b.classList.toggle('active', b.dataset.range === range));
-      if (!started) {
-        started = true;
-        load();
-      }
+      setTab(tab);
       // Economic data changes at most daily; check again every 30 minutes while the page is open.
       timer ??= setInterval(load, 30 * 60 * 1000);
     },

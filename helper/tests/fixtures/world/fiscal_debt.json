@@ -1,0 +1,23 @@
+{
+ "data": [
+  {
+   "record_date": "2026-11-03",
+   "tot_pub_debt_out_amt": "38123456789012.34",
+   "debt_held_public_amt": "30500000000000.00"
+  },
+  {
+   "record_date": "2026-11-02",
+   "tot_pub_debt_out_amt": "38100000000000.00",
+   "debt_held_public_amt": "30480000000000.00"
+  },
+  {
+   "record_date": "2026-10-26",
+   "tot_pub_debt_out_amt": "38000000000000.00",
+   "debt_held_public_amt": "30400000000000.00"
+  }
+ ],
+ "meta": {
+  "count": 3
+ },
+ "links": {}
+}

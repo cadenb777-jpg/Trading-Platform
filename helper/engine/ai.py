@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 
-from . import alpaca, alts, flow, invest, macro, positioning, quant, research, sec, settings, store
+from . import alpaca, alts, flow, invest, macro, positioning, predictions, quant, research, sec, settings, store, worldmacro
 from .core import EngineError, handler
 
 EASTERN = ZoneInfo('America/New_York')
@@ -66,6 +66,7 @@ INSIGHT_PROMPTS = {
     'scanner': 'Here are the market scanner\'s current results: ranked setups with their signals, ATR-based trade plans, support and resistance, institutional flow (Williams A/D, money flow, COT, insiders, big options trades), and each signal\'s tested track record on that stock. Write a short trading-desk note: the market backdrop, the 2-3 best plays with entry, stop and targets and why, what would invalidate each, and which setups to avoid. Weigh the tested track record heavily and say plainly when evidence is thin. Use get_news for any fresh catalyst on the top names.',
     'market': 'Here is today\'s market snapshot from the platform\'s home page (major indexes with their latest change, and the top headlines). Explain what is driving the market today, whether the tone is risk-on or risk-off, what to watch next (upcoming events), and what it means for positioning. Be specific and use the numbers.',
     'macro': 'Here are the latest US economic readings (rates, inflation, jobs, growth, markets) with 1-month and 1-year changes, and the Treasury yield curve. Summarise where the economy is in the cycle, what the Fed is likely to do, whether conditions are bullish or bearish for stocks and bonds, and the key risks. Use the numbers.',
+    'world': 'Here is the world economy by country (World Bank, IMF WEO forecasts, OECD leading indicators) grouped by region, plus any US and euro-area detail on screen. Compare the regions: who is growing or slowing, where inflation is sticky, which economies the leading indicators say are turning, and what that means for US stocks, the dollar and bonds. Cite figures with their period and source.',
     'bonds': 'Here is the bond market: Treasury yields, corporate yields and credit spreads, real yields, breakeven inflation, and recent Treasury auctions. Explain what bonds are signalling about growth, inflation and risk appetite, whether now favours short or long maturities and credit vs Treasuries, and what to watch.',
     'board': 'Here is a market board from the Investments page ({market}): each line with today\'s change and 1-month, year-to-date and 1-year returns. Explain what is leading and lagging, what that says about the market (rotation, risk appetite), and which areas look strongest or weakest right now.',
     'futures': 'Here is the futures board: the main US futures by sector with today\'s change, the move in standard deviations of daily moves, 1-week, 1-month and year-to-date returns, the next roll date and COT positioning (commercials\' 3-year index). Give the whole-market picture: which sectors lead and lag, what the biggest moves say (risk appetite, inflation, rates, dollar), any curve or positioning extremes worth noting (commercials at extremes, Larry Williams style), and what to watch next. Plain words for a beginner; use the numbers.',
@@ -203,6 +204,21 @@ TOOLS = [
             'portfolio_id': {'type': 'string', 'description': 'A saved portfolio id, or a template: "template:Classic 60/40", "template:All-weather style", "template:Growth (90/10)"'}, 'inception': {'type': 'string', 'description': 'YYYY-MM-DD'},
             'initial_investment': {'type': 'number'}, 'fee_percent': {'type': 'number', 'description': 'Yearly advisory fee in percent, e.g. 1'},
         }, 'required': ['name']},
+    },
+    {
+        'name': 'world_macro',
+        'description': 'World economy by country (US, Canada, Mexico, Brazil, Germany, France, UK, Italy, Spain, Japan, China, India, South Korea, Australia): GDP growth, inflation, unemployment and government debt (World Bank, yearly), IMF WEO forecasts for this year and next, OECD composite leading indicators with cycle phase; plus US detail from BLS (CPI components, wages, JOLTS, payrolls), BEA (GDP contributions, PCE prices, needs the owner\'s free key), Treasury Fiscal Data (debt, cash balance, auctions), the ECB (euro-area rates, HICP, EUR/USD) and EIA (oil inventories and prices, needs a free key). Every figure carries its source and period.',
+        'input_schema': {'type': 'object', 'properties': {
+            'countries': {'type': 'array', 'items': {'type': 'string'}, 'description': 'ISO3 codes to include (default all), e.g. ["USA", "DEU", "JPN"]'},
+        }},
+    },
+    {
+        'name': 'predictions',
+        'description': 'Prediction-market odds (read only, from Polymarket and Kalshi public data): Fed decision odds per meeting (cut / hold / hike) and open macro and political markets with yes probability, volume, last update and link. Odds are crowd prices, not forecasts from the platform.',
+        'input_schema': {'type': 'object', 'properties': {
+            'category': {'type': 'string', 'enum': ['fed', 'macro', 'politics']},
+            'query': {'type': 'string', 'description': 'Words to look for in the question, e.g. "CPI" or "recession"'},
+        }},
     },
     {
         'name': 'get_my_journal',
@@ -373,7 +389,7 @@ TOOL_LABELS = {
     'get_positioning': 'Checking positioning', 'get_private_fund': 'Reading the fund\'s SEC filings',
     'search_private_funds': 'Searching private funds', 'get_bond_market': 'Checking the bond market', 'get_my_alternatives': 'Looking at your alternatives', 'list_portfolios': 'Looking at your portfolios', 'save_portfolio': 'Saving the portfolio',
     'analyze_portfolio': 'Analysing the portfolio', 'optimize_portfolio': 'Optimising weights', 'list_clients': 'Looking at your clients',
-    'save_client': 'Saving the client', 'get_my_journal': 'Reading your trading journal', 'ui_action': 'Updating the platform', 'web_search': 'Searching the web',
+    'save_client': 'Saving the client', 'world_macro': 'Checking the world economy', 'predictions': 'Reading prediction-market odds', 'get_my_journal': 'Reading your trading journal', 'ui_action': 'Updating the platform', 'web_search': 'Searching the web',
 }
 
 _conversations = {}
@@ -751,6 +767,19 @@ async def t_save_client(ctx, args, actions):
     return {'saved': True, 'id': saved['id'], 'name': saved['name']}
 
 
+async def t_world_macro(ctx, args, actions):
+    codes = [str(c).upper() for c in args.get('countries') or [] if str(c).upper() in worldmacro.CODES]
+    return await worldmacro.snapshot(ctx, codes or None)
+
+
+async def t_predictions(ctx, args, actions):
+    d = await predictions.markets(ctx, {'category': args.get('category'), 'query': args.get('query'), 'limit': 40})
+    keep = ('source', 'question', 'category', 'yes', 'volume', 'updated', 'closes', 'url')
+    return {'fedMeetings': [{k: g[k] for k in ('source', 'title', 'meeting', 'odds', 'volume', 'updated', 'url')} for g in d['fed'][:6]],
+            'markets': [{k: m[k] for k in keep} for m in d['markets']], 'errors': d['errors'],
+            'note': 'yes = the market price of the Yes side (0-1), read as the crowd\'s probability.'}
+
+
 async def t_get_my_journal(ctx, args, actions):
     from . import journal
     return journal.journal_for_ai(args.get('start') or None, args.get('end') or None, args.get('symbol') or None)
@@ -774,7 +803,7 @@ TOOL_FUNCS = {
     'get_positioning': t_get_positioning, 'get_private_fund': t_get_private_fund, 'search_private_funds': t_search_private_funds,
     'get_bond_market': t_get_bond_market, 'get_my_alternatives': t_get_my_alternatives, 'list_portfolios': t_list_portfolios, 'save_portfolio': t_save_portfolio,
     'analyze_portfolio': t_analyze_portfolio, 'optimize_portfolio': t_optimize_portfolio, 'list_clients': t_list_clients,
-    'save_client': t_save_client, 'get_my_journal': t_get_my_journal, 'ui_action': t_ui_action,
+    'save_client': t_save_client, 'world_macro': t_world_macro, 'predictions': t_predictions, 'get_my_journal': t_get_my_journal, 'ui_action': t_ui_action,
 }
 
 

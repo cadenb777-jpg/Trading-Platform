@@ -8,7 +8,7 @@ import { renderMarkdown } from './markdown';
 import { markTickers } from '../ui/markTickers';
 
 export interface InsightRequest {
-  topic: 'options' | 'insiders' | 'cot' | 'positioning' | 'research' | 'indicator' | 'chart' | 'scanner' | 'market' | 'macro' | 'bonds' | 'board' | 'fund' | 'backtest' | 'futures' | 'prospect';
+  topic: 'options' | 'insiders' | 'cot' | 'positioning' | 'research' | 'indicator' | 'chart' | 'scanner' | 'market' | 'macro' | 'bonds' | 'board' | 'fund' | 'backtest' | 'futures' | 'prospect' | 'world';
   symbol: string;
   title: string;
   data: unknown;
