@@ -21,6 +21,33 @@ export function isRegularHours(time: number): boolean {
   return regular;
 }
 
+export type SessionPhase = 'pre' | 'regular' | 'post' | 'closed';
+const phaseMemo = new Map<number, SessionPhase>();
+
+/**
+ * Which part of the US stock day a bar starting at `time` falls in (New York time): pre-market 4:00-9:30, regular
+ * 9:30-16:00, after-hours 16:00-20:00, otherwise closed (overnight and weekends). Holidays are not looked up here.
+ */
+export function sessionPhase(time: number): SessionPhase {
+  const hit = phaseMemo.get(time);
+  if (hit) return hit;
+  const parts = Object.fromEntries(eastern.formatToParts(new Date(time * 1000)).map((p) => [p.type, p.value]));
+  const m = (Number(parts.hour) % 24) * 60 + Number(parts.minute);
+  const weekend = parts.weekday === 'Sat' || parts.weekday === 'Sun';
+  const phase: SessionPhase = weekend ? 'closed' : m >= 240 && m < 570 ? 'pre' : m >= 570 && m < 960 ? 'regular' : m >= 960 && m < 1200 ? 'post' : 'closed';
+  if (phaseMemo.size > 50000) phaseMemo.clear();
+  phaseMemo.set(time, phase);
+  return phase;
+}
+
+/** Shading colour (with alpha) for a phase, or null for the regular session. Pre-market sky, after-hours copper. */
+export function phaseShade(phase: SessionPhase): string | null {
+  if (phase === 'pre') return withAlpha(THEME.accent, 0.075);
+  if (phase === 'post') return withAlpha(THEME.viz2, 0.08);
+  if (phase === 'closed') return withAlpha(THEME.text, 0.05);
+  return null;
+}
+
 /** Keeps only regular-hours bars (for when extended hours are switched off). */
 export function regularHoursOnly(bars: Bar[]): Bar[] {
   return bars.filter((b) => isRegularHours(b.time));
@@ -87,22 +114,23 @@ export class SessionShading {
     const bars = this.view.visibleBars();
     if (bars.length < 2) return;
     const spacing = this.view.barSpacing();
-    ctx.fillStyle = withAlpha(THEME.text, 0.045);
-    let runStart: number | null = null;
-    let runEnd = 0;
+    // one rectangle per run of bars in the same phase: pre-market, after-hours and overnight each get their own tint
+    let run: { phase: SessionPhase; start: number; end: number } | null = null;
     const flush = () => {
-      if (runStart === null) return;
-      ctx.fillRect(runStart - spacing / 2, 0, runEnd - runStart + spacing, height);
-      runStart = null;
+      const fill = run && phaseShade(run.phase);
+      if (run && fill) {
+        ctx.fillStyle = fill;
+        ctx.fillRect(run.start - spacing / 2, 0, run.end - run.start + spacing, height);
+      }
+      run = null;
     };
     for (const b of bars) {
       const x = this.view.timeToX(b.time);
       if (x === null) continue;
-      if (isRegularHours(b.time)) flush();
-      else {
-        runStart ??= x;
-        runEnd = x;
-      }
+      const phase = sessionPhase(b.time);
+      if (run && (run as { phase: SessionPhase }).phase !== phase) flush();
+      if (run) (run as { end: number }).end = x;
+      else run = { phase, start: x, end: x };
     }
     flush();
   }

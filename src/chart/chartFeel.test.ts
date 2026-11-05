@@ -148,7 +148,7 @@ describe('header trader figures', () => {
 
   it('NYSE holidays and 13:00 early closes', () => {
     expect(sessionClock(utc('2026-11-26T16:00:00'), 'schwab')).toBe('Market closed (holiday)'); // Thanksgiving
-    expect(sessionClock(utc('2026-11-27T17:15:00'), 'schwab')).toBe('Closes 13:00 in 45m'); // 12:15 New York
+    expect(sessionClock(utc('2026-11-27T17:15:00'), 'schwab')).toBe('Closes 1:00 PM in 45m'); // 12:15 New York
     expect(sessionClock(utc('2026-11-27T18:30:00'), 'schwab')).toBe('Closed'); // 13:30
     expect(sessionClock(utc('2027-03-26T15:00:00'), 'schwab')).toBe('Market closed (holiday)'); // Good Friday
   });
@@ -157,7 +157,7 @@ describe('header trader figures', () => {
 describe('crosshair label', () => {
   it('carries the full date, trader style', () => {
     expect(crosshairLabel(utc('2025-11-10T05:00:00'), { daily: true })).toBe('Mon 10 Nov 2025');
-    expect(crosshairLabel(utc('2026-11-05T19:35:00'), { daily: false, timeZone: 'America/New_York' })).toBe('Thu 05 Nov 14:35');
+    expect(crosshairLabel(utc('2026-11-05T19:35:00'), { daily: false, timeZone: 'America/New_York' })).toBe('Thu 05 Nov 2:35 PM');
   });
 });
 
@@ -192,11 +192,11 @@ describe('square grid', () => {
     expect(boundaries(times, 0, 6, 'week', 'utc')).toEqual([1, 6]);
   });
 
-  it('labels: years, months, dates and 24-hour times', () => {
+  it('labels: years, months, dates and clock times', () => {
     expect(gridLabel(utc('2025-01-02T05:00:00'), 'year', 'utc')).toBe('2025');
     expect(gridLabel(utc('2025-02-03T05:00:00'), 'month', 'utc')).toBe('Feb');
     expect(gridLabel(utc('2025-11-10T05:00:00'), 'week', 'utc')).toBe('Nov 10');
-    expect(gridLabel(utc('2025-11-10T14:00:00'), 'h1', 'utc')).toBe('14:00');
+    expect(gridLabel(utc('2025-11-10T14:00:00'), 'h1', 'utc')).toBe('2:00 PM');
   });
 
   it('year row: under the first label, then under the first label of each new year (rollover)', () => {

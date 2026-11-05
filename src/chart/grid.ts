@@ -8,6 +8,7 @@
  * - our own time-axis labels at those vertical lines, with the year on a second row under the first label of each year.
  * One controller per chart (attachSquareGrid, called by followTheme for every chart); pure parts are tested.
  */
+import { clockText } from './clock';
 import type { IChartApi, IPaneApi, IPanePrimitive, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, SeriesType, Time } from 'lightweight-charts';
 
 // ---------- Pure maths ----------
@@ -126,13 +127,13 @@ const fmt = (cache: Map<Zone, Intl.DateTimeFormat>, zone: Zone, o: Intl.DateTime
   return f;
 };
 
-/** The label for a vertical line: the year, a month, a date ("Nov 10") or a 24-hour clock time. */
+/** The label for a vertical line: the year, a month, a date ("Nov 10") or a clock time (12- or 24-hour, clock.ts). */
 export function gridLabel(t: number, level: Level, zone: Zone): string {
   if (level === 'year') return String(parts(t, zone).y);
   if (level === 'quarter' || level === 'month') return fmt(fmtMonth, zone, { month: 'short' }).format(t * 1000);
   if (level === 'week' || level === 'day') return fmt(fmtMonthDay, zone, { month: 'short', day: 'numeric' }).format(t * 1000);
   const p = parts(t, zone);
-  return `${String(p.h).padStart(2, '0')}:${String(p.mi).padStart(2, '0')}`;
+  return clockText(p.h, p.mi);
 }
 
 /** Year row: which labels (by position in the list) get the year under them: the first, then each new year. */
@@ -295,7 +296,7 @@ class SquareGrid {
     const span = priceTickSpan(high, low, height, Math.ceil(layout.fontSize * density), base);
     if (!span) return { ys: [], spanPx: 0 };
     const spanPx = (span / (high - low)) * height;
-    const step = cell && Math.abs(Math.log(spanPx / 2 / cell)) < Math.abs(Math.log(spanPx / cell)) && spanPx / 2 >= 20 ? span / 2 : span;
+    const step = cell && Math.abs(Math.log(spanPx / 2 / cell)) < Math.abs(Math.log(spanPx / cell)) && spanPx / 2 >= 14 ? span / 2 : span;
     const ys: number[] = [];
     for (let p = Math.ceil(low / step) * step; p <= high; p += step) {
       const y = series.priceToCoordinate(p);
@@ -328,6 +329,17 @@ class SquareGrid {
       labelTimes.push(times[i]);
     }
     const cell = xs.length > 1 ? (xs[xs.length - 1] - xs[0]) / (xs.length - 1) : spanPx;
+    // Past the data (the empty space right of the last candle, or left of the first) there are no calendar
+    // boundaries: carry the lines on at the same spacing so the cells stay square there too (no labels).
+    if (xs.length && cell >= 8) {
+      const dataEnd = (ts.logicalToCoordinate((times.length - 1) as never) ?? width) + pxPerBar / 2;
+      for (let x = xs[xs.length - 1] + cell; x < width; x += cell) if (x > dataEnd) (xs.push(x), labelTimes.push(NaN));
+      const dataStart = (ts.logicalToCoordinate(0 as never) ?? 0) - pxPerBar / 2;
+      const before: number[] = [];
+      for (let x = xs[0] - cell; x > 0; x -= cell) if (x < dataStart) before.unshift(x);
+      xs.unshift(...before);
+      labelTimes.unshift(...before.map(() => NaN));
+    }
     this.layout = { key, xs, labelTimes, level: pick?.level ?? 'day', zone, cell };
     // for checks: the cell size in CSS pixels (horizontal x vertical spacing)
     try {
@@ -383,6 +395,7 @@ class SquareGrid {
     const placed: { x: number; t: number }[] = [];
     let right = -Infinity;
     layout.xs.forEach((x, i) => {
+      if (!Number.isFinite(layout.labelTimes[i])) return; // a line carried past the data
       const text = gridLabel(layout.labelTimes[i], layout.level, layout.zone);
       const w = ctx.measureText(text).width;
       const left = Math.round(x - w / 2);
@@ -391,7 +404,8 @@ class SquareGrid {
       right = left + w;
       placed.push({ x: left, t: layout.labelTimes[i] });
     });
-    if (layout.level !== 'year' && height >= size * 2 + 10) {
+    // the year row (daily-type levels only: intraday charts use that row for the session times, axisChrome.ts)
+    if (DAILY_LEVELS.includes(layout.level) && layout.level !== 'year' && height >= size * 2 + 10) {
       ctx.font = `600 ${size - 2}px ${o.fontFamily}`;
       ctx.globalAlpha = 0.8;
       for (const { at, year } of yearRow(placed.map((p) => p.t), layout.zone)) ctx.fillText(String(year), placed[at].x, 8 + size);

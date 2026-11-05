@@ -5,6 +5,7 @@
  * own indicator rows (with hide/settings/remove buttons) in `rows`; the security GP tab lets the box build simple ones.
  */
 import { indicatorLabel } from '../indicators/library';
+import { clockText } from './clock';
 import { THEME } from '../ui/theme';
 import { h } from '../ui/dom';
 import type { ChartView } from './ChartView';
@@ -17,7 +18,8 @@ const THROTTLE_MS = 80;
 const dailyFmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 /** "Nov 5 '26": Bloomberg's "High on 12/16/14", in words. */
 const dailyDate = { format: (ms: number) => `${dailyFmt.format(ms)} '${String(new Date(ms).getUTCFullYear()).slice(2)}` };
-const intradayDate = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const monthDay = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+const intradayDate = { format: (ms: number) => { const d = new Date(ms); return `${monthDay.format(ms)}, ${clockText(d.getHours(), d.getMinutes())}`; } };
 
 export interface ExtraRow {
   label: string;

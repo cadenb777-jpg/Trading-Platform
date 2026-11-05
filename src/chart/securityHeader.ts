@@ -5,6 +5,7 @@
  * Built once; update() only changes text in place, so live ticks cost almost nothing.
  */
 import { h } from '../ui/dom';
+import { clockText } from './clock';
 import { formatCompact, formatPrice, sessionClock, type DaySummary } from './summary';
 
 export interface HeaderInput {
@@ -40,7 +41,7 @@ const FIELDS: { key: Key; label: string; title: string; wide?: boolean }[] = [
   { key: 'clock', label: '', title: 'US stock session (9:30-16:00 New York; NYSE holidays and 13:00 early closes for 2026-2027)', wide: true },
 ];
 
-const timeFormat = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const timeFormat = { format: (ms: number) => { const d = new Date(ms); return clockText(d.getHours(), d.getMinutes()); } };
 const dateFormat = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
 export function createSecurityHeader() {

@@ -1,6 +1,7 @@
 /** The full chart screen: toolbar, drawing tools, chart with indicators, and watchlist. */
 import { CHART_TYPES, ChartView, THEME, type ChartType } from '../chart/ChartView';
 import { DRAWING_TOOLS, DrawingManager, type Tool } from '../chart/drawings';
+import { getClock, setClock } from '../chart/clock';
 import { SessionShading, isRegularHours, regularHoursOnly } from '../chart/session';
 import { VolumeProfile } from '../chart/volumeProfile';
 import { PROVIDERS, getProvider } from '../data';
@@ -81,7 +82,13 @@ export function createChartPage() {
   onStateChange(updateAlertCount);
   onAlertsChange(updateAlertCount);
   alertBtn.addEventListener('click', () => openAlertsDialog(currentRef(), bars[bars.length - 1]?.close ?? null));
-  const extBtn = h('button', { class: 'btn fit-btn ext-btn', title: 'Extended hours: show pre-market (4:00-9:30 am ET) and after-hours (4-8 pm ET) trading on intraday stock charts. Shaded areas are outside regular hours.', 'aria-label': 'Extended hours' }, 'Ext');
+  const extBtn = h('button', { class: 'btn fit-btn ext-btn', title: 'Extended hours: show pre-market (4:00-9:30 am ET) and after-hours (4-8 pm ET) trading on intraday stock charts. Shading: pre-market blue, after-hours copper, overnight grey; the open (green) and close (red) times are marked on the time axis.', 'aria-label': 'Extended hours' }, 'Ext');
+  // 12- or 24-hour times on every chart's time axis, crosshair and legend (src/chart/clock.ts)
+  const clockBtn = h('button', { class: 'btn fit-btn clock-btn', title: 'Clock: switch chart times between 12-hour (2:30 PM) and 24-hour (14:30)', 'aria-label': 'Clock format' }, getClock());
+  clockBtn.addEventListener('click', () => {
+    setClock(getClock() === '12h' ? '24h' : '12h');
+    clockBtn.textContent = getClock();
+  });
   const fitBtn = h('button', { class: 'btn fit-btn', title: 'Fit the chart to the candles (F)', 'aria-label': 'Fit chart', onclick: () => chart?.fit() }, icon('fit', 18), ' Fit');
   const side = h('aside', { class: 'watch-side' });
   // the chart's link chip: other panels of its colour follow its symbol, and it follows theirs
@@ -134,6 +141,7 @@ export function createChartPage() {
       profileBtn,
       alertBtn,
       extBtn,
+      clockBtn,
       fitBtn,
       h('button', { class: 'btn fit-btn', title: 'Backtest this chart: a strategy from its symbol, timeframe and indicators', 'aria-label': 'Backtest this chart', onclick: () => window.dispatchEvent(new Event('tp:backtest-chart')) }, icon('backtest', 18)),
       h('span', { class: 'spacer' }),

@@ -302,6 +302,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   our axis labels and year row, last-price tag and session lines (axis.ts, axisChrome.ts ChartChrome primitive),
   volume in its own slim pane, no library logo (attribution in Settings > About). Grid and time labels: our square
   dotted grid primitive (src/chart/grid.ts) on every chart via followTheme; the library grid and time labels stay off.
+  Chart clock (src/chart/clock.ts): 12-hour by default, 12h/24h button on the Chart page (`tp:clock` repaints every chart).
+  Session look (src/chart/session.ts sessionPhase, axisChrome.ts): pre-market shaded sky, after-hours copper, overnight
+  grey; open (green) and close (red) lines with their times in colour on the time axis' second row. The square grid
+  continues past the data at the same spacing. Text roles: --label (amber) for labels/headers, white figures.
   Chart legend (chartPage renderLegend) is rebuilt only when its layout changes; values update in place. Indicator
   instances can hide single plots (`hiddenPlots`) and levels (`hideLevels`); the manager is openIndicatorManager.
   Browser reply cache: engineRequest reuses read-only replies for ENGINE_CACHE_MS (20 s quotes .. 60 min catalogs),
