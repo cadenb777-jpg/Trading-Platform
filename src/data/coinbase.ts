@@ -15,6 +15,8 @@ const PAGE = 300;
 const NATIVE = [86400, 21600, 3600, 900, 300, 60];
 const TARGET_BARS = 600;
 const MAX_PAGES = 10;
+/** Pages allowed when the range bar asks for a longer history (5 years of daily candles, ~4 months of 15-minute). */
+const RANGE_PAGES = 40;
 const TRADE_PAGES = 3;
 
 /** Coinbase candle format: [time, low, high, open, close, volume], newest first. */
@@ -26,10 +28,12 @@ async function inBatches<T>(tasks: (() => Promise<T>)[], size: number): Promise<
   return out;
 }
 
-async function loadCandles(symbol: string, timeframe: Timeframe, signal: AbortSignal): Promise<Bar[]> {
+async function loadCandles(symbol: string, timeframe: Timeframe, signal: AbortSignal, days = 0): Promise<Bar[]> {
   const target = TIMEFRAME_SECONDS[timeframe];
   const granularity = NATIVE.find((g) => target % g === 0 && g <= target) ?? 60;
-  const pages = Math.min(MAX_PAGES, Math.max(3, Math.ceil((TARGET_BARS * (target / granularity)) / PAGE)));
+  const usual = Math.min(MAX_PAGES, Math.max(3, Math.ceil((TARGET_BARS * (target / granularity)) / PAGE)));
+  const forDays = Math.ceil((Math.min(days, 365 * 20) * 86400) / granularity / PAGE);
+  const pages = Math.max(usual, Math.min(RANGE_PAGES, forDays));
   const now = Math.floor(Date.now() / 1000);
   const results = await inBatches(
     Array.from({ length: pages }, (_, i) => () => {
@@ -87,8 +91,8 @@ export const coinbase: DataProvider = {
     return `${s}-USD`;
   },
 
-  loadHistory(symbol, timeframe, signal) {
-    return TIMEFRAME_SECONDS[timeframe] < 60 ? loadFromTrades(symbol, timeframe, signal) : loadCandles(symbol, timeframe, signal);
+  loadHistory(symbol, timeframe, signal, days) {
+    return TIMEFRAME_SECONDS[timeframe] < 60 ? loadFromTrades(symbol, timeframe, signal) : loadCandles(symbol, timeframe, signal, days);
   },
 
   subscribe(symbol, handlers) {

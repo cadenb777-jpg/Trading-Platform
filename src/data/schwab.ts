@@ -129,6 +129,9 @@ const HISTORY_PLAN: Record<Timeframe, { resolution: string; days: number } | nul
 };
 
 /** With Alpaca keys saved, the helper fills intraday history older than Schwab keeps, so these charts reach ~3 years. */
+/** The most history the range bar asks for per bar size (the helper itself stops at 20 years). */
+const HISTORY_CAP_DAYS: Record<string, number> = { '1m': 48, '5m': 270, '10m': 270, '15m': 270, '30m': 270, '1D': 365 * 20, '1W': 365 * 20 };
+
 const ALPACA_HISTORY_PLAN: Partial<Record<Timeframe, { resolution: string; days: number }>> = {
   '30m': { resolution: '30m', days: 365 * 3 },
   '1h': { resolution: '30m', days: 365 * 3 },
@@ -602,14 +605,16 @@ export const schwab: DataProvider = {
 
   normalizeSymbol: (input) => input.trim().toUpperCase(),
 
-  async loadHistory(symbol, timeframe, signal) {
+  async loadHistory(symbol, timeframe, signal, days) {
     checkAlpaca();
     const plan = (alpacaSet && ALPACA_HISTORY_PLAN[timeframe]) || HISTORY_PLAN[timeframe];
     if (!plan) {
       await helper.connect();
       return [];
     }
-    const reply = await helper.request({ type: 'history', symbol, resolution: plan.resolution, days: plan.days }, signal).catch((err: Error) => {
+    // The range bar may ask for more than the usual plan, up to what Schwab keeps for that bar size.
+    const want = Math.max(plan.days, Math.min(days ?? 0, HISTORY_CAP_DAYS[plan.resolution] ?? plan.days));
+    const reply = await helper.request({ type: 'history', symbol, resolution: plan.resolution, days: want }, signal).catch((err: Error) => {
       noteFailure('history', err);
       throw err;
     });

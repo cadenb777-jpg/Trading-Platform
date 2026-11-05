@@ -26,7 +26,11 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts';
 import { externalData } from '../indicators/external';
-import { THEME, followTheme } from '../ui/theme';
+import { THEME, chartThemeOptions, followTheme } from '../ui/theme';
+import { crosshairLabel, tickLabel, yearsOnAxis, type AxisOptions } from './axis';
+import { CHART_FONT, ChartChrome } from './axisChrome';
+import { firstIndexFrom } from './range';
+import './chartFeel.css';
 import { easeOutCubic, reducedMotion, withAlpha } from './frame';
 import { firstDifference, newTailState, tailUpdate, type TailState } from './incremental';
 import { expectedCost, indicatorWorker, recordCost } from './workerClient';
@@ -133,6 +137,10 @@ export class ChartView {
   private indicatorFrom: number | null = null;
   private indicatorTimer: ReturnType<typeof setTimeout> | 0 = 0;
   private lastIndicatorFlush = 0;
+  /** How the time axis reads dates (daily bars in UTC, intraday in the viewer's zone). */
+  private axisOpts: AxisOptions = { daily: false };
+  /** Our own last-price tag, year row and session separators. */
+  private readonly chrome: ChartChrome;
 
   /** Called with the bar index under the mouse (or the latest bar when the mouse leaves). */
   onHover: (index: number) => void = () => {};
@@ -147,33 +155,57 @@ export class ChartView {
 
   constructor(container: HTMLElement, options: { worker?: boolean } = {}) {
     this.useWorker = options.worker ?? true;
+    const look = chartThemeOptions();
     this.chart = createChart(container, {
+      ...look,
       autoSize: true,
       layout: {
+        ...look.layout,
         background: { type: ColorType.Solid, color: THEME.background },
-        textColor: THEME.text,
-        fontSize: 13,
-        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-        panes: { separatorColor: THEME.border, separatorHoverColor: '#2962ff55', enableResize: true },
+        // Our fonts on both axes, a touch larger than the library's, with equal-width digits (chartFeel.css).
+        fontSize: 13.5,
+        fontFamily: CHART_FONT,
+        panes: { ...look.layout.panes, enableResize: true },
       },
-      grid: { vertLines: { color: THEME.grid }, horzLines: { color: THEME.grid } },
       // The crosshair snaps to the nearest open/high/low/close; a flick of the chart glides to a stop.
-      crosshair: { mode: CrosshairMode.MagnetOHLC },
+      crosshair: { ...look.crosshair, mode: CrosshairMode.MagnetOHLC },
       kineticScroll: { mouse: true, touch: true },
-      // Denser price labels (smaller steps between them) than the library's default.
-      rightPriceScale: { borderColor: THEME.border, tickMarkDensity: 1.6 },
-      timeScale: { borderColor: THEME.border, timeVisible: true, secondsVisible: false, rightOffset: 8 },
+      // Denser price labels than the library's default; a steady width and only whole labels, so the axis stays crisp.
+      rightPriceScale: { ...look.rightPriceScale, tickMarkDensity: 1.6, minimumWidth: 80, entireTextOnly: true, ticksVisible: true },
+      leftPriceScale: { ...look.leftPriceScale, minimumWidth: 64, entireTextOnly: true, ticksVisible: true },
+      // Taller time axis: month/day labels on the first row, the year on the second (ChartChrome).
+      timeScale: {
+        ...look.timeScale,
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: 8,
+        minimumHeight: 42,
+        ticksVisible: true,
+        tickMarkFormatter: (t: Time, type: number) => tickLabel(t as number, type, this.axisOpts),
+      },
+      localization: { timeFormatter: (t: Time) => crosshairLabel(t as number, this.axisOpts) },
     });
     this.stopTheme = followTheme(this.chart, {
       onChange: () => {
-        this.chart.applyOptions({ layout: { panes: { separatorColor: THEME.border } } });
         this.recolorMain();
+        this.chrome.update();
       },
     });
     this.overlay = document.createElement('div');
     this.overlay.className = 'chart-fx';
     container.append(this.overlay);
     this.main = this.createMainSeries('candles');
+    this.chrome = new ChartChrome({
+      bars: () => this.bars,
+      axis: () => this.axisOpts,
+      sessions: () => this.market === 'schwab' && TIMEFRAME_SECONDS[this.timeframe] < 86400,
+      formatPrice: (p) => this.formatPrice(p),
+      priceToY: (p) => this.priceToY(p),
+      indexToX: (i) => this.chart.timeScale().logicalToCoordinate(i as Logical),
+      visibleRange: () => this.chart.timeScale().getVisibleLogicalRange(),
+    });
+    this.attachPrimitive(this.chrome);
+    this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.updateAxisSpan());
     this.chart.subscribeCrosshairMove((param) => {
       const idx = param.time === undefined ? undefined : this.timeIndex.get(param.time as number);
       this.onHover(idx ?? this.bars.length - 1);
@@ -227,6 +259,64 @@ export class ChartView {
     return this.bars.slice(Math.max(0, Math.floor(range.from)), Math.max(0, Math.ceil(range.to) + 1));
   }
 
+  /** Re-applying the formatter makes the library drop the labels it formatted the other way. */
+  private setAxis(next: AxisOptions) {
+    this.axisOpts = next;
+    this.chart.applyOptions({ timeScale: { tickMarkFormatter: (t: Time, type: number) => tickLabel(t as number, type, this.axisOpts) } });
+  }
+
+  /** Several years on screen: the years move into the axis labels (see yearsOnAxis). */
+  private updateAxisSpan() {
+    const range = this.chart.timeScale().getVisibleLogicalRange();
+    const n = this.bars.length;
+    if (!range || !n) return;
+    const a = this.bars[Math.max(0, Math.min(n - 1, Math.ceil(range.from)))].time;
+    const b = this.bars[Math.max(0, Math.min(n - 1, Math.floor(range.to)))].time;
+    const years = yearsOnAxis(b - a);
+    if (years !== !!this.axisOpts.years) this.setAxis({ ...this.axisOpts, years });
+  }
+
+  /** Every loaded bar (read only). */
+  allBars(): readonly Bar[] {
+    return this.bars;
+  }
+
+  /** Calls `fn` whenever the bars on screen change (scroll, zoom, new data); returns a function that stops it. */
+  onVisibleRange(fn: () => void): () => void {
+    const ts = this.chart.timeScale();
+    ts.subscribeVisibleLogicalRangeChange(fn);
+    return () => {
+      try {
+        ts.unsubscribeVisibleLogicalRangeChange(fn);
+      } catch {
+        // chart already removed
+      }
+    };
+  }
+
+  /** The visible bar indexes (fractional), or null before any data. */
+  visibleLogicalRange(): { from: number; to: number } | null {
+    return this.chart.timeScale().getVisibleLogicalRange();
+  }
+
+  /** Shows the bars from `from` (unix seconds) to the latest, with a little room on the right (the range bar). */
+  showFrom(from: number) {
+    const n = this.bars.length;
+    if (!n) return;
+    const start = Math.min(n - 1, firstIndexFrom(this.bars.map((b) => b.time), from));
+    for (const pane of this.chart.panes()) {
+      for (const series of pane.getSeries()) series.priceScale().applyOptions({ autoScale: true });
+    }
+    cancelAnimationFrame(this.fitFrame);
+    const count = n - start;
+    this.chart.timeScale().setVisibleLogicalRange({ from: start - 0.5, to: n - 1 + Math.max(1, Math.round(count * 0.04)) });
+  }
+
+  /** The indicators on the chart in the order they were added, for legends. */
+  indicatorList(): { instance: IndicatorInstance; def: IndicatorDef }[] {
+    return [...this.indicators.values()].map((r) => ({ instance: r.instance, def: r.def }));
+  }
+
   barAt(index: number): Bar | undefined {
     return this.bars[index];
   }
@@ -245,6 +335,8 @@ export class ChartView {
     this.timeframe = timeframe;
     this.timeIndex.clear();
     bars.forEach((b, i) => this.timeIndex.set(b.time, i));
+    const daily = TIMEFRAME_SECONDS[timeframe] >= 86400;
+    if (daily !== this.axisOpts.daily) this.setAxis({ ...this.axisOpts, daily });
     this.chart.applyOptions({ timeScale: { secondsVisible: TIMEFRAME_SECONDS[timeframe] < 60 } });
     this.applyPriceFormat();
     this.heikin = [];
@@ -270,6 +362,7 @@ export class ChartView {
     }
     if (refit) this.fit(false);
     this.refreshPrimitives();
+    this.chrome.update();
   }
 
   /** Lays a snapshot of the current chart over it and fades it out while the new data draws underneath. */
@@ -522,7 +615,8 @@ export class ChartView {
     const markersOnly = def.plots.every((p) => p.type === 'marker');
     const placement: Placement = def.placement === 'volume' ? 'volume' : markersOnly ? 'overlay' : (instance.placement ?? def.placement);
     const r: RenderedIndicator = { instance, def, placement, series: {}, values: {}, levels: [], tail: newTailState(), request: 0, dirtyFrom: null, opacity: 1 };
-    const paneIndex = placement === 'separate' ? this.chart.panes().length : 0;
+    // Oscillators and volume get panes of their own below the price (volume as a slim histogram with its own axis).
+    const paneIndex = placement === 'overlay' ? 0 : this.chart.panes().length;
     // An oscillator moved onto the price chart gets its own invisible scale so it doesn't squash the candles.
     const ownScale = placement === 'overlay' && def.placement === 'separate';
     for (const plot of def.plots.filter((p) => p.type !== 'marker')) {
@@ -532,7 +626,7 @@ export class ChartView {
         priceLineVisible: false,
         lastValueVisible: placement !== 'volume',
         title: '',
-        ...(placement === 'volume' ? { priceScaleId: 'volume', priceFormat: { type: 'volume' as const } } : {}),
+        ...(placement === 'volume' ? { priceFormat: { type: 'volume' as const }, lastValueVisible: true } : {}),
         ...(ownScale ? { priceScaleId: `ind-${instance.uid}`, lastValueVisible: false } : {}),
       };
       const first = Object.values(r.series)[0];
@@ -552,7 +646,9 @@ export class ChartView {
       return;
     }
     if (placement === 'volume') {
-      firstSeries.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+      // A slim strip: about a sixth of the price pane.
+      firstSeries.getPane().setStretchFactor(this.chart.panes()[0].getStretchFactor() / 5);
+      firstSeries.priceScale().applyOptions({ scaleMargins: { top: 0.15, bottom: 0 }, tickMarkDensity: 4 });
     }
     if (ownScale) {
       firstSeries.priceScale().applyOptions({ scaleMargins: { top: 0.65, bottom: 0.05 } });
@@ -598,8 +694,10 @@ export class ChartView {
     }
   }
 
+  /** True when the indicator has a pane of its own (oscillators, volume), so its legend row sits in that pane. */
   isSeparatePane(uid: string): boolean {
-    return this.indicators.get(uid)?.placement === 'separate';
+    const p = this.indicators.get(uid)?.placement;
+    return p === 'separate' || p === 'volume';
   }
 
   hasIndicator(uid: string): boolean {
@@ -722,8 +820,9 @@ export class ChartView {
   private createMainSeries(type: ChartType): ISeriesApi<SeriesType> {
     const { up, down, accent } = THEME;
     // Last-price line: thin and dashed, green while the latest candle is up and red while it is down (the library
-    // colours it from the last bar when priceLineColor is empty); it just moves with the price, no flashing.
-    const common = { priceLineVisible: true, lastValueVisible: true, priceLineStyle: LineStyle.Dashed, priceLineWidth: 1 as const, priceLineColor: '' };
+    // colours it from the last bar when priceLineColor is empty); it just moves with the price, no flashing. The
+    // price-axis tag is our own bold one (ChartChrome), so the library's label is off.
+    const common = { priceLineVisible: true, lastValueVisible: false, priceLineStyle: LineStyle.Dashed, priceLineWidth: 1 as const, priceLineColor: '' };
     switch (type) {
       case 'hollow':
         return this.chart.addSeries(
@@ -747,8 +846,8 @@ export class ChartView {
   }
 
   private applyPriceFormat() {
-    // Leave the bottom fifth for volume bars so they don't cover the candles.
-    this.main.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 } });
+    // Volume has its own pane now, so the candles use the whole price pane.
+    this.main.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.06 } });
     const last = this.bars[this.bars.length - 1];
     const precision = last ? pricePrecision(last.close) : 2;
     this.main.applyOptions({ priceFormat: { type: 'price', precision, minMove: 10 ** -precision } });
