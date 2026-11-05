@@ -14,7 +14,7 @@ import { createSecurityHeader } from '../chart/securityHeader';
 import { daySummary, formatPrice } from '../chart/summary';
 import { TIMEFRAME_SECONDS } from '../types';
 import { getProvider } from '../data';
-import { guessMarket } from '../data/quotes';
+import { guessMarket, subscribeQuote } from '../data/quotes';
 import { getIndicator } from '../indicators/library';
 import { newIndicatorInstance } from '../state';
 import type { IndicatorInstance } from '../indicators/types';
@@ -61,7 +61,8 @@ export function chartTab(symbol: string, still: () => boolean): ChartTab {
   const header = createSecurityHeader();
   const state = createChartState();
   const wrap = h('div', { class: 'sv-chart-wrap' }, chartEl, state.el, message);
-  const rangeBar = createRangeBar({ view: () => view, timeframe: () => tf, reload: (days) => void load(days) });
+  const provider = () => getProvider(guessMarket(symbol)?.provider ?? 'schwab');
+  const rangeBar = createRangeBar({ view: () => view, timeframe: () => tf, maxDays: () => provider().maxHistoryDays(tf), reload: (days) => void load(days) });
   const el = h(
     'div',
     { class: 'sv-chart-tab' },
@@ -83,6 +84,30 @@ export function chartTab(symbol: string, still: () => boolean): ChartTab {
   /** The history request on its way (aborted when the timeframe changes or the tab closes). */
   let pending: AbortController | null = null;
   let pendingCompare: AbortController | null = null;
+  /** Days of history the main line was loaded with (the compare line loads the same). */
+  let loadedDays: number | undefined;
+  let compareLast: number | null = null;
+  /** The latest live quote, if any. */
+  let live: { last: number; at: number } | null = null;
+
+  /** The header from the loaded bars, with the live quote as the last price when there is one. */
+  const paintHeader = () => {
+    const s = daySummary(view.allBars() as never, tf, marketTimeZone(view.market));
+    if (s && live) {
+      s.last = live.last;
+      s.change = s.prevClose === null ? null : live.last - s.prevClose;
+      s.changePct = s.change === null || !s.prevClose ? null : (s.change / s.prevClose) * 100;
+    }
+    header.update({ symbol: symbol.replace(/^\$/, ''), summary: s, at: live?.at ?? null, daily: TIMEFRAME_SECONDS[tf] >= 86400 && !live, market: view.market, price: (v) => view.formatPrice(v) });
+  };
+  const paintCompareLegend = () => {
+    if (!compare) return;
+    const mainLast = live?.last ?? view.barAt(view.barCount - 1)?.close;
+    legend.setExtra([
+      { axis: 'L1', label: compare.symbol, color: THEME.viz2, value: compareLast !== null ? formatPrice(compareLast) : '—' },
+      { axis: 'R1', label: symbol.replace(/^\$/, ''), color: THEME.accent, value: mainLast != null ? view.formatPrice(mainLast) : '—' },
+    ]);
+  };
 
   const addStudy = (key: string) => {
     const spec = STUDIES.find((s) => s.key === key)!;
@@ -123,13 +148,14 @@ export function chartTab(symbol: string, still: () => boolean): ChartTab {
     const ctl = (pending = new AbortController());
     if (!view.barCount) state.loading(`Loading ${symbol.replace(/^\$/, '')} · ${tf}…`);
     try {
-      const bars = await getProvider(ref.provider).loadHistory(ref.symbol, tf, ctl.signal, Math.max(days ?? 0, rangeBar.daysWanted() ?? 0) || undefined);
+      loadedDays = Math.max(days ?? 0, rangeBar.daysWanted() ?? 0) || undefined;
+      const bars = await getProvider(ref.provider).loadHistory(ref.symbol, tf, ctl.signal, loadedDays);
       if (!alive || mine !== seq || !still()) return;
       state.hide();
       view.setBars(bars, tf);
       rangeBar.apply();
       if (!bars.length) state.empty(`No price history for ${symbol.replace(/^\$/, '')} at ${tf}`);
-      header.update({ symbol: symbol.replace(/^\$/, ''), summary: daySummary(bars, tf, marketTimeZone(view.market)), daily: TIMEFRAME_SECONDS[tf] >= 86400, market: view.market, price: (v) => view.formatPrice(v) });
+      paintHeader();
       legend.refresh();
       if (compare) await drawCompare(compare.symbol);
     } catch (err) {
@@ -147,7 +173,8 @@ export function chartTab(symbol: string, still: () => boolean): ChartTab {
     pendingCompare?.abort();
     const ctl = (pendingCompare = new AbortController());
     try {
-      const bars = await getProvider(ref.provider).loadHistory(ref.symbol, tf, ctl.signal);
+      // the same history (days) as the main line, so both cover the range on screen
+      const bars = await getProvider(ref.provider).loadHistory(ref.symbol, tf, ctl.signal, loadedDays);
       if (!alive || ctl.signal.aborted) return;
       // Bloomberg's multi-line chart: the compare symbol is read on its own left axis (L1), the security on the right (R1).
       compare ??= { symbol: sym, series: view.chart.addSeries(LineSeries, { color: THEME.viz2, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, priceScaleId: 'left', title: '' }) };
@@ -157,10 +184,8 @@ export function chartTab(symbol: string, still: () => boolean): ChartTab {
       const a = bars[0]?.close;
       const z = bars[bars.length - 1]?.close;
       compareNote.textContent = a && z ? `${sym} ${fmtPct(z / a - 1, 1, true)} over the loaded bars` : '';
-      legend.setExtra([
-        { axis: 'L1', label: sym, color: THEME.viz2, value: z ? formatPrice(z) : '—' },
-        { axis: 'R1', label: symbol.replace(/^\$/, ''), color: THEME.accent, value: view.barCount ? view.formatPrice(view.barAt(view.barCount - 1)!.close) : '—' },
-      ]);
+      compareLast = z ?? null;
+      paintCompareLegend();
     } catch (err) {
       if (alive && !ctl.signal.aborted) compareNote.textContent = `${sym}: ${reasonOf(err)}`;
     }
@@ -171,6 +196,7 @@ export function chartTab(symbol: string, still: () => boolean): ChartTab {
     compare = null;
     compareNote.textContent = '';
     view.chart.applyOptions({ leftPriceScale: { visible: false } });
+    compareLast = null;
     legend.setExtra([]);
   }
 
@@ -182,6 +208,14 @@ export function chartTab(symbol: string, still: () => boolean): ChartTab {
   });
   compareInput.addEventListener('input', () => !compareInput.value.trim() && clearCompare());
 
+  // Live: the header's last/change and the R1 legend value follow the quote stream (the candles stay as loaded).
+  const stopQuote = subscribeQuote({ provider: guessMarket(symbol)?.provider ?? 'schwab', symbol: guessMarket(symbol)?.symbol ?? symbol }, (q) => {
+    if (q.last == null || !alive) return;
+    live = { last: q.last, at: Date.now() / 1000 };
+    paintHeader();
+    paintCompareLegend();
+  });
+
   void load();
   return {
     el,
@@ -192,6 +226,7 @@ export function chartTab(symbol: string, still: () => boolean): ChartTab {
       pendingCompare?.abort();
       header.destroy();
       legend.destroy();
+      stopQuote();
       try {
         view.destroy();
       } catch {

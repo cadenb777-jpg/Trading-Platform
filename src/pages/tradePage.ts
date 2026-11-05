@@ -22,7 +22,7 @@ import { cancelOrder, envBadge, friendly, futuresAccount, IRA_NOTE, loadSnapshot
 import { dataTable } from '../ui/charts';
 import { activatable, activatableRows, formatPrice, h, timeAgo, toast } from '../ui/dom';
 import { fallbackNotice, valueGapNote } from '../trade/accountNotes';
-import { THEME, followTheme } from '../ui/theme';
+import { THEME, chartThemeOptions, followTheme } from '../ui/theme';
 import { tickerAttr } from '../ui/tickerCard';
 import { isStockSymbol, linkPanel, markPanel } from '../ui/linkGroups';
 
@@ -433,9 +433,9 @@ export function createTradePage() {
       if (!chart) {
         chartBox.replaceChildren();
         chart = createChart(chartBox, {
+          ...chartThemeOptions(true), // our square dotted grid (src/chart/grid.ts) and theme colours from creation
           autoSize: true,
           layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text },
-          grid: { vertLines: { visible: false }, horzLines: { color: THEME.grid } },
           rightPriceScale: { borderColor: THEME.border },
           timeScale: { borderColor: THEME.border },
         });

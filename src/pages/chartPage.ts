@@ -100,6 +100,7 @@ export function createChartPage() {
   const rangeBar = createRangeBar({
     view: () => (started ? chart : null),
     timeframe: () => state.timeframe,
+    maxDays: () => provider().maxHistoryDays(state.timeframe),
     reload: (days) => {
       forcedDays = days;
       reload();

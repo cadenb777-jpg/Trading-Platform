@@ -1,14 +1,11 @@
 /**
  * Our own drawing on top of the chart library, so the chart reads as the platform's and not as a stock library chart:
  * - the last-price tag on the price axis (a bold rounded tag, green or red by the last candle, no flashing),
- * - the year row under the time axis labels (yearMarks in axis.ts),
  * - thin session separators at each New York day open on intraday stock charts.
  * One series primitive on the main series (ChartView moves it when the chart type changes).
  */
 import type { IPrimitivePaneView, ISeriesPrimitive, SeriesAttachedParameter, Time } from 'lightweight-charts';
 import { THEME } from '../ui/theme';
-import type { AxisOptions } from './axis';
-import { yearMarks } from './axis';
 import { withAlpha } from './frame';
 import { dayKey } from './range';
 import type { Bar } from '../types';
@@ -18,7 +15,6 @@ export const CHART_FONT = "'TP Figures', 'Inter', -apple-system, BlinkMacSystemF
 
 export interface ChromeHost {
   bars(): Bar[];
-  axis(): AxisOptions;
   /** Session separators apply (intraday stock bars). */
   sessions(): boolean;
   formatPrice(p: number): string;
@@ -48,11 +44,8 @@ export class ChartChrome implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
   private readonly pane = [view((c, w, h) => this.drawSessions(c, w, h), 'bottom')];
   private readonly priceAxis = [view((c, w) => this.drawLastTag(c, w))];
-  private readonly timeAxis = [view((c, w, h) => this.drawYears(c, w, h))];
   /** Day keys of the bars, recomputed only when the data changes. */
   private sessionCache: { key: string; starts: number[] } | null = null;
-  private times: number[] = [];
-  private timesFor: Bar[] | null = null;
 
   constructor(private readonly host: ChromeHost) {}
 
@@ -70,9 +63,6 @@ export class ChartChrome implements ISeriesPrimitive<Time> {
   }
   priceAxisPaneViews() {
     return this.priceAxis;
-  }
-  timeAxisPaneViews() {
-    return this.timeAxis;
   }
 
   /** The last price in a bold tag: green while the latest candle is up, red while it is down. */
@@ -94,43 +84,6 @@ export class ChartChrome implements ISeriesPrimitive<Time> {
     ctx.fillStyle = THEME.onFill;
     ctx.textBaseline = 'middle';
     ctx.fillText(text, 9, top + h / 2 + 0.5);
-    ctx.restore();
-  }
-
-  /** The year under the first label of each year (and at the left edge for the first year on screen). */
-  private drawYears(ctx: Ctx, width: number, height: number) {
-    const range = this.host.visibleRange();
-    const bars = this.host.bars();
-    if (!range || !bars.length || this.host.axis().years) return;
-    if (this.timesFor !== bars || this.times.length !== bars.length) {
-      this.timesFor = bars;
-      this.times = bars.map((b) => b.time);
-    }
-    const times = this.times;
-    const marks = yearMarks(times, range.from, range.to, this.host.axis());
-    ctx.save();
-    ctx.font = `600 11px ${CHART_FONT}`;
-    ctx.fillStyle = withAlpha(THEME.text, 0.75);
-    ctx.textBaseline = 'bottom';
-    const placed: { x: number; edge: boolean }[] = [];
-    for (const m of marks) {
-      const x = this.host.indexToX(m.index);
-      if (x === null) continue;
-      placed.push({ x: m.edge ? 6 : x, edge: m.edge });
-    }
-    let right = -Infinity;
-    marks.forEach((m, i) => {
-      const p = placed[i];
-      if (!p) return;
-      const next = placed[i + 1];
-      if (p.edge && next && next.x - p.x < 56) return; // a real year boundary right beside the edge says it already
-      const text = String(m.year);
-      const w = ctx.measureText(text).width;
-      const x = p.edge ? p.x : Math.min(width - w - 2, Math.max(2, p.x - w / 2));
-      if (x < right + 12) return; // never overlap the year before
-      right = x + w;
-      ctx.fillText(text, x, height - 3);
-    });
     ctx.restore();
   }
 
@@ -157,8 +110,10 @@ export class ChartChrome implements ISeriesPrimitive<Time> {
     ctx.setLineDash([]);
     for (const i of this.sessionCache.starts) {
       if (i < range.from - 1 || i > range.to + 1) continue;
-      const x = this.host.indexToX(i - 0.5);
-      if (x === null) continue;
+      const here = this.host.indexToX(i);
+      const before = this.host.indexToX(i - 1);
+      if (here === null || before === null) continue;
+      const x = (here + before) / 2;
       ctx.beginPath();
       ctx.moveTo(Math.round(x) + 0.5, 0);
       ctx.lineTo(Math.round(x) + 0.5, height);

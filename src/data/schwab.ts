@@ -605,6 +605,11 @@ export const schwab: DataProvider = {
 
   normalizeSymbol: (input) => input.trim().toUpperCase(),
 
+  maxHistoryDays(timeframe) {
+    const plan = (alpacaSet && ALPACA_HISTORY_PLAN[timeframe]) || HISTORY_PLAN[timeframe];
+    return plan ? Math.max(plan.days, HISTORY_CAP_DAYS[plan.resolution] ?? plan.days) : 0;
+  },
+
   async loadHistory(symbol, timeframe, signal, days) {
     checkAlpaca();
     const plan = (alpacaSet && ALPACA_HISTORY_PLAN[timeframe]) || HISTORY_PLAN[timeframe];

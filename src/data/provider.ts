@@ -28,6 +28,8 @@ export interface DataProvider {
   normalizeSymbol(input: string): string;
   /** `days`: at least this many calendar days back (the chart's range bar asks for more; Infinity = all there is). */
   loadHistory(symbol: string, timeframe: Timeframe, signal: AbortSignal, days?: number): Promise<Bar[]>;
+  /** The most calendar days of history `days` can reach at a timeframe (the range bar caps its ranges to this). */
+  maxHistoryDays(timeframe: Timeframe): number;
   /** Starts streaming live trades. `lastPrice` is the latest loaded close. Returns a function that stops the stream. */
   subscribe(symbol: string, handlers: LiveHandlers, lastPrice: number): () => void;
 }

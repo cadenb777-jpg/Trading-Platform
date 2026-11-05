@@ -1,6 +1,6 @@
 /** Small reusable charts for analysis pages: date line charts (Lightweight Charts) and bar lists. */
 import { ColorType, LineSeries, createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
-import { THEME, followTheme } from './theme';
+import { THEME, chartThemeOptions, followTheme } from './theme';
 import { attachTooltip, isDailySeries, openChartWindow, toUnix } from './chartWindow';
 import { h } from './dom';
 import { tableTools, type TableToolsOptions } from './tableTools';
@@ -22,9 +22,9 @@ export function createLineChart(container: HTMLElement, opts: { percent?: boolea
   if (opts.height) container.style.height = `${opts.height}px`;
   const format = opts.format ?? ((v: number) => (opts.percent ? `${v.toFixed(1)}%` : compact(v)));
   const chart: IChartApi = createChart(container, {
+    ...chartThemeOptions(true), // our square dotted grid (src/chart/grid.ts) and theme colours from creation
     autoSize: true,
     layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text, fontFamily: "'Inter', sans-serif", fontSize: 12 },
-    grid: { vertLines: { visible: false }, horzLines: { color: THEME.grid } },
     rightPriceScale: { borderColor: THEME.border },
     timeScale: { borderColor: THEME.border },
     handleScroll: false,

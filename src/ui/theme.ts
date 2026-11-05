@@ -2,7 +2,8 @@
  * Light and dark mode. The page colours are CSS variables (style.css, `:root[data-theme='light']`); charts drawn on a
  * canvas can't read CSS, so they take their colours from THEME and repaint when the theme changes (followTheme).
  */
-import { ColorType, LineStyle, type IChartApi } from 'lightweight-charts';
+import { ColorType, type IChartApi } from 'lightweight-charts';
+import { attachSquareGrid } from '../chart/grid';
 
 export type ThemeName = 'dark' | 'light';
 
@@ -69,8 +70,8 @@ export function chartThemeOptions(transparent = false) {
       attributionLogo: false,
       panes: { separatorColor: THEME.frame, separatorHoverColor: withAlphaHex(THEME.accent, 0.35) },
     },
-    // Bloomberg-style square grid: dotted lines at every price tick and every time tick, on every chart.
-    grid: { vertLines: { visible: true, color: THEME.grid, style: LineStyle.Dotted }, horzLines: { visible: true, color: THEME.grid, style: LineStyle.Dotted } },
+    // The square dotted grid is ours (src/chart/grid.ts, attached by followTheme): the library's grid stays off.
+    grid: { vertLines: { visible: false }, horzLines: { visible: false } },
     rightPriceScale: { borderColor: THEME.frame },
     leftPriceScale: { borderColor: THEME.frame },
     timeScale: { borderColor: THEME.frame },
@@ -83,11 +84,14 @@ export function chartThemeOptions(transparent = false) {
 
 /** Repaints a chart when the theme changes; stops once the chart has been removed. */
 export function followTheme(chart: IChartApi, opts: { transparent?: boolean; hideVertGrid?: boolean; onChange?: () => void } = {}) {
-  chart.applyOptions({ layout: { attributionLogo: false } }); // every chart: no library watermark
+  // Every chart, from creation: the theme's colours, no library watermark, and our square dotted grid.
+  chart.applyOptions(chartThemeOptions(opts.transparent));
+  attachSquareGrid(chart, { color: () => THEME.grid });
   const stop = onThemeChange(() => {
     try {
       const o = chartThemeOptions(opts.transparent);
-      // every chart keeps the full square grid (hideVertGrid is kept for older callers but no longer hides it)
+      // every chart keeps the full square grid (hideVertGrid is kept for older callers but no longer hides it); the
+      // grid reads THEME at draw time
       chart.applyOptions(o);
       opts.onChange?.();
     } catch {

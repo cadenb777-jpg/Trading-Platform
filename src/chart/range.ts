@@ -109,8 +109,8 @@ export function daysNeeded(range: RangeId, now: number): number {
   if (range === 'MAX') return Infinity;
   const n = TRADING_DAYS[range];
   const from = n ? weekdaysBack(now, n) : rangeStart(range, [now])!.from;
-  // a week's margin for holidays and a last bar older than today
-  return Math.ceil((now - from) / DAY) + 7;
+  // a few days' margin for holidays and a last bar older than today
+  return Math.ceil((now - from) / DAY) + (n ? 3 : 4);
 }
 
 /** The first bar index at or after a time (bars.length when every bar is earlier). */

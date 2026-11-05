@@ -11,9 +11,9 @@ library (lightweight-charts 5.2.1, Apache-2.0) still controls, and how a custom 
 | No library logo | `layout.attributionLogo: false` on every chart (`followTheme`); attribution in Settings > About and THIRD_PARTY_NOTICES.md | `src/ui/theme.ts` |
 | Fonts | Inter on both axes; digits from a tabular-figure system font via a digits-only `@font-face` ("TP Figures"), because a canvas cannot switch on Inter's `tnum` | `src/chart/chartFeel.css`, `CHART_FONT` |
 | Last-price tag | Our own bold rounded tag on the price axis (green/red by the last candle, no flash), drawn by a series primitive; the library's label is off, its dashed price line stays | `ChartChrome` in `src/chart/axisChrome.ts` |
-| Time axis | Our labels (months on daily bars, days intraday, 24-hour times), the year on a second row under the first label of each year; years move into the labels when more than ~2.5 years are on screen | `src/chart/axis.ts`, `ChartChrome` |
+| Time axis | Our own labels drawn at our vertical grid lines (years, months, dates, 24-hour times), the year on a second row under the first label of each year; the library's time labels are blanked | `src/chart/grid.ts` |
 | Crosshair | Label format "Thu 05 Nov 14:35" (daily: "Thu 05 Nov 2026"); label boxes in the theme's `axisLabel` colour | `crosshairLabel`, `chartThemeOptions` |
-| Grid | Square dotted grid on every chart (the library lines it up with the ticks) | `chartThemeOptions` |
+| Grid | Our square dotted grid on every chart (library grid off): crisp 1-device-pixel dots every 4px, pixel-aligned; horizontal lines at the price axis' own steps (the library's tick maths, re-implemented in `priceTickSpan`), vertical lines at the calendar level whose spacing is closest to it, so cells are near square. Checked by a Playwright pixel-sampling script | `src/chart/grid.ts`, attached by `followTheme` |
 | Frame and separators | Axis lines and pane separators in the theme's `frame` colour, separator hover in the accent; a 1px inset frame round the chart | `theme.ts`, `chartFeel.css` |
 | Volume | A slim histogram in its own sub-pane (a sixth of the price pane) with its own axis and a pane label | `ChartView.addIndicator` |
 | Session separators | A thin vertical line at each New York day open on intraday stock charts | `ChartChrome.drawSessions` |
@@ -28,13 +28,16 @@ library (lightweight-charts 5.2.1, Apache-2.0) still controls, and how a custom 
 - **Axis label boxes for other series and the crosshair**: shape (square, fixed padding) and font weight are fixed; we
   can set only their colours. The last-price tag is ours because a primitive can draw on the price axis
   (`priceAxisPaneViews`); indicator last-value labels and the crosshair label are still the library's boxes.
-- **Tick placement**: which times and prices get a label (and so where grid lines fall) is the library's choice; we
-  format the text and set density (`tickMarkDensity`), not the positions. "Square" cells depend on the zoom.
+- **Price tick placement**: which prices get a label is the library's choice; the grid re-computes the same steps
+  (`priceTickSpan`, copied from lightweight-charts 5.2.1's PriceTickMarkBuilder; re-check it when upgrading). Edge
+  labels the library adds or drops near the top and bottom are not mirrored.
 - **One font for both axes** (`layout.fontFamily`/`fontSize`): the price axis cannot be larger than the time axis.
 - **Crosshair line style**: colour, width and dash only.
 - **Pane separators**: colour and hover colour only (no thickness or handle shape).
-- **Two-row time axis**: the library draws one row; the year row is ours, painted in the extra height we ask for
-  (`minimumHeight`), so it follows the library's labels by position, not by sharing its layout.
+- **Two-row time axis**: the library draws one row; our labels and year row are painted in the extra height we ask
+  for (`minimumHeight`) while the library's own labels are blank strings.
+- **Device pixel ratio in headless Chromium**: the chart canvases stayed at 1x even with a 2x device scale factor in
+  Playwright, so the 2x pixel check ran on 1x canvases; the grid snaps to whatever ratio the canvas reports.
 
 ## Ideas for a custom renderer (if the owner wants to go further)
 

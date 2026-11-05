@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { TICK, crosshairLabel, tickLabel, yearMarks } from './axis';
+import { crosshairLabel } from './axis';
+import { DAILY_LEVELS, INTRADAY_LEVELS, boundaries, chooseLevel, gridLabel, priceTickSpan, yearRow } from './grid';
 import { daysNeeded, firstIndexFrom, rangeFits, rangeStart } from './range';
 import { daySummary, sessionClock, visibleStats } from './summary';
 import type { Bar } from '../types';
@@ -113,13 +114,29 @@ describe('header day summary', () => {
 });
 
 describe('header trader figures', () => {
-  it('VWAP and relative volume at the same time of day', () => {
+  it('relative volume lines days up by New York clock time', () => {
+    // earlier days trade 10 per hour from 09:30; today 20 per hour for its first 3 bars
     const times = hourly(['2025-11-06', '2025-11-07', '2025-11-10']);
-    // earlier days trade 10 per hour; today 20 per hour for the first 3 hours
     const bars = times.slice(0, 17).map((t, i) => bar(t, 100, 101, 99, i >= 14 ? 20 : 10));
-    const s = daySummary(bars, '1h', 'America/New_York')!;
-    expect(s.relVolume).toBeCloseTo(2);
-    expect(s.vwap).toBeCloseTo(100);
+    expect(daySummary(bars, '1h', 'America/New_York')!.relVolume).toBeCloseTo(2);
+  });
+
+  it('relative volume compares the same clock time even when an earlier day started earlier (pre-market)', () => {
+    // yesterday has a 08:30 pre-market bar of 50; up to 10:30 New York it traded 50 + 10 + 10
+    const pre = utc('2025-11-07T13:30:00');
+    const yesterday = [pre, ...hourly(['2025-11-07'])].map((t) => bar(t, 100, 101, 99, t === pre ? 50 : 10));
+    const today = hourly(['2025-11-10']).slice(0, 2).map((t) => bar(t, 100, 101, 99, 35)); // 09:30 and 10:30
+    expect(daySummary([...yesterday, ...today], '1h', 'America/New_York')!.relVolume).toBeCloseTo(70 / 70);
+  });
+
+  it('VWAP is anchored at the 09:30 open, the pre-market VWAP is apart, and none above 1-hour bars', () => {
+    const pre = bar(utc('2025-11-10T13:00:00'), 50, 50, 50, 100); // 08:00 New York
+    const regular = [bar(utc('2025-11-10T14:30:00'), 100, 100, 100, 10), bar(utc('2025-11-10T15:30:00'), 110, 110, 110, 30)];
+    const s = daySummary([pre, ...regular], '1h', 'America/New_York')!;
+    expect(s.vwap).toBeCloseTo(107.5);
+    expect(s.preVwap).toBeCloseTo(50);
+    expect(daySummary([pre, ...regular], '4h', 'America/New_York')!.vwap).toBeNull();
+    expect(daySummary([bar(utc('2025-11-10T05:00:00'), 50)], '1D')!.vwap).toBeNull();
   });
 
   it('session clock for stocks, none for crypto', () => {
@@ -128,53 +145,66 @@ describe('header trader figures', () => {
     expect(sessionClock(utc('2026-11-07T15:00:00'), 'schwab')).toBe('Closed'); // Saturday
     expect(sessionClock(utc('2026-11-05T19:35:00'), 'coinbase')).toBeNull();
   });
+
+  it('NYSE holidays and 13:00 early closes', () => {
+    expect(sessionClock(utc('2026-11-26T16:00:00'), 'schwab')).toBe('Market closed (holiday)'); // Thanksgiving
+    expect(sessionClock(utc('2026-11-27T17:15:00'), 'schwab')).toBe('Closes 13:00 in 45m'); // 12:15 New York
+    expect(sessionClock(utc('2026-11-27T18:30:00'), 'schwab')).toBe('Closed'); // 13:30
+    expect(sessionClock(utc('2027-03-26T15:00:00'), 'schwab')).toBe('Market closed (holiday)'); // Good Friday
+  });
 });
 
-describe('time axis labels', () => {
-  const daily = { daily: true };
-  const intraday = { daily: false, timeZone: 'America/New_York' };
+describe('crosshair label', () => {
+  it('carries the full date, trader style', () => {
+    expect(crosshairLabel(utc('2025-11-10T05:00:00'), { daily: true })).toBe('Mon 10 Nov 2025');
+    expect(crosshairLabel(utc('2026-11-05T19:35:00'), { daily: false, timeZone: 'America/New_York' })).toBe('Thu 05 Nov 14:35');
+  });
+});
 
-  it('daily: months as major labels, the year left for the row below', () => {
-    expect(tickLabel(utc('2025-01-02T05:00:00'), TICK.Year, daily)).toBe('Jan');
-    expect(tickLabel(utc('2025-02-03T05:00:00'), TICK.Month, daily)).toBe('Feb');
-    expect(tickLabel(utc('2025-02-10T05:00:00'), TICK.DayOfMonth, daily)).toBe('10');
+describe('square grid', () => {
+  it('price steps match the chart library’s label steps', () => {
+    expect(priceTickSpan(238.5, 229.5, 470, 22, 100)).toBe(0.5);
+    expect(priceTickSpan(238.5, 229.5, 470, 36, 100)).toBe(1);
+    expect(priceTickSpan(68000, 66000, 400, 36, 100)).toBe(200);
   });
 
-  it('several years on screen: year boundaries carry the year itself', () => {
-    expect(tickLabel(utc('2025-01-02T05:00:00'), TICK.Year, { daily: true, years: true })).toBe('2025');
-    expect(tickLabel(utc('2025-02-03T05:00:00'), TICK.Month, { daily: true, years: true })).toBe('Feb');
+  const days = (from: string, n: number) => {
+    const out: number[] = [];
+    for (let t = utc(`${from}T05:00:00`); out.length < n; t += 86400) {
+      const wd = new Date(t * 1000).getUTCDay();
+      if (wd !== 0 && wd !== 6) out.push(t);
+    }
+    return out;
+  };
+
+  it('picks the calendar level whose spacing is closest to the price-line spacing (square cells)', () => {
+    const times = days('2024-01-02', 500);
+    expect(chooseLevel(times, 0, 499, 4, 70, DAILY_LEVELS, 'utc')!.level).toBe('month'); // ~84 px apart
+    expect(chooseLevel(times, 0, 499, 4, 230, DAILY_LEVELS, 'utc')!.level).toBe('quarter');
+    expect(chooseLevel(times, 0, 499, 20, 90, DAILY_LEVELS, 'utc')!.level).toBe('week'); // 5 bars x 20 px
+    const fiveMin = Array.from({ length: 78 * 3 }, (_, i) => utc('2025-11-05T14:30:00') + Math.floor(i / 78) * 86400 + (i % 78) * 300);
+    expect(chooseLevel(fiveMin, 0, fiveMin.length - 1, 6, 70, INTRADAY_LEVELS, 'utc')!.level).toBe('h1'); // 12 bars x 6 px
   });
 
-  it('daily bars stamped near midnight in New York read as their own UTC date', () => {
-    expect(tickLabel(utc('2025-03-01T05:00:00'), TICK.Month, daily)).toBe('Mar');
+  it('vertical lines sit on the first bar of each period', () => {
+    const times = days('2024-12-27', 7); // Fri 27, Mon 30, Tue 31, Wed 1 Jan, Thu 2, Fri 3, Mon 6
+    expect(boundaries(times, 0, 6, 'year', 'utc')).toEqual([3]);
+    expect(boundaries(times, 0, 6, 'week', 'utc')).toEqual([1, 6]);
   });
 
-  it('intraday: the day as the major label, 24-hour times between, in the chosen zone', () => {
-    expect(tickLabel(utc('2025-11-10T14:30:00'), TICK.DayOfMonth, intraday)).toBe('Nov 10');
-    expect(tickLabel(utc('2025-11-10T15:30:00'), TICK.Time, intraday)).toBe('10:30');
-    expect(tickLabel(utc('2026-01-02T14:30:00'), TICK.Year, intraday)).toBe('Jan 2');
+  it('labels: years, months, dates and 24-hour times', () => {
+    expect(gridLabel(utc('2025-01-02T05:00:00'), 'year', 'utc')).toBe('2025');
+    expect(gridLabel(utc('2025-02-03T05:00:00'), 'month', 'utc')).toBe('Feb');
+    expect(gridLabel(utc('2025-11-10T05:00:00'), 'week', 'utc')).toBe('Nov 10');
+    expect(gridLabel(utc('2025-11-10T14:00:00'), 'h1', 'utc')).toBe('14:00');
   });
 
-  it('crosshair label carries the full date', () => {
-    expect(crosshairLabel(utc('2025-11-10T05:00:00'), daily)).toBe('Mon 10 Nov 2025');
-    expect(crosshairLabel(utc('2026-11-05T19:35:00'), intraday)).toBe('Thu 05 Nov 14:35');
-  });
-
-  it('year row: the first visible bar, then the first bar of each new year (rollover)', () => {
-    const times = ['2024-12-27', '2024-12-30', '2024-12-31', '2025-01-02', '2025-01-03', '2026-01-02'].map((d) => utc(`${d}T05:00:00`));
-    expect(yearMarks(times, 0.4, 5, daily)).toEqual([
-      { index: 1, year: 2024, edge: true },
-      { index: 3, year: 2025, edge: false },
-      { index: 5, year: 2026, edge: false },
-    ]);
-  });
-
-  it('year row intraday: New Year is read in the axis zone, not UTC', () => {
-    // 31 Dec 19:30 New York is already 1 Jan in UTC: still 2025 on a New York axis.
-    const times = [utc('2025-12-31T23:30:00'), utc('2026-01-01T00:30:00'), utc('2026-01-02T14:30:00')];
-    expect(yearMarks(times, 0, 2, intraday).map((m) => [m.index, m.year])).toEqual([
-      [0, 2025],
-      [2, 2026],
+  it('year row: under the first label, then under the first label of each new year (rollover)', () => {
+    const labels = ['2024-12-02', '2025-01-02', '2025-02-03', '2026-01-02'].map((d) => utc(`${d}T05:00:00`));
+    expect(yearRow(labels, 'utc')).toEqual([
+      { at: 0, year: 2024 },
+      { at: 1, year: 2025 },
+      { at: 3, year: 2026 },
     ]);
   });
 });

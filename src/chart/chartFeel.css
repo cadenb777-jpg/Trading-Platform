@@ -125,9 +125,32 @@
 .cf-state-bars i:nth-child(5) { height: 65%; }
 .cf-state.empty .cf-state-bars i { height: 3px; }
 
+.cf-more { display: none; }
+
 @media (max-width: 700px) {
-  .cf-head { gap: var(--sp-1) var(--sp-3); padding: 6px 10px; }
+  /* Two tidy rows on a phone: the quote, then the key pairs; the rest folds behind More. */
+  .cf-head { flex-wrap: wrap; overflow: visible; white-space: normal; gap: 4px var(--sp-3); padding: 6px 10px; }
+  .cf-quote { flex-basis: 100%; }
+  .cf-pairs { flex-wrap: wrap; gap: 2px var(--sp-3); }
+  .cf-kv { white-space: nowrap; }
+  .cf-head:not(.cf-open) .cf-wide { display: none; }
+  .cf-more {
+    display: inline-block;
+    margin-left: auto;
+    padding: 2px 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
   .cf-last { font-size: 16px; }
   .legend.cf-legend { max-width: 62%; font-size: 12px; }
 }
 .legend-ohlc[hidden] { display: none; }
+
+/* Range bar note when a range is capped to the history the data source keeps */
+.cf-range-wrap { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.cf-range-note { color: var(--muted); font-size: 12px; }

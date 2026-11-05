@@ -6,7 +6,7 @@
  */
 import { LineSeries, PriceScaleMode, createChart, type IChartApi, type ISeriesApi, type Logical, type MouseEventParams, type Time } from 'lightweight-charts';
 import { chartThemeOptions, followTheme } from './theme';
-import { crosshairLabel, tickLabel, yearsOnAxis, type AxisOptions } from '../chart/axis';
+import { crosshairLabel, type AxisOptions } from '../chart/axis';
 import { CHART_FONT, ChartChrome } from '../chart/axisChrome';
 import { createSecurityHeader } from '../chart/securityHeader';
 import type { Bar } from '../types';
@@ -174,7 +174,7 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
     autoSize: true,
     layout: { ...look.layout, fontFamily: CHART_FONT, fontSize: 12.5 },
     rightPriceScale: { ...look.rightPriceScale, entireTextOnly: true, ticksVisible: true, minimumWidth: 64 },
-    timeScale: { ...look.timeScale, rightOffset: 4, minimumHeight: 40, ticksVisible: true, timeVisible: !daily, tickMarkFormatter: (t: Time, type: number) => tickLabel(toUnix(t), type, axis) },
+    timeScale: { ...look.timeScale, rightOffset: 4, timeVisible: !daily },
     localization: { timeFormatter: (t: Time) => crosshairLabel(toUnix(t), axis) },
     crosshair: { ...look.crosshair, mode: 0 },
   });
@@ -194,7 +194,6 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
   });
   const chrome = new ChartChrome({
     bars: () => asBars,
-    axis: () => axis,
     sessions: () => false,
     formatPrice: format,
     priceToY: (p) => series[0]?.series.priceToCoordinate(p) ?? null,
@@ -208,7 +207,7 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
   header.update({
     symbol: lines[0]?.name || o.title,
     summary: lastBar
-      ? { last: lastBar.close, change: prevBar ? lastBar.close - prevBar.close : null, changePct: prevBar && prevBar.close ? ((lastBar.close - prevBar.close) / Math.abs(prevBar.close)) * 100 : null, open: lastBar.open, high: lastBar.high, low: lastBar.low, prevClose: prevBar?.close ?? null, volume: 0, value: 0, time: lastBar.time, vwap: null, relVolume: null }
+      ? { last: lastBar.close, change: prevBar ? lastBar.close - prevBar.close : null, changePct: prevBar && prevBar.close ? ((lastBar.close - prevBar.close) / Math.abs(prevBar.close)) * 100 : null, open: lastBar.open, high: lastBar.high, low: lastBar.low, prevClose: prevBar?.close ?? null, volume: 0, value: 0, time: lastBar.time, vwap: null, preVwap: null, relVolume: null }
       : null,
     daily,
     market: '',
@@ -304,15 +303,7 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
       item('Low', `${format(lo.value)} · ${when(lo.time)}`),
     );
   }
-  chart.timeScale().subscribeVisibleTimeRangeChange((r) => {
-    requestAnimationFrame(updateStats);
-    // Several years on screen: years go into the labels themselves (yearsOnAxis).
-    const years = !!r && yearsOnAxis(toUnix(r.to) - toUnix(r.from));
-    if (years !== !!axis.years) {
-      axis.years = years;
-      chart.applyOptions({ timeScale: { tickMarkFormatter: (t: Time, type: number) => tickLabel(toUnix(t), type, axis) } });
-    }
-  });
+  chart.timeScale().subscribeVisibleTimeRangeChange(() => requestAnimationFrame(updateStats));
 
   win.append(bar, header.el, tools, studies.menu, studies.chips, box, stats, h('div', { class: 'chart-window-hint muted small' }, 'Scroll or pinch to zoom · drag to pan · drag the title bar to move · drag the corner to resize'), grip);
   document.body.append(win);

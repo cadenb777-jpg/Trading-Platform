@@ -49,7 +49,7 @@ import { cleanBars, type Bar } from '../types';
 import { createLineChart, dataTable, pageFrame, statCards } from '../ui/charts';
 import { activatableRows, h, openModal, toast } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
-import { THEME, followTheme } from '../ui/theme';
+import { THEME, chartThemeOptions, followTheme } from '../ui/theme';
 
 type View = 'dashboard' | 'trades' | 'daily' | 'playbooks' | 'reports' | 'import';
 const VIEWS: [View, string][] = [['dashboard', 'Dashboard'], ['trades', 'Trades'], ['daily', 'Daily'], ['playbooks', 'Playbooks'], ['reports', 'Reports'], ['import', 'Import']];
@@ -689,9 +689,9 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
       if (!bars.length || !box.isConnected) throw new Error('No bars around this trade');
       box.replaceChildren();
       const chart = createChart(box, {
+        ...chartThemeOptions(true), // our square dotted grid (src/chart/grid.ts) and theme colours from creation
         autoSize: true,
         layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text },
-        grid: { vertLines: { visible: false }, horzLines: { color: THEME.grid } },
         rightPriceScale: { borderColor: THEME.border },
         timeScale: { borderColor: THEME.border, timeVisible: plan.seconds < 86400 },
       });

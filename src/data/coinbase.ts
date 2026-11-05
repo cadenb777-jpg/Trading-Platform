@@ -91,6 +91,13 @@ export const coinbase: DataProvider = {
     return `${s}-USD`;
   },
 
+  maxHistoryDays(timeframe) {
+    const target = TIMEFRAME_SECONDS[timeframe];
+    if (target < 60) return 0; // built from recent trades only
+    const granularity = NATIVE.find((g) => target % g === 0 && g <= target) ?? 60;
+    return Math.floor((RANGE_PAGES * PAGE * granularity) / 86400);
+  },
+
   loadHistory(symbol, timeframe, signal, days) {
     return TIMEFRAME_SECONDS[timeframe] < 60 ? loadFromTrades(symbol, timeframe, signal) : loadCandles(symbol, timeframe, signal, days);
   },

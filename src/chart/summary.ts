@@ -51,11 +51,17 @@ export interface DaySummary {
   value: number;
   /** Start time of the newest bar. */
   time: number;
-  /** Volume-weighted average price of the day (dollar volume / volume); null without volume. */
+  /**
+   * Volume-weighted average price, on bars of 1 hour or less only. Stocks: anchored at the 09:30 New York open
+   * (regular session); crypto: the UTC day. Null without volume or on longer bars.
+   */
   vwap: number | null;
+  /** Stocks: the pre-market VWAP of today (04:00-09:30 New York), shown separately; null when there is none. */
+  preVwap: number | null;
   /**
    * Volume against normal: intraday, today's volume so far against the average of up to 20 earlier days up to the
-   * same time of day (relative volume); daily and longer bars, the newest bar against the average of the 20 before.
+   * same New York (crypto: UTC) clock time (relative volume); daily and longer bars, the newest bar against the
+   * average of the 20 before.
    */
   relVolume: number | null;
 }
@@ -87,7 +93,9 @@ export function daySummary(bars: Bar[], tf: Timeframe, timeZone = 'UTC'): DaySum
   }
   const prevClose = start > 0 ? bars[start - 1].close : null;
   const change = prevClose === null ? null : lastBar.close - prevClose;
-  const relVolume = TIMEFRAME_SECONDS[tf] < 86400 ? intradayRelVolume(bars, start, volume, timeZone) : dailyRelVolume(bars);
+  const intraday = TIMEFRAME_SECONDS[tf] < 86400;
+  const relVolume = intraday ? intradayRelVolume(bars, start, volume, timeZone) : dailyRelVolume(bars);
+  const vw = TIMEFRAME_SECONDS[tf] <= 3600 ? sessionVwaps(bars, start, timeZone) : { vwap: null, preVwap: null };
   return {
     last: lastBar.close,
     change,
@@ -99,7 +107,7 @@ export function daySummary(bars: Bar[], tf: Timeframe, timeZone = 'UTC'): DaySum
     volume,
     value,
     time: lastBar.time,
-    vwap: volume > 0 ? value / volume : null,
+    ...vw,
     relVolume,
   };
 }
@@ -112,38 +120,88 @@ function dailyRelVolume(bars: Bar[]): number | null {
   return avg > 0 ? bars[n - 1].volume / avg : null;
 }
 
-/** Seconds since the start of a bar's day: earlier days are compared up to the same clock time. */
+const clockFormats = new Map<string, Intl.DateTimeFormat>();
+const clockMemo = new Map<string, number>();
+/** Minutes after midnight of a time in a zone (memoised: the same bars are read on every repaint). */
+export function minuteOfDay(t: number, timeZone: string): number {
+  if (timeZone === 'UTC') return Math.floor((t % 86400) / 60);
+  const key = `${timeZone}|${t}`;
+  const hit = clockMemo.get(key);
+  if (hit !== undefined) return hit;
+  let f = clockFormats.get(timeZone);
+  if (!f) clockFormats.set(timeZone, (f = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: 'numeric', hourCycle: 'h23' })));
+  const p = Object.fromEntries(f.formatToParts(t * 1000).map((x) => [x.type, x.value]));
+  const m = Number(p.hour) * 60 + Number(p.minute);
+  if (clockMemo.size > 200_000) clockMemo.clear();
+  clockMemo.set(key, m);
+  return m;
+}
+
+/** Today's volume so far against earlier days' volume up to the same clock time in the market's zone. */
 function intradayRelVolume(bars: Bar[], todayStart: number, todayVolume: number, timeZone: string): number | null {
-  const cutoff = bars[bars.length - 1].time - bars[todayStart].time;
+  const cutoff = minuteOfDay(bars[bars.length - 1].time, timeZone);
   const totals: number[] = [];
   let i = todayStart - 1;
   while (i >= 0 && totals.length < 20) {
     const key = dayKey(bars[i].time, timeZone);
-    let first = i;
-    while (first > 0 && dayKey(bars[first - 1].time, timeZone) === key) first--;
     let sum = 0;
-    for (let j = first; j <= i; j++) if (bars[j].time - bars[first].time <= cutoff) sum += bars[j].volume || 0;
+    while (i >= 0 && dayKey(bars[i].time, timeZone) === key) {
+      if (minuteOfDay(bars[i].time, timeZone) <= cutoff) sum += bars[i].volume || 0;
+      i--;
+    }
     totals.push(sum);
-    i = first - 1;
   }
   const avg = totals.length ? totals.reduce((a, b) => a + b, 0) / totals.length : 0;
   return avg > 0 ? todayVolume / avg : null;
 }
 
+const OPEN = 570; // 09:30
+const CLOSE = 960; // 16:00
+
+/** VWAP of today's bars: stocks from the 09:30 open (and the pre-market apart); other markets the whole day. */
+function sessionVwaps(bars: Bar[], start: number, timeZone: string): { vwap: number | null; preVwap: number | null } {
+  const stocks = timeZone === 'America/New_York';
+  let pv = 0;
+  let v = 0;
+  let prePv = 0;
+  let preV = 0;
+  for (let i = start; i < bars.length; i++) {
+    const b = bars[i];
+    const vol = b.volume || 0;
+    const typical = ((b.high + b.low + b.close) / 3) * vol;
+    const m = stocks ? minuteOfDay(b.time, timeZone) : OPEN;
+    if (m < OPEN) (prePv += typical), (preV += vol);
+    else if (m < CLOSE) (pv += typical), (v += vol);
+  }
+  return { vwap: v > 0 ? pv / v : null, preVwap: stocks && preV > 0 ? prePv / preV : null };
+}
+
+/** NYSE full-day holidays and 13:00 early closes (New York dates), 2026-2027. Update each year. */
+export const NYSE_HOLIDAYS = new Set([
+  '2026-01-01', '2026-01-19', '2026-02-16', '2026-04-03', '2026-05-25', '2026-06-19', '2026-07-03', '2026-09-07', '2026-11-26', '2026-12-25',
+  '2027-01-01', '2027-01-18', '2027-02-15', '2027-03-26', '2027-05-31', '2027-06-18', '2027-07-05', '2027-09-06', '2027-11-25', '2027-12-24',
+]);
+export const NYSE_EARLY_CLOSES = new Set(['2026-11-27', '2026-12-24', '2027-11-26']);
+
 const nyClock = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' });
 
 /**
- * The US stock session clock at `now` (unix seconds): "Closes in 2h 05m" during regular hours, "Opens in 45m" before
- * 9:30 on a weekday, "Closed" otherwise (market holidays are not known here). Null for markets that never close.
+ * The US stock session clock at `now` (unix seconds): "Closes in 2h 05m" during regular hours ("Closes 13:00 in
+ * 45m" on an early-close day), "Opens in 45m" before 9:30 on a trading day, "Market closed (holiday)" on NYSE
+ * holidays, "Closed" otherwise. Null for markets that never close.
  */
 export function sessionClock(now: number, market: string): string | null {
   if (market !== 'schwab') return null;
   const parts = Object.fromEntries(nyClock.formatToParts(now * 1000).map((p) => [p.type, p.value]));
   if (parts.weekday === 'Sat' || parts.weekday === 'Sun') return 'Closed';
+  const day = dayKey(now, 'America/New_York');
+  if (NYSE_HOLIDAYS.has(day)) return 'Market closed (holiday)';
+  const early = NYSE_EARLY_CLOSES.has(day);
+  const close = early ? 780 : CLOSE;
   const minutes = Number(parts.hour) * 60 + Number(parts.minute);
   const span = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m}m`);
-  if (minutes < 570) return `Opens in ${span(570 - minutes)}`;
-  if (minutes < 960) return `Closes in ${span(960 - minutes)}`;
+  if (minutes < OPEN) return `Opens in ${span(OPEN - minutes)}`;
+  if (minutes < close) return early ? `Closes 13:00 in ${span(close - minutes)}` : `Closes in ${span(close - minutes)}`;
   return 'Closed';
 }
 

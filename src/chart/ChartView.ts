@@ -27,7 +27,7 @@ import {
 } from 'lightweight-charts';
 import { externalData } from '../indicators/external';
 import { THEME, chartThemeOptions, followTheme } from '../ui/theme';
-import { crosshairLabel, tickLabel, yearsOnAxis, type AxisOptions } from './axis';
+import { crosshairLabel, type AxisOptions } from './axis';
 import { CHART_FONT, ChartChrome } from './axisChrome';
 import { firstIndexFrom } from './range';
 import './chartFeel.css';
@@ -93,6 +93,8 @@ const WORKER_MIN_BARS = 2000;
 const HEAVY_MS = 12;
 /** Live ticks redraw indicator lines at most this often (the candle itself redraws every frame). */
 const INDICATOR_INTERVAL_MS = 100;
+/** The slim volume pane's minimum height (px). */
+const VOLUME_MIN_PX = 48;
 /** Opacity of the other indicators while one is highlighted. */
 const DIM = 0.22;
 
@@ -170,19 +172,11 @@ export class ChartView {
       // The crosshair snaps to the nearest open/high/low/close; a flick of the chart glides to a stop.
       crosshair: { ...look.crosshair, mode: CrosshairMode.MagnetOHLC },
       kineticScroll: { mouse: true, touch: true },
-      // Denser price labels than the library's default; a steady width and only whole labels, so the axis stays crisp.
-      rightPriceScale: { ...look.rightPriceScale, tickMarkDensity: 1.6, minimumWidth: 80, entireTextOnly: true, ticksVisible: true },
+      // Price labels about Bloomberg's spacing (the square grid follows them); a steady width and only whole labels.
+      rightPriceScale: { ...look.rightPriceScale, tickMarkDensity: 2.6, minimumWidth: 80, entireTextOnly: true, ticksVisible: true },
       leftPriceScale: { ...look.leftPriceScale, minimumWidth: 64, entireTextOnly: true, ticksVisible: true },
-      // Taller time axis: month/day labels on the first row, the year on the second (ChartChrome).
-      timeScale: {
-        ...look.timeScale,
-        timeVisible: true,
-        secondsVisible: false,
-        rightOffset: 8,
-        minimumHeight: 42,
-        ticksVisible: true,
-        tickMarkFormatter: (t: Time, type: number) => tickLabel(t as number, type, this.axisOpts),
-      },
+      // Time labels and the year row are drawn by the square grid (src/chart/grid.ts) at its vertical lines.
+      timeScale: { ...look.timeScale, timeVisible: true, secondsVisible: false, rightOffset: 8 },
       localization: { timeFormatter: (t: Time) => crosshairLabel(t as number, this.axisOpts) },
     });
     this.stopTheme = followTheme(this.chart, {
@@ -197,7 +191,6 @@ export class ChartView {
     this.main = this.createMainSeries('candles');
     this.chrome = new ChartChrome({
       bars: () => this.bars,
-      axis: () => this.axisOpts,
       sessions: () => this.market === 'schwab' && TIMEFRAME_SECONDS[this.timeframe] < 86400,
       formatPrice: (p) => this.formatPrice(p),
       priceToY: (p) => this.priceToY(p),
@@ -205,13 +198,15 @@ export class ChartView {
       visibleRange: () => this.chart.timeScale().getVisibleLogicalRange(),
     });
     this.attachPrimitive(this.chrome);
-    this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => this.updateAxisSpan());
     this.chart.subscribeCrosshairMove((param) => {
       const idx = param.time === undefined ? undefined : this.timeIndex.get(param.time as number);
       this.onHover(idx ?? this.bars.length - 1);
       this.onPointer(idx === undefined || !param.point ? null : this.pointerInfo(idx, param.point, param.paneIndex ?? 0, param.hoveredInfo?.series));
     });
-    this.paneObserver = new ResizeObserver(() => this.onLayout());
+    this.paneObserver = new ResizeObserver(() => {
+      this.keepVolumeHeight();
+      this.onLayout();
+    });
   }
 
   private pointerInfo(index: number, point: { x: number; y: number }, paneIndex: number, hovered: unknown): PointerInfo {
@@ -257,23 +252,6 @@ export class ChartView {
     const range = this.chart.timeScale().getVisibleLogicalRange();
     if (!range) return this.bars;
     return this.bars.slice(Math.max(0, Math.floor(range.from)), Math.max(0, Math.ceil(range.to) + 1));
-  }
-
-  /** Re-applying the formatter makes the library drop the labels it formatted the other way. */
-  private setAxis(next: AxisOptions) {
-    this.axisOpts = next;
-    this.chart.applyOptions({ timeScale: { tickMarkFormatter: (t: Time, type: number) => tickLabel(t as number, type, this.axisOpts) } });
-  }
-
-  /** Several years on screen: the years move into the axis labels (see yearsOnAxis). */
-  private updateAxisSpan() {
-    const range = this.chart.timeScale().getVisibleLogicalRange();
-    const n = this.bars.length;
-    if (!range || !n) return;
-    const a = this.bars[Math.max(0, Math.min(n - 1, Math.ceil(range.from)))].time;
-    const b = this.bars[Math.max(0, Math.min(n - 1, Math.floor(range.to)))].time;
-    const years = yearsOnAxis(b - a);
-    if (years !== !!this.axisOpts.years) this.setAxis({ ...this.axisOpts, years });
   }
 
   /** Every loaded bar (read only). */
@@ -336,7 +314,7 @@ export class ChartView {
     this.timeIndex.clear();
     bars.forEach((b, i) => this.timeIndex.set(b.time, i));
     const daily = TIMEFRAME_SECONDS[timeframe] >= 86400;
-    if (daily !== this.axisOpts.daily) this.setAxis({ ...this.axisOpts, daily });
+    this.axisOpts = { daily };
     this.chart.applyOptions({ timeScale: { secondsVisible: TIMEFRAME_SECONDS[timeframe] < 60 } });
     this.applyPriceFormat();
     this.heikin = [];
@@ -626,7 +604,8 @@ export class ChartView {
         priceLineVisible: false,
         lastValueVisible: placement !== 'volume',
         title: '',
-        ...(placement === 'volume' ? { priceFormat: { type: 'volume' as const }, lastValueVisible: true } : {}),
+        // Volume: one value label (the bars'), so its average's label never stacks on it in the slim pane.
+        ...(placement === 'volume' ? { priceFormat: { type: 'volume' as const }, lastValueVisible: !Object.keys(r.series).length } : {}),
         ...(ownScale ? { priceScaleId: `ind-${instance.uid}`, lastValueVisible: false } : {}),
       };
       const first = Object.values(r.series)[0];
@@ -691,6 +670,18 @@ export class ChartView {
     } else if (restyled) {
       if (r.def.plots.some((p) => p.type === 'histogram' && p.colorBy)) this.drawIndicator(r);
       if (r.def.plots.some((p) => p.type === 'marker')) this.refreshMarkers();
+    }
+  }
+
+  /** The volume pane never gets thinner than VOLUME_MIN_PX (stretch factors alone shrink it to a sliver on a phone). */
+  private keepVolumeHeight() {
+    for (const r of this.indicators.values()) {
+      if (r.placement !== 'volume') continue;
+      const pane = Object.values(r.series)[0]?.getPane();
+      const main = this.chart.panes()[0];
+      if (!pane || !main || pane === main) continue;
+      const height = pane.getHeight();
+      if (height > 0 && height < VOLUME_MIN_PX && main.getHeight() > VOLUME_MIN_PX * 3) pane.setHeight(VOLUME_MIN_PX);
     }
   }
 
