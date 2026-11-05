@@ -19,7 +19,7 @@ import logging
 import time
 from zoneinfo import ZoneInfo
 
-from . import settings
+from . import datahub, settings
 from .core import EngineError, handler
 
 log = logging.getLogger('engine.alpaca')
@@ -36,6 +36,13 @@ SIP_DELAY = 16 * 60
 #: days. That keeps a saved series to a few MB so saving it never stalls the helper. Hourly bars go back to 2016.
 MAX_SPAN_DAYS = {'1m': 60, '5m': 365 * 3, '10m': 365 * 3, '15m': 365 * 3, '30m': 365 * 3}
 PAGE_LIMIT = 10000
+#: Split-adjusted only, like Schwab's bars (Schwab doesn't adjust for dividends). 'all' (splits + dividends) made the
+#: older Alpaca part sit below Schwab's at the seam by the dividends paid since.
+ADJUSTMENT = 'split'
+#: Saved bars whose overlap with a fresh download differs by more than this were adjusted before a split since then.
+SPLIT_CHECK_TOLERANCE = 0.02
+#: Alpaca's bar at Schwab's first bar off by more than this: the older part is rescaled to Schwab (Schwab wins).
+SEAM_TOLERANCE = 0.03
 #: Alpaca allows 200 history calls a minute on the free plan; stay a little under it.
 MIN_CALL_GAP = 60 / 180
 #: How long a saved range counts as up to date before the newest bars are checked again (seconds).
@@ -45,9 +52,6 @@ SCHWAB_INTRADAY_DAYS = {'1m': 48, '5m': 270, '10m': 270, '15m': 270, '30m': 270}
 
 NO_KEYS = 'Add your Alpaca keys in Settings (free account at alpaca.markets) to use long price history.'
 BAD_KEYS = 'Alpaca rejected the keys. Check the key ID and secret in Settings (copy them again from alpaca.markets).'
-
-_pace_lock = None
-_last_call = 0.0
 
 
 def available():
@@ -110,15 +114,27 @@ def merge_with_schwab(schwab_bars, alpaca_bars):
     return merge(older, schwab_bars)
 
 
-async def _pace():
-    global _pace_lock, _last_call
-    if _pace_lock is None:
-        _pace_lock = asyncio.Lock()
-    async with _pace_lock:
-        wait = _last_call + MIN_CALL_GAP - time.monotonic()
-        if wait > 0:
-            await asyncio.sleep(wait)
-        _last_call = time.monotonic()
+def overlap_ratio(base, other):
+    """Median of other.close / base.close over the times both have (None without overlap)."""
+    closes = {b['time']: b['close'] for b in base or () if b.get('close')}
+    ratios = sorted(b['close'] / closes[b['time']] for b in other or () if b['time'] in closes and b.get('close'))
+    return ratios[len(ratios) // 2] if ratios else None
+
+
+def consistent(saved, fresh, tolerance=SPLIT_CHECK_TOLERANCE):
+    """False when fresh bars overlapping saved ones are on a different price basis (a split in between)."""
+    r = overlap_ratio(saved, fresh)
+    return r is None or abs(r - 1) <= tolerance
+
+
+def align_to_schwab(symbol, schwab_bars, alpaca_bars, tolerance=SEAM_TOLERANCE):
+    """Alpaca's bars rescaled to Schwab's basis when they disagree at the seam (Schwab wins; noted in the data hub)."""
+    r = overlap_ratio(schwab_bars, alpaca_bars)
+    if r is None or abs(r - 1) <= tolerance:
+        return alpaca_bars
+    datahub.note('alpaca', f'{symbol}: older bars rescaled by {1 / r:.4f} to match Schwab at the seam')
+    log.info('Alpaca %s: rescaled older bars by %.4f to match Schwab', symbol, 1 / r)
+    return [{**b, 'open': b['open'] / r, 'high': b['high'] / r, 'low': b['low'] / r, 'close': b['close'] / r} for b in alpaca_bars]
 
 
 def _error_message(response):
@@ -132,8 +148,9 @@ async def _get(ctx, params):
     """One market-data call, paced, with a single retry after a rate-limit reply."""
     headers = _headers()
     for attempt in range(2):
-        await _pace()
-        response = await ctx.http.get(DATA_URL, params=params, headers=headers)
+        # Through the data hub's 'alpaca' gate (pacing, network errors, health); 429 handling stays below.
+        response = await datahub.call('alpaca', lambda: ctx.http.get(DATA_URL, params=params, headers=headers),
+                                      gap=MIN_CALL_GAP, retries=0, passthrough=True)
         if response.status_code == 200:
             return response.json()
         if response.status_code in (401, 403):
@@ -162,7 +179,7 @@ async def _download(ctx, symbol, timeframe, start, end):
     """Every bar from start to end (unix seconds), following Alpaca's pages."""
     params = {
         'symbols': symbol, 'timeframe': TIMEFRAMES[timeframe], 'start': _rfc3339(start), 'end': _rfc3339(end),
-        'limit': PAGE_LIMIT, 'adjustment': 'all', 'feed': 'sip', 'sort': 'asc',
+        'limit': PAGE_LIMIT, 'adjustment': ADJUSTMENT, 'feed': 'sip', 'sort': 'asc',
     }
     out = []
     for _ in range(1000):  # a hard stop in case pages never end
@@ -182,7 +199,7 @@ _locks = {}
 
 
 async def bars(ctx, symbol, timeframe, start, end=None):
-    """Split- and dividend-adjusted intraday bars for `symbol` from Alpaca (full market, back to 2016).
+    """Split-adjusted (like Schwab) intraday bars for `symbol` from Alpaca (full market, back to 2016).
 
     timeframe: '1m', '5m', '10m', '15m', '30m' or '1h'. start/end: datetime, date or unix seconds (end defaults to
     now; it is moved back to 16 minutes ago, the free plan's limit; start is limited by MAX_SPAN_DAYS). Returns a
@@ -204,7 +221,7 @@ async def bars(ctx, symbol, timeframe, start, end=None):
         start = max(start, now - MAX_SPAN_DAYS[timeframe] * 86400)
     if start >= end:
         return []
-    key = ('alpaca', symbol, timeframe)
+    key = ('alpaca', symbol, timeframe, ADJUSTMENT)
     lock = _locks.setdefault(key, asyncio.Lock())
     async with lock:
         saved = await _saved(ctx, key)
@@ -220,6 +237,11 @@ async def bars(ctx, symbol, timeframe, start, end=None):
                 since = saved_bars[-1]['time'] if saved_bars else to
                 parts.append(await _download(ctx, symbol, timeframe, min(since, to), end))
                 to, checked = end, now
+            if parts and not all(consistent(saved_bars, part) for part in parts):
+                # A split since the bars were saved: the saved ones are on the old basis. Download the whole range again.
+                datahub.note('alpaca', f'{symbol} {timeframe}: saved bars no longer matched (a split?); downloaded again')
+                log.info('Alpaca %s %s: saved bars disagree with fresh ones (split?); re-downloading', symbol, timeframe)
+                saved_bars = await _download(ctx, symbol, timeframe, frm, to)
             if parts:
                 saved_bars = merge(saved_bars, *parts)
                 if timeframe in MAX_SPAN_DAYS:  # drop what has aged past the size's limit
@@ -301,6 +323,7 @@ async def fill_older(ctx, symbol, resolution, days, schwab_bars):
     except Exception as err:
         log.info('Alpaca history for %s %s not added: %s', symbol, resolution, err)
         return schwab_bars
+    older = align_to_schwab(symbol, schwab_bars, older)
     merged = merge_with_schwab(schwab_bars, older)
     if len(merged) > len(schwab_bars):
         log.info('%s %s: added %d older bars from Alpaca', symbol, resolution, len(merged) - len(schwab_bars))
@@ -314,7 +337,7 @@ async def status(ctx, msg):
         return {'ok': False, 'keysSet': False, 'message': NO_KEYS, 'earliest': None}
     probe = 'SPY'
     params = {'symbols': probe, 'timeframe': '1Day', 'start': _rfc3339(EARLIEST), 'end': _rfc3339(EARLIEST + 10 * 86400),
-              'limit': 1, 'adjustment': 'all', 'feed': 'sip'}
+              'limit': 1, 'adjustment': ADJUSTMENT, 'feed': 'sip'}
     try:
         data = await _get(ctx, params)
     except EngineError as err:

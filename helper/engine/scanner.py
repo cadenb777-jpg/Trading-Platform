@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 
 from . import alpaca, flow, lab, positioning, ruletests, sec
 from . import strategies as st
+from . import datahub
 from .core import EngineError, background, handler, market_session
 
 log = logging.getLogger('engine.scanner')
@@ -61,8 +62,7 @@ NDX_COT = '209742'  # Nasdaq-100 E-mini futures: the COT market for Nasdaq stock
 # Schwab allows about 120 requests a minute for the whole app, and the charts share it: the scanner sends one
 # request at a time, at most one every 0.7 s (about 85 a minute), so the owner's own charts always have room.
 REQUEST_GAP = 0.7
-_pace = asyncio.Lock()
-_last_request = [0.0]
+_last_request = [0.0]  # (kept for older tests; the data hub's 'schwab' gate does the pacing)
 BAD_SYMBOL_RETRY = 24 * 3600
 DAILY_DAYS = 15 * 366  # swing time frame: about 15 years of daily bars
 SCHWAB_30M_DAYS = 270  # Schwab keeps about 9 months of 30-minute bars
@@ -88,7 +88,7 @@ class _PacedClient:
     """The Schwab client with every call going through the scanner's pacer."""
 
     def __init__(self, client):
-        self._client = client
+        self._client = datahub.raw(client)  # the data hub's own routing is replaced by the background one below
 
     def __getattr__(self, name):
         attr = getattr(self._client, name)
@@ -122,14 +122,12 @@ def bad_symbols(now=None):
 
 
 async def _paced(call):
-    async with _pace:
-        wait = _last_request[0] + REQUEST_GAP - time.monotonic()
-        if wait > 0:
-            await asyncio.sleep(wait)
-        try:
-            return await call()
-        finally:
-            _last_request[0] = time.monotonic()
+    """One Schwab call as background work in the data hub: one at a time, REQUEST_GAP after the previous one ends, and
+    within the per-minute budget it shares with charts and quotes (leaving them their reserve)."""
+    try:
+        return await datahub.call('schwab', call, background=True, gap=REQUEST_GAP, gap_from='end')
+    except datahub.DataError as err:  # busy/unreachable after retries: skip this symbol, never stop the scan
+        raise TemporaryError(str(err)) from err
 
 
 def _remember(cache, key, value, limit):
@@ -255,7 +253,7 @@ def _candles(response, symbol):
 
 async def _fetch(ctx, symbol, method, days):
     now = dt.datetime.now(dt.timezone.utc)
-    response = await _paced(lambda: getattr(ctx.schwab, method)(symbol, start_datetime=now - dt.timedelta(days=days), end_datetime=now))
+    response = await _paced(lambda: getattr(datahub.raw(ctx.schwab), method)(symbol, start_datetime=now - dt.timedelta(days=days), end_datetime=now))
     return _candles(response, symbol)
 
 

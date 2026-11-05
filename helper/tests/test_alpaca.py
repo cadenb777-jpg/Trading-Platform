@@ -112,7 +112,7 @@ class Pagination(AlpacaBase):
         self.assertEqual(len(fake.calls), 4)  # 3 + 3 + 3 + 1
         self.assertEqual(fake.calls[1]['params']['page_token'], '3')
         p = fake.calls[0]['params']
-        self.assertEqual((p['symbols'], p['timeframe'], p['adjustment'], p['feed']), ('AAPL', '1Hour', 'all', 'sip'))
+        self.assertEqual((p['symbols'], p['timeframe'], p['adjustment'], p['feed']), ('AAPL', '1Hour', 'split', 'sip'))
         self.assertTrue(fake.calls[0]['url'].startswith('https://data.alpaca.markets/'))
         self.assertEqual(set(bars[0]), {'time', 'open', 'high', 'low', 'close', 'volume'})
 

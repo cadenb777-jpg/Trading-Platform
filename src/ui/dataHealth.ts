@@ -3,7 +3,8 @@
  * A stamp turns amber when its data is older than twice its feed's refresh interval. Bookkeeping in ../data/health.
  */
 import { FEEDS, feedState, health, replyTime, isStale, onHealthChange, stampTime, type FeedId, type Health } from '../data/health';
-import { alpacaKeysSaved, helper } from '../data/schwab';
+import { alpacaKeysSaved, datahubReady, engineRequest, helper } from '../data/schwab';
+import { replyProvenance, sourceCells, type DataHealth } from '../data/provenance';
 import { h, openPopover } from './dom';
 import { diagnosticsButton } from './diagnostics';
 
@@ -39,6 +40,8 @@ export interface AsOfOptions {
   refreshMs?: number;
   /** A word before the time: "as of" (default), "delayed", "end of day", "filed". */
   prefix?: string;
+  /** The helper showed an older saved copy while it fetches a new one (reply provenance, v44). */
+  savedCopy?: boolean;
 }
 
 /**
@@ -63,13 +66,13 @@ export function asOfStamp(feed: FeedId | null, opts: AsOfOptions & { reply?: unk
         s.text = `${prefix} ${at}${src ? ` · ${src}` : ''}`;
       } else {
         s.at = at < 1e12 ? at * 1000 : at;
-        s.text = `${prefix} ${stampTime(s.at)}${src ? ` · ${src}` : ''}`;
+        s.text = `${prefix} ${stampTime(s.at)}${src ? ` · ${src}` : ''}${more.savedCopy ? ' · saved copy, refreshing' : ''}`;
       }
       paint(s);
       return api;
     },
   };
-  api.set(replyTime(opts.reply));
+  api.set(replyTime(opts.reply), { savedCopy: replyProvenance(opts.reply)?.stale ?? false });
   watch(s);
   return api;
 }
@@ -92,6 +95,50 @@ function feedRow(id: FeedId) {
   );
 }
 
+/** The helper's own view of every outside source (data hub, v44): last success, age, errors, rate limit, cache. */
+function sourcesTable() {
+  const wrap = h('div', { class: 'health-sources' });
+  let busy = false;
+  const draw = async () => {
+    if (!helper.isConnected || !datahubReady()) {
+      wrap.replaceChildren(h('div', { class: 'muted small' }, helper.isConnected ? 'Update the helper to see each source’s details.' : ''));
+      return;
+    }
+    if (busy) return;
+    busy = true;
+    try {
+      const data = await engineRequest<DataHealth>('data.health', {}, 8000);
+      const used = data.sources.filter((r) => r.state !== 'idle' || r.calls || r.cacheHits);
+      const head = h('tr', {}, ...['Source', 'State', 'Last success', 'Errors', 'Requests', 'Cache hits'].map((t) => h('th', {}, t)));
+      const rows = used.map((r) => {
+        const c = sourceCells(r);
+        const note = r.notes.length ? r.notes[r.notes.length - 1].text : '';
+        return h(
+          'tr',
+          { class: `src-${r.state}`, title: [r.about, note].filter(Boolean).join('\n') },
+          h('td', {}, c.name),
+          h('td', {}, c.state),
+          h('td', {}, c.last),
+          h('td', { class: 'src-err' }, c.errors),
+          h('td', {}, c.limit),
+          h('td', {}, c.cache),
+        );
+      });
+      wrap.replaceChildren(
+        h('b', {}, 'Sources (helper)'),
+        h('div', { class: 'muted tiny' }, 'Every outside site the helper asks, shared pacing and retries included. Hover a row for details.'),
+        rows.length ? h('div', { class: 'src-scroll' }, h('table', { class: 'src-table' }, h('thead', {}, head), h('tbody', {}, ...rows))) : h('div', { class: 'muted small' }, 'No source used yet this run.'),
+      );
+    } catch (err) {
+      wrap.replaceChildren(h('div', { class: 'muted small' }, `Sources unavailable: ${(err as Error).message}`));
+    } finally {
+      busy = false;
+    }
+  };
+  void draw();
+  return { el: wrap, draw };
+}
+
 /** The list of feeds, redrawn every few seconds while open. */
 function healthList() {
   const list = h('ul', { class: 'health-list' });
@@ -103,9 +150,10 @@ function healthList() {
     );
     list.replaceChildren(...(Object.keys(FEEDS) as FeedId[]).map(feedRow));
   };
+  const sources = sourcesTable();
   draw();
   const foot = h('div', { class: 'health-foot' }, diagnosticsButton('btn small'));
-  return { el: h('div', { class: 'health-pop' }, head, list, foot), draw };
+  return { el: h('div', { class: 'health-pop' }, head, list, sources.el, foot), draw: () => (draw(), void sources.draw()) };
 }
 
 /** Worst state across feeds that have been used (for the button's dot). */

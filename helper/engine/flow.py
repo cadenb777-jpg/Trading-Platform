@@ -4,6 +4,7 @@ exposure) and futures positioning from the CFTC's Commitment of Traders report.
 """
 import math
 
+from . import datahub
 from .core import EngineError, handler
 
 UNUSUAL_MIN_VOLUME = 300
@@ -270,7 +271,7 @@ async def cot(ctx, msg):
         raise EngineError('Unknown market')
     async def load():
         params = {'cftc_contract_market_code': code, '$order': 'report_date_as_yyyy_mm_dd DESC', '$limit': '156'}
-        response = await ctx.http.get(COT_URL, params=params)
+        response = await datahub.get(ctx.http, 'cftc', COT_URL, params=params)
         response.raise_for_status()
         return parse_cot(response.json())
     rows = await ctx.cached(('cot', code), 6 * 3600, load, persist=True, stale_ok=True)

@@ -230,7 +230,11 @@ async def fetch_history(client, symbol, resolution, days):
     kwargs = {'start_datetime': now - dt.timedelta(days=days), 'end_datetime': now}
     if resolution not in ('1D', '1W'):
         kwargs['need_extended_hours_data'] = True
-    response = await getattr(client, RESOLUTIONS[resolution])(symbol, **kwargs)
+    # Through the data hub: Schwab's shared per-minute budget, a retry on 429/5xx, and two tabs asking for the same
+    # chart at once share one request.
+    from engine import datahub
+    method = getattr(datahub.raw(client), RESOLUTIONS[resolution])
+    response = await datahub.call('schwab', lambda: method(symbol, **kwargs), key=('history', symbol, resolution, days))
     if response.status_code == 401:
         raise HelperError('Schwab login expired. Close the helper and start it again to log in.')
     if response.status_code != 200:
@@ -441,7 +445,8 @@ class NewsFetcher:
         cached = self.cache.get(url)
         if cached and time.time() - cached[0] < max_age:
             return cached[1]
-        response = await self.http.get(url)
+        from engine import datahub
+        response = await datahub.get(self.http, None, url)  # news/calendar gate: retries, joined requests, health
         response.raise_for_status()
         data = parse(response)
         self._remember(url, data)
@@ -768,10 +773,15 @@ class Market:
         return emit
 
     async def engine_reply(self, kind, msg):
+        from engine import datahub
+        record = datahub.track()  # which cached values (and how old) this reply is built from
         try:
             data = await engine.HANDLERS[kind](self.engine, msg)
         except engine.EngineError as err:
             raise HelperError(str(err)) from err
+        prov = datahub.provenance(record)
+        if prov and isinstance(data, dict) and 'provenance' not in data:
+            data = {**data, 'provenance': prov}  # a copy: the handler's dict may be a cached value
         return {'type': 'engine', 'data': data}
 
     async def calendar_reply(self):
@@ -927,7 +937,7 @@ class Market:
             for i in range(0, len(symbols), 100):
                 chunk = symbols[i:i + 100]
                 try:
-                    response = await self.client.get_quotes(chunk)
+                    response = await (getattr(self.engine, 'schwab', None) or self.client).get_quotes(chunk)  # paced and recorded by the data hub
                     data = response.json() if response.status_code == 200 else {}
                 except Exception as err:
                     log.debug('Official quotes failed: %s', err)

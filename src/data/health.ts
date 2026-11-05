@@ -3,6 +3,8 @@
  * and the Data button can list every feed. Pure bookkeeping; schwab.ts records successes and failures.
  */
 
+import { replyProvenance } from './provenance';
+
 export type FeedId = 'quotes' | 'stream' | 'alpaca' | 'sec' | 'fred' | 'cftc' | 'webull';
 
 /** Each feed, its stamp label and how often it is normally refreshed (stale after twice that). 0 = on request only. */
@@ -78,8 +80,17 @@ export function markFetched(type: string, data?: unknown, at = Date.now()) {
   if (feed) recordOk(feed, at);
 }
 
-/** When this exact reply arrived from the helper (ms), or null. */
-export const replyTime = (data: unknown): number | null => (data && typeof data === 'object' ? (replies.get(data) ?? null) : null);
+/**
+ * When this reply's data was fetched (ms), or null: the time it arrived from the helper, except when the helper
+ * showed an older saved copy while refreshing (v44 `provenance.stale`), then that copy's own time, so the stamp
+ * tells the truth and turns amber.
+ */
+export const replyTime = (data: unknown): number | null => {
+  if (!data || typeof data !== 'object') return null;
+  const prov = replyProvenance(data);
+  if (prov?.stale) return prov.fetchedAt * 1000;
+  return replies.get(data) ?? null;
+};
 
 /** Stale = older than twice the feed's refresh interval (feeds refreshed only on request never go stale). */
 export function isStale(at: number | null, refreshMs: number, now = Date.now()): boolean {

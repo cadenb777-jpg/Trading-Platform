@@ -136,7 +136,7 @@ class SecPacing(unittest.TestCase):
                 await asyncio.gather(*(sec.sec_get(ctx, f'u{i}') for i in range(3)), *(sec._json(ctx, 'j') for _ in range(2)))
         asyncio.run(go())
         gaps = [b - a for a, b in zip(calls, calls[1:])]
-        self.assertEqual(len(calls), 5)
+        self.assertEqual(len(calls), 4)  # the two identical _json('j') requests in flight together share one (data hub)
         self.assertTrue(all(g >= 0.045 for g in gaps), gaps)
 
     def test_default_is_at_most_8_a_second(self):

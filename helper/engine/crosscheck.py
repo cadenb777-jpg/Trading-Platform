@@ -54,6 +54,7 @@ import time
 import urllib.parse
 from zoneinfo import ZoneInfo
 
+from . import datahub, symbols
 from .core import NYSE_EARLY_CLOSES, NYSE_HOLIDAYS, EngineError, handler, market_session
 
 NY = ZoneInfo('America/New_York')
@@ -436,16 +437,10 @@ def _failed_recently(key):
 
 
 async def _paced(site, coro_fn):
-    """Runs one request to `site` at a time, at least PACING[site] seconds after the previous one."""
-    gate = _gates.setdefault(site, {'lock': asyncio.Lock(), 'last': 0.0})
-    async with gate['lock']:
-        wait = gate['last'] + PACING.get(site, 1.0) - time.monotonic()
-        if wait > 0:
-            await asyncio.sleep(wait)
-        try:
-            return await asyncio.wait_for(coro_fn(), TIMEOUT * 2)
-        finally:
-            gate['last'] = time.monotonic()
+    """Runs one request to `site` through the data hub's gate for that site (shared with the rest of the helper), at
+    least PACING[site] seconds after the previous one ends. No retries here: a failure is remembered (FAIL_TTL)."""
+    return await datahub.call(site if site in datahub.SOURCES else 'other', coro_fn, gap=PACING.get(site, 1.0),
+                              gap_from='end', retries=0, timeout=TIMEOUT * 2)
 
 
 async def _get(ctx, site, url, **kw):
@@ -464,12 +459,12 @@ NASDAQ_HEADERS = {'Accept': 'application/json, text/plain, */*', 'Origin': 'http
 
 
 def _yahoo(symbol):
-    return symbol.replace('.', '-')
+    return symbols.to_source(symbol, 'yahoo')
 
 
 async def fetch_schwab(ctx, symbol, field, hint):
     async def go():
-        return await ctx.schwab.get_quotes([symbol])
+        return await datahub.raw(ctx.schwab).get_quotes([symbol])  # _paced already routes it
     response = await _paced('schwab', go)
     if response.status_code == 401:
         raise EngineError('Schwab login expired.')

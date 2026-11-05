@@ -156,10 +156,34 @@ class DiskCache:
             log.debug('Not cached %s: %s', key, err)
 
 
+def parse_yahoo_events(payload):
+    """Yahoo chart JSON -> {'dividends': {'YYYY-MM-DD': amount}, 'splits': {'YYYY-MM-DD': ratio}} (dates are the UTC
+    date of Yahoo's event time, which Yahoo sets during the New York trading day, so it is the ex-date)."""
+    result = ((payload or {}).get('chart', {}).get('result') or [{}])[0] or {}
+    events = result.get('events') or {}
+    divs, splits = {}, {}
+    for d in (events.get('dividends') or {}).values():
+        try:
+            day = dt.datetime.fromtimestamp(d['date'], dt.timezone.utc).date().isoformat()
+            divs[day] = divs.get(day, 0.0) + float(d['amount'])
+        except (KeyError, TypeError, ValueError):
+            continue
+    for x in (events.get('splits') or {}).values():
+        try:
+            num, den = float(x.get('numerator') or 0), float(x.get('denominator') or 0)
+            if num > 0 and den > 0:
+                splits[dt.datetime.fromtimestamp(x['date'], dt.timezone.utc).date().isoformat()] = num / den
+        except (KeyError, TypeError, ValueError):
+            continue
+    return {'dividends': divs, 'splits': splits}
+
+
 class EngineContext:
     def __init__(self, schwab_client, sec_contact='', news=None, disk=None):
-        from . import diagnostics, settings
-        self.schwab = schwab_client
+        from . import datahub, diagnostics, settings
+        # Every Schwab get_* call goes through the data hub: one per-minute budget shared by charts, quotes, pages and
+        # the scanner (which uses ctx.schwab.background()), with retries and a health record.
+        self.schwab = datahub.Routed(schwab_client) if schwab_client is not None else None
         self.news = news
         self.http = diagnostics.watch_http(httpx.AsyncClient(timeout=httpx.Timeout(12, connect=6), follow_redirects=True, headers={'User-Agent': BROWSER_UA}))
         # An email entered at the old terminal prompt moves into the Settings window's storage.
@@ -191,19 +215,44 @@ class EngineContext:
 
         persist keeps the value on disk across restarts. stale_ok returns an older saved value straight
         away and refreshes it in the background, so pages never wait on a slow website twice."""
+        from . import datahub
+        source = datahub.source_of_key(key)
         hit = self._cache.get(key)
         if hit is None and persist:
             hit = self.disk.get(repr(key))
             if hit:
-                self._cache[key] = hit
+                self._remember(key, hit)
         if hit and time.time() - hit[0] < max_age:
+            if source:
+                datahub.record_cache(source, True)
+            datahub.note_value(key, hit[0], False)
             return hit[1]
         if hit and stale_ok and time.time() - hit[0] < max_age + 7 * 86400:
             if key not in self._refreshing:
                 self._refreshing.add(key)
                 background(self._refresh(key, load, persist))
+            if source:
+                datahub.record_cache(source, True, stale=True)
+            datahub.note_value(key, hit[0], True)  # the reply says it showed a saved copy
             return hit[1]
-        return await self._load(key, load, persist, max_age)
+        if source:
+            datahub.record_cache(source, False)
+        value = await self._load(key, load, persist, max_age)
+        datahub.note_value(key, (self._cache.get(key) or (time.time(),))[0], False)
+        return value
+
+    #: values kept in memory; the oldest are dropped past this (persisted ones are read back from cache.db)
+    MEMORY_LIMIT = 3000
+
+    def _remember(self, key, entry):
+        self._cache[key] = entry
+        if len(self._cache) > self.MEMORY_LIMIT:
+            for old in sorted(self._cache, key=lambda k: self._cache[k][0])[:len(self._cache) - self.MEMORY_LIMIT * 3 // 4]:
+                if old not in self._refreshing:
+                    self._cache.pop(old, None)
+                    lock = self._locks.get(old)
+                    if lock is not None and not lock.locked():
+                        self._locks.pop(old, None)
 
     async def _load(self, key, load, persist, max_age=0):
         lock = self._locks.setdefault(key, asyncio.Lock())
@@ -213,7 +262,7 @@ class EngineContext:
                 return hit[1]
             value = await load()
             now = time.time()
-            self._cache[key] = (now, value)
+            self._remember(key, (now, value))
             if persist:
                 # Writing (JSON + commit) can take tens of milliseconds for long histories: do it off the event
                 # loop so live quotes and other requests keep flowing.
@@ -231,43 +280,37 @@ class EngineContext:
         finally:
             self._refreshing.discard(key)
 
-    async def dividends(self, symbol):
-        """Cash dividends per share by ex-date ({date: amount}) from Yahoo Finance's free chart data; {} if unavailable."""
+    async def yahoo_events(self, symbol):
+        """Cash dividends ({date: amount per share by ex-date}) and splits ({date: new shares per old share}) from
+        Yahoo's free chart data, in ONE request per symbol (it used to be two), saved in cache.db (a day, then served
+        while it refreshes) and paced through the data hub. Yahoo's amounts are split-adjusted, like Schwab's bars."""
+        from . import datahub, symbols
+
         async def load():
-            yahoo = symbol.replace('.', '-').replace('/', '-')
-            response = await self.http.get(f'https://query1.finance.yahoo.com/v8/finance/chart/{yahoo}',
-                                           params={'range': 'max', 'interval': '1mo', 'events': 'div'})
+            yahoo = symbols.to_source(symbol, 'yahoo')
+            response = await datahub.get(self.http, 'yahoo', f'https://query1.finance.yahoo.com/v8/finance/chart/{yahoo}',
+                                         params={'range': 'max', 'interval': '1mo', 'events': 'div,split'})
+            if response.status_code == 404:
+                return {'dividends': {}, 'splits': {}}  # Yahoo doesn't know it: a definite "none"
             response.raise_for_status()
-            result = (response.json().get('chart', {}).get('result') or [{}])[0]
-            out = {}
-            for d in (result.get('events') or {}).get('dividends', {}).values():
-                day = dt.datetime.fromtimestamp(d['date'], dt.timezone.utc).date()
-                out[day] = out.get(day, 0.0) + float(d['amount'])
-            return out
+            return parse_yahoo_events(response.json())
+        return await self.cached(('yahoo-events', symbols.normalize(symbol)), 86400, load, persist=True, stale_ok=True)
+
+    async def dividends(self, symbol):
+        """Cash dividends per share by ex-date ({date: amount}) from Yahoo Finance's free chart data; None if unavailable."""
         try:
-            return await self.cached(('dividends', symbol), 86400, load)
+            data = await self.yahoo_events(symbol)
         except Exception:
             return None
+        return {dt.date.fromisoformat(d): v for d, v in data['dividends'].items()}
 
     async def splits(self, symbol):
-        """Stock splits by date ({date: new shares per old share, e.g. 4.0 for 4-for-1}) from Yahoo's chart data;
-        None if unavailable."""
-        async def load():
-            yahoo = symbol.replace('.', '-').replace('/', '-')
-            response = await self.http.get(f'https://query1.finance.yahoo.com/v8/finance/chart/{yahoo}',
-                                           params={'range': 'max', 'interval': '1mo', 'events': 'split'})
-            response.raise_for_status()
-            result = (response.json().get('chart', {}).get('result') or [{}])[0]
-            out = {}
-            for x in ((result.get('events') or {}).get('splits') or {}).values():
-                num, den = float(x.get('numerator') or 0), float(x.get('denominator') or 0)
-                if num > 0 and den > 0:
-                    out[dt.datetime.fromtimestamp(x['date'], dt.timezone.utc).date()] = num / den
-            return out
+        """Stock splits by date ({date: new shares per old share, e.g. 4.0 for 4-for-1}); None if unavailable."""
         try:
-            return await self.cached(('splits', symbol), 86400, load)
+            data = await self.yahoo_events(symbol)
         except Exception:
             return None
+        return {dt.date.fromisoformat(d): v for d, v in data['splits'].items()}
 
     async def daily_bars(self, symbol, years=20):
         """Daily bars (split-adjusted) for up to `years` years: list of dicts with time (unix s) and OHLCV."""

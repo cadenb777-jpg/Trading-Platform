@@ -5,9 +5,9 @@ statements (XBRL company facts). The SEC asks for a contact email in the User-Ag
 """
 import asyncio
 import re
-import time
 import xml.etree.ElementTree as ET
 
+from . import datahub, symbols
 from .core import EngineError, handler
 
 TICKERS_URL = 'https://www.sec.gov/files/company_tickers.json'
@@ -15,23 +15,18 @@ SUBMISSIONS_URL = 'https://data.sec.gov/submissions/CIK{cik:010d}.json'
 FACTS_URL = 'https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json'
 ARCHIVE_URL = 'https://www.sec.gov/Archives/edgar/data/{cik}/{accession}/{document}'
 
-_sec_slots = asyncio.Semaphore(5)
-#: seconds between requests to the SEC from anywhere in the helper (at most 8 a second; the SEC allows 10)
+#: seconds between requests to the SEC from anywhere in the helper (at most 8 a second; the SEC allows 10).
+#: The pacing itself is the data hub's 'sec' gate (shared with every module, at most 5 at once).
 SEC_SPACING = 0.125
-_pace_lock = None
-_last_sent = [0.0]
 
 
 async def pace():
-    """Waits for this request's turn so the whole helper sends the SEC at most one request per SEC_SPACING."""
-    global _pace_lock
-    if _pace_lock is None:
-        _pace_lock = asyncio.Lock()
-    async with _pace_lock:
-        wait = _last_sent[0] + SEC_SPACING - time.monotonic()
-        if wait > 0:
-            await asyncio.sleep(wait)
-        _last_sent[0] = time.monotonic()
+    """Waits for this request's turn so the whole helper sends the SEC at most one request per SEC_SPACING. For code
+    that streams its own download; prefer `sec_get`, which also retries and joins identical requests."""
+    g = datahub.gate('sec')
+    await g.acquire(gap=SEC_SPACING)
+    g.release()
+    datahub.HEALTH['sec'].calls += 1
 
 
 class NotListed(EngineError):
@@ -41,9 +36,8 @@ class NotListed(EngineError):
 async def sec_get(ctx, url):
     if not ctx.sec_contact:
         raise EngineError('SEC data needs a contact email: open Settings (the gear at the bottom of the left menu) and add your email under "SEC email".')
-    await pace()
-    async with _sec_slots:
-        response = await ctx.sec_http.get(url)
+    # Through the data hub: shared SEC pacing, retries on 429/5xx, identical requests joined, health recorded.
+    response = await datahub.call('sec', lambda: ctx.sec_http.get(url), key=('GET', url), gap=SEC_SPACING)
     if response.status_code == 404:
         raise EngineError('The SEC has no data for this company.')
     if response.status_code == 403:
@@ -63,7 +57,7 @@ async def tickers(ctx):
 async def company(ctx, symbol):
     """Looks up a ticker's SEC CIK number and name."""
     tickers_ = await tickers(ctx)
-    found = tickers_.get(symbol.upper().replace('.', '-')) or tickers_.get(symbol.upper())
+    found = symbols.lookup(tickers_, symbol)  # BRK.B, BRK/B and BRK-B are all the SEC's BRK-B
     if not found:
         raise NotListed(f'"{symbol}" isn\'t in the SEC\'s company list (ETFs, indexes and foreign companies often aren\'t).')
     return found
