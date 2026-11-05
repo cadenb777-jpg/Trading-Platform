@@ -90,7 +90,7 @@ export function createChartPage() {
     clockBtn.textContent = getClock();
     clockBtn.setAttribute('aria-label', `Clock: ${getClock()}`);
   });
-  const fitBtn = h('button', { class: 'btn fit-btn', title: 'Fit the chart to the candles (F)', 'aria-label': 'Fit chart', onclick: () => chart?.fit() }, icon('fit', 18), ' Fit');
+  const fitBtn = h('button', { class: 'btn fit-btn', title: 'Fit the chart to the candles (F)', 'aria-label': 'Fit chart', onclick: () => chart?.fit() }, icon('fit', 18));
   const side = h('aside', { class: 'watch-side' });
   // the chart's link chip: other panels of its colour follow its symbol, and it follows theirs
   const link = linkPanel({

@@ -9287,7 +9287,8 @@ body[data-route='chart'] { background: var(--bg-chart); }
 /* Depth cards: every information card is darker at the top and lighter toward the bottom. */
 :root {
   --card-top: color-mix(in srgb, var(--bg-deep) 55%, var(--surface));
-  --card-bottom: color-mix(in srgb, var(--raised) 70%, var(--accent) 6%);
+  /* the two parts add up to 100%, so cards are solid (76% let the page grid show through) */
+  --card-bottom: color-mix(in srgb, var(--raised) 93%, var(--accent) 7%);
 }
 :root[data-theme='light'] {
   /* Light mode: white cards with only a whisper of warmth at the top, so they read as paper, not grey. */
@@ -10507,4 +10508,58 @@ body.rail-collapsed .rail .rail-bottom {
 .fn-chip {
   flex: none;
   white-space: nowrap;
+}
+
+/* ----- v45.1: owner's polish round ----- */
+/* Home hero: the same solid depth gradient as every card (no grid behind it), with its two soft glows kept. */
+.home > .home-hero {
+  background:
+    radial-gradient(60% 120% at 100% 0, var(--glow-sky), transparent 70%),
+    radial-gradient(40% 90% at 0 100%, var(--glow-copper), transparent 70%),
+    linear-gradient(180deg, var(--card-top) 0%, var(--card-bottom) 100%);
+}
+/* The function bar is a solid card too, and keeps the page's centring (its margin used to undo margin: auto). */
+.fn-bar {
+  margin-left: auto;
+  margin-right: auto;
+  background: linear-gradient(180deg, var(--card-top) 0%, var(--card-bottom) 100%);
+}
+
+/* Chart toolbar on one line on a wide screen: tighter gaps, narrower boxes and buttons, an icon-only Fit. */
+.chart-page .toolbar {
+  gap: 4px;
+}
+.chart-page .toolbar .input.market {
+  width: 142px;
+}
+.chart-page .toolbar .input.symbol {
+  width: 92px;
+}
+.chart-page .toolbar .input.chart-type {
+  width: 112px;
+}
+.chart-page .toolbar .tf-picker button,
+.chart-page .toolbar .cf-range-wrap button {
+  padding-left: 7px;
+  padding-right: 7px;
+  min-width: 0;
+}
+
+/* The menu uses its full height: the groups spread out evenly so the names breathe, Launchpad sits near the bottom. */
+@media (min-width: 701px) and (min-height: 720px) {
+  .rail-tree {
+    flex: 1 1 auto;
+    justify-content: space-evenly;
+    gap: 0;
+  }
+  .rail .nav-btn.rail-page {
+    padding-top: clamp(4px, 0.55vh, 8px);
+    padding-bottom: clamp(4px, 0.55vh, 8px);
+  }
+  .rail-head {
+    padding-bottom: 4px;
+  }
+  .rail .rail-launch {
+    margin-bottom: var(--sp-2);
+  }
 }
