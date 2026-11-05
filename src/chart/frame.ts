@@ -109,3 +109,37 @@ export function mixColor(a: string, b: string, t: number): string {
   const c = x.map((v, i) => Math.round(v + (y[i] - v) * k));
   return `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 }
+
+const EFFECTS_KEY = 'tp-chart-effects';
+let effectsPref: boolean | null = null;
+const effectsListeners = new Set<() => void>();
+
+/** The "Chart effects" setting (Settings > Chart, saved in this browser): on unless switched off. */
+export function chartEffectsSetting(): boolean {
+  if (effectsPref === null) {
+    try {
+      effectsPref = localStorage.getItem(EFFECTS_KEY) !== 'off';
+    } catch {
+      effectsPref = true;
+    }
+  }
+  return effectsPref;
+}
+
+export function setChartEffects(on: boolean) {
+  effectsPref = on;
+  try {
+    localStorage.setItem(EFFECTS_KEY, on ? 'on' : 'off');
+  } catch {
+    // private window: not remembered
+  }
+  for (const fn of [...effectsListeners]) fn();
+}
+
+export function onChartEffectsChange(fn: () => void): () => void {
+  effectsListeners.add(fn);
+  return () => effectsListeners.delete(fn);
+}
+
+/** Crosshair glow, selected-drawing glow, last-price flash and pulse: on with the setting, always off with reduced motion. */
+export const chartEffects = () => chartEffectsSetting() && !reducedMotion();

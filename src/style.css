@@ -8694,7 +8694,7 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 55%, transparent) 0, color-mix(in srgb, var(--accent) 18%, transparent) 35%, transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 30%, transparent) 0, color-mix(in srgb, var(--accent) 10%, transparent) 35%, transparent 70%);
   opacity: 0;
   transition: opacity 0.18s ease;
 }

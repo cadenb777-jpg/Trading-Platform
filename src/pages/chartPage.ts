@@ -420,8 +420,14 @@ export function createChartPage() {
         setText(ohlcNums[4], `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`);
       }
     }
+    // On the latest bar an indicator may not have caught up yet (it follows ticks a little behind, or is still in the
+    // worker): keep its last number until onValues brings the new one, instead of blanking to a dash.
+    const latest = index >= chart.barCount - 1;
     for (const { uid, nums } of legendValues) {
-      chart.valuesAt(uid, index).forEach((v, i) => setText(nums[i], formatNumber(v.value)));
+      chart.valuesAt(uid, index).forEach((v, i) => {
+        if (latest && !Number.isFinite(v.value) && nums[i]?.textContent) return;
+        setText(nums[i], formatNumber(v.value));
+      });
     }
   }
 
@@ -492,7 +498,7 @@ export function createChartPage() {
       { label: 'High', value: formatNumber(bar.high) },
       { label: 'Low', value: formatNumber(bar.low) },
       { label: 'Close', value: formatNumber(bar.close), color: dir },
-      { label: 'Change', value: `${change >= 0 ? '+' : ''}${formatNumber(change)} (${pctChange >= 0 ? '+' : ''}${pctChange.toFixed(2)}%)`, color: change >= 0 ? THEME.up : THEME.down },
+      { label: 'Change', value: `${change >= 0 ? '+' : '−'}${chart.formatPrice(Math.abs(change))} (${pctChange >= 0 ? '+' : '−'}${Math.abs(pctChange).toFixed(2)}%)`, color: change >= 0 ? THEME.up : THEME.down },
       { label: 'Volume', value: fmtVolume(bar.volume) },
     ];
     if (!card.narrow) {

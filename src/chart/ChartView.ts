@@ -83,6 +83,8 @@ export interface PointerInfo {
   hoveredUid: string | null;
 }
 
+let chartCount = 0;
+
 /** Bars from which heavy indicators move to the worker, and how slow (ms) counts as heavy. */
 const WORKER_MIN_BARS = 2000;
 const HEAVY_MS = 12;
@@ -125,6 +127,7 @@ export class ChartView {
   private readonly useWorker: boolean;
   /** Bumped by every setBars so late worker results for old data are dropped. */
   private dataGeneration = 0;
+  private readonly workerGroup = `chart-${++chartCount}`;
   private highlighted: string | null = null;
   private highlightKey = '';
   private fitFrame = 0;
@@ -178,6 +181,7 @@ export class ChartView {
         timeToX: (t) => this.chart.timeScale().timeToCoordinate(t as UTCTimestamp),
         formatPrice: (p) => this.formatPrice(p),
         lastBar: () => this.bars[this.bars.length - 1] ?? null,
+        minMove: () => (this.main.options().priceFormat as { minMove?: number }).minMove ?? 0.01,
       },
       this.overlay,
     );
@@ -244,6 +248,7 @@ export class ChartView {
     if (refit && this.bars.length && bars !== this.bars) this.crossFade();
     this.dataGeneration++;
     this.cancelIndicatorFlush();
+    indicatorWorker.cancel(this.workerGroup, this.dataGeneration);
     this.bars = bars;
     this.timeframe = timeframe;
     this.timeIndex.clear();
@@ -879,7 +884,7 @@ export class ChartView {
     const generation = this.dataGeneration;
     const n = this.bars.length;
     r.dirtyFrom = null;
-    const job = indicatorWorker.run(this.bars, [{ key: r.instance.uid, defId: r.def.id, params: this.params(r) }]).get(r.instance.uid)!;
+    const job = indicatorWorker.run(this.bars, [{ key: r.instance.uid, defId: r.def.id, params: this.params(r) }], this.workerGroup, generation).get(r.instance.uid)!;
     const current = () => !this.disposed && r.request === token && this.dataGeneration === generation && this.indicators.get(r.instance.uid) === r;
     job.then(
       (values) => {

@@ -3,7 +3,7 @@
  * waiting calculation is rejected and `available` turns false, so charts fall back to calculating on the page.
  */
 import type { Bar } from '../types';
-import { packBars, unpackValues, type ComputeJob, type ComputeReply } from './workerProtocol';
+import { PROTOCOL_VERSION, packBars, unpackValues, type ComputeJob, type ComputeReply, type WorkerMessage } from './workerProtocol';
 
 type Values = Record<string, number[]>;
 
@@ -24,7 +24,7 @@ class IndicatorWorkerClient {
   private worker: Worker | null = null;
   private broken = typeof Worker === 'undefined';
   private nextId = 1;
-  private readonly waiting = new Map<string, { resolve: (v: Values) => void; reject: (e: Error) => void; defId: string; bars: number }>();
+  private readonly waiting = new Map<string, { resolve: (v: Values) => void; reject: (e: Error) => void; defId: string; bars: number; group: string; generation: number }>();
 
   get available() {
     return !this.broken;
@@ -45,8 +45,11 @@ class IndicatorWorkerClient {
     return this.worker;
   }
 
-  /** Sends the bars once with every job; each promise settles as soon as its own job is done. */
-  run(bars: Bar[], jobs: (ComputeJob & { defId: string })[]): Map<string, Promise<Values>> {
+  /**
+   * Sends the bars once with every job; each promise settles as soon as its own job is done. `group` (one chart) and
+   * `generation` (its data version) let `cancel` drop the work for data the chart no longer shows.
+   */
+  run(bars: Bar[], jobs: ComputeJob[], group = '', generation = 0): Map<string, Promise<Values>> {
     const out = new Map<string, Promise<Values>>();
     const worker = this.start();
     const id = this.nextId++;
@@ -55,15 +58,29 @@ class IndicatorWorkerClient {
         job.key,
         new Promise<Values>((resolve, reject) => {
           if (!worker) return reject(new Error('No indicator worker'));
-          this.waiting.set(`${id}:${job.key}`, { resolve, reject, defId: job.defId, bars: bars.length });
+          this.waiting.set(`${id}:${job.key}`, { resolve, reject, defId: job.defId, bars: bars.length, group, generation });
         }),
       );
     }
     if (worker) {
       const packed = packBars(bars);
-      worker.postMessage({ id, bars: packed, jobs }, [packed.buffer]);
+      const msg: WorkerMessage = { v: PROTOCOL_VERSION, type: 'compute', id, group, generation, bars: packed, jobs };
+      worker.postMessage(msg, [packed.buffer]);
     }
     return out;
+  }
+
+  /** Drops a chart's queued jobs for data older than `below` (e.g. the previous symbol) and rejects their promises. */
+  cancel(group: string, below: number) {
+    if (!this.worker) return;
+    const msg: WorkerMessage = { v: PROTOCOL_VERSION, type: 'cancel', group, below };
+    this.worker.postMessage(msg);
+    for (const [key, w] of this.waiting) {
+      if (w.group === group && w.generation < below) {
+        this.waiting.delete(key);
+        w.reject(new Error('cancelled'));
+      }
+    }
   }
 
   private onReply(reply: ComputeReply) {

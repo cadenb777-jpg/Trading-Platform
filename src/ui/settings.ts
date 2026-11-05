@@ -3,6 +3,7 @@
  * keys, Test/Live, order limits) and where alerts are sent (ntfy, Telegram). Values go straight to the helper,
  * which saves them on this computer; keys are never stored in the browser or shown again.
  */
+import { chartEffectsSetting, reducedMotion, setChartEffects } from '../chart/frame';
 import { LATEST_HELPER_VERSION, engineRequest, helper, prospectContactsReady, setAlpacaConnected } from '../data/schwab';
 import { smtpCheckRow } from '../prospect/smtpSetting';
 import { deliverySummary } from './alertsLogic';
@@ -585,7 +586,28 @@ function appearanceRow(): HTMLElement[] {
       ),
     );
   draw();
-  return [h('h3', { class: 'settings-section' }, 'Appearance'), h('div', { class: 'settings-row' }, h('div', { class: 'settings-label' }, h('b', {}, 'Theme')), seg)];
+  return [h('h3', { class: 'settings-section' }, 'Appearance'), h('div', { class: 'settings-row' }, h('div', { class: 'settings-label' }, h('b', {}, 'Theme')), seg), ...chartRows()];
+}
+
+/** Chart: one switch for the decorative motion (saved in this browser). "Reduce motion" in the system turns it off. */
+function chartRows(): HTMLElement[] {
+  const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Chart effects' });
+  const draw = () =>
+    seg.replaceChildren(
+      ...[true, false].map((on) =>
+        h('button', { type: 'button', class: chartEffectsSetting() === on ? 'active' : '', 'aria-pressed': String(chartEffectsSetting() === on), onclick: () => (setChartEffects(on), draw()) }, on ? 'On' : 'Off'),
+      ),
+    );
+  draw();
+  return [
+    h('h3', { class: 'settings-section' }, 'Chart'),
+    h(
+      'div',
+      { class: 'settings-row' },
+      h('div', { class: 'settings-label' }, h('b', {}, 'Chart effects'), h('span', { class: 'muted' }, ' Crosshair glow, selected-drawing glow, last-price flash and pulse.' + (reducedMotion() ? ' Off while your system asks for reduced motion.' : ''))),
+      seg,
+    ),
+  ];
 }
 
 /** `focus`: 'ai' (the key box), 'alerts', 'connection' (the check at the top) or a section heading such as 'Trading'. */

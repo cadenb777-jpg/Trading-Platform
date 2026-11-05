@@ -6,7 +6,7 @@
 import type { IPrimitivePaneView, ISeriesPrimitive, ISeriesPrimitiveAxisView, SeriesAttachedParameter, Time } from 'lightweight-charts';
 import type { ChartView } from './ChartView';
 import { THEME } from '../ui/theme';
-import { approach, reducedMotion, withAlpha } from './frame';
+import { approach, chartEffects, reducedMotion, withAlpha } from './frame';
 
 export type DrawingType = 'trend' | 'ray' | 'hline' | 'vline' | 'rect' | 'fib' | 'long' | 'short';
 export type Tool = DrawingType | 'cursor';
@@ -427,10 +427,10 @@ export class DrawingManager {
       ctx.save();
       ctx.strokeStyle = d.color;
       ctx.lineWidth = active ? 2 : 1.5;
-      if (d.id === this.selectedId) {
-        // The selected drawing glows softly.
-        ctx.shadowColor = withAlpha(d.color, 0.8);
-        ctx.shadowBlur = 10 * g;
+      if (d.id === this.selectedId && chartEffects()) {
+        // The selected drawing glows softly (a "Chart effect").
+        ctx.shadowColor = withAlpha(d.color, 0.6);
+        ctx.shadowBlur = 6 * g;
       }
       this.drawShape(ctx, d, s, width, height);
       ctx.restore();

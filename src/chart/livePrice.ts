@@ -6,7 +6,7 @@
  */
 import type { ISeriesPrimitive, ISeriesPrimitiveAxisView, IPrimitivePaneView, SeriesAttachedParameter, Time } from 'lightweight-charts';
 import { THEME } from '../ui/theme';
-import { approach, easeOutCubic, mixColor, reducedMotion, withAlpha } from './frame';
+import { approach, chartEffects, easeOutCubic, mixColor, reducedMotion, withAlpha } from './frame';
 
 export interface LivePriceHost {
   priceToY(price: number): number | null;
@@ -14,7 +14,19 @@ export interface LivePriceHost {
   formatPrice(price: number): string;
   /** The latest bar's time, open and close (null when the chart is empty). */
   lastBar(): { time: number; open: number; close: number } | null;
+  /** The smallest price step (one tick). */
+  minMove(): number;
 }
+
+/**
+ * The pulse ring marks real news, not every fast trade: a new bar, or a move of at least one tick when the last pulse
+ * was at least a second ago.
+ */
+export function shouldPulse(newBar: boolean, change: number, tick: number, msSinceLast: number): boolean {
+  return newBar || (Math.abs(change) >= tick * (1 - 1e-9) && msSinceLast >= PULSE_GAP_MS);
+}
+
+const PULSE_GAP_MS = 1000;
 
 const GLIDE_MS = 90;
 const FLASH_MS = 200;
@@ -31,6 +43,9 @@ export class LivePrice {
   /** A DOM ring on the latest candle: a CSS animation, so pulsing costs no chart redraws. */
   private readonly pulse: HTMLElement;
   private ring: Animation | null = null;
+  private pulseAt = -Infinity;
+  private pulsePrice = NaN;
+  private barTime = NaN;
 
   constructor(
     private readonly host: LivePriceHost,
@@ -69,19 +84,29 @@ export class LivePrice {
   update(tick: boolean) {
     const bar = this.host.lastBar();
     const price = bar?.close ?? NaN;
+    const newBar = !!bar && bar.time !== this.barTime;
+    this.barTime = bar?.time ?? NaN;
     if (!tick || !Number.isFinite(this.shown) || reducedMotion()) {
       this.shown = price;
       this.target = price;
+      this.pulsePrice = price;
       this.direction = 0;
       this.pulse.hidden = true;
       this.requestUpdate?.();
       return;
     }
+    const effects = chartEffects();
     if (price !== this.target) {
       this.direction = price > this.target ? 1 : -1;
-      this.flashAt = performance.now();
-      this.restartPulse();
+      // The flash (and the pulse) are "Chart effects"; the glide to the new price always runs.
+      if (effects) this.flashAt = performance.now();
     }
+    const now = performance.now();
+    if (effects && shouldPulse(newBar, price - this.pulsePrice, this.host.minMove(), now - this.pulseAt)) {
+      this.pulseAt = now;
+      this.pulsePrice = price;
+      this.restartPulse();
+    } else if (!effects) this.pulse.hidden = true;
     this.target = price;
     this.animate();
   }
@@ -148,7 +173,7 @@ export class LivePrice {
   private restartPulse() {
     const p = this.pulse;
     p.hidden = false;
-    p.style.setProperty('--pulse', this.direction > 0 ? THEME.up : THEME.down);
+    p.style.setProperty('--pulse', this.direction ? (this.direction > 0 ? THEME.up : THEME.down) : this.baseColor());
     this.placePulse();
     this.ring?.cancel();
     // Web Animations run on the compositor: no layout, no chart redraw.

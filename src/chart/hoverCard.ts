@@ -3,7 +3,7 @@
  * crosshair point. Plain DOM over the chart canvas: moving them never makes the chart redraw. The card eases after
  * the cursor and flips to the other side near the edges; with "reduce motion" it jumps.
  */
-import { approach, reducedMotion } from './frame';
+import { approach, chartEffects, reducedMotion } from './frame';
 
 export interface CardRow {
   label: string;
@@ -75,7 +75,7 @@ export class HoverCard {
   /** Shows the card next to (x, y); the glow sits on the crosshair's snapped point (null = no glow). */
   show(x: number, y: number, glowY: number | null, content: CardContent) {
     this.render(content);
-    if (glowY === null) this.glow.classList.remove('on');
+    if (glowY === null || !chartEffects()) this.glow.classList.remove('on');
     else {
       this.glow.style.transform = `translate(${x}px, ${glowY}px)`;
       this.glow.classList.add('on');
