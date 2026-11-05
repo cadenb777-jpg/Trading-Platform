@@ -242,7 +242,7 @@ export function createChartPage() {
   }
 
   document.addEventListener('keydown', (e) => {
-    if (!started || el.hidden || (e.target as HTMLElement).closest('input, select, textarea, .modal')) return;
+    if (!started || el.hidden || (e.target instanceof Element && e.target.closest('input, select, textarea, .modal'))) return;
     if (drawings.handleKey(e)) e.preventDefault();
     else if (e.key === 'f' && !e.ctrlKey && !e.metaKey) chart.fit();
   });
