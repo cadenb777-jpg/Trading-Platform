@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { approach, frameBatch, latestPerFrame, mixColor, withAlpha } from './frame';
-import { shouldPulse } from './livePrice';
 
 /** A hand-cranked "animation frame" so tests decide when frames happen. */
 function fakeFrames() {
@@ -65,16 +64,6 @@ describe('frameBatch', () => {
     latest.push('c');
     frames.tick();
     expect(seen).toEqual(['c']);
-  });
-});
-
-describe('last-price pulse', () => {
-  it('fires on a new bar, or a move of a tick or more at least a second after the last pulse', () => {
-    expect(shouldPulse(true, 0, 0.01, 10)).toBe(true);
-    expect(shouldPulse(false, 0.01, 0.01, 1000)).toBe(true);
-    expect(shouldPulse(false, -0.03, 0.01, 2500)).toBe(true);
-    expect(shouldPulse(false, 0.005, 0.01, 5000)).toBe(false); // less than a tick
-    expect(shouldPulse(false, 0.5, 0.01, 300)).toBe(false); // fast ticks: not every one
   });
 });
 

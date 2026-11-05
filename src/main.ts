@@ -17,6 +17,7 @@ import { h, toast } from './ui/dom';
 import { icon, type IconName } from './ui/icons';
 import { openSettings } from './ui/settings';
 import { initTheme } from './ui/theme';
+import { initAtmosphere, markRoute } from './ui/atmosphere';
 import { PAGE_SUGGESTIONS, screenText } from './ai/screen';
 import { followHealth, openDataHealth } from './ui/dataHealth';
 import { initTickerCards } from './ui/tickerCard';
@@ -28,6 +29,7 @@ import { createSecurityPage, initSecurity, openSecurity } from './security/open'
 captureConsoleErrors(); // kept for Settings > Send diagnostics
 
 initTheme();
+initAtmosphere();
 
 interface Page {
   el: HTMLElement;
@@ -465,6 +467,7 @@ async function route() {
   const where = resolveHash(location.hash, ROUTES());
   if (where.redirected) history.replaceState(null, '', where.hash);
   const current = currentPage();
+  markRoute(current.route);
   const mine = ++routeRequest;
   document.querySelectorAll<HTMLElement>('.nav-btn[data-route]').forEach((b) => {
     b.classList.toggle('active', b.dataset.route === current.route);

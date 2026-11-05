@@ -604,7 +604,7 @@ function chartRows(): HTMLElement[] {
     h(
       'div',
       { class: 'settings-row' },
-      h('div', { class: 'settings-label' }, h('b', {}, 'Chart effects'), h('span', { class: 'muted' }, ' Crosshair glow, selected-drawing glow, last-price flash and pulse.' + (reducedMotion() ? ' Off while your system asks for reduced motion.' : ''))),
+      h('div', { class: 'settings-label' }, h('b', {}, 'Chart effects'), h('span', { class: 'muted' }, ' Crosshair glow and selected-drawing glow.' + (reducedMotion() ? ' Off while your system asks for reduced motion.' : ''))),
       seg,
     ),
   ];

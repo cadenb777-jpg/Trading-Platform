@@ -28,7 +28,7 @@
   --up: #2fbf95;
   --down: #f0645a;
   --up-text: #4fd3ab;
-  --down-text: #ff8a80;
+  --down-text: #ff958c;
   --up-fill: #0b7358;
   --down-fill: #b8322b;
   --on-fill: #ffffff;
@@ -44,9 +44,9 @@
      Spots are #rrggbbaa so tokens.test.ts can check text contrast where they are strongest. */
   --grid-minor: color-mix(in srgb, var(--accent) 3.5%, transparent);
   --grid-major: color-mix(in srgb, var(--accent) 7.5%, transparent);
-  --spot-sky: #7ac3ee1f;
-  --spot-copper: #c8763a33;
-  --spot-deep: #1e5a9a47;
+  --spot-sky: #7ac3ee3d;
+  --spot-copper: #e0874552;
+  --spot-deep: #2466ad4a;
   --bridge-sky: #7ac3ee;
   --bridge-copper: #d9884a;
   /* Type. */
@@ -165,8 +165,8 @@
   --glass: color-mix(in srgb, var(--surface) 88%, transparent);
   --grid-minor: color-mix(in srgb, var(--accent) 3%, transparent);
   --grid-major: color-mix(in srgb, var(--accent) 6%, transparent);
-  --spot-sky: #7ac3ee2e;
-  --spot-copper: #ffa24d1f;
+  --spot-sky: #7ac3ee3d;
+  --spot-copper: #ffa24d33;
   --spot-deep: #123b680d;
   --bridge-sky: #3f86c2;
   --bridge-copper: #b8622a;
@@ -227,9 +227,6 @@ body::before {
   contain: strict;
   will-change: transform;
   background:
-    radial-gradient(42vmax 36vmax at 4% 100%, var(--spot-copper), transparent 70%),
-    radial-gradient(46vmax 38vmax at 100% 0, var(--spot-sky), transparent 70%),
-    radial-gradient(50vmax 34vmax at 58% 52%, var(--spot-deep), transparent 72%),
     linear-gradient(var(--grid-major) 1px, transparent 1px) -1px -1px / 120px 120px,
     linear-gradient(90deg, var(--grid-major) 1px, transparent 1px) -1px -1px / 120px 120px,
     linear-gradient(var(--grid-minor) 1px, transparent 1px) -1px -1px / 24px 24px,
@@ -8865,39 +8862,6 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   box-shadow: 0 0 0 1px var(--border-strong);
 }
 
-/* Ring that pulses on the latest candle at each live tick. */
-.live-pulse {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 0;
-  height: 0;
-}
-
-.live-pulse i,
-.live-pulse b {
-  position: absolute;
-  border-radius: 50%;
-}
-
-.live-pulse i {
-  left: -3px;
-  top: -3px;
-  width: 6px;
-  height: 6px;
-  background: var(--pulse);
-  box-shadow: 0 0 8px var(--pulse);
-}
-
-.live-pulse b {
-  left: -7px;
-  top: -7px;
-  width: 14px;
-  height: 14px;
-  opacity: 0;
-  background: color-mix(in srgb, var(--pulse) 45%, transparent);
-}
-
 .crosshair-glow {
   position: absolute;
   left: -14px;
@@ -9016,10 +8980,6 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   .crosshair-glow,
   .legend-row.indicator {
     transition: none;
-  }
-
-  .live-pulse {
-    display: none;
   }
 }
 /* ===== end chart engine ===== */
@@ -9249,3 +9209,75 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 }
 .mc-held { color: var(--text); }
 /* ===== end Investments interaction ===== */
+
+/* ===== Design round 3 (owner): living colour spots, depth cards, a plain Chart page ===== */
+/* Colour spots: three soft blurred glows (copper, sky, deep blue) on the fixed page layer, behind all content. They
+   drift and brighten/dim slowly on a random timer (src/ui/atmosphere.ts); reduced motion keeps them still. */
+.atmos {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+.atmos i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 70vmax;
+  height: 60vmax;
+  margin: -30vmax 0 0 -35vmax;
+  border-radius: 50%;
+  opacity: var(--o, 0.85);
+  transform: translate(var(--x, 50vw), var(--y, 50vh)) scale(var(--s, 1));
+  transition: transform 24s cubic-bezier(0.45, 0, 0.55, 1), opacity 11s ease-in-out;
+  will-change: transform, opacity;
+}
+.atmos .a-copper { background: radial-gradient(closest-side, var(--spot-copper), transparent); --x: 6vw; --y: 92vh; }
+.atmos .a-sky { background: radial-gradient(closest-side, var(--spot-sky), transparent); --x: 94vw; --y: 6vh; }
+.atmos .a-deep { background: radial-gradient(closest-side, var(--spot-deep), transparent); --x: 58vw; --y: 52vh; }
+@media (prefers-reduced-motion: reduce) {
+  .atmos i { transition: none; }
+}
+
+/* The Chart page is a pure working surface: no grid, no glows behind it. */
+body[data-route='chart']::before,
+body[data-route='chart'] .atmos { display: none; }
+body[data-route='chart'] { background: var(--bg-chart); }
+
+/* Depth cards: every information card is darker at the top and lighter toward the bottom. */
+:root {
+  --card-top: color-mix(in srgb, var(--bg-deep) 55%, var(--surface));
+  --card-bottom: color-mix(in srgb, var(--raised) 70%, var(--accent) 6%);
+}
+:root[data-theme='light'] {
+  --card-top: color-mix(in srgb, var(--bg) 85%, var(--accent) 4%);
+  --card-bottom: var(--surface);
+}
+.panel,
+.stat-card,
+.sp-card,
+.sp-edge,
+.sp-detail,
+.sp-today,
+.sp-fold,
+.sp-lab,
+.idx-card {
+  background: linear-gradient(180deg, var(--card-top) 0%, var(--card-bottom) 100%);
+}
+
+/* Setups: the list and its filters sit on a card too, so nothing floats on the page background. */
+.sp-filters,
+.sp-list,
+.sp-alerts {
+  background: linear-gradient(180deg, var(--card-top) 0%, var(--card-bottom) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-2) var(--sp-3);
+}
+.sp-alerts h3 { margin-top: 0; }
+.sp-filters:empty,
+.sp-list:empty,
+.sp-alerts:empty { display: none; }
+/* ===== end design round 3 ===== */

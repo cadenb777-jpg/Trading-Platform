@@ -29,7 +29,6 @@ import { externalData } from '../indicators/external';
 import { THEME, followTheme } from '../ui/theme';
 import { easeOutCubic, reducedMotion, withAlpha } from './frame';
 import { firstDifference, newTailState, tailUpdate, type TailState } from './incremental';
-import { LivePrice } from './livePrice';
 import { expectedCost, indicatorWorker, recordCost } from './workerClient';
 import { defaultParams, getIndicator } from '../indicators/library';
 import type { IndicatorDef, IndicatorInstance, PlotDef } from '../indicators/types';
@@ -121,9 +120,8 @@ export class ChartView {
   private markersApi: ISeriesMarkersPluginApi<Time> | null = null;
   private readonly paneObserver: ResizeObserver;
   private readonly stopTheme: () => void;
-  /** Layer over the chart canvas for DOM effects (pulse, hover card); never takes the mouse. */
+  /** Layer over the chart canvas for DOM effects (hover card); never takes the mouse. */
   readonly overlay: HTMLElement;
-  private readonly livePrice: LivePrice;
   private readonly useWorker: boolean;
   /** Bumped by every setBars so late worker results for old data are dropped. */
   private dataGeneration = 0;
@@ -175,18 +173,7 @@ export class ChartView {
     this.overlay = document.createElement('div');
     this.overlay.className = 'chart-fx';
     container.append(this.overlay);
-    this.livePrice = new LivePrice(
-      {
-        priceToY: (p) => this.priceToY(p),
-        timeToX: (t) => this.chart.timeScale().timeToCoordinate(t as UTCTimestamp),
-        formatPrice: (p) => this.formatPrice(p),
-        lastBar: () => this.bars[this.bars.length - 1] ?? null,
-        minMove: () => (this.main.options().priceFormat as { minMove?: number }).minMove ?? 0.01,
-      },
-      this.overlay,
-    );
     this.main = this.createMainSeries('candles');
-    this.attachPrimitive(this.livePrice.primitive);
     this.chart.subscribeCrosshairMove((param) => {
       const idx = param.time === undefined ? undefined : this.timeIndex.get(param.time as number);
       this.onHover(idx ?? this.bars.length - 1);
@@ -282,7 +269,6 @@ export class ChartView {
       console.error('Indicator signals failed', err);
     }
     if (refit) this.fit(false);
-    this.livePrice.update(false);
     this.refreshPrimitives();
   }
 
@@ -349,7 +335,6 @@ export class ChartView {
       this.timeIndex.set(this.bars[i].time, i);
       this.main.update(this.mainPoint(i) as never);
     }
-    this.livePrice.update(true);
     this.queueIndicators(start);
   }
 
@@ -732,13 +717,12 @@ export class ChartView {
       area: { lineColor: accent, topColor: withAlpha(accent, 0.35), bottomColor: withAlpha(accent, 0) },
     };
     this.main.applyOptions(options[this.chartType] as never);
-    this.livePrice.update(false);
   }
 
   private createMainSeries(type: ChartType): ISeriesApi<SeriesType> {
     const { up, down, accent } = THEME;
-    // LivePrice draws the last-price line and label (animated), so the library's own stay off.
-    const common = { priceLineVisible: false, lastValueVisible: false };
+    // A calm last-price line: thin, dashed, neutral; the axis label takes the last candle's up/down colour.
+    const common = { priceLineVisible: true, lastValueVisible: true, priceLineStyle: LineStyle.Dashed, priceLineWidth: 1 as const, priceLineColor: THEME.crosshair };
     switch (type) {
       case 'hollow':
         return this.chart.addSeries(

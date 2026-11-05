@@ -141,5 +141,5 @@ export function onChartEffectsChange(fn: () => void): () => void {
   return () => effectsListeners.delete(fn);
 }
 
-/** Crosshair glow, selected-drawing glow, last-price flash and pulse: on with the setting, always off with reduced motion. */
+/** Crosshair glow and selected-drawing glow: on with the setting, always off with reduced motion. */
 export const chartEffects = () => chartEffectsSetting() && !reducedMotion();

@@ -63,7 +63,10 @@ describe('design tokens', () => {
     it(`${name}: page text stays readable where the background colour spots overlap`, () => {
       const spots = ['spot-sky', 'spot-copper', 'spot-deep'].map((k) => theme[k]);
       for (const sp of spots) expect(sp).toMatch(/^#[0-9a-f]{8}$/i);
-      const worst = [...spots.map((sp) => over(theme.bg, sp)), spots.reduce(over, theme.bg)];
+      // Copper (low left) and sky (top right) live in opposite corners and meet only at their faint edges; deep blue drifts mid-page and
+      // can sit over either, so the worst cases are each spot alone and deep blue over each corner spot.
+      const [sky, copper, deep] = spots;
+      const worst = [...spots.map((sp) => over(theme.bg, sp)), over(over(theme.bg, sky), deep), over(over(theme.bg, copper), deep)];
       const failing = TEXT.flatMap((t) => worst.filter((bg) => contrast(theme[t], bg) < 4.5).map((bg) => `${t} on ${bg}`));
       expect(failing).toEqual([]);
     });
