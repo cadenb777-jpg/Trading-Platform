@@ -10317,3 +10317,191 @@ input.sl-player.p0, input.sl-player.p1, input.sl-player.p2, input.sl-player.p3 {
   .qp-krdval { font-size: 10px; }
 }
 /* ===== end Quant pack ===== */
+
+/* ======================================================================================================
+   v45: Bloomberg text roles, a page list in the rail, the function bar as one toolbar strip.
+   Text roles: labels (what a number is: column headers, field names, panel titles) in amber; the numbers
+   themselves stay white; gains/losses keep --up-text/--down-text. Page titles and body text stay as they were.
+   ====================================================================================================== */
+:root {
+  --label: #f2b23a;
+  --label-soft: color-mix(in srgb, var(--label) 14%, transparent);
+}
+:root[data-theme='light'] {
+  --label: #8a5300;
+}
+
+.stat-label,
+.data-table th,
+.data-table.tt thead th,
+.holdings-table th,
+.md th,
+.sp-table th,
+.sp-edge-table th,
+.section-label,
+.guide-readings dt,
+.plan-row dt,
+.tk-label,
+.bar-label,
+.curve-label,
+.alloc-label,
+.panel-head h3,
+.ph .ph-title,
+.lp-group h3,
+.wl-columns,
+.cal-columns,
+.shell-section,
+.fn-related-label {
+  color: var(--label);
+}
+.stat-value,
+.data-table td {
+  color: var(--text-strong);
+}
+.data-table td.muted,
+.data-table td .muted {
+  color: var(--muted);
+}
+
+/* ----- rail: every page under its section heading ----- */
+.rail-sections {
+  display: none;
+}
+.rail-tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.rail-tree-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.rail-head {
+  padding: 4px 10px 2px;
+  font: 600 var(--fs-xs) / 1.2 var(--font-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--label);
+}
+.rail .nav-btn.rail-page {
+  padding: 5px 10px;
+  font-size: var(--fs-sm);
+  gap: 9px;
+}
+.rail .nav-btn.rail-page svg {
+  width: 16px;
+  height: 16px;
+}
+.rail .rail-launch {
+  margin-top: var(--sp-2);
+}
+/* the utilities sit in one row of icons at the bottom (their names are in the tooltips) */
+.rail .rail-bottom {
+  flex-direction: row;
+  justify-content: space-between;
+}
+.rail .rail-bottom .rail-util {
+  padding: 6px;
+}
+.rail .rail-bottom .rail-util .nav-label {
+  display: none;
+}
+body.rail-collapsed .rail .rail-head {
+  height: 1px;
+  padding: 0;
+  margin: 4px 8px;
+  overflow: hidden;
+  color: transparent;
+  background: var(--border);
+}
+body.rail-collapsed .rail .nav-btn.rail-page .nav-label {
+  display: none;
+}
+body.rail-collapsed .rail .nav-btn.rail-page {
+  padding: 7px 0;
+}
+body.rail-collapsed .rail .rail-bottom {
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ----- function bar: one toolbar strip, flat buttons with amber key numbers ----- */
+.fn-bar {
+  gap: var(--sp-2);
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--glass);
+}
+.fn-chips {
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+.fn-chip {
+  height: 32px;
+  padding: 0 12px 0 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-weight: 500;
+}
+.fn-chip + .fn-chip {
+  box-shadow: -1px 0 0 var(--line);
+}
+.fn-chip:hover {
+  background: var(--raised);
+  box-shadow: none;
+}
+.fn-chip:hover + .fn-chip {
+  box-shadow: none;
+}
+.fn-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: var(--label-soft);
+  color: var(--label);
+}
+.fn-related {
+  padding: 0 4px 0 var(--sp-3);
+  border-left: 1px solid var(--line);
+}
+@media (max-width: 700px) {
+  .rail-tree {
+    display: none;
+  }
+  .rail-sections {
+    display: contents;
+  }
+  .fn-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .fn-related {
+    border-left: 0;
+    padding-left: 4px;
+  }
+}
+
+/* ----- scrolling: a page scrolls on its own and never drags the window; the Setups detail fits the screen ----- */
+.views > * {
+  overscroll-behavior: contain;
+}
+.sp-detail {
+  top: 0;
+  max-height: calc(100vh - 110px);
+  overscroll-behavior: contain;
+}
+.sp-table td:nth-child(2) {
+  min-width: 150px;
+}
+.sp-table td:nth-child(2) .sp-side + * {
+  white-space: nowrap;
+}
+.fn-chip {
+  flex: none;
+  white-space: nowrap;
+}

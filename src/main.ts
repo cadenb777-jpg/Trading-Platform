@@ -433,11 +433,30 @@ if (isAiWindow) {
       h('span', { class: 'nav-label' }, s.label),
     ),
   );
+  // Every page by name under its section heading, so anything is one click away (phones keep the section bar).
+  const pageLinks: HTMLElement[] = [];
+  const tree = h(
+    'div',
+    { class: 'rail-tree' },
+    ...SECTIONS.filter((s) => s.id !== 'ai').map((s) =>
+      h(
+        'div',
+        { class: 'rail-tree-group', role: 'group', 'aria-label': s.label },
+        h('div', { class: 'rail-head', title: s.about }, s.label),
+        ...sectionPages(s.id).map((p) => {
+          const a = h('a', { class: 'nav-btn rail-page', href: `#${p.route}`, 'data-route': p.route, title: `${p.about} (code ${p.code})` }, icon(p.icon, 16), h('span', { class: 'nav-label' }, p.label));
+          pageLinks.push(a);
+          return a;
+        }),
+      ),
+    ),
+  );
   const rail = h(
     'nav',
-    { class: 'rail', 'aria-label': 'Sections' },
+    { class: 'rail', 'aria-label': 'Pages' },
     h('div', { class: 'brand', title: 'Trading Platform' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }, '◆'), h('span', { class: 'brand-name' }, 'Terminal')),
-    ...sectionLinks,
+    h('div', { class: 'rail-sections' }, ...sectionLinks),
+    tree,
     aiBtn,
     railBtn('rail-launch', 'Launchpad', 'grid', 'Launchpad: every page and function (Ctrl+Shift+L, g l, or Ctrl+L when not typing)', launch, { 'aria-keyshortcuts': 'Control+Shift+L Meta+Shift+L' }),
     h(
@@ -510,6 +529,12 @@ if (isAiWindow) {
       const on = id === section;
       a.classList.toggle('active', on);
       if (on) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    }
+    for (const a of pageLinks) {
+      const on = a.dataset.route === route;
+      a.classList.toggle('active', on);
+      if (on) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
     }
     drawSubTabs(route);
