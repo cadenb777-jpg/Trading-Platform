@@ -13,7 +13,7 @@ import { persist, state } from '../state';
 import { openAlertsDialog } from '../ui/alerts';
 import { openSecurity as openSecurityView } from '../security/open';
 import { h, toast } from '../ui/dom';
-import { CATALOG_ETFS } from './catalog';
+import type { SymbolKind } from './symbolKind';
 import { listDocs } from '../data/store';
 import type { Portfolio } from '../portfolio/types';
 import { heldPosition } from '../ui/tickerCard';
@@ -104,19 +104,7 @@ export function aiAction(question: string): GoAction {
 
 // ---------- stocks, ETFs, indexes, futures ----------
 
-export type SymbolKind = 'stock' | 'fund' | 'index' | 'future';
-
-/**
- * Schwab calls ETFs "EQUITY" too; its assetSubType ('ETF', 'ETN', 'COE' ...) tells them apart (helpers that send it).
- * Without it, the catalog's ETF groups decide. Mutual funds and other non-equity types are funds.
- */
-export function symbolKind(symbol: string, assetType?: string, assetSubType?: string): SymbolKind {
-  if (symbol.startsWith('/')) return 'future';
-  if (symbol.startsWith('$') || assetType === 'INDEX') return 'index';
-  if (assetType && assetType !== 'EQUITY') return 'fund'; // MUTUAL_FUND, ...
-  if (assetSubType) return /^(ETF|ETN)$/i.test(assetSubType) ? 'fund' : 'stock';
-  return CATALOG_ETFS.has(symbol.toUpperCase()) ? 'fund' : 'stock';
-}
+export { symbolKind, type SymbolKind } from './symbolKind';
 
 /**
  * The "Go to" list for a listed symbol, best first (the first PRIMARY become buttons). `detail` is the symbol window
