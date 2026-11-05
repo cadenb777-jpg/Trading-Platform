@@ -28,7 +28,7 @@ NEW_YORK = ZoneInfo('America/New_York')
 DIR = Path.home() / '.trading-platform' / 'journal'
 #: What the owner writes on a trade: carried over whenever the trades are rebuilt from fills.
 OWNER_KEYS = ('strategy', 'playbookId', 'rulesFollowed', 'setup', 'plan', 'tags', 'emotionsBefore', 'emotionsAfter', 'rating', 'notes',
-              'screenshots', 'mistakes', 'followedStop', 'mae', 'mfe', 'excursionSource', 'review')
+              'screenshots', 'mistakes', 'followedStop', 'mae', 'mfe', 'maePrice', 'mfePrice', 'atr', 'excursionSource', 'review')
 #: Futures contract sizes ($ per point) by root, for exports that don't carry the multiplier (CME contract specs).
 FUTURES_MULTIPLIERS = {'ES': 50, 'MES': 5, 'NQ': 20, 'MNQ': 2, 'YM': 5, 'MYM': 0.5, 'RTY': 50, 'M2K': 5, 'CL': 1000, 'MCL': 100,
                        'NG': 10000, 'GC': 100, 'MGC': 10, 'SI': 5000, 'HG': 25000, 'ZB': 1000, 'ZN': 1000, 'ZF': 1000, 'ZT': 2000,
@@ -346,7 +346,7 @@ def clean_notes(changes):
         elif k == 'plan' and v is not None:
             v = {kk: (_num(vv) if kk in ('stop', 'target', 'riskPct') else str(vv)[:200]) for kk, vv in dict(v).items()
                  if kk in ('stop', 'target', 'riskPct', 'setup', 'setupId', 'exitBy', 'thesis')}
-        elif k in ('mae', 'mfe'):
+        elif k in ('mae', 'mfe', 'maePrice', 'mfePrice', 'atr'):
             v = _num(v)
         out[k] = v
     return out

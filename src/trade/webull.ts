@@ -42,6 +42,8 @@ export interface SetupPlan {
   setup?: string;
   /** Close the trade by this date (YYYY-MM-DD). */
   exitBy?: string;
+  /** The scanner strategy's name (the journal files the trade under it). */
+  strategy?: string;
 }
 
 export interface Balances {

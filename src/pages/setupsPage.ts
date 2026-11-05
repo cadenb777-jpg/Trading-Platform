@@ -8,7 +8,8 @@
  */
 import { CandlestickSeries, ColorType, LineStyle, createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { subscribeQuote } from '../data/quotes';
-import { engineRequest, helper, schwab } from '../data/schwab';
+import { engineRequest, helper, journalReady, schwab } from '../data/schwab';
+import { strategyRecord, type BreakdownRow, type Trade } from '../journal/stats';
 import type { MarketRef } from '../data/quotes';
 import { entryZone, isLive, isOver, type Zone } from '../home/entryZone';
 import { takeProfit, type SideRecord, type Setup, type StrategyInfo } from '../home/setupsPanel';
@@ -188,6 +189,8 @@ function dailyRoutine() {
 export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   const prefs = load(PREFS_KEY, { horizon: 'swing' as Horizon, strategy: 'all' as StrategyKey | 'all', grade: 'ab' as 'ab' | 'all', side: 'all' as 'all' | 'buy' | 'sell', sort: 'grade' as 'grade' | 'rr' | 'mc' | 'new', autoAlert: true });
   let data: Scan | null = null;
+  /** The owner's own journal record per strategy name (beside the scanner's paper record), once read. */
+  let own: Map<string, BreakdownRow> | null = null;
   let selected: string | null = null;
   let timer: ReturnType<typeof setInterval> | undefined;
   const watched = new Set<string>(load<string[]>(WATCH_KEY, []));
@@ -291,6 +294,22 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
     renderAlerts();
   }
 
+  /** "Your trades: 12 · +$340 · 58% won" from the journal, for trades filed under this strategy. */
+  function ownLine(k: StrategyKey, short?: string) {
+    const names = [STRATEGY_LABEL[k], short, k].filter(Boolean).map((x) => x!.toLowerCase());
+    const row = [...(own?.values() ?? [])].find((r) => names.includes(r.key.toLowerCase()));
+    if (!row) return '';
+    const amount = `${row.net >= 0 ? '+' : '-'}$${Math.abs(row.net).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+    return h('p', { class: 'small sp-own', title: "Your own closed trades filed under this strategy in the Journal (real fills, after fees). The figures above are the scanner's paper record." },
+      h('span', { class: 'muted' }, 'Your trades: '), `${row.n} · `, h('span', { class: row.net >= 0 ? 'up' : 'down' }, amount),
+      row.winRate != null ? ` · ${Math.round(row.winRate * 100)}% won` : '', row.n < 30 ? h('span', { class: 'muted tiny' }, ' (too few to judge)') : '');
+  }
+  function loadOwn() {
+    if (own || !journalReady()) return;
+    own = new Map();
+    engineRequest<{ trades: Trade[] }>('journal.list').then((d) => ((own = strategyRecord(d.trades)), render()), () => (own = null));
+  }
+
   function renderEvidence(hr: HorizonResult | undefined) {
     if (!hr) return evidenceBody.replaceChildren(h('p', { class: 'empty-state' }, data?.loading ? 'The first scan is running: it downloads 15 years of history for every Nasdaq-100 stock, so it takes a few minutes after the helper starts. This page fills in by itself.' : 'This time frame is still being scanned; it appears here as soon as it is done.'));
     const cards = (Object.keys(hr.strategies) as StrategyKey[]).filter((k) => !hr.strategies[k].lab).map((k) => {
@@ -322,6 +341,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
           h('span', {}, termLabel('Avg', 'avg'), ` ${pct(s.expectancy, 2)}`),
           h('span', {}, termLabel('PF', 'pf'), ` ${s.profitFactor != null ? String(s.profitFactor) : '—'}`),
         ),
+        ownLine(k, st.short),
         h('details', { class: 'guide-more inline' }, h('summary', {}, 'Test details'),
           s.tStat != null ? h('p', { class: 'tiny' }, termLabel('t (same week = one bet)', 'tstat'), ` = ${s.tStat.toFixed(1)} over ${(s.effectiveTrades ?? s.trades).toLocaleString()} independent weeks`, s.tradesNeeded ? h('span', {}, ' · ', termLabel('weeks needed', 'needed'), ` ≈ ${s.tradesNeeded.toLocaleString()} (one-sided p 0.10, 80% power)`) : '') : '',
           re ? h('p', { class: 'tiny' }, termLabel('Random-entry test', 'randomentry'), ` (${(re.runs ?? 1000).toLocaleString()} runs): p = ${re.p.toFixed(3)}${re.pAdjusted != null ? `, ${re.pAdjusted.toFixed(3)} after correcting for ${re.family} tests` : ''}`, h('span', {}, ' ', infoTip('holm'))) : '',
@@ -768,6 +788,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       const wanted = link.wanted();
       if (wanted) pickSymbol(wanted);
       refresh();
+      loadOwn();
       timer ??= setInterval(() => refresh(), REFRESH_MS);
     },
     // Keep watching in the background so alerts still fire while you look at other pages.

@@ -111,6 +111,7 @@ export async function tradeSetup(s: Setup, strat?: StrategyInfo, marketTrend?: n
       read: { title: v.title, action: read.action, tone: v.tone },
       setup: [s.strategyName.split(' (')[0], s.tier ? `${s.tier}-grade` : '', p.holdText ?? p.horizon].filter(Boolean).join(' · '),
       exitBy: p.exitBy,
+      strategy: s.strategyName.split(' (')[0],
     },
   });
 }
