@@ -4,8 +4,13 @@
  * inside zooms (scroll / pinch) and pans (drag), with range buttons, log and %-change scales, a stats bar for the
  * visible period, line toggles and a CSV download. Several windows can be open at once.
  */
-import { ColorType, LineSeries, PriceScaleMode, createChart, type IChartApi, type ISeriesApi, type MouseEventParams, type Time } from 'lightweight-charts';
-import { THEME, followTheme } from './theme';
+import { LineSeries, PriceScaleMode, createChart, type IChartApi, type ISeriesApi, type Logical, type MouseEventParams, type Time } from 'lightweight-charts';
+import { chartThemeOptions, followTheme } from './theme';
+import { crosshairLabel, type AxisOptions } from '../chart/axis';
+import { CHART_FONT, ChartChrome } from '../chart/axisChrome';
+import { createSecurityHeader } from '../chart/securityHeader';
+import type { Bar } from '../types';
+import '../chart/chartFeel.css';
 import { h } from './dom';
 import { indicatorMenu } from './windowIndicators';
 
@@ -99,6 +104,7 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
   const offset = (openCount++ % 6) * 28;
   const win = h('div', { class: 'chart-window', role: 'dialog', 'aria-label': o.title, style: `left:${Math.max(16, (innerWidth - 920) / 2 + offset)}px;top:${Math.max(16, (innerHeight - 600) / 2 + offset)}px;z-index:${++zTop}` });
   const close = () => {
+    header.destroy();
     chart.remove();
     win.remove();
     document.removeEventListener('keydown', onKey);
@@ -160,22 +166,54 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
 
   // ----- Chart -----
   const box = h('div', { class: 'chart-window-chart' });
+  const daily = isDailySeries(lineTimes(lines[0]?.data ?? []));
+  const axis: AxisOptions = { daily };
+  const look = chartThemeOptions();
   const chart = createChart(box, {
+    ...look,
     autoSize: true,
-    layout: { background: { type: ColorType.Solid, color: THEME.background }, textColor: THEME.text, fontFamily: "'Inter', sans-serif", fontSize: 12 },
-    grid: { vertLines: { color: THEME.grid }, horzLines: { color: THEME.grid } },
-    rightPriceScale: { borderColor: THEME.border },
-    timeScale: { borderColor: THEME.border, rightOffset: 4 },
-    crosshair: { mode: 0 },
+    layout: { ...look.layout, fontFamily: CHART_FONT, fontSize: 12.5 },
+    rightPriceScale: { ...look.rightPriceScale, entireTextOnly: true, ticksVisible: true, minimumWidth: 64 },
+    timeScale: { ...look.timeScale, rightOffset: 4, timeVisible: !daily },
+    localization: { timeFormatter: (t: Time) => crosshairLabel(toUnix(t), axis) },
+    crosshair: { ...look.crosshair, mode: 0 },
   });
-  followTheme(chart);
-  const series = lines.map((l) => {
-    // The format goes on each series (not the whole chart) so indicator panes keep their own units.
-    const s = chart.addSeries(LineSeries, { color: l.color, lineWidth: l.width ?? 2, priceLineVisible: false, lastValueVisible: true, title: lines.length > 1 ? l.name : '', priceFormat: { type: 'custom', formatter: format, minMove: 0.0001 } });
+  followTheme(chart, { onChange: () => chrome.update() });
+  const series = lines.map((l, i) => {
+    // The format goes on each series (not the whole chart) so indicator panes keep their own units. The first line's
+    // last value is our own tag (ChartChrome).
+    const s = chart.addSeries(LineSeries, { color: l.color, lineWidth: l.width ?? 2, priceLineVisible: false, lastValueVisible: i > 0, title: lines.length > 1 ? l.name : '', priceFormat: { type: 'custom', formatter: format, minMove: 0.0001 } });
     s.setData(dedupe(l.data) as never);
     return { series: s, name: l.name, color: l.color, line: l, visible: true };
   });
-  const daily = isDailySeries(lineTimes(lines[0]?.data ?? []));
+  // The first line as flat bars (open = the point before), for the header, the last-value tag and the year row.
+  const firstPoints = dedupe(lines[0]?.data ?? []);
+  const asBars: Bar[] = firstPoints.map((p, i) => {
+    const prev = firstPoints[i - 1]?.value ?? p.value;
+    return { time: toUnix(p.time), open: prev, high: Math.max(prev, p.value), low: Math.min(prev, p.value), close: p.value, volume: 0 };
+  });
+  const chrome = new ChartChrome({
+    bars: () => asBars,
+    sessions: () => false,
+    formatPrice: format,
+    priceToY: (p) => series[0]?.series.priceToCoordinate(p) ?? null,
+    indexToX: (i) => chart.timeScale().logicalToCoordinate(i as Logical),
+    visibleRange: () => chart.timeScale().getVisibleLogicalRange(),
+  });
+  series[0]?.series.attachPrimitive(chrome);
+  const header = createSecurityHeader();
+  const lastBar = asBars[asBars.length - 1];
+  const prevBar = asBars[asBars.length - 2];
+  header.update({
+    symbol: lines[0]?.name || o.title,
+    summary: lastBar
+      ? { last: lastBar.close, change: prevBar ? lastBar.close - prevBar.close : null, changePct: prevBar && prevBar.close ? ((lastBar.close - prevBar.close) / Math.abs(prevBar.close)) * 100 : null, open: lastBar.open, high: lastBar.high, low: lastBar.low, prevClose: prevBar?.close ?? null, volume: 0, value: 0, time: lastBar.time, vwap: null, preVwap: null, relVolume: null }
+      : null,
+    daily,
+    market: '',
+    price: format,
+    fields: ['at', 'prev'],
+  });
   const when = (t: string | number | Time) => formatTime(t, daily);
   attachTooltip(chart, box, () => series.filter((s) => s.visible), format, () => daily);
 
@@ -267,7 +305,7 @@ export function openChartWindow(o: ChartWindowOptions): () => void {
   }
   chart.timeScale().subscribeVisibleTimeRangeChange(() => requestAnimationFrame(updateStats));
 
-  win.append(bar, tools, studies.menu, studies.chips, box, stats, h('div', { class: 'chart-window-hint muted small' }, 'Scroll or pinch to zoom · drag to pan · drag the title bar to move · drag the corner to resize'), grip);
+  win.append(bar, header.el, tools, studies.menu, studies.chips, box, stats, h('div', { class: 'chart-window-hint muted small' }, 'Scroll or pinch to zoom · drag to pan · drag the title bar to move · drag the corner to resize'), grip);
   document.body.append(win);
   chart.timeScale().fitContent();
   // The chart measures itself before the window is laid out; fit again once it has its real size.

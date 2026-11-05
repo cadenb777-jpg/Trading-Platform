@@ -1,0 +1,156 @@
+/* ===== Chart feel (src/chart/*): security header row, range bar, legend box, chart frame, empty/loading states.
+   Colours from the design tokens only (docs/design.md). ===== */
+
+/* Equal-width digits for the canvas axes: a canvas can't switch on Inter's tabular figures, so digits come from a
+   neo-grotesque system font whose figures are tabular by default, and everything else stays Inter (CHART_FONT). */
+@font-face {
+  font-family: 'TP Figures';
+  src: local('Helvetica Neue'), local('HelveticaNeue'), local('Arial'), local('ArialMT'), local('Roboto'), local('Liberation Sans'), local('LiberationSans');
+  unicode-range: U+0030-0039;
+}
+
+/* ----- Security header row ----- */
+.cf-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-5);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  min-width: 0;
+}
+.cf-quote { display: inline-flex; align-items: baseline; gap: var(--sp-3); }
+.cf-sym { font-size: 15px; font-weight: 700; letter-spacing: 0.02em; color: var(--text-strong); }
+.cf-lastbox { display: inline-flex; align-items: baseline; gap: 4px; }
+.cf-last { font-size: 18px; font-weight: 600; color: var(--text-strong); }
+.cf-arrow { font-size: 15px; font-weight: 700; }
+.cf-chg { font-size: 13px; font-weight: 600; white-space: pre; }
+.cf-head[data-dir='up'] .cf-arrow,
+.cf-head[data-dir='up'] .cf-chg { color: var(--up-text); }
+.cf-head[data-dir='down'] .cf-arrow,
+.cf-head[data-dir='down'] .cf-chg { color: var(--down-text); }
+.cf-pairs { display: inline-flex; align-items: baseline; gap: var(--sp-1) var(--sp-4); }
+.cf-kv { display: inline-flex; align-items: baseline; gap: 5px; font-size: 12.5px; }
+.cf-k { color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
+.cf-v { color: var(--text); font-weight: 500; }
+.cf-v[data-dir='up'] { color: var(--up-text); }
+.cf-v[data-dir='down'] { color: var(--down-text); }
+.cf-v[data-level='high'] { color: var(--accent-2-text); font-weight: 600; }
+.cf-v[data-open='true'] { color: var(--accent-text); }
+.cf-head.cf-empty .cf-pairs { opacity: 0.5; }
+
+/* ----- Range bar (beside the timeframe buttons) ----- */
+.cf-range button { min-width: 34px; font-variant-numeric: tabular-nums; }
+.cf-range button:disabled { opacity: 0.35; cursor: default; }
+
+/* ----- Thin frame around the chart area ----- */
+.chart-wrap,
+.sv-chart-wrap { box-shadow: inset 0 0 0 1px var(--line); }
+
+/* ----- Legend box: translucent rounded card, top left ----- */
+.legend.cf-legend {
+  top: 8px;
+  left: 8px;
+  gap: 0;
+  max-width: min(340px, 44%);
+  padding: 4px 6px 6px;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 70%, transparent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg-chart) 78%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  pointer-events: auto;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.cf-legend-head { display: flex; align-items: center; gap: 6px; min-height: 24px; }
+.cf-legend-title { flex: 1; min-width: 0; }
+.cf-legend .legend-row { background: none; padding-left: 2px; }
+.cf-legend .legend-title { flex-wrap: wrap; }
+.cf-fold {
+  flex-shrink: 0;
+  width: 24px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.cf-fold::before { content: '▾'; font-size: 13px; }
+.cf-legend.folded .cf-fold::before { content: '▸'; }
+.cf-fold:hover { background: var(--raised); color: var(--text); }
+.cf-legend.folded .cf-legend-body { display: none; }
+.cf-legend-body { display: flex; flex-direction: column; gap: 1px; }
+.cf-stats,
+.cf-extra { display: grid; grid-template-columns: auto 1fr auto; column-gap: 8px; }
+.cf-stats { padding: 2px 2px 4px; margin-bottom: 2px; border-bottom: 1px solid color-mix(in srgb, var(--line) 80%, transparent); }
+.cf-extra:empty { display: none; }
+.cf-stat { display: contents; }
+.cf-stat > i { align-self: center; width: 10px; height: 3px; border-radius: 2px; background: var(--c); }
+.cf-stat-last > i { height: 10px; width: 10px; border-radius: 3px; background: var(--last, var(--accent)); }
+.cf-stat-avg > i { background: none; border-top: 2px dotted var(--c); height: 0; }
+.cf-stat-k { color: var(--muted); white-space: nowrap; }
+.cf-stat-v { color: var(--text-strong); font-weight: 500; text-align: right; white-space: nowrap; }
+.cf-stat-last .cf-stat-v { font-weight: 700; }
+.cf-axis-tag { display: inline-block; margin-right: 4px; padding: 0 3px; border-radius: 3px; font-size: 10px; font-weight: 600; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.cf-rows { display: flex; flex-direction: column; gap: 1px; }
+.cf-rows:has(.cf-ind) { display: grid; grid-template-columns: auto 1fr auto; column-gap: 8px; }
+.cf-ind-vals { display: inline-flex; gap: 8px; justify-content: flex-end; color: var(--text-strong); }
+/* Pane labels (volume, oscillators) read like a small axis caption. */
+.legend-row.pane-legend { border-radius: var(--radius-sm); background: color-mix(in srgb, var(--bg-chart) 80%, transparent); font-size: 12px; }
+
+/* ----- Empty and loading states (over the chart) ----- */
+.cf-state {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+.cf-state[hidden] { display: none; }
+.cf-state-card { display: grid; justify-items: center; gap: 10px; padding: 16px 20px; border-radius: var(--radius-lg); background: color-mix(in srgb, var(--bg-chart) 85%, transparent); }
+.cf-state-bars { display: flex; align-items: flex-end; gap: 4px; height: 28px; }
+.cf-state-bars i { width: 5px; border-radius: 2px; background: color-mix(in srgb, var(--muted) 45%, transparent); }
+.cf-state-bars i:nth-child(1) { height: 40%; }
+.cf-state-bars i:nth-child(2) { height: 70%; }
+.cf-state-bars i:nth-child(3) { height: 55%; }
+.cf-state-bars i:nth-child(4) { height: 90%; }
+.cf-state-bars i:nth-child(5) { height: 65%; }
+.cf-state.empty .cf-state-bars i { height: 3px; }
+
+.cf-more { display: none; }
+
+@media (max-width: 700px) {
+  /* Two tidy rows on a phone: the quote, then the key pairs; the rest folds behind More. */
+  .cf-head { flex-wrap: wrap; overflow: visible; white-space: normal; gap: 4px var(--sp-3); padding: 6px 10px; }
+  .cf-quote { flex-basis: 100%; }
+  .cf-pairs { flex-wrap: wrap; gap: 2px var(--sp-3); }
+  .cf-kv { white-space: nowrap; }
+  .cf-head:not(.cf-open) .cf-wide { display: none; }
+  .cf-more {
+    display: inline-block;
+    margin-left: auto;
+    padding: 2px 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .cf-last { font-size: 16px; }
+  .legend.cf-legend { max-width: 62%; font-size: 12px; }
+}
+.legend-ohlc[hidden] { display: none; }
+
+/* Range bar note when a range is capped to the history the data source keeps */
+.cf-range-wrap { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.cf-range-note { color: var(--muted); font-size: 12px; }

@@ -24,6 +24,12 @@ import { HoverCard, type CardNote, type CardRow } from '../chart/hoverCard';
 import type { PointerInfo } from '../chart/ChartView';
 import { INDICATOR_GUIDES } from '../indicators/info';
 import { CATALOG_GUIDES } from '../indicators/catalog';
+import { createSecurityHeader } from '../chart/securityHeader';
+import { createRangeBar } from '../chart/rangeBar';
+import { LegendBox } from '../chart/legendBox';
+import { createChartState } from '../chart/chartState';
+import { daySummary } from '../chart/summary';
+import { marketTimeZone } from '../chart/range';
 
 const SYMBOL_SUGGESTIONS: Record<ProviderId, string[]> = {
   coinbase: ['BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD', 'DOGE-USD', 'ADA-USD', 'AVAX-USD', 'LINK-USD', 'LTC-USD'],
@@ -57,12 +63,13 @@ export function createChartPage() {
     { class: 'input chart-type', 'aria-label': 'Chart type', title: 'Chart type' },
     ...CHART_TYPES.map((t) => h('option', { value: t.id }, t.label)),
   );
-  const priceEl = h('span', { class: 'price' });
+  const header = createSecurityHeader();
+  const chartState = createChartState();
   const statusEl = h('span', { class: 'status' });
   const chartEl = h('div', { class: 'chart' });
   const legendEl = h('div', { class: 'legend' });
   const messageEl = h('div', { class: 'chart-message', hidden: true });
-  const chartWrap = h('div', { class: 'chart-wrap' }, chartEl, legendEl, messageEl);
+  const chartWrap = h('div', { class: 'chart-wrap' }, chartEl, legendEl, chartState.el, messageEl);
   const drawBar = h('div', { class: 'draw-bar', role: 'toolbar', 'aria-label': 'Drawing tools' });
   const watchToggle = h('button', { class: 'icon-btn', title: 'Show or hide watchlist', 'aria-label': 'Toggle watchlist' }, icon('list', 22));
   const profileBtn = h('button', { class: 'btn fit-btn', title: 'Volume profile: volume traded at each price', 'aria-label': 'Volume profile' }, icon('profile', 18));
@@ -88,6 +95,18 @@ export function createChartPage() {
   });
   chartWrap.dataset.linkKeys = 'own'; // its letters are its own (f fits); the command bar is / here
 
+  /** Extra history the range bar asked for on the next load. */
+  let forcedDays: number | undefined;
+  const rangeBar = createRangeBar({
+    view: () => (started ? chart : null),
+    timeframe: () => state.timeframe,
+    maxDays: () => provider().maxHistoryDays(state.timeframe),
+    reload: (days) => {
+      forcedDays = days;
+      reload();
+    },
+  });
+
   const tfPicker = createTimeframePicker({
     getCurrent: () => state.timeframe,
     getFavorites: () => state.favoriteTimeframes,
@@ -109,6 +128,7 @@ export function createChartPage() {
       symbolInput,
       symbolList,
       tfPicker.el,
+      rangeBar.el,
       typeSelect,
       h('button', { class: 'btn', onclick: openManager }, h('span', { class: 'fx' }, 'ƒx'), ' Indicators'),
       profileBtn,
@@ -117,10 +137,10 @@ export function createChartPage() {
       fitBtn,
       h('button', { class: 'btn fit-btn', title: 'Backtest this chart: a strategy from its symbol, timeframe and indicators', 'aria-label': 'Backtest this chart', onclick: () => window.dispatchEvent(new Event('tp:backtest-chart')) }, icon('backtest', 18)),
       h('span', { class: 'spacer' }),
-      priceEl,
       statusEl,
       watchToggle,
     ),
+    header.el,
     h('div', { class: 'chart-body' }, drawBar, chartWrap, side),
   );
 
@@ -131,6 +151,9 @@ export function createChartPage() {
   /** Extended hours apply to intraday stock charts (Schwab), not crypto or daily bars. */
   const extendedApplies = () => provider().id === 'schwab' && TIMEFRAME_SECONDS[state.timeframe] < 86400;
   let started = false;
+  let legendBox: LegendBox;
+  /** The symbol/timeframe the chart last finished drawing (the loading card shows only for something new). */
+  let shownKey = '';
   /** What the chart last loaded (market:symbol:timeframe:extended), so sync() knows when to reload. */
   let loadedKey = '';
 
@@ -143,6 +166,7 @@ export function createChartPage() {
     symbolList.replaceChildren(...SYMBOL_SUGGESTIONS[state.provider].map((s) => h('option', { value: s })));
     typeSelect.value = state.chartType;
     tfPicker.render();
+    rangeBar.render();
     el.classList.toggle('watch-open', state.watchlistOpen);
     updateAlertCount();
   }
@@ -266,6 +290,7 @@ export function createChartPage() {
   /** After any indicator change: redraw the legend and the manager window if it's open. */
   function indicatorsChanged() {
     renderLegend();
+    legendBox.schedule();
     if (manager && document.querySelector('.mgr')) manager.refresh();
     else manager = null;
   }
@@ -350,11 +375,12 @@ export function createChartPage() {
 
   function buildLegend(layout: string) {
     legendLayout = layout;
-    legendEl.replaceChildren();
+    legendBox.title.replaceChildren();
+    legendBox.rows.replaceChildren();
     chartWrap.querySelectorAll(':scope > .pane-legend').forEach((n) => n.remove());
     ohlcNums = [0, 1, 2, 3, 4].map(() => h('span', { class: 'legend-num' }));
     ohlcValues = h('span', { class: 'legend-ohlc' }, ...['O', 'H', 'L', 'C'].map((label, i) => h('span', { class: 'kv' }, label, ohlcNums[i])), ohlcNums[4]);
-    legendEl.append(h('div', { class: 'legend-row legend-title' }, h('b', {}, `${displaySymbol(symbol())} · ${state.timeframe} · ${provider().name}`), ohlcValues));
+    legendBox.title.append(h('div', { class: 'legend-row legend-title' }, h('b', {}, `${displaySymbol(symbol())} · ${state.timeframe} · ${provider().name}`), ohlcValues));
     legendValues = [];
     for (const instance of state.indicators) {
       const def = getIndicator(instance.defId)!;
@@ -398,7 +424,7 @@ export function createChartPage() {
         row.style.top = `${chart.paneTop(instance.uid) + 4}px`;
         chartWrap.append(row);
       } else {
-        legendEl.append(row);
+        legendBox.rows.append(row);
       }
     }
   }
@@ -412,7 +438,8 @@ export function createChartPage() {
     const bar = chart.barAt(index);
     const prev = chart.barAt(index - 1);
     if (ohlcValues) {
-      ohlcValues.hidden = !bar;
+      // The bar under the crosshair; at rest the header row already shows the day.
+      ohlcValues.hidden = !bar || hoverIndex === null;
       if (bar) {
         ohlcValues.style.setProperty('--c', bar.close >= bar.open ? THEME.up : THEME.down);
         const change = prev ? ((bar.close - prev.close) / prev.close) * 100 : 0;
@@ -555,13 +582,28 @@ export function createChartPage() {
       waitingForTrades = false;
       showMessage(null);
     }
-    const last = bars[bars.length - 1];
-    const prev = bars[bars.length - 2];
-    if (last) {
-      priceEl.textContent = formatNumber(last.close);
-      priceEl.className = `price ${prev && last.close < prev.close ? 'down' : 'up'}`;
-    }
+    paintHeaderSoon();
     if (hoverIndex === null) updateLegendValues(chart.barCount - 1);
+    legendBox.schedule();
+  }
+
+  /** Time of the latest live trade, for the header's "At". */
+  let lastTradeAt: number | null = null;
+  let headerTimer: ReturnType<typeof setTimeout> | 0 = 0;
+  function paintHeader() {
+    const p = provider();
+    header.update({
+      symbol: displaySymbol(symbol()),
+      summary: daySummary(bars, state.timeframe, marketTimeZone(p.id)),
+      at: lastTradeAt,
+      daily: TIMEFRAME_SECONDS[state.timeframe] >= 86400,
+      market: p.id,
+      price: (v) => (started && bars.length ? chart.formatPrice(v) : formatNumber(v)),
+    });
+  }
+  /** Live ticks repaint the header at most 4 times a second (it sums the day's bars). */
+  function paintHeaderSoon() {
+    if (!headerTimer) headerTimer = setTimeout(() => ((headerTimer = 0), paintHeader()), 250);
   }
 
   async function reload() {
@@ -575,7 +617,7 @@ export function createChartPage() {
     watchlist.render();
     setStatus('connecting');
     showMessage(null);
-    priceEl.textContent = '';
+    lastTradeAt = null;
     const p = provider();
     const sym = symbol();
     const tf = state.timeframe;
@@ -585,10 +627,15 @@ export function createChartPage() {
 
     chart.symbol = sym;
     chart.market = p.id;
+    const days = Math.max(forcedDays ?? 0, rangeBar.daysWanted() ?? 0) || undefined;
+    forcedDays = undefined;
+    if (!bars.length || loadedKey !== shownKey) chartState.loading(`Loading ${displaySymbol(sym)} · ${tf}…`);
+    header.update({ symbol: displaySymbol(sym), summary: null, daily: TIMEFRAME_SECONDS[tf] >= 86400, market: p.id });
     try {
-      bars = await p.loadHistory(sym, tf, controller.signal);
+      bars = await p.loadHistory(sym, tf, controller.signal, days);
     } catch (err) {
       if (controller.signal.aborted) return;
+      chartState.hide();
       bars = [];
       chart.setBars(bars, tf);
       drawings.setDrawings([]);
@@ -606,10 +653,15 @@ export function createChartPage() {
     shading.setGuides(ext);
 
     chart.setBars(bars, tf);
+    rangeBar.apply();
+    shownKey = loadedKey;
+    chartState.hide();
+    if (!bars.length && TIMEFRAME_SECONDS[tf] >= 60) chartState.empty(`No price history for ${displaySymbol(sym)} at ${tf}`);
     drawings.setDrawings(loadDrawings(drawingsKey));
     drawings.onChange = (list) => saveDrawings(drawingsKey, list);
-    priceEl.textContent = bars.length ? formatNumber(bars[bars.length - 1].close) : '';
+    paintHeader();
     renderLegend();
+    legendBox.schedule();
     if (!bars.length && TIMEFRAME_SECONDS[tf] < 60) {
       waitingForTrades = true;
       showMessage('Waiting for trades… Second charts have no history, so they build live from now on.');
@@ -622,6 +674,7 @@ export function createChartPage() {
           if (extendedApplies() && !state.extendedHours && !isRegularHours(trade.time)) return;
           const result = applyTrade(bars, tf, trade.price, trade.size, trade.time);
           if (!result) return;
+          lastTradeAt = trade.time;
           live.push(bars.length - 1);
         },
         onStatus: setStatus,
@@ -649,6 +702,9 @@ export function createChartPage() {
     if (narrow()) state.watchlistOpen = false;
     chart = new ChartView(chartEl);
     chart.setChartType(state.chartType);
+    legendBox = new LegendBox(chart);
+    legendEl.replaceWith(legendBox.el);
+    if (chartWrap.clientWidth && chartWrap.clientWidth < 560) legendBox.el.classList.add('folded');
     card = new HoverCard(chart.overlay);
     drawings = new DrawingManager(chart, chartWrap);
     profile = new VolumeProfile(chart);

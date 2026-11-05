@@ -297,6 +297,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   primitive with prev close/today's open guides (today = the last bar's New York day). Settings > Chart > "Chart
   effects" (frame.ts chartEffects, localStorage, default on, reduced motion forces off) gates the crosshair glow,
   selected-drawing glow and last-price flash/pulse (pulse only on a new bar or a 1-tick move >= 1 s after the last). Numbers: docs/research/chart-performance.md.
+  Chart look (src/chart/, docs/research/chart-look.md): security header row (securityHeader.ts), range bar
+  (rangeBar.ts/range.ts, remembered per timeframe, `loadHistory(..., days)` fetches more), legend box (legendBox.ts),
+  our axis labels and year row, last-price tag and session lines (axis.ts, axisChrome.ts ChartChrome primitive),
+  volume in its own slim pane, no library logo (attribution in Settings > About). Grid and time labels: our square
+  dotted grid primitive (src/chart/grid.ts) on every chart via followTheme; the library grid and time labels stay off.
   Chart legend (chartPage renderLegend) is rebuilt only when its layout changes; values update in place. Indicator
   instances can hide single plots (`hiddenPlots`) and levels (`hideLevels`); the manager is openIndicatorManager.
   Browser reply cache: engineRequest reuses read-only replies for ENGINE_CACHE_MS (20 s quotes .. 60 min catalogs),

@@ -91,7 +91,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
     autoSize: true,
     ...chartThemeOptions(true),
     layout: { ...chartThemeOptions(true).layout, fontFamily: "'Inter', sans-serif", fontSize: 11 },
-    grid: { vertLines: { visible: false }, horzLines: { color: THEME.grid } },
+    // the square dotted grid comes from chartThemeOptions + followTheme (src/chart/grid.ts)
     rightPriceScale: { borderVisible: false, entireTextOnly: true, scaleMargins: { top: 0.18, bottom: 0.08 } }, // entireTextOnly: no half-cut labels at the edges
     timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true, timeVisible: true, tickMarkMaxCharacterLength: 6, tickMarkFormatter: (t: number, type: TickMarkType) => cardTick(t, type, range) },
     localization: { timeFormatter: (t: number) => (daily() ? nyDate(t) : nyTime(t, true)), priceFormatter: (v: number) => formatPrice(v) },

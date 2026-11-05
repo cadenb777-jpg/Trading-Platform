@@ -20,7 +20,7 @@ import { activatable, formatPrice, h, timeAgo, toast } from '../ui/dom';
 import { deleteHelperAlert, helperAlertsAvailable, listHelperAlerts, saveHelperAlert } from '../ui/alerts';
 import { infoTip, termLabel } from '../ui/glossary';
 import { withTableTools } from '../ui/tableTools';
-import { THEME, followTheme } from '../ui/theme';
+import { THEME, chartThemeOptions, followTheme } from '../ui/theme';
 import { tickerAttr } from '../ui/tickerCard';
 import { isStockSymbol, linkPanel, links } from '../ui/linkGroups';
 
@@ -652,9 +652,9 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       const bars = (await schwab.loadHistory(s.symbol, tf, new AbortController().signal)).slice(-150);
       if (!box.isConnected) return;
       chart = createChart(box, {
+        ...chartThemeOptions(true), // our square dotted grid (src/chart/grid.ts) and theme colours from creation
         autoSize: true,
         layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text },
-        grid: { vertLines: { visible: false }, horzLines: { color: THEME.grid } },
         rightPriceScale: { borderColor: THEME.border },
         timeScale: { borderColor: THEME.border, timeVisible: tf === '1h' },
       });
