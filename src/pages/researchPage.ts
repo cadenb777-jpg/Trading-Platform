@@ -1,3 +1,4 @@
+import { toneVsPrev } from '../research/tone';
 /** Research: a company's financial statements, ratios, valuation (DCF) and SEC filings. */
 import { runId } from '../ui/command';
 import { cotSummary } from '../futures/cot';
@@ -78,6 +79,15 @@ const periodLabel = (end: string, quarterly: boolean) => {
   const d = new Date(`${end}T00:00:00Z`);
   return quarterly ? `${d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })} ${d.getUTCFullYear()}` : `FY${d.getUTCFullYear()}`;
 };
+
+/** Hover text for a coloured cell: what it was compared with. */
+function toneTitle(key: string, v: number | null, prev: number | null | undefined, quarterly = false): string | undefined {
+  const t = toneVsPrev(key, v, prev);
+  if (!t) return undefined;
+  if (v != null && v < 0 && t === 'down' && !(prev != null && v > prev)) return 'A loss';
+  const when = quarterly ? 'the same quarter a year before' : 'the year before';
+  return t === 'up' ? `Better than ${when}` : `Worse than ${when}`;
+}
 
 export function createResearchPage() {
   let tab: Tab = 'overview';
@@ -195,13 +205,13 @@ export function createResearchPage() {
         { label: 'P/E (trailing)', value: fmtX(v.pe ?? d.quote.peRatio), hint: 'Price divided by the last 12 months of earnings per share' },
         { label: 'Price / sales', value: fmtX(v.ps) },
         { label: 'EV / EBITDA', value: fmtX(v.evEbitda), hint: 'A debt-neutral valuation multiple' },
-        { label: 'Free cash flow yield', value: pct(v.fcfYield), hint: 'Yearly free cash flow as a % of market cap' },
         { label: 'Beta (5y vs S&P 500)', value: v.beta != null ? v.beta.toFixed(2) : '—', hint: '1 = moves with the market; 2 = twice as much' },
         { label: '52-week range', value: '—', node: range },
         { label: 'Dividend yield', value: d.quote.divYield ? `${d.quote.divYield.toFixed(2)}%` : '—' },
         { label: 'Revenue (TTM)', value: money(d.ttm.revenue) },
         { label: 'Net income (TTM)', value: money(d.ttm.netIncome), tone: (d.ttm.netIncome ?? 0) >= 0 ? '' : 'down' },
-        { label: 'Net margin', value: pct(lastRatio('netMargin'), 1) },
+        { label: 'Net margin', value: pct(lastRatio('netMargin'), 1), tone: (() => { const m = (d.ratios.netMargin ?? []).filter((x): x is number => x != null); return toneVsPrev('netMargin', m[m.length - 1], m[m.length - 2]); })(), hint: 'Green: higher than the year before; red: lower' },
+        { label: 'Free cash flow yield', value: pct(v.fcfYield), tone: v.fcfYield == null ? '' : v.fcfYield < 0 ? 'down' : '' },
       ]),
       // futures positioning for the company's market: one line, the full COT table is on Futures
       cotSummary(d.symbol, undefined, { quiet: true }),
@@ -212,7 +222,7 @@ export function createResearchPage() {
         h('div', { class: 'panel-head' }, h('h3', {}, 'Key ratios by year')),
         dataTable(
           ['', ...a.periods.map((p) => periodLabel(p, false))],
-          RATIO_ROWS.map(([k, label]) => [{ v: label, cls: 'label' }, ...(d.ratios[k] ?? []).map((x) => (RATIO_PLAIN.has(k) ? (x == null ? '—' : x.toFixed(2)) : { v: pct(x, 1), cls: x == null ? '' : k.endsWith('Growth') ? (x >= 0 ? 'up' : 'down') : '' }))]),
+          RATIO_ROWS.map(([k, label]) => [{ v: label, cls: 'label' }, ...(d.ratios[k] ?? []).map((x, i, all) => ({ v: RATIO_PLAIN.has(k) ? (x == null ? '—' : x.toFixed(2)) : pct(x, 1), cls: x == null ? '' : k.endsWith('Growth') ? (x >= 0 ? 'up' : 'down') : toneVsPrev(k, x, all[i - 1]) }))]),
         ),
       ),
     ];
@@ -238,6 +248,8 @@ export function createResearchPage() {
         h('button', { class: p === period ? 'active' : '', onclick: () => ((period = p), render()) }, p === 'annual' ? 'Yearly' : 'Quarterly'),
       ),
     );
+    // quarters are compared with the same quarter a year before (as traders read earnings), years with the year before
+    const back = quarterly ? 4 : 1;
     const fmt = (key: string, v: number | null) => (v == null ? '—' : key === 'epsDiluted' ? `$${v.toFixed(2)}` : key === 'dilutedShares' ? compact(v) : money(v));
     const table = (title: string, keys: string[]) =>
       h(
@@ -248,7 +260,7 @@ export function createResearchPage() {
           ['', ...s.periods.map((p) => periodLabel(p, quarterly))],
           keys
             .filter((k) => s.values[k]?.some((v) => v != null))
-            .map((k) => [{ v: d.labels[k] ?? k, cls: 'label' }, ...s.values[k].map((v) => ({ v: fmt(k, v), cls: v != null && v < 0 ? 'down' : '' }))]),
+            .map((k) => [{ v: d.labels[k] ?? k, cls: 'label' }, ...s.values[k].map((v, i) => ({ v: fmt(k, v), cls: toneVsPrev(k, v, s.values[k][i - back]), title: toneTitle(k, v, s.values[k][i - back], quarterly) }))]),
           (i) => (['netIncome', 'freeCashFlow', 'equity'].includes(keys.filter((k) => s.values[k]?.some((v) => v != null))[i]) ? 'total' : ''),
         ),
       );

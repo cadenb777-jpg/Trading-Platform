@@ -1,3 +1,4 @@
+import { toneVsPeers } from './tone';
 /**
  * Research > Valuation, beside the DCF: comparable companies (with a football field), an LBO model and a merger
  * (accretion/dilution) model. Inputs start from the company's SEC figures and can all be changed. The maths is in
@@ -61,6 +62,7 @@ export function compsView(d: CompanyData, dcfValue: number | null): Node[] {
       ['operatingMargin', 'Op. margin', (v) => pctU(v, 1)],
       ['netMargin', 'Net margin', (v) => pctU(v, 1)],
     ];
+    const medianOf = (k: string) => summarise(kept.map((p) => p[k as keyof CompRow] as number | null).filter((x): x is number => x != null && (!MULTIPLES.some((m) => m.key === k) || x > 0))).median;
     const line = (p: CompRow, own = false) => [
       own
         ? { v: h('b', {}, `${p.symbol} (this company)`), cls: 'label' }
@@ -74,7 +76,8 @@ export function compsView(d: CompanyData, dcfValue: number | null): Node[] {
             cls: 'label',
           },
       h('span', { class: 'muted small qp-name' }, p.name),
-      ...cols.map(([k, , f]) => f(p[k] as number | null)),
+      // this company's figures against the peers' median: green = cheaper multiple or better margin/growth
+      ...cols.map(([k, , f]) => (own ? { v: f(p[k] as number | null), cls: toneVsPeers(k, p[k] as number | null, medianOf(k)), title: 'Against the peers’ median' } : f(p[k] as number | null))),
     ];
     const stat = (label: string, pick: 'median' | 'mean') => [
       { v: h('b', {}, label), cls: 'label' },

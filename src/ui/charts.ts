@@ -198,7 +198,7 @@ export function pageFrame(title: string, subtitle: string, controls: Node[]) {
   };
 }
 
-type Cell = Node | string | { v: Node | string; cls?: string };
+type Cell = Node | string | { v: Node | string; cls?: string; title?: string };
 
 /** A table id for remembering sort/filters: the page (first part of the URL hash) plus the column headers. */
 export const tableId = (headers: string[]) => `${(location.hash || '#home').replace(/[/?].*$/, '')}:${headers.join('|')}`;
@@ -211,7 +211,7 @@ export const tableId = (headers: string[]) => `${(location.hash || '#home').repl
  */
 export function dataTable(headers: string[], rows: Cell[][], rowClass?: (i: number) => string, tools: Partial<TableToolsOptions> | false = headers[0] === '' ? false : {}) {
   const cell = (c: Cell, tag: 'td' | 'th' = 'td') =>
-    typeof c === 'object' && c !== null && 'v' in c ? h(tag, { class: c.cls ?? '' }, c.v) : h(tag, {}, c as Node | string);
+    typeof c === 'object' && c !== null && 'v' in c ? h(tag, { class: c.cls ?? '', ...(c.title ? { title: c.title } : {}) }, c.v) : h(tag, {}, c as Node | string);
   const table = h(
     'table',
     { class: 'data-table' },
