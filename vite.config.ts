@@ -7,5 +7,5 @@ export default defineConfig({
   // Keep licence comments (/*! ... */ and @license, e.g. TA-Lib's BSD notice) in the minified bundle.
   build: { rolldownOptions: { output: { comments: { legal: true } } } },
   // Agent worktrees live in .claude/; without this their copies of the tests run too.
-  test: { exclude: ['**/node_modules/**', '.claude/**', 'dist/**'] },
+  test: { exclude: ['**/node_modules/**', '.claude/**', 'dist/**'], css: { include: [/style\.css/] } },
 });

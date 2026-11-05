@@ -1,53 +1,87 @@
+/* ---------- Design tokens (docs/design.md) ----------
+   Semantic tokens first (--surface, --line, --accent-2 ...); the older names below them point at these, so every
+   page follows. Dark (default) = deep navy terminal with sky and copper accents; light = paper, ink and slate.
+   Text pairs are checked for 4.5:1 contrast in src/ui/tokens.test.ts. */
 :root {
-  --bg: #0f1218;
-  --bg-chart: #131722;
-  --panel: #171b24;
-  --panel-2: #1f2430;
-  --panel-3: #2a2f3b;
-  --border: #262b36;
-  --text: #e1e4ea;
-  --muted: #8b909c;
-  --accent: #2962ff;
-  --accent-soft: #2962ff26;
-  --up: #26a69a;
-  --down: #ef5350;
-  --warn: #f5a623;
-  --link: #6b93ff;
-  --ai: #b18cff;
-  --ai-bg: #1b1730;
-  --ai-border: #4b3d8a;
-  --ai-hover: #251f42;
-  --ai-top: #151a26;
-  --insight-top: #1a1630;
-  --faint: #4a5162;
-  --border-strong: #3a4152;
-  /* Text colours for gains and losses (pass 4.5:1 on every panel); --up/--down are for fills, bars and lines. */
-  --up-text: #2bb3a6;
-  --down-text: #f2716e;
-  /* Filled Buy/Sell buttons and pills: dark enough for white text (4.5:1). */
-  --up-fill: #00796b;
-  --down-fill: #d32f2f;
-  --warn-text: #f7b955;
-  /* Categorical chart series (blue, orange, aqua), validated per mode; canvas charts use THEME.viz1-3. */
-  --viz-1: #3987e5;
-  --viz-2: #d95926;
-  --viz-3: #199e70;
-  --banner-bg: #2a2410;
-  --banner-border: #5a4a14;
-  --banner-text: #f3dfa2;
-  --overlay: #0009;
-  --text-strong: #fff;
-  --on-accent: #fff;
-  --control-active: #2f3542;
+  /* Layers: page -> surface (cards) -> raised (controls, hovers) -> high (active controls). */
+  --bg: #050d19;
+  --bg-deep: #040b16;
+  --bg-chart: #071629;
+  --surface: #0a1a2e;
+  --raised: #0f233b;
+  --high: #163150;
+  --line: #17304b;
+  --line-strong: #25476b;
+  /* Text. */
+  --text: #e8f1fa;
+  --text-strong: #ffffff;
+  --muted: #9fb4ca;
+  --faint: #62809e;
+  /* Accents: sky for interaction, copper for highlights (active nav, key figures). */
+  --accent: #7ac3ee;
+  --accent-text: #8ac4ec;
+  --on-accent: #04101f;
+  --accent-2: #c8763a;
+  --accent-2-text: #ffa24d;
+  --focus: #8ac4ec;
+  /* Gains and losses: a blue-leaning green and a warm red that also differ in lightness (colour-blind safe). */
+  --up: #2fbf95;
+  --down: #f0645a;
+  --up-text: #4fd3ab;
+  --down-text: #ff8a80;
+  --up-fill: #0b7358;
+  --down-fill: #b8322b;
+  --on-fill: #ffffff;
+  --warn: #e9b04f;
+  --warn-text: #f3c26b;
+  /* Signature touches: blueprint grid, glows, the hero gradient. */
+  --grid-line: color-mix(in srgb, var(--accent) 6%, transparent);
+  --glow-sky: color-mix(in srgb, var(--accent) 16%, transparent);
+  --glow-copper: color-mix(in srgb, var(--accent-2) 16%, transparent);
+  --hero-bg: linear-gradient(160deg, var(--bg-deep) 0%, #071629 45%, #0e2740 100%);
+  --glass: color-mix(in srgb, var(--surface) 82%, transparent);
+  /* Type. */
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Cormorant Garamond', 'Iowan Old Style', Georgia, serif;
+  /* Motion: short and eased; prefers-reduced-motion turns it off (Accessibility block). */
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --lift: translateY(-1px);
+
+  /* Older names (kept so every page follows the tokens above). */
+  --panel: var(--surface);
+  --panel-2: var(--raised);
+  --panel-3: var(--high);
+  --border: var(--line);
+  --border-strong: var(--line-strong);
+  --accent-soft: color-mix(in srgb, var(--accent) 15%, transparent);
+  --link: var(--accent-text);
+  --control-active: var(--high);
+  --ai: #b79cff;
+  --ai-bg: #13183a;
+  --ai-border: #3f418a;
+  --ai-hover: #1b2250;
+  --ai-top: #0b1a30;
+  --insight-top: #111a38;
+  --ai-strong: #8f74ff;
+  /* Categorical chart series (sky, copper, sea green), validated per mode; canvas charts use THEME.viz1-3. */
+  --viz-1: #5aaae6;
+  --viz-2: #e0803f;
+  --viz-3: #2fb58a;
+  --banner-bg: #23170c;
+  --banner-border: #6b4320;
+  --banner-text: #ffd8b0;
+  --overlay: #020814b3;
   --logo-bg: #fff;
-  --star: #f7a600;
-  --ai-strong: #7b5cff;
-  --scrim: #0f1218d9;
-  --tooltip-bg: #0f1218f0;
-  --shadow-sm: 0 1px 2px #0006;
-  --shadow-md: 0 6px 20px #0008;
-  --shadow-lg: 0 16px 40px #000a;
-  --shadow-side: -10px 0 30px #0008;
+  --star: #f2b84b;
+  --scrim: #050d19d9;
+  --tooltip-bg: #071629f2;
+  --shadow-sm: 0 1px 2px #00000066;
+  --shadow-md: 0 8px 24px #00000080, 0 0 0 1px #ffffff08;
+  --shadow-lg: 0 20px 48px #000000a6, 0 0 0 1px #ffffff0a;
+  --shadow-side: -12px 0 32px #00000080;
+  --shadow-hover: 0 6px 18px #00000059, 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
   color-scheme: dark;
 
   /* ---- Design system (shared by every page; see the "Design system" block below) ---- */
@@ -59,7 +93,7 @@
   --warn-soft: color-mix(in srgb, var(--warn) 12%, transparent);
   --warn-border: color-mix(in srgb, var(--warn) 35%, transparent);
   --accent-border: color-mix(in srgb, var(--accent) 40%, transparent);
-  --row-hover: color-mix(in srgb, var(--panel-2) 70%, transparent);
+  --row-hover: color-mix(in srgb, var(--accent) 6%, transparent);
   /* Spacing scale (4px steps). */
   --sp-1: 4px;
   --sp-2: 8px;
@@ -75,63 +109,75 @@
   --fs-lg: 15px;
   --fs-xl: 18px;
   --fs-2xl: 22px;
+  --fs-display: 34px;
   --fs-num-lg: 20px;
   --font-mono: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
   /* Shapes and sizes. */
-  --radius-sm: 5px;
-  --radius: 8px;
+  --radius-sm: 4px;
+  --radius: 6px;
   --radius-lg: 10px;
   --control-h: 32px;
   --page-max: 1320px;
   --page-pad: 24px 32px 40px;
 }
 
-/* Light mode (Settings > Appearance; saved per browser). */
+/* Light mode (Settings > Appearance; saved per browser): paper, ink and slate with navy and copper accents. */
 :root[data-theme='light'] {
-  --viz-1: #2a78d6;
-  --viz-2: #eb6834;
-  --viz-3: #1baf7a;
-  --bg: #f4f6fa;
+  --bg: #f5f2ec;
+  --bg-deep: #ede8de;
   --bg-chart: #ffffff;
-  --panel: #ffffff;
-  --panel-2: #f1f3f8;
-  --panel-3: #e4e8f0;
-  --border: #dde2ea;
-  --text: #1a1f2b;
-  --muted: #5f6676;
-  --accent: #2962ff;
-  --accent-soft: #2962ff1f;
-  --up: #089981;
-  --down: #e5383b;
-  --warn: #c77c02;
-  --link: #1f4fd6;
-  --ai: #6b3fd4;
-  --ai-bg: #f1ecff;
-  --ai-border: #c8b6f5;
-  --ai-hover: #e4dbff;
-  --ai-top: #eef0fb;
-  --insight-top: #f1ecff;
-  --faint: #9aa1ad;
-  --border-strong: #c6cdd8;
-  --up-text: #057362;
-  --down-text: #c62828;
-  --up-fill: #067a67;
-  --down-fill: #c62828;
-  --warn-text: #9a6000;
-  --banner-bg: #fff6dc;
-  --banner-border: #f0d68a;
-  --banner-text: #5c4400;
-  --overlay: #0005;
-  --text-strong: #0b0f19;
-  --star: #e09400;
-  --control-active: #ffffff;
-  --ai-strong: #6b3fd4;
-  --scrim: #f4f6fad9;
-  --tooltip-bg: #fffffff2;
-  --shadow-sm: 0 1px 2px #0f172a14;
-  --shadow-md: 0 6px 20px #0f172a1f;
-  --shadow-lg: 0 16px 40px #0f172a29;
-  --shadow-side: -10px 0 30px #0f172a1f;
+  --surface: #ffffff;
+  --raised: #f7f5f0;
+  --high: #ece7dd;
+  --line: #dde3ea;
+  --line-strong: #c3ccd7;
+  --text: #1f2a37;
+  --text-strong: #0b1b2e;
+  --muted: #526277;
+  --faint: #8a96a6;
+  --accent: #123b68;
+  --accent-text: #1d4f86;
+  --on-accent: #ffffff;
+  --accent-2: #9c4e1c;
+  --accent-2-text: #8f461a;
+  --focus: #1d5fa8;
+  --up: #0e8a6a;
+  --down: #c8402f;
+  --up-text: #0a6b52;
+  --down-text: #b3261e;
+  --up-fill: #0b7358;
+  --down-fill: #b3261e;
+  --warn: #a86a00;
+  --warn-text: #865300;
+  --grid-line: color-mix(in srgb, var(--accent) 5%, transparent);
+  --glow-sky: color-mix(in srgb, #7ac3ee 22%, transparent);
+  --glow-copper: color-mix(in srgb, var(--accent-2) 10%, transparent);
+  --hero-bg: linear-gradient(160deg, #fbf9f5 0%, var(--bg) 55%, #ece6da 100%);
+  --glass: color-mix(in srgb, var(--surface) 88%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 9%, transparent);
+  --row-hover: color-mix(in srgb, var(--accent) 4%, transparent);
+  --viz-1: #1f5fa8;
+  --viz-2: #b4581f;
+  --viz-3: #178a64;
+  --ai: #5b3fc4;
+  --ai-bg: #f1edfb;
+  --ai-border: #cbbcf2;
+  --ai-hover: #e6dffa;
+  --ai-top: #f3f0ea;
+  --insight-top: #f1edfb;
+  --ai-strong: #5b3fc4;
+  --banner-bg: #fbefe2;
+  --banner-border: #e3c3a3;
+  --banner-text: #5c2e10;
+  --overlay: #0b1b2e66;
+  --star: #c27c00;
+  --scrim: #f5f2ecd9;
+  --tooltip-bg: #fffffff5;
+  --shadow-sm: 0 1px 2px #0b1b2e12;
+  --shadow-md: 0 8px 24px #0b1b2e1a;
+  --shadow-lg: 0 20px 48px #0b1b2e26;
+  --shadow-side: -12px 0 32px #0b1b2e1f;
+  --shadow-hover: 0 6px 18px #0b1b2e17, 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
   color-scheme: light;
 }
 
@@ -145,7 +191,8 @@ body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.45 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font: 14px/1.45 var(--font-ui);
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -190,7 +237,7 @@ a {
 .rail {
   width: 78px;
   flex-shrink: 0;
-  background: var(--bg);
+  background: linear-gradient(180deg, var(--bg-deep), var(--bg) 60%);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -222,11 +269,13 @@ button.nav-btn {
 
 .brand {
   color: var(--accent);
-  font-size: 26px;
-  margin-bottom: 8px;
+  font-size: 22px;
+  margin: 4px 0 10px;
+  text-shadow: 0 0 14px var(--glow-sky);
 }
 
 .nav-btn {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -237,6 +286,12 @@ button.nav-btn {
   color: var(--muted);
   text-decoration: none;
   font-size: var(--fs-xs);
+  letter-spacing: 0.01em;
+  transition: color var(--dur-1) var(--ease), background-color var(--dur-1) var(--ease);
+}
+
+.nav-btn svg {
+  transition: transform var(--dur-2) var(--ease), color var(--dur-1) var(--ease);
 }
 
 .nav-btn:hover {
@@ -244,13 +299,34 @@ button.nav-btn {
   background: var(--panel-2);
 }
 
+.nav-btn:hover svg {
+  transform: var(--lift);
+}
+
+.nav-btn:active svg {
+  transform: scale(0.94);
+}
+
+/* Active page: a soft wash and a thin copper hairline on the rail's edge. */
 .nav-btn.active {
   color: var(--text-strong);
   background: var(--accent-soft);
 }
 
+.nav-btn.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent-2);
+  box-shadow: 0 0 8px var(--glow-copper);
+}
+
 .nav-btn.active svg {
-  color: var(--link);
+  color: var(--accent-text);
 }
 
 .views {
@@ -275,7 +351,7 @@ button.nav-btn {
   min-width: 0;
   font-size: var(--fs-base);
   line-height: 1.4;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-2) var(--ease), background-color var(--dur-1) var(--ease);
 }
 
 .input:hover {
@@ -284,8 +360,8 @@ button.nav-btn {
 
 .input:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 22%, transparent);
 }
 
 .input::placeholder {
@@ -329,12 +405,17 @@ input[type='radio'] {
   line-height: 1.4;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  transition: background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease),
+    box-shadow var(--dur-2) var(--ease), transform var(--dur-1) var(--ease);
 }
 
 .btn:hover {
   background: var(--panel-3);
   border-color: var(--border-strong);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .btn:focus-visible,
@@ -343,8 +424,8 @@ input[type='radio'] {
 .segmented button:focus-visible,
 .chip:focus-visible,
 .nav-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .btn:disabled,
@@ -357,11 +438,13 @@ input[type='radio'] {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--on-accent);
+  font-weight: 600;
 }
 
 .btn.primary:hover {
-  filter: brightness(1.1);
+  background: color-mix(in srgb, var(--accent) 86%, var(--text-strong));
   border-color: var(--accent);
+  box-shadow: 0 4px 14px var(--glow-sky);
 }
 
 .btn.danger {
@@ -395,6 +478,7 @@ input[type='radio'] {
   padding: 8px;
   border-radius: var(--radius-sm);
   color: var(--muted);
+  transition: color var(--dur-1) var(--ease), background-color var(--dur-1) var(--ease);
 }
 
 .icon-btn:hover {
@@ -436,6 +520,7 @@ input[type='radio'] {
   cursor: pointer;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  transition: color var(--dur-1) var(--ease), background-color var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
 }
 
 .segmented button:hover {
@@ -467,6 +552,7 @@ input[type='radio'] {
   font-size: var(--fs-base);
   font-weight: 500;
   white-space: nowrap;
+  transition: color var(--dur-1) var(--ease), background-color var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease);
 }
 
 .tab:hover {
@@ -731,9 +817,10 @@ input[type='radio'] {
 
 /* The one card style: every boxed section on every page. */
 .panel {
-  background: var(--panel);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 3%, transparent), transparent 140px), var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-sm), inset 0 1px 0 color-mix(in srgb, var(--text-strong) 4%, transparent);
   padding: var(--sp-4);
   min-width: 0;
 }
@@ -749,10 +836,10 @@ input[type='radio'] {
 
 .panel-head h3 {
   margin: 0;
-  font-size: var(--fs-lg);
+  font-size: var(--fs-md);
   font-weight: 600;
   color: var(--text-strong);
-  letter-spacing: -0.005em;
+  letter-spacing: 0.005em;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1528,8 +1615,11 @@ input[type='radio'] {
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--panel-3);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   border: 1px solid var(--border-strong);
+  border-left: 2px solid var(--accent-2);
   padding: 8px 16px;
   border-radius: var(--radius);
   z-index: 50;
@@ -2845,13 +2935,15 @@ button.news-item {
   border-bottom: 1px solid var(--border);
 }
 
-/* Page title: the same size and weight on every page. */
+/* Page title: the display serif, the same size on every page. */
 .ap-header h1,
 .cal-header h1 {
   margin: 0;
-  font-size: var(--fs-2xl);
-  font-weight: 650;
-  letter-spacing: -0.015em;
+  font-family: var(--font-display);
+  font-size: var(--fs-display);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.005em;
   color: var(--text-strong);
 }
 
@@ -2905,9 +2997,10 @@ button.news-item {
 }
 
 .stat-card {
-  background: var(--panel);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent), var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -2918,7 +3011,7 @@ button.news-item {
 .stat-label {
   font-size: var(--fs-xs);
   font-weight: 500;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
   line-height: 1.35;
@@ -3006,7 +3099,7 @@ button.news-item {
   text-align: right;
   font-size: var(--fs-xs);
   font-weight: 500;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
   padding: 8px 10px;
@@ -3030,8 +3123,16 @@ button.news-item {
   text-align: left;
 }
 
+.data-table td {
+  transition: background-color var(--dur-1) var(--ease);
+}
+
 .data-table tbody tr:hover td {
   background: var(--row-hover);
+}
+
+.data-table tbody tr:hover td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent-border);
 }
 
 .data-table td.label {
@@ -5245,7 +5346,7 @@ a.btn {
   letter-spacing: 0.04em;
   padding: 2px 8px;
   border-radius: 999px;
-  color: var(--on-accent);
+  color: var(--on-fill);
 }
 
 .setup-side.bull {
@@ -6026,11 +6127,23 @@ a.btn {
 
 /* Section label above a group of cards. */
 .section-label {
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+/* Eyebrow: spaced uppercase label with a thin rule after it (the site's section marker). */
+.section-label::after {
+  content: '';
+  flex: 0 1 48px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.45;
 }
 
 /* Header controls never push the page wider than the screen. */
@@ -6255,6 +6368,318 @@ a.btn {
   }
 }
 
+/* ---------- Design refresh: signature touches and interaction states (docs/design.md) ----------
+   Faint blueprint grid and soft glows behind page headers, the Home hero with its arch line, copper hairlines,
+   hover lift on clickable cards, and one focus ring. Colours come from the tokens only. */
+
+@keyframes tp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes tp-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Page backdrop: grid lines and sky/copper glows at the top of each page, fading out as the page goes on. */
+.home,
+.analysis-page,
+.calendar-page {
+  position: relative;
+  isolation: isolate;
+}
+
+.home::before,
+.analysis-page::before,
+.calendar-page::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 380px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(48% 260px at 8% 0, var(--glow-sky), transparent 72%),
+    radial-gradient(34% 220px at 100% 0, var(--glow-copper), transparent 72%),
+    linear-gradient(var(--grid-line) 1px, transparent 1px) 0 0 / 56px 56px,
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 56px 56px;
+  -webkit-mask-image: linear-gradient(180deg, currentColor 25%, transparent);
+  mask-image: linear-gradient(180deg, currentColor 25%, transparent);
+}
+
+/* Page titles sit on a thin copper rule, like the site's section markers. */
+.ap-header h1::before,
+.cal-header h1::before,
+.hero-left::before {
+  content: '';
+  display: block;
+  width: 40px;
+  height: 1px;
+  margin-bottom: var(--sp-3);
+  background: var(--accent-2);
+  box-shadow: 0 0 8px var(--glow-copper);
+}
+
+.ap-header p,
+.cal-header p {
+  color: var(--muted);
+}
+
+/* Home hero: navy (or paper) gradient, blueprint grid and a glowing arch line. */
+.home > .home-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  padding: var(--sp-5) var(--sp-5) 40px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(var(--grid-line) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0 / 48px 48px,
+    radial-gradient(60% 120% at 100% 0, var(--glow-sky), transparent 70%),
+    radial-gradient(40% 90% at 0 100%, var(--glow-copper), transparent 70%),
+    var(--hero-bg);
+  box-shadow: var(--shadow-md);
+}
+
+/* The arch: a sky line with a soft glow, and a thinner copper line above it. */
+.home > .home-hero::after,
+.home > .home-hero::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+}
+
+.home > .home-hero::after {
+  left: -8%;
+  right: -8%;
+  top: 70%;
+  height: 260%;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  box-shadow: 0 -2px 22px var(--glow-sky), inset 0 2px 18px var(--glow-sky);
+}
+
+.home > .home-hero::before {
+  left: -16%;
+  right: -16%;
+  top: 56%;
+  height: 300%;
+  border-top: 1px solid color-mix(in srgb, var(--accent-2) 65%, transparent);
+}
+
+.greeting {
+  font-family: var(--font-display);
+  font-size: 42px;
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+}
+
+.name-btn {
+  background: none;
+  color: var(--accent-text);
+  font-style: italic;
+  transition: color var(--dur-1) var(--ease);
+}
+
+.name-btn:hover {
+  color: var(--accent-2-text);
+}
+
+.hero-sub {
+  font-size: var(--fs-sm);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hero-sub .market-pill {
+  letter-spacing: 0.02em;
+  text-transform: none;
+  background: var(--glass);
+}
+
+/* Big figures in the display serif with lining numerals: the account total and the index prices. */
+.brief-total b,
+.idx-price {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: 0;
+  line-height: 1.05;
+  color: var(--text-strong);
+}
+
+.brief-total b {
+  font-size: 44px;
+}
+
+.idx-price {
+  font-size: 34px;
+}
+
+.brief-total:hover b {
+  color: var(--accent-text);
+}
+
+.brief-head h2,
+.modal-header h2 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 26px;
+  letter-spacing: 0;
+}
+
+/* Clickable cards lift a little and pick up a sky edge on hover. */
+.idx-card,
+.brief-chip,
+.fut-tile,
+.div-cell {
+  transition: border-color var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease), transform var(--dur-2) var(--ease),
+    background-color var(--dur-1) var(--ease);
+}
+
+.idx-card {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent 120px), var(--panel);
+  box-shadow: var(--shadow-sm);
+}
+
+.idx-card:hover,
+.brief-chip:hover,
+.fut-tile:hover,
+.div-cell:hover {
+  transform: var(--lift);
+  border-color: var(--accent-border);
+  box-shadow: var(--shadow-hover);
+}
+
+.idx-card:active,
+.brief-chip:active,
+.fut-tile:active {
+  transform: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.chip {
+  transition: color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), background-color var(--dur-1) var(--ease);
+}
+
+.chip:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.chip.on {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+/* Active tab: a copper hairline under the label. */
+.tab.active {
+  box-shadow: var(--shadow-sm), inset 0 -1px 0 var(--accent-2);
+}
+
+.btn.ghost:hover {
+  color: var(--text-strong);
+}
+
+/* Popovers, menus and modals: glassy, with a short rise. */
+.popover,
+.modal {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent 160px), var(--panel);
+  border-color: var(--border-strong);
+  animation: tp-rise var(--dur-2) var(--ease);
+}
+
+.modal-backdrop {
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  animation: tp-fade var(--dur-2) var(--ease);
+}
+
+.modal-header {
+  border-bottom-color: var(--border);
+}
+
+/* One focus ring for anything focusable that has no ring of its own. */
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Numbered steps inside an empty state read left-aligned. */
+.empty-state ol {
+  text-align: left;
+}
+
+/* Waiting and empty states: quiet text with a thin rule above, the same on every page. */
+.empty-state::before {
+  content: '';
+  width: 32px;
+  height: 1px;
+  background: var(--border-strong);
+}
+
+/* Chart page toolbar: the raised surface, a hairline below. */
+.toolbar {
+  background: linear-gradient(180deg, var(--panel), color-mix(in srgb, var(--panel) 92%, var(--bg)));
+}
+
+@media (max-width: 700px) {
+  /* The rail becomes a bottom bar: the copper hairline moves to the top edge. */
+  .nav-btn.active::before {
+    left: 10px;
+    right: 10px;
+    top: -4px;
+    bottom: auto;
+    width: auto;
+    height: 2px;
+  }
+  .home > .home-hero {
+    padding: var(--sp-4) var(--sp-4) var(--sp-6);
+  }
+  .greeting {
+    font-size: 32px;
+  }
+  .ap-header h1,
+  .cal-header h1,
+  .tr-top h1 {
+    font-size: 28px;
+  }
+  .brief-total b {
+    font-size: 36px;
+  }
+  .idx-price {
+    font-size: 30px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .idx-card:hover,
+  .brief-chip:hover,
+  .fut-tile:hover,
+  .div-cell:hover,
+  .nav-btn:hover svg,
+  .btn:active:not(:disabled) {
+    transform: none;
+  }
+}
+
 /* ---------- Webull (Portfolios > Webull, Settings > Trading) ---------- */
 .wb-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .wb-head h3 { margin: 0; }
@@ -6270,7 +6695,7 @@ a.btn {
 .wb-field[hidden] { display: none; }
 .wb-field .input { width: 100%; min-width: 0; }
 .segmented button.wb-sell.active { background: var(--down-soft); color: var(--down-text); }
-.segmented button.wb-live.active { background: var(--down-fill); color: var(--on-accent); }
+.segmented button.wb-live.active { background: var(--down-fill); color: var(--on-fill); }
 .wb-confirm-env { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
 .wb-summary { font-size: var(--fs-lg); font-weight: 700; color: var(--text-strong); margin: var(--sp-2) 0; }
 .wb-confirm-actions { margin-top: var(--sp-3); flex-wrap: wrap; }
@@ -6537,9 +6962,9 @@ a.btn {
 .tr-top {
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3);
   padding: var(--sp-2) 0; margin-bottom: var(--sp-3);
-  background: var(--bg); border-bottom: 1px solid var(--border);
+  background: var(--scrim); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
 }
-.tr-top h1 { margin: 0; font-size: var(--fs-2xl); }
+.tr-top h1 { margin: 0; font-family: var(--font-display); font-size: clamp(28px, 4vw, var(--fs-display)); font-weight: 500; line-height: 1.1; color: var(--text-strong); }
 .tr-is-live .tr-top { box-shadow: inset 0 -2px 0 var(--down); }
 .tr-stats { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); }
 .tr-stat { display: flex; flex-direction: column; line-height: 1.25; }
@@ -6624,7 +7049,7 @@ a.btn {
 .plan-check { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
 .plan-step { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: var(--sp-2); align-items: start; }
 .plan-step > i { font-style: normal; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-strong); color: var(--muted); font-size: var(--fs-sm); }
-.plan-step.done > i { background: var(--up-fill); border-color: var(--up-fill); color: var(--on-accent); }
+.plan-step.done > i { background: var(--up-fill); border-color: var(--up-fill); color: var(--on-fill); }
 .plan-step.ready > i { border-color: var(--accent); color: var(--accent); }
 .plan-step .btn { margin-top: 4px; }
 .plan-step.done b { color: var(--muted); }
@@ -6634,8 +7059,8 @@ a.btn {
 .tk-side { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 4px; }
 .tk-side button { border: 0; border-radius: var(--radius-sm); padding: 10px 0; font-size: var(--fs-lg); font-weight: 700; letter-spacing: 0.02em; background: none; color: var(--muted); cursor: pointer; }
 .tk-side button:hover { color: var(--text); }
-.tk-side .tk-buy.active { background: var(--up-fill); color: var(--on-accent); box-shadow: var(--shadow-sm); }
-.tk-side .tk-sell.active { background: var(--down-fill); color: var(--on-accent); box-shadow: var(--shadow-sm); }
+.tk-side .tk-buy.active { background: var(--up-fill); color: var(--on-fill); box-shadow: var(--shadow-sm); }
+.tk-side .tk-sell.active { background: var(--down-fill); color: var(--on-fill); box-shadow: var(--shadow-sm); }
 .tk-row { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .tk-row[hidden], .tk-risk[hidden] { display: none; }
 .tk-row .input { width: 100%; min-width: 0; font-variant-numeric: tabular-nums; }
@@ -6658,7 +7083,7 @@ a.btn {
 .tk-sum-main b { font-size: var(--fs-xl); color: var(--text-strong); }
 .tk-sum-row .down { color: var(--down-text); }
 .tk-warn { margin: 2px 0 0; }
-.btn.tk-preview { width: 100%; min-height: 42px; font-size: var(--fs-lg); font-weight: 700; background: var(--up-fill); border-color: var(--up-fill); color: var(--on-accent); }
+.btn.tk-preview { width: 100%; min-height: 42px; font-size: var(--fs-lg); font-weight: 700; background: var(--up-fill); border-color: var(--up-fill); color: var(--on-fill); }
 .btn.tk-preview:hover { filter: brightness(1.08); }
 .btn.tk-preview.tk-is-sell { background: var(--down-fill); border-color: var(--down-fill); }
 .tk-foot { margin: -4px 0 0; }
@@ -6677,7 +7102,7 @@ a.btn {
   .tr-top { position: static; }
 }
 @media (max-width: 600px) {
-  .tr-top h1 { font-size: var(--fs-xl); }
+  .tr-top h1 { font-size: 26px; }
   .tr-stats { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
   .tr-updated { display: none; }
 }
