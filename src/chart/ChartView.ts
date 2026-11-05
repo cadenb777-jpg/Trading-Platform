@@ -721,8 +721,9 @@ export class ChartView {
 
   private createMainSeries(type: ChartType): ISeriesApi<SeriesType> {
     const { up, down, accent } = THEME;
-    // A calm last-price line: thin, dashed, neutral; the axis label takes the last candle's up/down colour.
-    const common = { priceLineVisible: true, lastValueVisible: true, priceLineStyle: LineStyle.Dashed, priceLineWidth: 1 as const, priceLineColor: THEME.crosshair };
+    // Last-price line: thin and dashed, green while the latest candle is up and red while it is down (the library
+    // colours it from the last bar when priceLineColor is empty); it just moves with the price, no flashing.
+    const common = { priceLineVisible: true, lastValueVisible: true, priceLineStyle: LineStyle.Dashed, priceLineWidth: 1 as const, priceLineColor: '' };
     switch (type) {
       case 'hollow':
         return this.chart.addSeries(

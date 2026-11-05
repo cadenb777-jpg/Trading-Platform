@@ -24,7 +24,7 @@ export function nextPose(home: [number, number], rand: () => number = Math.rando
     x: Math.round(home[0] + jitter()),
     y: Math.round(home[1] + jitter()),
     scale: +(0.85 + rand() * 0.35).toFixed(2),
-    opacity: +(0.5 + rand() * 0.5).toFixed(2),
+    opacity: +(0.65 + rand() * 0.35).toFixed(2),
   };
 }
 

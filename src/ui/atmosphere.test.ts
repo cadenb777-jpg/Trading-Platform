@@ -11,7 +11,7 @@ describe('colour spots', () => {
       expect(Math.abs(p.y - 50)).toBeLessThanOrEqual(16);
       expect(p.scale).toBeGreaterThanOrEqual(0.85);
       expect(p.scale).toBeLessThanOrEqual(1.2);
-      expect(p.opacity).toBeGreaterThanOrEqual(0.5);
+      expect(p.opacity).toBeGreaterThanOrEqual(0.65);
       expect(p.opacity).toBeLessThanOrEqual(1);
     }
   });

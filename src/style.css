@@ -15,7 +15,7 @@
   /* Text. */
   --text: #e8f1fa;
   --text-strong: #ffffff;
-  --muted: #9fb4ca;
+  --muted: #adc1d6;
   --faint: #62809e;
   /* Accents: sky for interaction, copper for highlights (active nav, key figures). */
   --accent: #7ac3ee;
@@ -44,9 +44,9 @@
      Spots are #rrggbbaa so tokens.test.ts can check text contrast where they are strongest. */
   --grid-minor: color-mix(in srgb, var(--accent) 3.5%, transparent);
   --grid-major: color-mix(in srgb, var(--accent) 7.5%, transparent);
-  --spot-sky: #7ac3ee3d;
-  --spot-copper: #e0874552;
-  --spot-deep: #2466ad4a;
+  --spot-sky: #6fb8ea47;
+  --spot-copper: #e5823e5c;
+  --spot-deep: #2a74c445;
   --bridge-sky: #7ac3ee;
   --bridge-copper: #d9884a;
   /* Type. */
@@ -165,8 +165,8 @@
   --glass: color-mix(in srgb, var(--surface) 88%, transparent);
   --grid-minor: color-mix(in srgb, var(--accent) 3%, transparent);
   --grid-major: color-mix(in srgb, var(--accent) 6%, transparent);
-  --spot-sky: #7ac3ee3d;
-  --spot-copper: #ffa24d33;
+  --spot-sky: #6fb8ea38;
+  --spot-copper: #ff9a402e;
   --spot-deep: #123b680d;
   --bridge-sky: #3f86c2;
   --bridge-copper: #b8622a;
@@ -1801,8 +1801,6 @@ input[type='radio'] {
   justify-content: space-between;
   gap: 12px 24px;
   margin-bottom: var(--sp-5);
-  padding-bottom: var(--sp-4);
-  border-bottom: 1px solid var(--border);
 }
 
 .cal-filters {
@@ -2967,8 +2965,6 @@ button.news-item {
   justify-content: space-between;
   gap: 12px 24px;
   margin-bottom: var(--sp-5);
-  padding-bottom: var(--sp-4);
-  border-bottom: 1px solid var(--border);
 }
 
 /* Page title: the display serif, the same size on every page. */
@@ -9225,9 +9221,9 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   position: absolute;
   left: 0;
   top: 0;
-  width: 70vmax;
-  height: 60vmax;
-  margin: -30vmax 0 0 -35vmax;
+  width: 84vmax;
+  height: 70vmax;
+  margin: -35vmax 0 0 -42vmax;
   border-radius: 50%;
   opacity: var(--o, 0.85);
   transform: translate(var(--x, 50vw), var(--y, 50vh)) scale(var(--s, 1));
@@ -9252,7 +9248,8 @@ body[data-route='chart'] { background: var(--bg-chart); }
   --card-bottom: color-mix(in srgb, var(--raised) 70%, var(--accent) 6%);
 }
 :root[data-theme='light'] {
-  --card-top: color-mix(in srgb, var(--bg) 85%, var(--accent) 4%);
+  /* Light mode: white cards with only a whisper of warmth at the top, so they read as paper, not grey. */
+  --card-top: color-mix(in srgb, var(--surface) 96%, var(--bg) 4%);
   --card-bottom: var(--surface);
 }
 .panel,

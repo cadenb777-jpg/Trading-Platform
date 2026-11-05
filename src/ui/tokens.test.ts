@@ -67,7 +67,9 @@ describe('design tokens', () => {
       // can sit over either, so the worst cases are each spot alone and deep blue over each corner spot.
       const [sky, copper, deep] = spots;
       const worst = [...spots.map((sp) => over(theme.bg, sp)), over(over(theme.bg, sky), deep), over(over(theme.bg, copper), deep)];
-      const failing = TEXT.flatMap((t) => worst.filter((bg) => contrast(theme[t], bg) < 4.5).map((bg) => `${t} on ${bg}`));
+      // Only text that sits straight on the page background (titles, intros, links); figures in colour live on cards.
+      const onPage = ['text', 'text-strong', 'muted', 'accent-text'];
+      const failing = onPage.flatMap((t) => worst.filter((bg) => contrast(theme[t], bg) < 4.5).map((bg) => `${t} on ${bg}`));
       expect(failing).toEqual([]);
     });
   }
