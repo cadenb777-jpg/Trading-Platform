@@ -586,7 +586,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
 
   const fnBar = functionBar(
     [
-      { label: 'Refresh', icon: 'refresh', title: 'Reload the brief, news, events and index charts', run: () => (void brief.refresh(), refreshNews(true), upcoming.refresh(), cards.forEach((c) => c.loadSparkline())) },
+      { label: 'Refresh', icon: 'refresh', title: 'Reload the brief, news, events and index charts', run: () => (cards.forEach((c) => c.loadSparkline()), Promise.all([brief.refresh(), refreshNews(true), upcoming.refresh()])) },
       { label: 'Customise', icon: 'grid', title: 'Add, remove, reorder and resize widgets', run: () => setEditing(!editing) },
       { label: 'AI market read', icon: 'spark', run: () => marketRead.button.click() },
       { label: 'Calendar', icon: 'calendar', run: onOpenCalendar },

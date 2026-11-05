@@ -88,6 +88,7 @@ let closeOpen: (() => void) | null = null;
 /** Opens the launchpad. `run` carries out an item's command id. Calling it while open closes it. */
 export function openLaunchpad(run: (id: string) => void) {
   if (closeOpen) return closeOpen();
+  const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const items = launchItems();
   let favs = readList(FAV_KEY);
   const byId = new Map(items.map((i) => [i.id, i]));
@@ -167,9 +168,13 @@ export function openLaunchpad(run: (id: string) => void) {
     else if (step < 0) input.focus();
   });
   draw();
-  const close = openModal('Launchpad', h('div', { class: 'launchpad' }, input, body, h('p', { class: 'muted tiny lp-foot' }, h('kbd', {}, 'Ctrl'), '+', h('kbd', {}, 'L'), ' opens this anywhere · ', h('kbd', {}, '/'), ' opens the command bar for tickers')), {
+  const close = openModal('Launchpad', h('div', { class: 'launchpad' }, input, body, h('p', { class: 'muted tiny lp-foot' }, h('kbd', {}, 'Ctrl'), '+', h('kbd', {}, 'Shift'), '+', h('kbd', {}, 'L'), ' or ', h('kbd', {}, 'g'), ' ', h('kbd', {}, 'l'), ' opens this anywhere · ', h('kbd', {}, '/'), ' opens the command bar for tickers')), {
     wide: true,
-    onClose: () => (closeOpen = null),
+    onClose: () => {
+      closeOpen = null;
+      // focus goes back where it was (the rail button or the page), unless a launched page moved it already
+      if (opener?.isConnected && (document.activeElement === document.body || !document.activeElement)) opener.focus({ preventScroll: true });
+    },
   });
   input.closest('.modal')?.classList.add('lp-modal');
   closeOpen = close;

@@ -44,19 +44,25 @@ tabs, a function bar, a launchpad, a status bar and a widget dashboard, all in o
 
 - **One registry.** `src/ui/nav.ts` lists every page once (route, section, label, a unique Bloomberg-style code,
   keywords, one line about it) plus functions that aren't pages (WEI, COT, MULTI, AI, DATA, PREF...). The rail,
-  sub-tabs, command bar (`/`, Ctrl+K), launchpad (Ctrl+L) and the AI's page list all read it. A new page = one entry
+  sub-tabs, command bar (`/`, Ctrl+K), launchpad and the AI's page list all read it. A code that is also a ticker
+  (AI, RES, LAB...) shows both in the command bar: the function first (Enter), the ticker next (↓). A new page = one entry
   here + its loader in main.ts `LOADERS` (typed, so a missing loader fails the build); `nav.test.ts` checks routes
   and codes.
 - **Two levels.** The rail shows only the sections: Markets, Analyze, Money, Business, AI, then the launchpad;
   Alerts, Data, Settings and Collapse sit at the bottom. A section opens the page last visited in it. The top row
   shows the section's pages as sub-tabs (code as a quiet hint) and the command field on the right. Phones: the
   sections become a bottom bar, the sub-tabs scroll sideways, the command field is an icon.
-- **Function bar.** Under a page title, numbered chips run that page's actions (keys 1-9, ignored while typing or with
-  a dialog open) and a "Related" row links its neighbours by code. Opt in with `pageFrame(...).functions(actions,
+- **Launchpad keys.** Ctrl/Cmd+Shift+L or `g l` open it from anywhere. Plain Ctrl/Cmd+L opens it only when focus is
+  not in a text field, so in a field it stays the browser's address-bar key (Alt+D also reaches the address bar).
+  Closing it returns focus to where it was.
+- **Function bar.** Under a page title, numbered chips run that page's actions (keys 1-9, only when focus is on the
+  page itself and no dialog, drawer, slide-over, pop-out chart or launchpad is open). A chip whose action returns a
+  promise is disabled with a spinner until it settles, so repeated presses send one request and a "Related" row links its neighbours by code. Opt in with `pageFrame(...).functions(actions,
   related)` or `functionBar()`. Actions live here, not as duplicate header buttons; the header keeps filters and
   display choices.
-- **Status bar.** One thin row: helper and version, Schwab / Webull / SEC feeds, last latency, last update, the New York
-  session and READY / BUSY / OFFLINE. Every item opens its detail (Data health or Settings).
+- **Status bar.** One thin row: helper and version, Schwab / Webull / SEC feeds, "Last reply" (how long the helper took
+  to answer the last request, its own work included; not a network ping), last update, the New York session (with NYSE
+  holidays and early closes from `src/market/sessions.ts`) and READY / BUSY / OFFLINE. Every item opens its detail (Data health or Settings).
 - **Panels.** `panelHeader()` (src/ui/panel.ts): title, as-of, the panel's own controls, then refresh, open in full
   and collapse, always in that order.
 - **Home widgets.** A 12-column grid (`src/home/widgets.ts`): indexes, my accounts, needs attention, setups, news,

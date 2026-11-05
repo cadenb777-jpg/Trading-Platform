@@ -443,7 +443,7 @@ if (isAiWindow) {
     h('div', { class: 'brand', title: 'Trading Platform' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }, '◆'), h('span', { class: 'brand-name' }, 'Terminal')),
     ...sectionLinks,
     aiBtn,
-    railBtn('rail-launch', 'Launchpad', 'grid', 'Launchpad: every page and function (Ctrl+L)', launch, { 'aria-keyshortcuts': 'Control+L Meta+L' }),
+    railBtn('rail-launch', 'Launchpad', 'grid', 'Launchpad: every page and function (Ctrl+Shift+L, g l, or Ctrl+L when not typing)', launch, { 'aria-keyshortcuts': 'Control+Shift+L Meta+Shift+L' }),
     h(
       'div',
       { class: 'rail-bottom' },

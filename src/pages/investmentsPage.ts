@@ -54,7 +54,8 @@ export function createInvestmentsPage(ctx: InvestContext) {
   ]);
   frame.functions(
     [
-      { label: 'Refresh', icon: 'refresh', title: 'Load fresh data now', run: () => (clearEngineCache(), showSection(section)) },
+      // the boards load inside their own panels; holding the chip for 2 s keeps repeated presses from resending
+      { label: 'Refresh', icon: 'refresh', title: 'Load fresh data now', run: () => (clearEngineCache(), showSection(section), new Promise((r) => setTimeout(r, 2000))) },
       { label: 'Search', icon: 'search', title: 'Search stocks, ETFs, bonds and funds', run: () => search.focus() },
       { label: 'Overview', run: () => showSection('overview') },
       { label: 'Bonds', run: () => showSection('bonds') },

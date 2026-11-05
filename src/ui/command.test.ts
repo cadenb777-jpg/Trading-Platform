@@ -77,6 +77,19 @@ describe('parsing', () => {
 });
 
 describe('ranking', () => {
+  it('a word that is both a registry code and a ticker shows both: the function first (Enter), the ticker next (↓)', () => {
+    const groups = buildResults('AI', src({ symbols: [{ symbol: 'AI', name: 'C3.ai Inc', source: 'search' }] }));
+    const flat = flatten(groups);
+    expect(flat[0].id).toBe('fn:AI');
+    expect(groups.find((g) => g.label === 'AI · C3.ai Inc')?.items[0].id).toBe('tk:AI:DES');
+    expect(flat[1].id).toBe('tk:AI:DES');
+    for (const code of ['RES', 'LAB', 'BRF', 'DATA']) {
+      const f = flatten(buildResults(code, src()));
+      expect(f[0].id, code).toBe(`fn:${code}`);
+      expect(f.some((i) => i.id.startsWith(`tk:${code}:`)), code).toBe(true);
+    }
+  });
+
   it('exact ticker first, with the security view (DES) as the Enter default and its tabs and actions after', () => {
     const groups = buildResults('aapl', src());
     expect(groups[0].label).toBe('AAPL · Apple Inc');
@@ -159,6 +172,14 @@ describe('ranking', () => {
 
 describe('shortcuts', () => {
   const t0 = 1_000_000;
+  it('launchpad: Ctrl+Shift+L anywhere, Ctrl+L only outside text fields (the address bar keeps it there), g l', () => {
+    expect(dispatchKey(null, { key: 'l', ctrl: true }, t0).action).toBe('launchpad');
+    expect(dispatchKey(null, { key: 'l', ctrl: true, inField: true }, t0)).toMatchObject({ action: null, consume: false });
+    expect(dispatchKey(null, { key: 'L', ctrl: true, shift: true, inField: true }, t0).action).toBe('launchpad');
+    expect(dispatchKey(null, { key: 'L', meta: true, shift: true }, t0).action).toBe('launchpad');
+    const g = dispatchKey(null, { key: 'g' }, t0);
+    expect(dispatchKey(g.pending, { key: 'l' }, t0 + 200).action).toBe('act:launchpad');
+  });
   it('g then h goes Home and swallows the second key', () => {
     const first = dispatchKey(null, { key: 'g' }, t0);
     expect(first).toMatchObject({ action: null, consume: false });

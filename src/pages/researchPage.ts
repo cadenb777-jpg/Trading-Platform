@@ -111,7 +111,7 @@ export function createResearchPage() {
   const symbolNow = () => symbolInput.value.trim().toUpperCase();
   frame.functions(
     [
-      { label: 'Load', icon: 'refresh', title: 'Load the company typed in the box', run: userLoad },
+      { label: 'Load', icon: 'refresh', title: 'Load the company typed in the box', run: () => { const done = load(); link.publish(symbolInput.value); return done; } },
       { label: 'Company', icon: 'search', title: 'Type another company', run: () => (symbolInput.focus(), symbolInput.select()) },
       { label: 'AI summary', icon: 'spark', run: () => ai.button.click() },
       { label: 'Security view', title: 'DES: the security view of this company', run: () => void runId(`tk:${symbolNow()}:DES`) },

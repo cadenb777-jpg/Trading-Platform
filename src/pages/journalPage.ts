@@ -139,7 +139,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
   frame.el.classList.add('jr-page');
   frame.functions(
     [
-      { label: 'Refresh', icon: 'refresh', title: 'Read the journal again', run: () => void reload() },
+      { label: 'Refresh', icon: 'refresh', title: 'Read the journal again', run: () => reload() },
       { label: 'Dashboard', run: () => setView('dashboard') },
       { label: 'Trades', run: () => setView('trades') },
       { label: 'Import', title: 'Import Webull trades or a broker file', run: () => setView('import') },

@@ -152,7 +152,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     [
       { label: 'Refresh', icon: 'refresh', title: 'Reload prices, dividends and totals', run: () => (clearEngineCache('dividends.'), load()) },
       { label: 'Import statement', title: 'Upload a positions export (CSV or Excel) from your broker', run: () => openStatementImport(imported) },
-      { label: 'Sync Webull', title: 'Read your Webull holdings into Account (never trades)', run: () => (toast('Syncing Webull accounts…'), void syncAccounts('', syncNote).then(synced)) },
+      { label: 'Sync Webull', title: 'Read your Webull holdings into Account (never trades)', run: () => (toast('Syncing Webull accounts…'), syncAccounts('', syncNote).then(synced)) },
       { label: 'Analyse in Portfolios', icon: 'portfolio', title: 'Open the model portfolios (optimizer, what-ifs)', run: () => (location.hash = '#portfolio') },
     ],
     ['trade', 'journal', 'portfolio'],

@@ -36,6 +36,8 @@ export interface FnCode {
   keywords?: string;
   /** A page's own code from the nav registry: matched by its code only (the page itself is found by name under Pages). */
   page?: boolean;
+  /** Added from the nav registry (BRF, RES, LAB, AI, DATA...): typed alone it may also be a ticker, so both show. */
+  nav?: boolean;
 }
 
 export const CODES: FnCode[] = [
@@ -81,10 +83,10 @@ const CODE_ROUTE: Record<string, string> = {
 // The nav registry's pages and functions (src/ui/nav.ts) are codes too: BRF, RES, LAB, AI, DATA, PREF...
 for (const p of PAGES as readonly NavPage[]) {
   if (!p.code) continue;
-  if (!CODES.some((c) => c.code === p.code || c.aliases?.includes(p.code))) CODES.push({ code: p.code, label: `${p.label}: ${p.about}`, keywords: p.keywords, page: true });
+  if (!CODES.some((c) => c.code === p.code || c.aliases?.includes(p.code))) CODES.push({ code: p.code, label: `${p.label}: ${p.about}`, keywords: p.keywords, page: true, nav: true });
   CODE_ROUTE[p.code] ??= p.route;
 }
-for (const f of FUNCTIONS) if (!CODES.some((c) => c.code === f.code || c.aliases?.includes(f.code))) CODES.push({ code: f.code, label: f.label, keywords: f.keywords });
+for (const f of FUNCTIONS) if (!CODES.some((c) => c.code === f.code || c.aliases?.includes(f.code))) CODES.push({ code: f.code, label: f.label, keywords: f.keywords, nav: true });
 
 /** What a registry code without a ticker runs (a command id), when it isn't a page route above. */
 export function navTarget(code: string): string | null {
@@ -279,12 +281,13 @@ export function buildResults(input: string, src: Sources, recents: RecentEntry[]
 
   // a single word that is a ticker: its actions (the security view's DES first, the Enter default; Chart for indexes/crypto)
   let shownTicker: string | null = null;
-  // (a function code typed alone, like CLIENT or MULTI, is that function, not an unknown ticker or futures root)
-  if (!p.pair && p.ticker && !q.includes(' ') && (known(p.ticker) || !p.code)) {
+  // (a function code typed alone, like CLIENT or MULTI, is that function, not an unknown ticker or futures root;
+  // a registry code like AI, RES or LAB is also shown as a ticker, just below the function: Enter keeps the function)
+  if (!p.pair && p.ticker && !q.includes(' ') && (known(p.ticker) || !p.code || p.code.nav)) {
     const hit = known(p.ticker);
     const sym = hit?.symbol ?? p.ticker;
     shownTicker = sym;
-    const base = hit ? 1000 : 300; // an unknown word may be a name ("gold"): name matches come first
+    const base = p.code?.nav ? 850 : hit ? 1000 : 300; // an unknown word may be a name ("gold"): name matches come first
     const name = hit?.name;
     groups.push({ label: name ? `${sym.replace(/^\$/, '')} · ${name}` : sym.replace(/^\$/, ''), items: codesFor(sym).map((c, i) => tickerItem(sym, c, base - i * 0.1, name)) });
   }
@@ -314,7 +317,10 @@ export function buildResults(input: string, src: Sources, recents: RecentEntry[]
     if (byName != null && (score == null || byName > score)) score = byName;
     if (score != null && !(p.pair && p.code === c)) codeItems.push(codeItem(c, score));
   }
-  pushGroup(groups, 'Functions', codeItems, LIMIT.other);
+  // a registry code that is also a ticker (AI, RES...): the function alone first, then the ticker, then other codes
+  const exact = shownTicker && p.code?.nav ? codeItems.find((c) => c.id === `fn:${p.code!.code}`) : undefined;
+  if (exact) pushGroup(groups, 'Function', [exact], 1);
+  pushGroup(groups, 'Functions', exact ? codeItems.filter((c) => c !== exact) : codeItems, LIMIT.other);
 
   const fuzzyGroup = (label: string, list: { id: string; title: string; subtitle?: string; hint?: string; keywords?: string }[]) =>
     pushGroup(
@@ -406,6 +412,7 @@ export const CHORDS: { keys: string; id: string; label: string }[] = [
   { keys: 'g f', id: 'page:futures', label: 'Go to Futures' },
   { keys: 'g p', id: 'page:portfolio', label: 'Go to Portfolios (models)' },
   { keys: 'g m', id: 'page:chart/multi', label: 'Go to the Workspace (linked panels)' },
+  { keys: 'g l', id: 'act:launchpad', label: 'Open the launchpad' },
   { keys: 'n a', id: 'act:alert', label: 'New alert' },
 ];
 export const CHORD_MS = 1500;
@@ -456,7 +463,9 @@ export function dispatchKey(pending: Pending | null, k: KeyInfo, now: number): D
     const key = k.key.toLowerCase();
     if (key === 'k') return run('palette');
     if (key === 'i') return run('ai');
-    if (key === 'l' && !k.shift) return run('launchpad');
+    // the launchpad: Ctrl/Cmd+Shift+L anywhere; Ctrl/Cmd+L only outside text fields (in a field it stays the browser's
+    // address-bar key); "g l" works too
+    if (key === 'l') return k.shift || !k.inField ? run('launchpad') : none;
     // Ctrl only: Cmd+[ and ] are the Mac browser's Back and Forward
     if (k.ctrl && !k.meta && !k.inField && k.hasPanels && (key === '[' || key === ']')) return run(key === ']' ? 'panel:next' : 'panel:prev');
     return none;
@@ -487,7 +496,7 @@ export const SHORTCUT_SHEET: { title: string; rows: [string, string][] }[] = [
       ['/  or  Ctrl/Cmd+K', 'Open the command bar'],
       ['?', 'This list of shortcuts'],
       ['Ctrl/Cmd+I', 'Open or close the AI assistant'],
-      ['Ctrl/Cmd+L', 'Launchpad: every page and function'],
+      ['Ctrl/Cmd+Shift+L  or  g l', 'Launchpad: every page and function (Ctrl/Cmd+L too, when not typing in a field)'],
       ['1 … 9', 'Run the page’s numbered functions (the chips under its title)'],
       ...CHORDS.map((c) => [c.keys, c.label] as [string, string]),
       ['Esc', 'Close a dialog, pop-up or ticker card'],
@@ -752,6 +761,7 @@ async function runAction(name: string) {
   } else if (name === 'health') d.openHealth();
   else if (name === 'connection') (await import('./settings')).openSettings('connection');
   else if (name === 'shortcuts') openShortcutSheet();
+  else if (name === 'launchpad') d.openLaunchpad?.();
 }
 
 async function runCode(code: string, symbol: string | null) {

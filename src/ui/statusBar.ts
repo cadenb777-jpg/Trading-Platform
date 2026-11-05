@@ -1,41 +1,18 @@
 /**
  * The status bar along the bottom (thin and calm): the helper and its version, the main feeds (Schwab, Webull, SEC),
- * the last request's latency, the New York market session, the last update and READY / BUSY. Each item opens its
- * detail: the Data health list or Settings. The session maths is pure and tested (statusBar.test.ts).
+ * how long the last helper reply took, the New York market session (the shared NYSE rules in src/market/sessions.ts),
+ * the last update and READY / BUSY. Each item opens its detail: the Data health list or Settings.
  */
 import { FEEDS, getActivity, health, onActivity, onHealthChange, type FeedId, type Health } from '../data/health';
 import { helper } from '../data/schwab';
+import { sessionAt, type Session } from '../market/sessions';
 import { h } from './dom';
 
-export type Session = 'pre' | 'regular' | 'after' | 'closed';
-
-const PRE = 4 * 60;
-const OPEN = 9 * 60 + 30;
-const CLOSE = 16 * 60;
-const AFTER_END = 20 * 60;
-
-/** New York's weekday and wall-clock time for an instant (daylight saving handled by the time zone database). */
-export function newYorkClock(now: Date): { weekday: string; minutes: number; hhmm: string } {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
-      .formatToParts(now)
-      .map((p) => [p.type, p.value]),
-  );
-  const hour = Number(parts.hour) % 24;
-  return { weekday: String(parts.weekday), minutes: hour * 60 + Number(parts.minute), hhmm: `${String(hour).padStart(2, '0')}:${parts.minute}` };
-}
-
-/** The US stock session at an instant: pre 4:00-9:30, regular 9:30-16:00, after 16:00-20:00 New York time (weekdays; holidays not included). */
+/** The status bar's session: the shared NYSE rules with a short label ("Closed: Thanksgiving"). */
 export function marketSession(now: Date): { session: Session; label: string; nyTime: string } {
-  const { weekday, minutes, hhmm } = newYorkClock(now);
-  const label = (s: Session) => ({ pre: 'Pre-market', regular: 'Regular session', after: 'After hours', closed: 'Closed' })[s];
-  let session: Session = 'closed';
-  if (weekday !== 'Sat' && weekday !== 'Sun') {
-    if (minutes >= OPEN && minutes < CLOSE) session = 'regular';
-    else if (minutes >= PRE && minutes < OPEN) session = 'pre';
-    else if (minutes >= CLOSE && minutes < AFTER_END) session = 'after';
-  }
-  return { session, label: label(session), nyTime: hhmm };
+  const s = sessionAt(now);
+  const label = { pre: 'Pre-market', regular: s.earlyClose ? 'Regular session (closes 1:00 PM)' : 'Regular session', after: 'After hours', closed: s.holiday ? `Closed: ${s.holiday}` : 'Closed' }[s.session];
+  return { session: s.session, label, nyTime: s.nyTime };
 }
 
 /** Short latency text: "48 ms", "1.2 s". */
@@ -65,7 +42,7 @@ export function createStatusBar(d: StatusDeps): HTMLElement {
 
   const helperBtn = item('sb-helper', 'The helper on your computer: open the connection check', () => d.openSettings('connection'));
   const feeds = h('span', { class: 'sb-feeds' });
-  const latency = item('sb-lat', 'How long the last request to the helper took: open Data health', (e) => d.openHealth(e.currentTarget as HTMLElement));
+  const latency = item('sb-lat', 'How long the helper took to reply to the last request (sent to answered, including its own work, so not a network ping): open Data health', (e) => d.openHealth(e.currentTarget as HTMLElement));
   const session = item('sb-session', 'US stock market session, New York time', (e) => d.openHealth(e.currentTarget as HTMLElement));
   const updated = item('sb-updated', 'When the last data arrived: open Data health', (e) => d.openHealth(e.currentTarget as HTMLElement));
   const ready = h('span', { class: 'sb-ready', role: 'status', 'aria-live': 'polite' });
@@ -81,11 +58,11 @@ export function createStatusBar(d: StatusDeps): HTMLElement {
       }),
     );
     const a = getActivity();
-    latency.replaceChildren(h('span', { class: 'sb-key' }, 'LAT'), ' ', latencyText(a.lastLatencyMs));
+    latency.replaceChildren(h('span', { class: 'sb-key' }, 'Last reply'), ' ', latencyText(a.lastLatencyMs));
     const s = marketSession(new Date());
     session.dataset.session = s.session;
     session.replaceChildren(dot(s.session === 'regular' ? 'ok' : s.session === 'closed' ? 'idle' : 'stale'), h('span', {}, `${s.label} · NY ${s.nyTime}`));
-    updated.replaceChildren(h('span', { class: 'sb-key' }, 'UPD'), ' ', a.lastAt ? new Date(a.lastAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }) : '—');
+    updated.replaceChildren(h('span', { class: 'sb-key' }, 'Updated'), ' ', a.lastAt ? new Date(a.lastAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }) : '—');
     const busy = a.inflight > 0;
     ready.dataset.state = !up ? 'offline' : busy ? 'busy' : 'ready';
     ready.textContent = !up ? 'OFFLINE' : busy ? 'BUSY' : 'READY';
