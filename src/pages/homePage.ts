@@ -18,6 +18,7 @@ import { bucketStart, type Bar, type Timeframe } from '../types';
 import { formatPrice, h, timeAgo } from '../ui/dom';
 import { icon } from '../ui/icons';
 import { greeting, marketStatus } from '../ui/marketClock';
+import { createBridge } from '../home/bridge';
 import { THEME, chartThemeOptions, followTheme } from '../ui/theme';
 import { createWatchlist } from '../ui/watchlist';
 import { tickerAttr, tickersIn } from '../ui/tickerCard';
@@ -379,6 +380,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     h(
       'header',
       { class: 'home-hero' },
+      createBridge(),
       h('div', { class: 'hero-left' }, greetingEl, h('div', { class: 'hero-sub' }, dateEl, marketPill)),
       brief.strip,
     ),

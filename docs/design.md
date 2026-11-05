@@ -13,13 +13,14 @@ canvas charts take the same colours from `THEME` in `src/ui/theme.ts`.
 | Text | `--text` `--text-strong` `--muted` `--faint` | `--faint` only for placeholders and decoration |
 | Accents | `--accent` / `--accent-text` (sky, navy in light), `--accent-2` / `--accent-2-text` (copper), `--focus` | `--on-accent` on accent fills |
 | Money | `--up` `--down` (lines, bars), `--up-text` `--down-text` (text), `--up-fill` `--down-fill` + `--on-fill` (Buy/Sell) | green leans blue, red leans warm, and they differ in lightness (colour-blind safe) |
-| Glow | `--glow-sky` `--glow-copper` `--hero-bg` `--glass` | headers, Home hero, toasts |
+| Atmosphere | `--grid-minor` `--grid-major` `--spot-sky` `--spot-copper` `--spot-deep` | the fixed page layer (`body::before`) |
+| Glow | `--glow-sky` `--glow-copper` `--hero-bg` `--glass` `--bridge-sky` `--bridge-copper` | Home hero and its bridge, toasts |
 | Space / shape | `--sp-1..6` (4px steps), `--radius-sm/-/-lg` (4/6/10), `--control-h` 32px | |
 | Motion | `--dur-1` 120ms, `--dur-2` 180ms, `--ease`, `--lift` | off under `prefers-reduced-motion` |
 
 Older names (`--panel`, `--panel-2`, `--border`, `--link` ...) point at these, so existing pages follow. Light mode
 redefines the semantic tokens under `:root[data-theme='light']`. `src/ui/tokens.test.ts` checks every text token
-against every background for 4.5:1 in both themes.
+against every background for 4.5:1 in both themes, and against the page colour where all background spots overlap.
 
 ## Type
 
@@ -38,8 +39,12 @@ against every background for 4.5:1 in both themes.
 
 ## Principles (owner's brief: impactful, methodical, uncluttered)
 
-- **Every element earns its place.** Decoration only where it carries meaning: the arch and glow belong to the Home
-  hero (the "front door"), the grid and glow to page headers only. Never on cards, tables, tickets or charts.
+- **Atmosphere lives on the page background, nowhere else.** One fixed layer (`body::before`) carries the blueprint
+  grid (minor 24px, major 120px lines) and three soft colour spots (copper low left, sky top right, deep blue
+  mid-page). It never scrolls or repaints. Cards, tables, tickets and charts stay clean and opaque on top of it.
+- **Every element earns its place.** The bridge (`src/home/bridge.ts`: one glowing sky arch, a thinner copper arch
+  above it, hangers fading to a baseline) belongs to the Home hero only: centred, scaling with the hero's width,
+  below the text, with the overnight chips on glass above it.
 - **One focal point per view.** Each page has one hero figure or chart; everything else supports it. One accent
   colour at a time per region: sky for interaction, copper for the single most important highlight.
 - **Calm space and alignment.** Content sits on the 4/8px grid with shared edges; groups are separated by space

@@ -8,7 +8,7 @@ function block(selector: string): Record<string, string> {
   const start = css.indexOf(`${selector} {`);
   const body = css.slice(start, css.indexOf('\n}', start));
   const out: Record<string, string> = {};
-  for (const m of body.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})\s*;/gi)) out[m[1]] = m[2];
+  for (const m of body.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6}(?:[0-9a-f]{2})?)\s*;/gi)) out[m[1]] = m[2];
   return out;
 }
 
@@ -37,6 +37,12 @@ const PAIRS: [string, string][] = [
   ['on-fill', 'down-fill'],
 ];
 
+/** Paints a #rrggbbaa colour over an opaque #rrggbb one. */
+function over(base: string, top: string) {
+  const a = parseInt(top.slice(7, 9), 16) / 255;
+  return '#' + [1, 3, 5].map((i) => Math.round(parseInt(base.slice(i, i + 2), 16) * (1 - a) + parseInt(top.slice(i, i + 2), 16) * a).toString(16).padStart(2, '0')).join('');
+}
+
 describe('design tokens', () => {
   it('reads the stylesheet (vite.config test.css includes style.css, or ?raw would be empty)', () => {
     expect(styleCss.length).toBeGreaterThan(10_000);
@@ -49,6 +55,16 @@ describe('design tokens', () => {
         expect(theme[bg], `--${bg}`).toMatch(/^#/);
         return contrast(theme[fg], theme[bg]) < 4.5;
       }).map(([fg, bg]) => `${fg} on ${bg}: ${contrast(theme[fg], theme[bg]).toFixed(2)}`);
+      expect(failing).toEqual([]);
+    });
+  }
+
+  for (const [name, theme] of [['dark', dark], ['light', light]] as const) {
+    it(`${name}: page text stays readable where the background colour spots overlap`, () => {
+      const spots = ['spot-sky', 'spot-copper', 'spot-deep'].map((k) => theme[k]);
+      for (const sp of spots) expect(sp).toMatch(/^#[0-9a-f]{8}$/i);
+      const worst = [...spots.map((sp) => over(theme.bg, sp)), spots.reduce(over, theme.bg)];
+      const failing = TEXT.flatMap((t) => worst.filter((bg) => contrast(theme[t], bg) < 4.5).map((bg) => `${t} on ${bg}`));
       expect(failing).toEqual([]);
     });
   }
