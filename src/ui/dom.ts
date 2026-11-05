@@ -92,8 +92,6 @@ export function formatNumber(value: number): string {
   if (abs >= 1e9) return (value / 1e9).toFixed(2) + 'B';
   if (abs >= 1e6) return (value / 1e6).toFixed(2) + 'M';
   if (abs >= 1e4) return (value / 1e3).toFixed(1) + 'K';
-  // whole numbers from 1,000 (share counts, volume) read as "6,027", not "6027.00"
-  if (abs >= 1000 && Number.isInteger(value)) return value.toLocaleString('en-US');
   if (abs >= 1) return value.toFixed(2);
   if (abs >= 0.01) return value.toFixed(4);
   return value.toPrecision(4);

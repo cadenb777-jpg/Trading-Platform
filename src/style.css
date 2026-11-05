@@ -10354,13 +10354,9 @@ input.sl-player.p0, input.sl-player.p1, input.sl-player.p2, input.sl-player.p3 {
 .fn-related-label {
   color: var(--label);
 }
-.stat-value,
-.data-table td {
+.stat-value:not(.up):not(.down):not(.warn),
+.data-table td:not(.up):not(.down):not(.warn):not(.muted) {
   color: var(--text-strong);
-}
-.data-table td.muted,
-.data-table td .muted {
-  color: var(--muted);
 }
 
 /* ----- rail: every page under its section heading ----- */
@@ -10393,8 +10389,10 @@ input.sl-player.p0, input.sl-player.p1, input.sl-player.p2, input.sl-player.p3 {
   width: 16px;
   height: 16px;
 }
-.rail .rail-launch {
-  margin-top: var(--sp-2);
+@media (min-width: 701px) {
+  .rail .rail-launch {
+    margin-top: var(--sp-2);
+  }
 }
 /* the utilities sit in one row of icons at the bottom (their names are in the tooltips) */
 .rail .rail-bottom {
@@ -10490,10 +10488,12 @@ body.rail-collapsed .rail .rail-bottom {
 .views > * {
   overscroll-behavior: contain;
 }
-.sp-detail {
-  top: 0;
-  max-height: calc(100vh - 110px);
-  overscroll-behavior: contain;
+@media (min-width: 901px) {
+  .sp-detail {
+    top: 0;
+    max-height: calc(100vh - 110px);
+    overscroll-behavior: contain;
+  }
 }
 .sp-table td:nth-child(2) {
   min-width: 150px;

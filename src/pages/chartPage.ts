@@ -84,10 +84,11 @@ export function createChartPage() {
   alertBtn.addEventListener('click', () => openAlertsDialog(currentRef(), bars[bars.length - 1]?.close ?? null));
   const extBtn = h('button', { class: 'btn fit-btn ext-btn', title: 'Extended hours: show pre-market (4:00-9:30 am ET) and after-hours (4-8 pm ET) trading on intraday stock charts. Shading: pre-market blue, after-hours copper, overnight grey; the open (green) and close (red) times are marked on the time axis.', 'aria-label': 'Extended hours' }, 'Ext');
   // 12- or 24-hour times on every chart's time axis, crosshair and legend (src/chart/clock.ts)
-  const clockBtn = h('button', { class: 'btn fit-btn clock-btn', title: 'Clock: switch chart times between 12-hour (2:30 PM) and 24-hour (14:30)', 'aria-label': 'Clock format' }, getClock());
+  const clockBtn = h('button', { class: 'btn fit-btn clock-btn', title: 'Clock: switch chart times between 12-hour (2:30 PM) and 24-hour (14:30)', 'aria-label': `Clock: ${getClock()}` }, getClock());
   clockBtn.addEventListener('click', () => {
     setClock(getClock() === '12h' ? '24h' : '12h');
     clockBtn.textContent = getClock();
+    clockBtn.setAttribute('aria-label', `Clock: ${getClock()}`);
   });
   const fitBtn = h('button', { class: 'btn fit-btn', title: 'Fit the chart to the candles (F)', 'aria-label': 'Fit chart', onclick: () => chart?.fit() }, icon('fit', 18), ' Fit');
   const side = h('aside', { class: 'watch-side' });
@@ -461,7 +462,7 @@ export function createChartPage() {
     for (const { uid, nums } of legendValues) {
       chart.valuesAt(uid, index).forEach((v, i) => {
         if (latest && !Number.isFinite(v.value) && nums[i]?.textContent) return;
-        setText(nums[i], formatNumber(v.value));
+        setText(nums[i], legendNumber(v.value));
       });
     }
   }
@@ -496,6 +497,8 @@ export function createChartPage() {
     lineTimer = setTimeout(() => setHighlight(lineUid, false), uid ? 140 : 220);
   }
 
+  /** Indicator values: whole numbers (volume) grouped, "6,027" rather than "6027.00". */
+  const legendNumber = (v: number) => (Number.isInteger(v) && Math.abs(v) >= 1000 && Math.abs(v) < 1e4 ? v.toLocaleString('en-US') : formatNumber(v));
   let card: HoverCard;
   const fmtVolume = (v: number) => (v >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `${(v / 1e3).toFixed(1)}K` : formatNumber(v));
   const intradayFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -543,7 +546,7 @@ export function createChartPage() {
         if (!def) continue;
         for (const v of chart.valuesAt(instance.uid, p.index)) {
           if (v.hidden || !Number.isFinite(v.value)) continue;
-          rows.push({ label: def.plots.length > 1 ? `${def.shortName} ${v.title}` : indicatorLabel(def, instance), value: formatNumber(v.value), color: v.color });
+          rows.push({ label: def.plots.length > 1 ? `${def.shortName} ${v.title}` : indicatorLabel(def, instance), value: legendNumber(v.value), color: v.color });
           if (rows.length >= 14) break;
         }
         if (rows.length >= 14) break;

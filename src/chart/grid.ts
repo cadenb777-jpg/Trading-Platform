@@ -405,7 +405,7 @@ class SquareGrid {
       placed.push({ x: left, t: layout.labelTimes[i] });
     });
     // the year row (daily-type levels only: intraday charts use that row for the session times, axisChrome.ts)
-    if (DAILY_LEVELS.includes(layout.level) && layout.level !== 'year' && height >= size * 2 + 10) {
+    if (layout.zone === 'utc' && layout.level !== 'year' && height >= size * 2 + 10) {
       ctx.font = `600 ${size - 2}px ${o.fontFamily}`;
       ctx.globalAlpha = 0.8;
       for (const { at, year } of yearRow(placed.map((p) => p.t), layout.zone)) ctx.fillText(String(year), placed[at].x, 8 + size);

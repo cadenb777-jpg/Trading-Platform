@@ -101,7 +101,7 @@ export function followTheme(chart: IChartApi, opts: { transparent?: boolean; hid
   // 12/24-hour clock switched (src/chart/clock.ts): redraw so the time labels change at once.
   const onClock = () => {
     try {
-      chart.applyOptions({ timeScale: { rightOffset: chart.timeScale().options().rightOffset } });
+      chart.applyOptions({ layout: { textColor: chart.options().layout.textColor } });
     } catch {
       window.removeEventListener('tp:clock', onClock);
     }

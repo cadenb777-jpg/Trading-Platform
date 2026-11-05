@@ -48,8 +48,10 @@ export function createWatchlist(opts: { onSelect: (ref: MarketRef) => void; isAc
 
   const updateRow = (row: HTMLElement, q: Quote | undefined) => {
     const change = quoteChange(q);
-    row.querySelector('.wl-last')!.textContent = formatPrice(q?.last);
-    const chg = row.querySelector('.wl-chg')!;
+    const last = row.querySelector('.wl-last');
+    const chg = row.querySelector('.wl-chg');
+    if (!last || !chg) return;
+    last.textContent = formatPrice(q?.last);
     chg.textContent = change ? `${change.percent >= 0 ? '+' : ''}${change.percent.toFixed(2)}%` : '—';
     chg.className = `wl-chg ${change ? (change.percent >= 0 ? 'up' : 'down') : ''}`;
     chg.setAttribute('title', q?.lastSession ? 'Change in the latest session (the market is closed)' : 'Change today');
@@ -57,7 +59,8 @@ export function createWatchlist(opts: { onSelect: (ref: MarketRef) => void; isAc
 
   const render = () => {
     const key = state.watchlist.map(refKey).join('|');
-    el.querySelector('.wl-count')!.textContent = `${state.watchlist.length}`;
+    const count = el.querySelector('.wl-count');
+    if (count) count.textContent = `${state.watchlist.length}`; // compact copies have no count
     if (key !== rendered) {
       rendered = key;
       for (const stop of stops) stop();

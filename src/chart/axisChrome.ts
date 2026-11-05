@@ -113,8 +113,10 @@ export class ChartChrome implements ISeriesPrimitive<Time> {
       const newDay = dayKey(bars[i].time, 'America/New_York') !== dayKey(bars[i - 1].time, 'America/New_York');
       if (b === 'regular' && (a !== 'regular' || newDay)) marks.push({ i, kind: 'open', t: bars[i].time });
       else if (a === 'regular' && b !== 'regular') marks.push({ i, kind: 'close', t: bars[i].time });
-      else if (b === 'pre' && a !== 'pre') marks.push({ i, kind: 'pre', t: bars[i].time });
-      else if (a === 'post' && b === 'closed') marks.push({ i, kind: 'postEnd', t: bars[i].time });
+      else {
+        if (a === 'post' && b !== 'post') marks.push({ i, kind: 'postEnd', t: bars[i].time });
+        if (b === 'pre' && a !== 'pre') marks.push({ i, kind: 'pre', t: bars[i].time });
+      }
     }
     this.sessionCache = { key, marks };
     return marks;

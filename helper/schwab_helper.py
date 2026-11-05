@@ -73,6 +73,12 @@ ALLOWED_ORIGINS = [
     'http://127.0.0.1:4173',
 ]
 
+# The desktop app (desktop/) runs its own copy of this helper with --desktop: its own port, only the app may connect
+# (a web page can't send this Origin), no browser, no background scanner or updater (the website's helper does those).
+DESKTOP_PORT = 8766
+DESKTOP_ORIGIN = 'tp-desktop://app'
+DESKTOP = False
+
 SYMBOL_PATTERN = re.compile(r'^[A-Z0-9.\-/$^]{1,15}$')
 
 # Bar sizes Schwab provides directly. The charts build other timeframes (2m, 4h, 1M...) from these.
@@ -1161,6 +1167,8 @@ async def run(client, sec_contact='', open_browser=True):
     async with server:
         jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market), warm_up(market),
                 open_when_ready(market, open_browser), market_scanner(market), prospect_schedule(market), market.update_loop()]
+        if DESKTOP:  # the website's helper runs the scanner, prospecting and updates; this one only answers the app
+            jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market)]
         if SCREEN:
             SCREEN.ready(PLATFORM_URL, LOG_PATH, os.environ.get('TP_LAUNCH_WARNING', ''))
             return await until_restart(market, [*jobs, screen_clock()])
@@ -1221,7 +1229,13 @@ def main():
     parser = argparse.ArgumentParser(description='Serve Schwab market data to the Trading Platform charts.')
     parser.add_argument('--reset', action='store_true', help='enter new Schwab keys and log in again')
     parser.add_argument('--no-browser', action='store_true', help="don't open the platform in the browser when ready")
+    parser.add_argument('--desktop', action='store_true', help="run as the desktop app's own helper (port 8766, app only)")
     args = parser.parse_args()
+    if args.desktop:
+        global PORT, DESKTOP
+        PORT, DESKTOP = DESKTOP_PORT, True
+        ALLOWED_ORIGINS[:] = [DESKTOP_ORIGIN]
+        args.no_browser = True
     # The new version imported fine and is starting: from here on a problem (login, busy port) isn't the update's fault.
     updater.confirm_started()
     # Big libraries (AI, numpy, scipy) load while we log in and start the server.

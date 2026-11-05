@@ -95,7 +95,11 @@ tabs, a function bar, a launchpad, a status bar and a widget dashboard, all in o
   colour at a time per region: sky for interaction, copper for the single most important highlight.
 - **Calm space and alignment.** Content sits on the 4/8px grid with shared edges; groups are separated by space
   before lines; lines before boxes. Related things are close, unrelated things apart.
-- **Hierarchy by size and weight, not colour.** Colour is reserved for meaning (up/down, status, selection).
+- **Hierarchy by size and weight; colour for meaning.** Text has fixed roles (owner, v45, after Bloomberg): amber
+  `--label` names a figure (column headers, field labels, panel titles, section headings), white is the figure itself,
+  green/red are gains/losses. Body text and page titles stay as they are. Never amber on a number.
+- **Navigation shows where everything is.** The rail lists every page by name under its section (one click to any
+  page); the top row holds the current section's pages as tabs and the command field (codes like `AAPL GP`).
 - **Motion explains.** Animate only what changed or what the pointer touches; ≤ 200 ms, eased; nothing loops.
 - **Remove before adding.** A new visual touch replaces an old one or proves it helps a task; review new pages
   against this list before merging.
