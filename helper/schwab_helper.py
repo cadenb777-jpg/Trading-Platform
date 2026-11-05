@@ -78,6 +78,13 @@ ALLOWED_ORIGINS = [
 DESKTOP_PORT = 8766
 DESKTOP_ORIGIN = 'tp-desktop://app'
 DESKTOP = False
+# Orders never go through the desktop helper (the website's Trade page keeps preview + confirm): every Webull
+# request whose name ends in _order (preview, place, cancel) is refused in desktop mode.
+
+
+def desktop_blocked(kind):
+    return kind.startswith('webull.') and kind.endswith('_order')
+
 
 SYMBOL_PATTERN = re.compile(r'^[A-Z0-9.\-/$^]{1,15}$')
 
@@ -695,6 +702,8 @@ class Market:
                 elif kind == 'news':
                     symbols = [str(s).upper() for s in msg.get('symbols') or [] if isinstance(s, str)]
                     engine.background(self.reply(ws, msg.get('id'), self.news_reply(symbols, str(msg.get('query') or '')), 'news'))
+                elif DESKTOP and desktop_blocked(kind):
+                    await ws.send(json.dumps({'type': 'error', 'id': msg.get('id'), 'message': 'The desktop app is read-only: place orders on the website Trade page.'}))
                 elif kind in engine.HANDLERS:
                     msg['_emit'] = self.emitter(ws, msg.get('id'))
                     engine.background(self.reply(ws, msg.get('id'), self.engine_reply(kind, msg), kind))
@@ -1231,13 +1240,15 @@ def main():
     parser.add_argument('--no-browser', action='store_true', help="don't open the platform in the browser when ready")
     parser.add_argument('--desktop', action='store_true', help="run as the desktop app's own helper (port 8766, app only)")
     args = parser.parse_args()
+    if not args.desktop:  # a pending update belongs to the website's helper
+        updater.confirm_started()
     if args.desktop:
         global PORT, DESKTOP
         PORT, DESKTOP = DESKTOP_PORT, True
         ALLOWED_ORIGINS[:] = [DESKTOP_ORIGIN]
         args.no_browser = True
-    # The new version imported fine and is starting: from here on a problem (login, busy port) isn't the update's fault.
-    updater.confirm_started()
+    # The new version imported fine and is starting (confirmed above): from here on a problem (login, busy port) isn't
+    # the update's fault.
     # Big libraries (AI, numpy, scipy) load while we log in and start the server.
     engine.start_loading()
     start_screen()
