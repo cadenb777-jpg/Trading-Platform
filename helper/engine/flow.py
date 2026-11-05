@@ -3,6 +3,7 @@ Options flow from Schwab option chains (unusual activity, put/call ratios, max p
 exposure) and futures positioning from the CFTC's Commitment of Traders report.
 """
 import math
+import time
 
 from .core import EngineError, handler
 
@@ -186,11 +187,9 @@ def analyze_chain(chain, expiration=None):
     }
 
 
-@handler('flow.options')
-async def options(ctx, msg):
-    symbol = str(msg.get('symbol', '')).upper()
-    if not symbol:
-        raise EngineError('Enter a symbol')
+async def chain(ctx, symbol):
+    """Schwab's option chain for `symbol` and the time it was fetched (unix seconds), cached a minute and shared by
+    Flow (flow.options) and the options analytics (quant.options)."""
     async def load():
         # 100 strikes around the price for every expiration: nearly all of the volume and open interest.
         response = await ctx.schwab.get_option_chain(symbol, strike_count=100, include_underlying_quote=True)
@@ -198,9 +197,18 @@ async def options(ctx, msg):
             raise EngineError('Schwab login expired. Close the helper and start it again to log in.')
         if response.status_code != 200:
             raise EngineError(f'Schwab returned {response.status_code} for {symbol} options')
-        return response.json()
-    chain = await ctx.cached(('chain', symbol), 60, load)
-    return analyze_chain(chain, msg.get('expiration'))
+        return {'chain': response.json(), 'at': time.time()}
+    hit = await ctx.cached(('chain', symbol), 60, load)
+    return hit['chain'], hit['at']
+
+
+@handler('flow.options')
+async def options(ctx, msg):
+    symbol = str(msg.get('symbol', '')).upper()
+    if not symbol:
+        raise EngineError('Enter a symbol')
+    data, _ = await chain(ctx, symbol)
+    return analyze_chain(data, msg.get('expiration'))
 
 
 # ---------- Commitment of Traders ----------

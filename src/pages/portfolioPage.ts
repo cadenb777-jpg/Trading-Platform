@@ -32,6 +32,7 @@ import {
   type Portfolio,
   type Rebalance,
 } from '../portfolio/types';
+import { standInNotes, tearSheetBlock } from '../portfolio/tearSheet';
 import { createLineChart, dataTable, money, pageFrame, pct, pctU, statCards } from '../ui/charts';
 import { infoTip } from '../ui/glossary';
 import { h, openModal, toast } from '../ui/dom';
@@ -564,6 +565,7 @@ export function createPortfolioPage() {
             mcBox,
           )
         : '',
+      tearSheet(),
       h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Optimise weights')), optimiserForm(optBox), optBox),
     );
     const g = createLineChart(growthBox, { height: 320, format: money });
@@ -588,6 +590,17 @@ export function createPortfolioPage() {
         { name: 'Poor (25th)', color: '#ef9a9a', width: 1, data: line('25') },
         { name: 'Worst 5%', color: '#ef5350', width: 1, data: line('5') },
       ]);
+    }
+  }
+
+  /** The tear sheet for this portfolio; correlation, risk shares and the Monte Carlo are already shown above. */
+  function tearSheet() {
+    try {
+      const holdings = holdingsPayload(current, priceMap(prices));
+      const value = positions(current, priceMap(prices)).total ?? 100000;
+      return tearSheetBlock(holdings, value, { omit: ['correlation', 'risk', 'montecarlo'], label: (s) => holdingLabel(current, s).label, notes: standInNotes(current) });
+    } catch {
+      return '';
     }
   }
 

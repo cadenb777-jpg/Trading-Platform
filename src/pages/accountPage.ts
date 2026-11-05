@@ -16,6 +16,7 @@ import { fetchPrices, type PriceInfo } from '../portfolio/prices';
 import { dayTotal, gainOf, methodLabel, methodOf, readPrefs, savePrefs, showChange, sumGains, type DisplayPrefs, type Gain, type Received, type ShowAs } from '../portfolio/returns';
 import { fetchRisk, fetchTax, type RiskInput, type RiskReport, type TaxReport, type TaxType } from '../portfolio/risk';
 import { holdingGroup, riskCard, taxSection } from '../portfolio/riskView';
+import { tearSheetBlock } from '../portfolio/tearSheet';
 import { isMine, type Holding, type Portfolio } from '../portfolio/types';
 import { renderWebullCard, syncAccounts, syncButton } from '../portfolio/webullView';
 import { notice19aLink, periods, rocText, splitPeriod, yieldCheck, type YieldCheck } from '../portfolio/yieldQuality';
@@ -307,6 +308,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
       panel(single ? 'Account' : 'Accounts', 'Imported statements, synced Webull accounts and portfolios marked as yours', accountsBox, webull),
       holdingsBox,
       riskBox,
+      tearSheetFor(riskRows(valued)),
       newsBox,
       h('h2', { class: 'section-label acct-section' }, 'Dividends'),
       divBox,
@@ -766,6 +768,16 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
         h('div', { class: 'ap-controls' }, save, h('span', { class: 'muted small' }, 'Leave a box empty to clear it. Dividends you type count to today; later payments are added as estimates.')),
       );
     }
+  }
+
+  /** The tear sheet for the priced holdings (cash earns nothing; alternatives have no daily prices, so they're left out). */
+  function tearSheetFor(rows: RiskInput[]) {
+    const kept = rows.filter((r) => r.kind !== 'alt');
+    if (!kept.some((r) => r.kind === 'security')) return '';
+    const value = kept.reduce((s, r) => s + r.value, 0);
+    const alts = rows.filter((r) => r.kind === 'alt').map((r) => r.symbol);
+    const notes = alts.length ? [`left out (no daily prices): ${alts.join(', ')}`] : [];
+    return tearSheetBlock(kept.map((r) => ({ symbol: r.kind === 'cash' ? 'CASH' : r.symbol, weight: r.value })), value, { omit: ['risk'], notes });
   }
 
   function choose(id: string) {

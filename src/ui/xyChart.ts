@@ -5,6 +5,8 @@ export interface XySeries {
   name: string;
   color: string;
   points: { x: number; y: number }[];
+  /** Dotted line (e.g. a second source next to a solid one). */
+  dash?: boolean;
 }
 
 export function xySvg(series: XySeries[], opts: { x: (v: number) => string; y: (v: number) => string; marker?: { x: number; label: string }; xName?: string; height?: number }) {
@@ -44,7 +46,7 @@ export function xySvg(series: XySeries[], opts: { x: (v: number) => string; y: (
   }
   for (const s of series) {
     const pts = [...s.points].sort((a, b) => a.x - b.x);
-    if (pts.length > 1) add('polyline', { points: pts.map((p) => `${X(p.x)},${Y(p.y)}`).join(' '), fill: 'none', stroke: s.color, 'stroke-width': 2 });
+    if (pts.length > 1) add('polyline', { points: pts.map((p) => `${X(p.x)},${Y(p.y)}`).join(' '), fill: 'none', stroke: s.color, 'stroke-width': 2, ...(s.dash ? { 'stroke-dasharray': '2 4', 'stroke-linecap': 'round' } : {}) });
   }
   const guide = add('line', { x1: 0, x2: 0, y1: pad.t, y2: H - pad.b, stroke: '#787b86', 'stroke-dasharray': '3 3', visibility: 'hidden' });
   const tip = h('div', { class: 'chart-tip', hidden: true });
@@ -70,6 +72,6 @@ export function xySvg(series: XySeries[], opts: { x: (v: number) => string; y: (
     tip.hidden = true;
     guide.setAttribute('visibility', 'hidden');
   });
-  const legend = h('div', { class: 'line-legend static' }, ...series.map((s) => h('span', {}, h('i', { style: `background:${s.color}` }), s.name)));
+  const legend = h('div', { class: 'line-legend static' }, ...series.map((s) => h('span', {}, h('i', { style: s.dash ? `background:none;border-top:2px dotted ${s.color};height:0` : `background:${s.color}` }), s.name)));
   return h('div', { class: 'curve-wrap curve-interactive' }, legend, svg, tip);
 }

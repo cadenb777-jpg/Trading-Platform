@@ -7,7 +7,7 @@ import { engineRequest } from '../data/schwab';
 import { barList, compact, createLineChart, dataTable, money, pageFrame, pct, statCards } from '../ui/charts';
 import { formatPrice, h } from '../ui/dom';
 import { withTableTools } from '../ui/tableTools';
-import { xySvg } from '../ui/xyChart';
+import { optionsAnalyticsBlock } from '../flow/optionsAnalytics';
 import { tickerAttr } from '../ui/tickerCard';
 import { cotSummary, openCotOnFutures, type CotSymbolData } from '../futures/cot';
 import { isStockSymbol, linkPanel, markPanel } from '../ui/linkGroups';
@@ -268,26 +268,17 @@ export function createFlowPage() {
         ),
       ),
       h(
-        'div',
-        { class: 'two-col' },
-        h(
-          'section',
-          { class: 'panel' },
-          h('div', { class: 'panel-head' }, h('h3', {}, `Volatility smile (${d.expiration})`)),
-          h('p', { class: 'muted small' }, 'Implied volatility by strike. A steeper left side (puts) means traders pay up for crash protection.'),
-          ivSmile(d),
-        ),
-        h(
-          'section',
-          { class: 'panel' },
-          h('div', { class: 'panel-head' }, h('h3', {}, 'Gamma exposure by strike')),
-          h('p', { class: 'muted small' }, 'All expirations. The biggest bars are levels where dealer hedging is heaviest.'),
-          barList(
-            d.gex.filter((g) => Math.abs(g.strike - d.spot) / d.spot < 0.15).reverse().map((g) => ({ label: formatPrice(g.strike), value: g.gex, highlight: g.strike === nearSpot ? 'spot' : '' })),
-            money,
-          ),
+        'section',
+        { class: 'panel' },
+        h('div', { class: 'panel-head' }, h('h3', {}, 'Gamma exposure by strike')),
+        h('p', { class: 'muted small' }, 'All expirations. The biggest bars are levels where dealer hedging is heaviest.'),
+        barList(
+          d.gex.filter((g) => Math.abs(g.strike - d.spot) / d.spot < 0.15).reverse().map((g) => ({ label: formatPrice(g.strike), value: g.gex, highlight: g.strike === nearSpot ? 'spot' : '' })),
+          money,
         ),
       ),
+      // implied volatility (smile, term structure, skew), expected-move band and greeks, from our own Black-Scholes
+      optionsAnalyticsBlock(d.symbol),
     );
   }
 
@@ -326,19 +317,6 @@ export function createFlowPage() {
           h('span', { class: 'oi-side call' }, h('span', { class: 'oi-fill', style: `width:${(r.callVolume / max) * 100}%` }), h('span', { class: 'oi-num' }, compact(r.callVolume))),
         ),
       ),
-    );
-  }
-
-  /** IV by strike as an SVG line chart (calls and puts), with the current price marked and hover values. */
-  function ivSmile(d: OptionsData) {
-    const pts = d.strikes.filter((r) => Math.abs(r.strike - d.spot) / d.spot < 0.25 && (r.callIv || r.putIv));
-    if (pts.length < 3) return h('p', { class: 'muted' }, 'Not enough implied-volatility data for this expiration.');
-    return xySvg(
-      [
-        { name: 'Calls', color: '#26a69a', points: pts.filter((r) => r.callIv).map((r) => ({ x: r.strike, y: r.callIv! })) },
-        { name: 'Puts', color: '#ef5350', points: pts.filter((r) => r.putIv).map((r) => ({ x: r.strike, y: r.putIv! })) },
-      ],
-      { x: (v) => formatPrice(v), y: (v) => `${v.toFixed(1)}%`, marker: { x: d.spot, label: 'Price' }, xName: 'Strike' },
     );
   }
 

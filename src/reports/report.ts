@@ -5,8 +5,10 @@
  */
 import { STRUCTURES, PRIVATE_FUNDS, type PrivateFund } from '../invest/catalog';
 import { holdingStats, type AltHolding } from '../invest/holdings';
-import { analysisSymbol, describeFees, isCashOrAlt, liquidityOf, positions, proxyNotes, type Analysis, type Holding, type Portfolio } from '../portfolio/types';
+import { analysisSymbol, describeFees, holdingLabel, isCashOrAlt, liquidityOf, positions, proxyNotes, type Analysis, type Holding, type Portfolio } from '../portfolio/types';
 import { pct } from '../ui/charts';
+import { heatScale, heatStyle } from '../portfolio/heat';
+import { modelNotes, standInNotes, type TearSheet } from '../portfolio/tearSheet';
 import { h } from '../ui/dom';
 import { barsSvg, donutSvg, lineSvg, mix } from './svg';
 import { ALT_DISCLOSURE, type Branding, type Client, type ReportSection } from './types';
@@ -49,6 +51,8 @@ export interface ReportInput {
   /** SEC fund data keyed by fund name (lower case). */
   fundFacts?: Record<string, FundFacts>;
   market?: MarketRow[];
+  /** The risk tear sheet (quant.tearsheet); the section is left out when it couldn't be worked out. */
+  tearsheet?: TearSheet | null;
 }
 
 /** One table with optional first-column labels and right-aligned numbers. */
@@ -116,7 +120,7 @@ interface AltLine {
   valueDate?: string;
 }
 
-export function buildReport({ client, portfolio, analysis: a, branding: b, prices = {}, alternatives = [], fundFacts = {}, market = [] }: ReportInput): HTMLElement {
+export function buildReport({ client, portfolio, analysis: a, branding: b, prices = {}, alternatives = [], fundFacts = {}, market = [], tearsheet = null }: ReportInput): HTMLElement {
   const on = (s: ReportSection) => client.sections?.[s] !== false;
   const primary = b.primary || '#1f3b57';
   const accent = b.accent || '#8fb8d8';
@@ -434,6 +438,66 @@ export function buildReport({ client, portfolio, analysis: a, branding: b, price
         ),
       ),
     );
+  }
+
+  // ---- Risk tear sheet: value at risk, drawdowns and monthly returns on one page; risk contribution (20 holdings a
+  // page, like Holdings Detail) and the correlation matrix (up to 8 holdings) on the next ----
+  if (on('tearsheet') && tearsheet) {
+    const t = tearsheet;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const years = t.monthly.slice(-6);
+    const scale = heatScale(years.flatMap((y) => y.months));
+    const sym = (s: string) => (s === 'CASH' ? 'Cash' : holdingLabel(portfolio, s).label);
+    const basis = `Current weights applied to daily prices from ${longDate(t.start)} to ${longDate(t.end)}, dividends reinvested where available. ${modelNotes(t.symbols, standInNotes(portfolio))}Historical results do not predict future results.`;
+    page(
+      'Risk Tear Sheet',
+      section(
+        'Value at Risk',
+        table(
+          ['Confidence, horizon', 'Historical VaR', 'Expected shortfall', 'Normal VaR'],
+          t.var.map((r) => [`${Math.round(r.level * 100)}%, ${r.days} day${r.days > 1 ? 's' : ''}`, `${fmtMoney(r.historical * valueScale)} (${fmtPct(r.historical)})`, `${fmtMoney(r.historicalCvar * valueScale)} (${fmtPct(r.historicalCvar)})`, `${fmtMoney(r.parametric * valueScale)} (${fmtPct(r.parametric)})`]),
+        ),
+        h(
+          'p',
+          { class: 'rpt-note' },
+          `On a value of ${fmtMoney(valueScale)}. Value at risk: a loss exceeded on only 5% (or 1%) of days in the period (10-day: every overlapping 10-day stretch). Expected shortfall: the average loss on those days. Normal VaR assumes normally distributed returns; over 10 days it scales the daily mean by 10 and the daily standard deviation by √10.`,
+        ),
+      ),
+      section(
+        'Largest Drawdowns',
+        table(
+          ['Decline', 'Peak', 'Trough', 'Recovered', 'Length'],
+          t.drawdowns.map((d) => [fmtPct(d.depth), longDate(d.start), longDate(d.trough), d.recovered ? longDate(d.recovered) : 'Not yet', `${d.days.toLocaleString('en-US')} days`]),
+        ),
+      ),
+      section(
+        'Monthly Returns (%)',
+        table(
+          ['Year', ...months, 'Year'],
+          years.map((y) => [String(y.year), ...y.months.map((m) => (m == null ? '' : h('span', { class: 'rpt-heat', style: heatStyle(m, scale) }, (m * 100).toFixed(1)))), fmtPct(y.total)]),
+        ),
+      ),
+      h('p', { class: 'rpt-note' }, basis),
+    );
+    const risk = [...t.risk].sort((x, y) => y.share - x.share).map((r) => [sym(r.symbol), fmtPct(r.weight), fmtPct(r.share)]);
+    const corr = t.correlation.symbols.length > 1 && t.correlation.symbols.length <= 8 ? t.correlation : null;
+    const parts = chunk(risk, 20);
+    parts.forEach((part, i) =>
+      page(
+        'Risk Tear Sheet (continued)',
+        section(
+          i ? 'Risk Contribution (continued)' : 'Risk Contribution',
+          table(['Holding', 'Weight', 'Share of risk'], part),
+          i === parts.length - 1 ? h('p', { class: 'rpt-note' }, `Annualized volatility ${fmtPct(t.volatility)}. Share of risk: each holding's part of the portfolio's variance.`) : null,
+        ),
+        // the matrix goes with the last risk page when it fits beside a short list, otherwise after it on its own page
+        corr && i === parts.length - 1 && part.length <= 8
+          ? section('Correlation', table(['', ...corr.symbols.map(sym)], corr.matrix.map((row, j) => [sym(corr.symbols[j]), ...row.map((x) => x.toFixed(2))])))
+          : null,
+      ),
+    );
+    if (corr && parts[parts.length - 1].length > 8)
+      page('Risk Tear Sheet (continued)', section('Correlation', table(['', ...corr.symbols.map(sym)], corr.matrix.map((row, j) => [sym(corr.symbols[j]), ...row.map((x) => x.toFixed(2))]))));
   }
 
   // ---- Allocation & liquidity ----
