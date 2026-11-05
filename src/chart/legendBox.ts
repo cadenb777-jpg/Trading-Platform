@@ -77,7 +77,23 @@ export class LegendBox {
         // ignore
       }
     });
-    this.stop = view.onVisibleRange(() => this.schedule());
+    const stopRange = view.onVisibleRange(() => this.schedule());
+    // fade while the cursor is over the chart under the box (the box lets the mouse through to the chart)
+    let frame = 0;
+    const onMove = (e: MouseEvent) => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (!this.el.isConnected) return;
+        const r = this.el.getBoundingClientRect();
+        this.el.classList.toggle('see-through', e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom);
+      });
+    };
+    window.addEventListener('mousemove', onMove, { passive: true });
+    this.stop = () => {
+      stopRange();
+      window.removeEventListener('mousemove', onMove);
+    };
   }
 
   /** Recomputes on the next quiet moment (scroll and zoom fire every frame; the stats follow at most every 80 ms). */

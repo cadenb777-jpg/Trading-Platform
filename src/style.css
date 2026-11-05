@@ -10513,7 +10513,7 @@ body.rail-collapsed .rail .rail-bottom {
   gap: 4px;
 }
 .chart-page .toolbar .input.market {
-  width: 142px;
+  width: 96px;
 }
 .chart-page .toolbar .input.symbol {
   width: 92px;
@@ -10906,4 +10906,19 @@ body[data-route='chart'] .buddy {
   .settings-tab {
     white-space: nowrap;
   }
+}
+
+.chart-ws-tabs .tab {
+  display: inline-grid;
+  place-items: center;
+  padding-left: 9px;
+  padding-right: 9px;
+}
+
+/* narrower screens: the toolbar keeps one line by dropping words (the tooltips keep them) */
+@media (max-width: 1700px) {
+  .chart-page .toolbar .fx-btn .fx-label { display: none; }
+  .chart-page .toolbar .status { font-size: 0; }
+  .chart-page .toolbar { gap: 3px; }
+  .chart-page .toolbar .input.chart-type { width: 100px; }
 }

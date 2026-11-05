@@ -52,7 +52,8 @@ export const TIMEFRAMES: Timeframe[] = TIMEFRAME_DEFS.map((d) => d.id);
 
 export const TIMEFRAME_SECONDS = Object.fromEntries(TIMEFRAME_DEFS.map((d) => [d.id, d.seconds])) as Record<Timeframe, number>;
 
-export const DEFAULT_FAVORITE_TIMEFRAMES: Timeframe[] = ['1m', '5m', '15m', '1h', '4h', '1D', '1W'];
+// 4h is still in the timeframe menu (the chevron); off the bar so the chart toolbar fits one line (owner)
+export const DEFAULT_FAVORITE_TIMEFRAMES: Timeframe[] = ['1m', '5m', '15m', '1h', '1D', '1W'];
 
 /** 1970-01-05 was a Monday; weekly bars start on Mondays. */
 const MONDAY_OFFSET = 4 * 86400;

@@ -56,7 +56,7 @@ export function createChartPage() {
 
   // ---------- Layout ----------
 
-  const marketSelect = h('select', { class: 'input market', 'aria-label': 'Market' }, ...PROVIDERS.map((p) => h('option', { value: p.id }, p.name)));
+  const marketSelect = h('select', { class: 'input market', 'aria-label': 'Market' }, ...PROVIDERS.map((p) => h('option', { value: p.id, title: p.name }, p.name.split(' (')[0])));
   const symbolInput = h('input', { class: 'input symbol', 'aria-label': 'Symbol', list: 'symbol-list', spellcheck: false, autocomplete: 'off' });
   const symbolList = h('datalist', { id: 'symbol-list' });
   const typeSelect = h(
@@ -138,7 +138,7 @@ export function createChartPage() {
       tfPicker.el,
       rangeBar.el,
       typeSelect,
-      h('button', { class: 'btn', onclick: openManager }, h('span', { class: 'fx' }, 'ƒx'), ' Indicators'),
+      h('button', { class: 'btn fx-btn', onclick: openManager, title: 'Indicators: add, edit and remove', 'aria-label': 'Indicators' }, h('span', { class: 'fx' }, 'ƒx'), h('span', { class: 'fx-label' }, ' Indicators')),
       profileBtn,
       alertBtn,
       extBtn,
@@ -220,6 +220,7 @@ export function createChartPage() {
     const labels: Record<ConnectionStatus, string> = { connecting: 'Connecting…', live: 'Live', error: 'Offline', closed: 'Stopped' };
     statusEl.className = `status ${status}`;
     statusEl.textContent = labels[status];
+    statusEl.title = labels[status];
     statusEl.title = message ?? labels[status];
   }
 
@@ -447,8 +448,8 @@ export function createChartPage() {
     const bar = chart.barAt(index);
     const prev = chart.barAt(index - 1);
     if (ohlcValues) {
-      // The bar under the crosshair; at rest the header row already shows the day.
-      ohlcValues.hidden = !bar || hoverIndex === null;
+      // The bar under the crosshair, or the latest bar at rest: always shown, so the box never grows or shrinks.
+      ohlcValues.hidden = !bar;
       if (bar) {
         ohlcValues.style.setProperty('--c', bar.close >= bar.open ? THEME.up : THEME.down);
         const change = prev ? ((bar.close - prev.close) / prev.close) * 100 : 0;

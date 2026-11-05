@@ -65,6 +65,15 @@ function load(): AppState {
   if (!validProvider(state.provider)) state.provider = 'coinbase';
   if (!TIMEFRAMES.includes(state.timeframe)) state.timeframe = '5m';
   state.favoriteTimeframes = state.favoriteTimeframes.filter((t) => TIMEFRAMES.includes(t));
+  // once: take 4h off the timeframe bar (owner); it stays in the menu and can be starred back
+  try {
+    if (!localStorage.getItem('tp-fav-no4h')) {
+      state.favoriteTimeframes = state.favoriteTimeframes.filter((t) => t !== '4h');
+      localStorage.setItem('tp-fav-no4h', '1');
+    }
+  } catch {
+    // private window: leave as saved
+  }
   if (!CHART_TYPES.some((c) => c.id === state.chartType)) state.chartType = 'candles';
   state.indicators = state.indicators.filter((i) => getIndicator(i.defId));
   state.watchlist = state.watchlist.filter((r) => validProvider(r.provider));

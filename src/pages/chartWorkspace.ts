@@ -1,3 +1,4 @@
+import { icon, type IconName } from '../ui/icons';
 /**
  * The Chart page with its modes: Chart | Multi | Scripts (#chart, #chart/multi, #chart/scripts). Multi-chart and the
  * script editor used to be pages of their own (#multi and #scripts still redirect here). The mode tabs sit at the
@@ -14,13 +15,15 @@ interface Mode {
   stop?(): void;
 }
 
+const ICONS: Record<ChartMode, IconName> = { chart: 'chart', multi: 'grid', scripts: 'code' };
 const LABELS: Record<ChartMode, string> = { chart: 'Chart', multi: 'Workspace', scripts: 'Scripts' };
 const TITLES: Record<ChartMode, string> = { chart: 'One chart with indicators and drawings', multi: 'Workspace: up to six linked panels (charts, quote, news, facts, my position)', scripts: 'Write your own indicators (Pine-style scripts)' };
 
 export function createChartWorkspace(chart: ReturnType<typeof createChartPage>, openChart: (ref: MarketRef) => void, openResearch: (symbol: string) => void) {
   const el = h('div', { class: 'chart-ws' });
   const links = CHART_MODES.map((m) =>
-    h('a', { class: 'tab', href: m === 'chart' ? '#chart' : `#chart/${m}`, 'data-mode': m, title: TITLES[m] }, LABELS[m]),
+    // icons (names in the tooltip and for screen readers), so the chart toolbar fits one line
+    h('a', { class: 'tab', href: m === 'chart' ? '#chart' : `#chart/${m}`, 'data-mode': m, title: `${LABELS[m]}: ${TITLES[m]}`, 'aria-label': LABELS[m] }, icon(ICONS[m], 16)),
   );
   const tabs = h('nav', { class: 'tabs chart-ws-tabs', 'aria-label': 'Chart mode' }, ...links);
   const modes: Partial<Record<ChartMode, Mode>> = { chart };

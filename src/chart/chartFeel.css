@@ -54,16 +54,32 @@
   top: 8px;
   left: 8px;
   gap: 0;
-  max-width: min(340px, 44%);
+  /* a steady width, so it doesn't twitch as the numbers change */
+  width: min(372px, 46%);
   padding: 4px 6px 6px;
   border: 1px solid color-mix(in srgb, var(--line-strong) 70%, transparent);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--bg-chart) 78%, transparent);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-  pointer-events: auto;
+  /* the mouse goes through to the chart (the crosshair keeps working under it); only its buttons take clicks */
+  pointer-events: none;
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
+  transition: opacity var(--dur-2) var(--ease);
+}
+.legend.cf-legend button,
+.legend.cf-legend input,
+.legend.cf-legend a {
+  pointer-events: auto;
+}
+/* while the cursor is under it, it fades so the candles behind show */
+.legend.cf-legend.see-through {
+  opacity: 0.22;
+}
+.legend.cf-legend.see-through:hover,
+.legend.cf-legend.see-through:focus-within {
+  opacity: 1;
 }
 .cf-legend-head { display: flex; align-items: center; gap: 6px; min-height: 24px; }
 .cf-legend-title { flex: 1; min-width: 0; }
@@ -153,3 +169,16 @@
 /* Range bar note when a range is capped to the history the data source keeps */
 .cf-range-wrap { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .cf-range-note { color: var(--muted); font-size: 12px; }
+
+/* O H L C on its own line, each value in a fixed slot: hovering candles changes the numbers, never the box's size */
+.cf-legend .legend-title { flex-direction: column; align-items: stretch; gap: 2px; }
+.cf-legend .legend-ohlc {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  gap: 0 6px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.cf-legend .legend-ohlc .kv { display: flex; gap: 3px; min-width: 0; }
+.cf-legend .legend-ohlc .legend-num { display: inline-block; min-width: 0; overflow: hidden; text-overflow: clip; }
+.cf-legend .legend-ohlc > .legend-num:last-child { min-width: 6.5ch; text-align: right; }

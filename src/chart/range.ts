@@ -8,7 +8,6 @@ export type RangeId = '1D' | '3D' | '1M' | '6M' | 'YTD' | '1Y' | '5Y' | 'MAX';
 
 export const RANGES: { id: RangeId; label: string; title: string }[] = [
   { id: '1D', label: '1D', title: 'The last trading day' },
-  { id: '3D', label: '3D', title: 'The last 3 trading days' },
   { id: '1M', label: '1M', title: 'One month' },
   { id: '6M', label: '6M', title: 'Six months' },
   { id: 'YTD', label: 'YTD', title: 'Since 1 January' },
