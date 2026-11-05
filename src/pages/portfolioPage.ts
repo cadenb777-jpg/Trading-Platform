@@ -32,7 +32,7 @@ import {
   type Portfolio,
   type Rebalance,
 } from '../portfolio/types';
-import { tearSheetBlock } from '../portfolio/tearSheet';
+import { standInNotes, tearSheetBlock } from '../portfolio/tearSheet';
 import { createLineChart, dataTable, money, pageFrame, pct, pctU, statCards } from '../ui/charts';
 import { infoTip } from '../ui/glossary';
 import { h, openModal, toast } from '../ui/dom';
@@ -598,7 +598,7 @@ export function createPortfolioPage() {
     try {
       const holdings = holdingsPayload(current, priceMap(prices));
       const value = positions(current, priceMap(prices)).total ?? 100000;
-      return tearSheetBlock(holdings, value, { omit: ['correlation', 'risk', 'montecarlo'], label: (s) => holdingLabel(current, s).label });
+      return tearSheetBlock(holdings, value, { omit: ['correlation', 'risk', 'montecarlo'], label: (s) => holdingLabel(current, s).label, notes: standInNotes(current) });
     } catch {
       return '';
     }

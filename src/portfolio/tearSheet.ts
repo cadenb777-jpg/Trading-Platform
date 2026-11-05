@@ -11,6 +11,7 @@ import { infoTip } from '../ui/glossary';
 import { THEME } from '../ui/theme';
 import { fanSvg } from '../ui/quantCharts';
 import { heatScale, heatStyle } from './heat';
+import { analysisSymbol, isCashOrAlt, type Portfolio } from './types';
 
 export interface TearSheet {
   symbols: string[];
@@ -44,6 +45,25 @@ export type TearSection = 'var' | 'correlation' | 'rolling' | 'drawdowns' | 'mon
 export const fetchTearSheet = (holdings: TearSheetHolding[], value: number, horizon = 10) =>
   engineRequest<TearSheet>('quant.tearsheet', { holdings, value, horizon, years: 5 }, 180000);
 
+/** Plain names for the listed stand-ins that model cash and alternatives (src/portfolio/types.ts PROXIES). */
+const STAND_INS: Record<string, string> = { BIL: 'T-bills', BIZD: 'listed business development companies', VNQ: 'listed REITs', PSP: 'listed private-equity firms', IGF: 'listed infrastructure', QAI: 'a hedge-fund replication ETF' };
+
+/** "Cash modelled as BIL (T-bills)" for each cash or alternative holding of a portfolio, without repeats. */
+export function standInNotes(p: Portfolio): string[] {
+  const out = p.holdings.filter(isCashOrAlt).map((x) => {
+    const sym = analysisSymbol(x);
+    const name = x.kind === 'cash' ? 'Cash' : x.name || x.symbol;
+    return `${name} modelled as ${sym}${STAND_INS[sym] ? ` (${STAND_INS[sym]})` : ''}`;
+  });
+  return [...new Set(out)];
+}
+
+/** What the figures assume about cash and stand-ins, as one sentence-ish string ending in a space (or ''). */
+export function modelNotes(symbols: string[], notes: string[] = []): string {
+  const parts = [...(symbols.includes('CASH') ? ['Cash counted at 0% return'] : []), ...notes];
+  return parts.length ? `${parts.join('; ')}. ` : '';
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const panel = (title: string, note: Node | string | null, ...body: (Node | null)[]) =>
@@ -53,7 +73,7 @@ const panel = (title: string, note: Node | string | null, ...body: (Node | null)
  * The tear sheet as a self-loading block. `label` names a symbol for display (e.g. cash stand-ins), `omit` leaves out
  * sections a page already shows elsewhere.
  */
-export function tearSheetBlock(holdings: TearSheetHolding[], value: number, opts: { omit?: TearSection[]; label?: (symbol: string) => string; title?: string } = {}) {
+export function tearSheetBlock(holdings: TearSheetHolding[], value: number, opts: { omit?: TearSection[]; label?: (symbol: string) => string; title?: string; notes?: string[] } = {}) {
   const omit = new Set(opts.omit ?? []);
   const label = opts.label ?? ((s: string) => (s === 'CASH' ? 'Cash' : s));
   const el = h('div', { class: 'qp-tear' });
@@ -71,7 +91,7 @@ export function tearSheetBlock(holdings: TearSheetHolding[], value: number, opts
   }
 
   function draw(t: TearSheet) {
-    const parts: (Node | null)[] = [head, h('p', { class: 'muted small' }, `Today's weights held ${t.start} to ${t.end} (${t.days.toLocaleString('en-US')} trading days; the youngest holding sets the start). Cash earns nothing. ${t.priceOnly.length ? `Price-only (no dividend data): ${t.priceOnly.join(', ')}. ` : ''}Sources: ${t.sources}.`)];
+    const parts: (Node | null)[] = [head, h('p', { class: 'muted small' }, `Today's weights held ${t.start} to ${t.end} (${t.days.toLocaleString('en-US')} trading days; the youngest holding sets the start). ${modelNotes(t.symbols, opts.notes)}${t.priceOnly.length ? `Price-only (no dividend data): ${t.priceOnly.join(', ')}. ` : ''}Sources: ${t.sources}.`)];
     if (!omit.has('var')) parts.push(varPanel(t));
     const pair: Node[] = [];
     if (!omit.has('drawdowns')) pair.push(drawdownPanel(t));
@@ -123,7 +143,7 @@ export function varPanel(t: TearSheet) {
     h(
       'p',
       { class: 'muted small' },
-      'VaR: the loss beaten on only 5% (or 1%) of days. CVaR (expected shortfall): the average loss on those bad days. Historical uses the actual worst days (10-day: every overlapping 10-day stretch); normal assumes a bell curve, which usually understates big falls.',
+      'VaR: the loss beaten on only 5% (or 1%) of days. CVaR (expected shortfall): the average loss on those bad days. Historical uses the actual worst days (10-day: every overlapping 10-day stretch). Normal assumes a bell curve: 10-day figures scale the daily mean by 10 and the daily standard deviation by √10, which usually understates big falls.',
     ),
   );
 }

@@ -8,7 +8,7 @@ import { holdingStats, type AltHolding } from '../invest/holdings';
 import { analysisSymbol, describeFees, holdingLabel, isCashOrAlt, liquidityOf, positions, proxyNotes, type Analysis, type Holding, type Portfolio } from '../portfolio/types';
 import { pct } from '../ui/charts';
 import { heatScale, heatStyle } from '../portfolio/heat';
-import type { TearSheet } from '../portfolio/tearSheet';
+import { modelNotes, standInNotes, type TearSheet } from '../portfolio/tearSheet';
 import { h } from '../ui/dom';
 import { barsSvg, donutSvg, lineSvg, mix } from './svg';
 import { ALT_DISCLOSURE, type Branding, type Client, type ReportSection } from './types';
@@ -440,32 +440,34 @@ export function buildReport({ client, portfolio, analysis: a, branding: b, price
     );
   }
 
-  // ---- Risk tear sheet ----
+  // ---- Risk tear sheet: value at risk, drawdowns and monthly returns on one page; risk contribution (20 holdings a
+  // page, like Holdings Detail) and the correlation matrix (up to 8 holdings) on the next ----
   if (on('tearsheet') && tearsheet) {
     const t = tearsheet;
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const years = t.monthly.slice(-6);
     const scale = heatScale(years.flatMap((y) => y.months));
     const sym = (s: string) => (s === 'CASH' ? 'Cash' : holdingLabel(portfolio, s).label);
+    const basis = `Current weights applied to daily prices from ${longDate(t.start)} to ${longDate(t.end)}, dividends reinvested where available. ${modelNotes(t.symbols, standInNotes(portfolio))}Historical results do not predict future results.`;
     page(
       'Risk Tear Sheet',
-      h(
-        'div',
-        {},
-        section(
-          'Value at Risk',
-          table(
-            ['Confidence, horizon', 'Historical VaR', 'Expected shortfall', 'Normal VaR'],
-            t.var.map((r) => [`${Math.round(r.level * 100)}%, ${r.days} day${r.days > 1 ? 's' : ''}`, `${fmtMoney(r.historical * valueScale)} (${fmtPct(r.historical)})`, `${fmtMoney(r.historicalCvar * valueScale)} (${fmtPct(r.historicalCvar)})`, `${fmtMoney(r.parametric * valueScale)} (${fmtPct(r.parametric)})`]),
-          ),
-          h('p', { class: 'rpt-note' }, `On a value of ${fmtMoney(valueScale)}. Value at risk: a loss exceeded on only 5% (or 1%) of days in the period. Expected shortfall: the average loss on those days.`),
+      section(
+        'Value at Risk',
+        table(
+          ['Confidence, horizon', 'Historical VaR', 'Expected shortfall', 'Normal VaR'],
+          t.var.map((r) => [`${Math.round(r.level * 100)}%, ${r.days} day${r.days > 1 ? 's' : ''}`, `${fmtMoney(r.historical * valueScale)} (${fmtPct(r.historical)})`, `${fmtMoney(r.historicalCvar * valueScale)} (${fmtPct(r.historicalCvar)})`, `${fmtMoney(r.parametric * valueScale)} (${fmtPct(r.parametric)})`]),
         ),
-        section(
-          'Largest Drawdowns',
-          table(
-            ['Decline', 'Peak', 'Trough', 'Recovered', 'Length'],
-            t.drawdowns.map((d) => [fmtPct(d.depth), longDate(d.start), longDate(d.trough), d.recovered ? longDate(d.recovered) : 'Not yet', `${d.days.toLocaleString('en-US')} days`]),
-          ),
+        h(
+          'p',
+          { class: 'rpt-note' },
+          `On a value of ${fmtMoney(valueScale)}. Value at risk: a loss exceeded on only 5% (or 1%) of days in the period (10-day: every overlapping 10-day stretch). Expected shortfall: the average loss on those days. Normal VaR assumes normally distributed returns; over 10 days it scales the daily mean by 10 and the daily standard deviation by √10.`,
+        ),
+      ),
+      section(
+        'Largest Drawdowns',
+        table(
+          ['Decline', 'Peak', 'Trough', 'Recovered', 'Length'],
+          t.drawdowns.map((d) => [fmtPct(d.depth), longDate(d.start), longDate(d.trough), d.recovered ? longDate(d.recovered) : 'Not yet', `${d.days.toLocaleString('en-US')} days`]),
         ),
       ),
       section(
@@ -475,23 +477,27 @@ export function buildReport({ client, portfolio, analysis: a, branding: b, price
           years.map((y) => [String(y.year), ...y.months.map((m) => (m == null ? '' : h('span', { class: 'rpt-heat', style: heatStyle(m, scale) }, (m * 100).toFixed(1)))), fmtPct(y.total)]),
         ),
       ),
-      h(
-        'div',
-        { class: 'rpt-split top' },
+      h('p', { class: 'rpt-note' }, basis),
+    );
+    const risk = [...t.risk].sort((x, y) => y.share - x.share).map((r) => [sym(r.symbol), fmtPct(r.weight), fmtPct(r.share)]);
+    const corr = t.correlation.symbols.length > 1 && t.correlation.symbols.length <= 8 ? t.correlation : null;
+    const parts = chunk(risk, 20);
+    parts.forEach((part, i) =>
+      page(
+        'Risk Tear Sheet (continued)',
         section(
-          'Risk Contribution',
-          table(['Holding', 'Weight', 'Share of risk'], [...t.risk].sort((a, b) => b.share - a.share).slice(0, 12).map((r) => [sym(r.symbol), fmtPct(r.weight), fmtPct(r.share)])),
-          h('p', { class: 'rpt-note' }, `Annualized volatility ${fmtPct(t.volatility)}.`),
+          i ? 'Risk Contribution (continued)' : 'Risk Contribution',
+          table(['Holding', 'Weight', 'Share of risk'], part),
+          i === parts.length - 1 ? h('p', { class: 'rpt-note' }, `Annualized volatility ${fmtPct(t.volatility)}. Share of risk: each holding's part of the portfolio's variance.`) : null,
         ),
-        t.correlation.symbols.length > 1 && t.correlation.symbols.length <= 8
-          ? section(
-              'Correlation',
-              table(['', ...t.correlation.symbols.map(sym)], t.correlation.matrix.map((row, i) => [sym(t.correlation.symbols[i]), ...row.map((x) => x.toFixed(2))])),
-            )
+        // the matrix goes with the last risk page when it fits beside a short list, otherwise after it on its own page
+        corr && i === parts.length - 1 && part.length <= 8
+          ? section('Correlation', table(['', ...corr.symbols.map(sym)], corr.matrix.map((row, j) => [sym(corr.symbols[j]), ...row.map((x) => x.toFixed(2))])))
           : null,
       ),
-      h('p', { class: 'rpt-note' }, `Current weights applied to daily prices from ${longDate(t.start)} to ${longDate(t.end)}, dividends reinvested where available; cash assumed to earn nothing. Historical results do not predict future results.`),
     );
+    if (corr && parts[parts.length - 1].length > 8)
+      page('Risk Tear Sheet (continued)', section('Correlation', table(['', ...corr.symbols.map(sym)], corr.matrix.map((row, j) => [sym(corr.symbols[j]), ...row.map((x) => x.toFixed(2))]))));
   }
 
   // ---- Allocation & liquidity ----

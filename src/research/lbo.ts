@@ -116,7 +116,8 @@ export function lbo(i: LboInputs): LboResult {
     });
     cash += freeCashFlow - mandatory;
     let sweep = 0;
-    let spare = Math.max(0, cash) * i.sweepPct;
+    // only this year's spare cash sweeps (cash kept in earlier years stays kept), and never more than is on hand
+    let spare = Math.max(0, Math.min(freeCashFlow - mandatory, cash)) * i.sweepPct;
     i.tranches.forEach((t, k) => {
       if (!t.sweep || spare <= 0) return;
       const pay = Math.min(balance[k], spare);

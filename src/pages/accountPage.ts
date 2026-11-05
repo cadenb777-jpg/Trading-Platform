@@ -770,7 +770,9 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     const kept = rows.filter((r) => r.kind !== 'alt');
     if (!kept.some((r) => r.kind === 'security')) return '';
     const value = kept.reduce((s, r) => s + r.value, 0);
-    return tearSheetBlock(kept.map((r) => ({ symbol: r.kind === 'cash' ? 'CASH' : r.symbol, weight: r.value })), value, { omit: ['risk'] });
+    const alts = rows.filter((r) => r.kind === 'alt').map((r) => r.symbol);
+    const notes = alts.length ? [`left out (no daily prices): ${alts.join(', ')}`] : [];
+    return tearSheetBlock(kept.map((r) => ({ symbol: r.kind === 'cash' ? 'CASH' : r.symbol, weight: r.value })), value, { omit: ['risk'], notes });
   }
 
   function choose(id: string) {

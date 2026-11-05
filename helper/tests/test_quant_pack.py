@@ -146,6 +146,11 @@ class OptionAnalytics(unittest.TestCase):
         row = next(x for x in om.greek_table(chain, 100, T, 0.04, 0.0) if x['strike'] == 90)
         self.assertAlmostEqual(row['iv'], 0.25, places=4)
         self.assertAlmostEqual(row['call']['iv'], row['put']['iv'])
+        self.assertAlmostEqual(row['call']['schwabIv'], 0.25)  # Schwab's own figure, per contract, kept beside ours
+        rows, _ = om.smile(chain, 100, T, 0.04, 0.0)
+        r90 = next(x for x in rows if x['strike'] == 90)
+        self.assertAlmostEqual(r90['schwabCallIv'], 0.25)
+        self.assertAlmostEqual(r90['schwabPutIv'], 0.25)
         self.assertAlmostEqual(row['call']['delta'], om.greeks(100, 90, T, 0.04, row['iv'], 0.0, 'call')['delta'])
 
     def test_no_chain_is_an_error(self):

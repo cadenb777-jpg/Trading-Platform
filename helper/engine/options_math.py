@@ -128,13 +128,17 @@ def _interp(xs, ys, x):
 
 def smile(contracts, spot, T, r, q):
     """IV by strike for one expiry: our IV for the call and the put at each strike, the out-of-the-money one as the
-    smile (puts below the forward price, calls above: the liquid side), and Schwab's own IV for comparison."""
+    smile (puts below the forward price, calls above: the liquid side), and Schwab's own IV for the call and the put
+    (schwabCallIv, schwabPutIv; schwabIv is Schwab's out-of-the-money one) for comparison."""
     fwd = spot * math.exp((r - q) * T)
     rows = {}
     for c in contracts:
         if abs(c['strike'] / spot - 1) > SMILE_RANGE:
             continue
-        row = rows.setdefault(c['strike'], {'strike': c['strike'], 'callIv': None, 'putIv': None, 'schwabIv': None, 'callDelta': None, 'putDelta': None})
+        row = rows.setdefault(c['strike'], {'strike': c['strike'], 'callIv': None, 'putIv': None, 'schwabIv': None, 'schwabCallIv': None, 'schwabPutIv': None,
+                                            'callDelta': None, 'putDelta': None})
+        if c.get('iv'):
+            row['schwabCallIv' if c['type'] == 'call' else 'schwabPutIv'] = c['iv'] / 100
         m = usable_price(c)
         iv = implied_vol(m, spot, c['strike'], T, r, q, c['type']) if m else None
         row[f"{c['type']}Iv"] = iv
@@ -203,7 +207,7 @@ def greek_table(contracts, spot, T, r, q, strikes=GREEK_STRIKES):
         iv = ivs.get(otm) or ivs.get('call' if otm == 'put' else 'put')
         row = {'strike': k, 'iv': iv}
         for kind, c in here.items():
-            row[kind] = {'mid': mid_price(c), 'iv': iv, 'model': price(spot, k, T, r, iv, q, kind) if iv else None,
+            row[kind] = {'mid': mid_price(c), 'iv': iv, 'schwabIv': c['iv'] / 100 if c.get('iv') else None, 'model': price(spot, k, T, r, iv, q, kind) if iv else None,
                          **({key: float(v) for key, v in greeks(spot, k, T, r, iv, q, kind).items()} if iv else {})}
         out.append(row)
     return out

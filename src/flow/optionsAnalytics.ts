@@ -14,6 +14,8 @@ import { xySvg } from '../ui/xyChart';
 interface Greeks {
   mid: number | null;
   iv: number | null;
+  /** Schwab's own IV for this contract (helper v44+). */
+  schwabIv?: number | null;
   model: number | null;
   delta?: number;
   gamma?: number;
@@ -28,6 +30,8 @@ interface SmileRow {
   callIv: number | null;
   putIv: number | null;
   schwabIv: number | null;
+  schwabCallIv?: number | null;
+  schwabPutIv?: number | null;
 }
 
 interface TermRow {
@@ -87,7 +91,7 @@ export function optionsAnalyticsBlock(symbol: string, expiration?: string, opts:
     const source = h(
       'p',
       { class: 'ap-note' },
-      `Black-Scholes-Merton (European; Schwab's options are American, so deep in-the-money puts can read slightly off). IV from bid/ask mids by Newton's method with a bisection fallback. Rate ${vol(d.rate, 2)} (${d.sources.rate}); dividend yield ${vol(d.divYield, 2)} (${d.sources.dividend}). Source: ${d.sources.chain}, as of ${when(d.asOf)}.`,
+      `Black-Scholes-Merton (European; Schwab's options are American, so deep in-the-money puts can read slightly off). IV from bid/ask mids by Newton's method with a bisection fallback. Rate ${vol(d.rate, 2)} (${d.sources.rate}); dividend yield ${vol(d.divYield, 2)} (${d.sources.dividend}). Our smile uses the out-of-the-money side at each strike (puts below the forward price, calls above): those prices are mostly time value, while in-the-money prices are mostly intrinsic value plus a wide spread, so their volatility reading is noisy. Schwab's IV for both calls and puts is drawn dotted for comparison. Source: ${d.sources.chain}, as of ${when(d.asOf)}. An estimate from a model, not investment advice.`,
     );
     const term = d.term.filter((t) => t.atmIv != null);
     const smileChart =
@@ -95,7 +99,8 @@ export function optionsAnalyticsBlock(symbol: string, expiration?: string, opts:
         ? xySvg(
             [
               { name: 'Our IV (out-of-the-money side)', color: THEME.viz1, points: d.smile.map((r) => ({ x: r.strike, y: r.iv * 100 })) },
-              { name: 'Schwab IV', color: THEME.viz2, points: d.smile.filter((r) => r.schwabIv != null).map((r) => ({ x: r.strike, y: r.schwabIv! * 100 })) },
+              { name: 'Schwab IV, calls', color: THEME.up, dash: true, points: d.smile.filter((r) => r.schwabCallIv != null).map((r) => ({ x: r.strike, y: r.schwabCallIv! * 100 })) },
+              { name: 'Schwab IV, puts', color: THEME.down, dash: true, points: d.smile.filter((r) => r.schwabPutIv != null).map((r) => ({ x: r.strike, y: r.schwabPutIv! * 100 })) },
             ].filter((s) => s.points.length),
             { x: (v) => formatPrice(v), y: (v) => `${v.toFixed(1)}%`, marker: { x: d.spot, label: 'Price' }, xName: 'Strike' },
           )
@@ -104,9 +109,10 @@ export function optionsAnalyticsBlock(symbol: string, expiration?: string, opts:
       term.length >= 2
         ? xySvg([{ name: 'At-the-money IV', color: THEME.viz1, points: term.map((t) => ({ x: t.dte, y: t.atmIv! * 100 })) }], { x: (v) => `${Math.round(v)}d`, y: (v) => `${v.toFixed(1)}%`, xName: 'Days to expiry' })
         : h('p', { class: 'muted' }, 'Needs at least two expirations.');
-    const greekCols = opts.compact ? (['iv', 'delta', 'gamma', 'theta'] as const) : (['mid', 'iv', 'delta', 'gamma', 'vega', 'theta', 'rho'] as const);
-    const head = { mid: 'Mid', iv: 'IV', delta: 'Delta', gamma: 'Gamma', vega: 'Vega', theta: 'Theta', rho: 'Rho' };
-    const cell = (g: Greeks | undefined, k: (typeof greekCols)[number]) => (k === 'mid' ? formatPrice(g?.mid) : k === 'iv' ? vol(g?.iv) : num(g?.[k], k === 'gamma' ? 4 : 3));
+    const greekCols = opts.compact ? (['iv', 'schwabIv', 'delta', 'gamma', 'theta'] as const) : (['mid', 'iv', 'schwabIv', 'delta', 'gamma', 'vega', 'theta', 'rho'] as const);
+    const head = { mid: 'Mid', iv: 'Our IV', schwabIv: 'Schwab IV', delta: 'Delta', gamma: 'Gamma', vega: 'Vega', theta: 'Theta', rho: 'Rho' };
+    const cell = (g: Greeks | undefined, k: (typeof greekCols)[number]) =>
+      k === 'mid' ? formatPrice(g?.mid) : k === 'iv' || k === 'schwabIv' ? vol(g?.[k]) : num(g?.[k], k === 'gamma' ? 4 : 3);
     const nearest = d.greeks.reduce((b, r) => (Math.abs(r.strike - d.spot) < Math.abs(b - d.spot) ? r.strike : b), d.greeks[0]?.strike ?? 0);
     el.replaceChildren(
       h(
@@ -146,7 +152,7 @@ export function optionsAnalyticsBlock(symbol: string, expiration?: string, opts:
         h(
           'section',
           { class: 'panel' },
-          h('div', { class: 'panel-head' }, h('h3', {}, `Greeks near the money (${d.expiration})`), h('span', { class: 'muted small' }, 'Both sides use the out-of-the-money option’s IV · vega per 1 vol point, theta per day, rho per 1% rate')),
+          h('div', { class: 'panel-head' }, h('h3', {}, `Greeks near the money (${d.expiration})`), h('span', { class: 'muted small' }, 'Our IV is the out-of-the-money option’s, used for both sides; Schwab IV is Schwab’s figure for each contract · vega per 1 vol point, theta per day, rho per 1% rate')),
           h(
             'div',
             { class: 'table-wrap' },

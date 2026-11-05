@@ -98,6 +98,15 @@ describe('LBO', () => {
     expect(grow.exitEv).toBeCloseTo(1100, 10);
   });
 
+  it('a partial sweep uses only that year’s spare cash (reviewer case: 50%, year 2 sweeps 26.25)', () => {
+    const r = lbo({ ...simple, years: 2, sweepPct: 0.5 });
+    // year 1: free cash 50, sweep 25, debt 475, cash 25; year 2: interest 47.5, free cash 52.5, sweep 26.25
+    expect(r.years[0].sweep).toBeCloseTo(25, 10);
+    expect(r.years[1].sweep).toBeCloseTo(26.25, 10);
+    expect(r.years[1].debt).toBeCloseTo(448.75, 10);
+    expect(r.years[1].cash).toBeCloseTo(51.25, 10);
+  });
+
   it('sensitivity: paying more lowers the IRR, selling higher raises it', () => {
     const grid = lboSensitivity({ ...simple, years: 5 }, [9, 10, 11], [9, 10, 11]);
     expect(grid[1][1]).toBeCloseTo(lbo({ ...simple, years: 5 }).irr!, 12);
