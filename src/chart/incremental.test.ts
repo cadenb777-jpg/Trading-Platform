@@ -63,7 +63,6 @@ describe('incremental indicator updates', () => {
       }
     }
     expect([...bad]).toEqual([]);
-    console.log("INCR", incremental, defs.length * 12);
     // Most indicators settle into the fast path (the rest fall back to full recomputes, which are always right).
     expect(incremental).toBeGreaterThan(defs.length * 12 * 0.5);
   }, 120_000);

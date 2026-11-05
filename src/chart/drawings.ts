@@ -25,6 +25,8 @@ export interface Drawing {
   type: DrawingType;
   points: DrawingPoint[];
   color: string;
+  /** Optional text shown on a horizontal line (e.g. "Support" from the AI assistant). */
+  label?: string;
 }
 
 export const DRAWING_TOOLS: { id: Tool; label: string; shortcut?: string }[] = [
@@ -464,6 +466,11 @@ export class DrawingManager {
         break;
       case 'hline':
         line({ x: 0, y: s[0].y }, { x: width, y: s[0].y });
+        if (d.label) {
+          ctx.fillStyle = d.color;
+          ctx.font = '11px sans-serif';
+          ctx.fillText(d.label.slice(0, 40), 8, s[0].y - 4);
+        }
         break;
       case 'vline':
         line({ x: s[0].x, y: 0 }, { x: s[0].x, y: height });
