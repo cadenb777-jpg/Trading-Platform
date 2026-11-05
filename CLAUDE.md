@@ -49,6 +49,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   PAGE_SUGGESTIONS gives per-page example questions.
   AI (engine/ai.py): official `anthropic` SDK, default model claude-opus-5-5 with server-side fallbacks, tools over
   engine data plus `ui_action` (browser carries out open_chart/add_indicator/create_alert). It must never trade.
+  AI actions (helper v42, AI_ACTIONS_HELPER_VERSION; browser sends ai.chat `ui_actions: 1`): one tool per action
+  (ai.py UI_TOOLS) emitted as engine_event `ui_action {callId,name,args}`; the browser runs it through src/ai/actions.ts
+  (typed registry, hand checks, Undo stack; env wiring src/ai/actionsEnv.ts, chart via chartPage.sync()) and answers
+  `ai.ui_result {callId,result}`; UI tools run in order, 60 s timeout. find_indicators runs in the browser (live
+  library) with recommended settings from src/ai/tuning.ts (rule-of-thumb table per 1m/5m/15m/1h/1D/1W + fallback
+  scaling; docs/research/indicator-tuning.md). The chat shows "✓ step · Undo" lines; the pop-out window runs actions
+  in the main window over BroadcastChannel. Older helpers keep the one-way ui_action. No action can trade.
   Investments page (src/pages/investmentsPage.ts, src/invest/): boards via invest.board (quotes + 1m/3m/YTD/1y from
   daily closes), invest.history/movers/search; bonds.market (FRED yields/spreads), bonds.auctions (Treasury Fiscal Data),
   bonds.cusip (Schwab get_instrument_by_cusip); alts.fund (SEC: XBRL NAV per share, N-PORT, Form D, NAV sentences from

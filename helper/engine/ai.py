@@ -40,7 +40,7 @@ news tool doesn't cover. When explaining why something moved, combine the price 
 positioning and say how confident you are.
 
 You can act inside the platform: save or update portfolios and clients, run portfolio analysis and optimisation, \
-and use ui_action to open a chart or page, add an indicator, or create a price alert. Do these when asked; for \
+and use the platform tools (ui_action, or the individual platform actions when you have them) to open a chart or page, add an indicator, or create a price alert. Do these when asked; for \
 anything that changes saved data, say exactly what you saved. You cannot place, change or cancel trades or move \
 money, and you must not claim to.
 
@@ -213,7 +213,148 @@ TOOLS = [
 for _tool in TOOLS:
     _tool['eager_input_streaming'] = True
 
+# ---------- Operating the platform (helper v42+; the browser asks for it with ui_actions=1) ----------
+# Each of these is carried out by the browser (src/ai/actions.ts), which checks it, keeps an Undo and sends the result
+# back (ai.ui_result), so the model can chain steps and report what happened. None of them can trade.
+
+_SYMBOL = {'type': 'string', 'description': 'Ticker, e.g. "AAPL", "SPY", "BTC-USD"'}
+_TIMEFRAME = {'type': 'string', 'description': 'Bar size: 1m 2m 3m 5m 10m 15m 30m 45m 1h 2h 3h 4h 1D 1W 1M'}
+
+UI_TOOLS = [
+    {
+        'name': 'open_chart',
+        'description': 'Open the Chart page on a symbol, optionally at a timeframe. Use it when the owner names a symbol, or a timeframe for "my chart".',
+        'input_schema': {'type': 'object', 'properties': {'symbol': _SYMBOL, 'timeframe': _TIMEFRAME}, 'required': ['symbol']},
+    },
+    {
+        'name': 'set_timeframe',
+        'description': 'Switch the open chart to another timeframe (keeps the symbol). Do this before add_indicator so its settings are tuned for that timeframe.',
+        'input_schema': {'type': 'object', 'properties': {'timeframe': _TIMEFRAME}, 'required': ['timeframe']},
+    },
+    {
+        'name': 'set_chart_type',
+        'description': 'Change how prices are drawn on the chart.',
+        'input_schema': {'type': 'object', 'properties': {'type': {'type': 'string', 'enum': ['candles', 'hollow', 'heikin', 'bars', 'line', 'area']}}, 'required': ['type']},
+    },
+    {
+        'name': 'find_indicators',
+        'description': ("Search the platform's ~420 chart indicators. Returns real ids, names, categories, inputs (key, default, "
+                        'min, max) and recommended settings for the timeframe with a one-line reason (a rule of thumb). Call it '
+                        'before add_indicator unless you already know the exact id.'),
+        'input_schema': {'type': 'object', 'properties': {
+            'query': {'type': 'string', 'description': 'Plain words, e.g. "momentum", "rsi", "volatility bands", "vwap"'},
+            'category': {'type': 'string', 'enum': ['Moving Averages', 'Bands & Channels', 'Trend', 'Momentum', 'Oscillators', 'Volatility', 'Volume',
+                                                    'Statistics', 'Cycles', 'Support & Resistance', 'Candlestick Patterns', 'Positioning', 'My scripts']},
+            'timeframe': {'type': 'string', 'description': "Timeframe to tune for; default the chart's"},
+            'limit': {'type': 'integer', 'description': 'Default 10, max 25'},
+        }},
+    },
+    {
+        'name': 'add_indicator',
+        'description': ('Add an indicator to the chart by id (from find_indicators). Leave params out to get the recommended '
+                        "settings for the chart's timeframe (the result says which and why); pass params only for values the owner "
+                        'asked for. The result includes its uid for later edits.'),
+        'input_schema': {'type': 'object', 'properties': {
+            'id': {'type': 'string'},
+            'params': {'type': 'object', 'description': 'Input values by key, e.g. {"length": 9}'},
+            'placement': {'type': 'string', 'enum': ['overlay', 'separate'], 'description': "On the price chart or in its own pane; default the indicator's usual place"},
+        }, 'required': ['id']},
+    },
+    {
+        'name': 'edit_indicator',
+        'description': 'Change the settings of an indicator already on the chart (uid from list_chart_indicators or add_indicator).',
+        'input_schema': {'type': 'object', 'properties': {'uid': {'type': 'string'}, 'params': {'type': 'object'}}, 'required': ['uid', 'params']},
+    },
+    {
+        'name': 'remove_indicator',
+        'description': 'Remove one indicator from the chart, by uid (preferred) or by indicator id.',
+        'input_schema': {'type': 'object', 'properties': {'uid': {'type': 'string'}, 'id': {'type': 'string'}}},
+    },
+    {
+        'name': 'list_chart_indicators',
+        'description': "The open chart's symbol, timeframe and indicators (uid, id, settings). Read-only.",
+        'input_schema': {'type': 'object', 'properties': {}},
+    },
+    {
+        'name': 'clear_indicators',
+        'description': 'Remove every indicator from the chart, only when the owner asked for it. The owner is asked to confirm first.',
+        'input_schema': {'type': 'object', 'properties': {}},
+    },
+    {
+        'name': 'compare_symbol',
+        'description': "Open a chart window comparing two symbols as % change (base defaults to the chart's symbol, timeframe to 1D).",
+        'input_schema': {'type': 'object', 'properties': {'symbol': _SYMBOL, 'base': _SYMBOL, 'timeframe': _TIMEFRAME}, 'required': ['symbol']},
+    },
+    {
+        'name': 'add_to_watchlist',
+        'description': 'Add a symbol to the watchlist.',
+        'input_schema': {'type': 'object', 'properties': {'symbol': _SYMBOL}, 'required': ['symbol']},
+    },
+    {
+        'name': 'remove_from_watchlist',
+        'description': 'Remove a symbol from the watchlist.',
+        'input_schema': {'type': 'object', 'properties': {'symbol': _SYMBOL}, 'required': ['symbol']},
+    },
+    {
+        'name': 'create_alert',
+        'description': 'Set a price alert: notify when the symbol trades above or below a price.',
+        'input_schema': {'type': 'object', 'properties': {
+            'symbol': _SYMBOL, 'condition': {'type': 'string', 'enum': ['above', 'below']}, 'price': {'type': 'number'}, 'note': {'type': 'string'},
+        }, 'required': ['symbol', 'condition', 'price']},
+    },
+    {
+        'name': 'draw_level',
+        'description': "Draw a horizontal line (support, resistance, a target) on a symbol's chart (default the open chart), with an optional short label.",
+        'input_schema': {'type': 'object', 'properties': {'symbol': _SYMBOL, 'price': {'type': 'number'}, 'label': {'type': 'string'}}, 'required': ['price']},
+    },
+    {
+        'name': 'open_page',
+        'description': 'Go to a page: home, invest, futures, macro, calendar, chart, chart/multi, chart/scripts, setups, research, flow, backtest, account, portfolio, trade, clients, prospect.',
+        'input_schema': {'type': 'object', 'properties': {'route': {'type': 'string'}}, 'required': ['route']},
+    },
+    {
+        'name': 'open_security',
+        'description': 'Open the security view on a symbol (overview, financials, news...), when the platform has it.',
+        'input_schema': {'type': 'object', 'properties': {'symbol': _SYMBOL, 'tab': {'type': 'string'}}, 'required': ['symbol']},
+    },
+    {
+        'name': 'run_backtest',
+        'description': "Open the Backtest page with rules built from the open chart's symbol, timeframe and indicators.",
+        'input_schema': {'type': 'object', 'properties': {}},
+    },
+    {
+        'name': 'set_theme',
+        'description': 'Switch the platform between dark and light.',
+        'input_schema': {'type': 'object', 'properties': {'theme': {'type': 'string', 'enum': ['dark', 'light']}}, 'required': ['theme']},
+    },
+    {
+        'name': 'open_settings',
+        'description': 'Open the Settings window, optionally at a section ("ai", "alerts", "connection", or a heading such as "Trading").',
+        'input_schema': {'type': 'object', 'properties': {'section': {'type': 'string'}}},
+    },
+]
+UI_TOOL_NAMES = {t['name'] for t in UI_TOOLS}
+#: Seconds the browser has to carry out one action (clear_indicators waits for the owner to confirm).
+UI_ACTION_TIMEOUT = 60
+
+UI_PROMPT = """
+
+You can operate the platform for the owner with the platform tools (open_chart, set_timeframe, find_indicators, \
+add_indicator, edit_indicator, remove_indicator, create_alert, draw_level and more). The platform window carries out \
+each one and tells you the result; chain several in a row when a request needs it. "My chart" means the chart in the \
+platform context (its symbol and timeframe); list_chart_indicators shows what is on it. For indicator requests: switch \
+the timeframe first if the owner named one, then find_indicators (with that timeframe) to get a real id, then \
+add_indicator without params so it gets the recommended settings for that timeframe (pass params only for values the \
+owner asked for). For a generic "momentum indicator", RSI is a sound default; pick one sensible choice rather than \
+adding several. Ask one short question only when the request is genuinely ambiguous (for example no symbol given and \
+no chart open). Afterwards answer in 2-4 short lines: what changed, why those settings in one line (a rule of thumb, \
+not optimised), and that the Undo button under this message reverts it. If an action fails, say so plainly. These \
+tools never trade: nothing here can place, prepare or cancel an order, so if asked, say the owner does that on the \
+Trade page themselves."""
+
 TOOL_LABELS = {
+    **{t['name']: 'Updating the platform' for t in UI_TOOLS},
+    'find_indicators': 'Looking up indicators', 'list_chart_indicators': 'Reading your chart',
     'get_quotes': 'Getting live quotes', 'get_price_history': 'Reading price history', 'get_data_sources': 'Checking data sources', 'get_news': 'Reading the news',
     'get_options_flow': 'Checking options flow', 'get_insider_trades': 'Checking insider trades',
     'get_company_financials': 'Reading SEC financials', 'get_macro_snapshot': 'Checking the economy',
@@ -632,6 +773,45 @@ async def run_tool(ctx, block, actions):
         return {'type': 'tool_result', 'tool_use_id': block.id, 'is_error': True, 'content': f'Error: {err}'}
 
 
+_ui_waiting = {}  # call id -> Future the browser's ai.ui_result resolves
+
+
+async def run_ui_tool(block, emit):
+    """Asks the browser to carry out one platform action and waits for its result (or a timeout)."""
+    args = block.input if isinstance(block.input, dict) else None
+    if args is None:
+        return {'type': 'tool_result', 'tool_use_id': block.id, 'is_error': True, 'content': 'INVALID_JSON: the tool input could not be read; try again.'}
+    call_id = uuid.uuid4().hex[:12]
+    future = asyncio.get_running_loop().create_future()
+    _ui_waiting[call_id] = future
+    try:
+        await emit({'type': 'ui_action', 'callId': call_id, 'name': block.name, 'args': args})
+        result = await asyncio.wait_for(future, timeout=UI_ACTION_TIMEOUT)
+    except asyncio.TimeoutError:
+        return {'type': 'tool_result', 'tool_use_id': block.id, 'is_error': True,
+                'content': 'The platform window did not answer in time (it may be closed or busy), so this may not have happened. Tell the owner.'}
+    finally:
+        _ui_waiting.pop(call_id, None)
+    if not isinstance(result, dict):
+        result = {'ok': False, 'message': 'No result from the platform window'}
+    if not result.get('ok'):
+        return {'type': 'tool_result', 'tool_use_id': block.id, 'is_error': True, 'content': f"Not done: {str(result.get('message') or 'failed')[:500]}"}
+    reply = {'done': True, 'message': result.get('message'), 'undoable': bool(result.get('undoId'))}
+    if result.get('data') is not None:
+        reply['data'] = result['data']
+    return {'type': 'tool_result', 'tool_use_id': block.id, 'content': _clip(reply)}
+
+
+@handler('ai.ui_result')
+async def ui_result(ctx, msg):
+    """The browser's result for one platform action the model asked for (see run_ui_tool)."""
+    future = _ui_waiting.get(str(msg.get('callId') or ''))
+    if future is None or future.done():
+        return {'ok': False}
+    future.set_result(msg.get('result') if isinstance(msg.get('result'), dict) else None)
+    return {'ok': True}
+
+
 # ---------- Conversation loop ----------
 
 def _request_options(model):
@@ -662,14 +842,18 @@ def _friendly_api_error(err):
     return str(err)
 
 
-async def converse(ctx, messages, emit, tools=True, effort=None):
-    """Runs the model (and its tool calls) until it answers. Appends to `messages`; returns (text, actions)."""
+async def converse(ctx, messages, emit, tools=True, effort=None, ui=False):
+    """Runs the model (and its tool calls) until it answers. Appends to `messages`; returns (text, actions).
+    ui=True: the browser carries out platform actions itself (UI_TOOLS, results sent back) instead of ui_action."""
     model = settings.get('model', settings.DEFAULT_MODEL)
     opts = _request_options(model)
     if effort:
         opts['output_config'] = {'effort': effort}
     if tools:
-        opts['tools'] = TOOLS + [WEB_SEARCH_TOOL_BASIC if model == 'claude-haiku-5-5' else WEB_SEARCH_TOOL]
+        base = [t for t in TOOLS if t['name'] != 'ui_action'] + UI_TOOLS if ui else TOOLS
+        opts['tools'] = base + [WEB_SEARCH_TOOL_BASIC if model == 'claude-haiku-5-5' else WEB_SEARCH_TOOL]
+    if ui:
+        opts['system'] = SYSTEM_PROMPT + UI_PROMPT
     actions, answer = [], []
     json_retries = 0
     turn = 0
@@ -715,7 +899,13 @@ async def converse(ctx, messages, emit, tools=True, effort=None):
             break
         if response.stop_reason == 'max_tokens':
             raise EngineError('The AI’s request was cut off. Please try again.')
-        results = await asyncio.gather(*(run_tool(ctx, b, actions) for b in tool_uses))
+        # Data tools run together; platform actions run one at a time, in the order the model asked (open, then add).
+        data_tools = [b for b in tool_uses if not (ui and b.name in UI_TOOL_NAMES)]
+        done = dict(zip((b.id for b in data_tools), await asyncio.gather(*(run_tool(ctx, b, actions) for b in data_tools))))
+        for b in tool_uses:
+            if b.id not in done:
+                done[b.id] = await run_ui_tool(b, emit)
+        results = [done[b.id] for b in tool_uses]
         messages.append({'role': 'user', 'content': list(results)})
         if answer and not answer[-1].endswith('\n'):
             answer.append('\n\n')
@@ -793,7 +983,7 @@ async def chat(ctx, msg):
     start = len(messages)
     messages.append({'role': 'user', 'content': content})
     try:
-        answer, actions = await converse(ctx, messages, emit)
+        answer, actions = await converse(ctx, messages, emit, ui=bool(msg.get('ui_actions')))
     except Exception:
         del messages[start:]  # keep the conversation valid for the next question
         raise

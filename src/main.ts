@@ -2,7 +2,9 @@ import './installLocaleGuard';
 import './style.css';
 import { createChartPage } from './pages/chartPage';
 import { createHomePage } from './pages/homePage';
-import { createAssistant, type AssistantAction } from './ai/assistant';
+import { createAssistant, type AssistantAction, type AssistantActions } from './ai/assistant';
+import { confirmationFor, runAction as runUiAction, undoActions, type ActionResult } from './ai/actions';
+import { createActionEnv } from './ai/actionsEnv';
 import { setAssistantHub } from './ai/hub';
 import { guessMarket, type MarketRef } from './data/quotes';
 import { LATEST_HELPER_VERSION, helper } from './data/schwab';
@@ -185,6 +187,44 @@ try {
   // Older browsers: the pop-out window simply can't control the main window.
 }
 
+/** The AI's platform actions (src/ai/actions.ts) carried out on this window's state and pages. */
+const actionEnv = createActionEnv({
+  syncChart: () => chartPage?.sync(),
+  openChart,
+  navigate: (route) => (location.hash = `#${route}`),
+  currentRoute: routeKey,
+  routes: ROUTES,
+});
+const localActions: AssistantActions = {
+  run: (name, args) => runUiAction(actionEnv, name, args),
+  confirmation: (name, args) => confirmationFor(actionEnv, name, args),
+  undo: undoActions,
+};
+
+/** In the pop-out AI window the main platform window carries out the actions; this asks it and waits for the answer. */
+function channelActions(ch: BroadcastChannel): AssistantActions {
+  const waiting = new Map<string, (value: unknown) => void>();
+  ch.addEventListener('message', (e) => {
+    const d = e.data as { kind?: string; reqId?: string; value?: unknown };
+    if (d?.kind === 'reply' && d.reqId && waiting.has(d.reqId)) {
+      waiting.get(d.reqId)!(d.value);
+      waiting.delete(d.reqId);
+    }
+  });
+  const ask = <T>(msg: Record<string, unknown>, fallback: T, ms = 30000) =>
+    new Promise<T>((resolve) => {
+      const reqId = Math.random().toString(36).slice(2);
+      waiting.set(reqId, resolve as (v: unknown) => void);
+      ch.postMessage({ ...msg, reqId });
+      setTimeout(() => waiting.delete(reqId) && resolve(fallback), ms);
+    });
+  return {
+    run: (name, args) => ask<ActionResult>({ kind: 'run', name, args }, { ok: false, name, message: 'The main platform window didn’t answer (is it open?), so nothing changed' }),
+    confirmation: (name, args) => confirmationFor(actionEnv, name, args),
+    undo: (ids) => ask<number>({ kind: 'undo', ids }, 0),
+  };
+}
+
 if (isAiWindow) {
   // The assistant in its own window: actions are carried out by the main platform window.
   document.title = 'AI Assistant · Trading Platform';
@@ -193,6 +233,7 @@ if (isAiWindow) {
     mode: 'window',
     getContext: () => ({ page: 'AI assistant window', symbol: state.symbols[state.provider] ?? '', timeframe: state.timeframe }),
     onAction: (a) => channel?.postMessage(a),
+    actions: channel ? channelActions(channel) : undefined,
   });
   document.querySelector('#app')!.append(assistant.el);
   assistant.focus();
@@ -248,6 +289,7 @@ if (isAiWindow) {
     getContext: aiContext,
     getSuggestions: () => PAGE_SUGGESTIONS[routeKey()] ?? [],
     onAction: runAction,
+    actions: localActions,
     onClose: () => toggleAssistant(false),
     onPopOut: () => {
       window.open(`${location.pathname}#ai-window`, 'tp-ai', 'popup,width=520,height=860');
@@ -255,7 +297,13 @@ if (isAiWindow) {
     },
   });
   drawer.append(assistant.el);
-  channel?.addEventListener('message', (e) => runAction(e.data as AssistantAction));
+  // The pop-out AI window's requests: platform actions (with a reply) or, from older pages, one-way actions.
+  channel?.addEventListener('message', async (e) => {
+    const d = e.data as { kind?: string; reqId?: string; name?: string; args?: Record<string, unknown>; ids?: string[] };
+    if (d?.kind === 'run') channel?.postMessage({ kind: 'reply', reqId: d.reqId, value: await localActions.run(String(d.name), d.args ?? {}) });
+    else if (d?.kind === 'undo') channel?.postMessage({ kind: 'reply', reqId: d.reqId, value: await localActions.undo(d.ids ?? []) });
+    else if (!d?.kind) runAction(e.data as AssistantAction);
+  });
 
   const healthDot = h('span', { class: 'health-badge', 'aria-hidden': 'true' });
   const healthBtn = h(

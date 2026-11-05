@@ -8148,3 +8148,45 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
     gap: 0;
   }
 }
+
+/* ---------- AI actions: compact lines under the assistant's message (src/ai/assistant.ts stepsLine) ---------- */
+.ai-msg-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ai-steps {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  padding: 2px 2px 0;
+  overflow-wrap: anywhere;
+}
+.ai-step.ok {
+  color: var(--text);
+}
+.ai-step.failed {
+  color: var(--down-text);
+}
+.ai-step.undone {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+.ai-undo {
+  background: none;
+  border: 1px solid var(--ai-border);
+  color: var(--ai);
+  border-radius: 6px;
+  padding: 0 8px;
+  font: inherit;
+  cursor: pointer;
+}
+.ai-undo:hover {
+  background: var(--ai-hover);
+}
+.ai-undo:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

@@ -47,6 +47,10 @@ export const PROSPECT_SOURCES_HELPER_VERSION = 41;
 export const prospectSourcesReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_SOURCES_HELPER_VERSION;
 /** Prospect contacts (website crawler, review queue, change watcher, AI profile, do-not-contact) need at least this version. */
 export const PROSPECT_CONTACTS_HELPER_VERSION = 41;
+/** The AI assistant operates the platform (actions carried out here, results sent back with ai.ui_result). */
+export const AI_ACTIONS_HELPER_VERSION = 42;
+/** True when the connected helper lets the AI chain platform actions (v42+); older ones use the one-way ui_action. */
+export const aiActionsReady = () => !helper.tooOld && (helper.version ?? 0) >= AI_ACTIONS_HELPER_VERSION;
 const PROSPECT_CONTACTS_REQUEST = /^prospect\.(crawl|contacts|email_check|ai_profile|watch\.|review\.|optout\.|contacts_export|contacts_settings)/;
 /** True when the connected helper has prospect contacts (v41+). */
 export const prospectContactsReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_CONTACTS_HELPER_VERSION;
@@ -184,6 +188,8 @@ export interface FiredAlert {
 
 /** Progress sent by a long-running engine request before its final reply (e.g. AI text as it is written). */
 export type EngineEvent = { type: 'text'; text: string } | { type: 'status'; text: string };
+/** The AI asks the platform to do something during ai.chat (helper v42+); answered with ai.ui_result {callId, result}. */
+export type UiActionEvent = { type: 'ui_action'; callId: string; name: string; args: Record<string, unknown> };
 
 /** One shared connection to the helper, reused by charts, the watchlist and the home page. */
 class HelperConnection {
@@ -299,6 +305,7 @@ class HelperConnection {
     if (type.startsWith('prospect.sources.') && (this.version ?? 0) < PROSPECT_SOURCES_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (SMART_MONEY_REQUESTS.has(type) && (this.version ?? 0) < SMART_MONEY_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (PROSPECT_CONTACTS_REQUEST.test(type) && (this.version ?? 0) < PROSPECT_CONTACTS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if (type === 'ai.ui_result' && (this.version ?? 0) < AI_ACTIONS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('scanner.') || (type === 'ai.insight' && NEW_INSIGHTS.has(String(msg.topic)))) && (this.version ?? 0) < SCANNER_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     const id = this.nextId++;
     return new Promise<HelperMessage>((resolve, reject) => {
