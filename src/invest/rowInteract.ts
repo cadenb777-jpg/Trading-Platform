@@ -16,6 +16,7 @@
  */
 import { pct, rangeBar } from '../ui/charts';
 import { formatPrice, h, toast } from '../ui/dom';
+import { actionBar, closeGoMenu, openGoMenu, type GoAction } from './goTo';
 import { lineChart, valueAt } from './miniChart';
 import { seriesCache, seriesKey, type MiniItem, type Series } from './miniData';
 import { RANGES, createIntent, lowHigh, range52, rangeChange, rebase, sliceRange, stepRange, type ChangeMode, type Range } from './miniMath';
@@ -124,10 +125,18 @@ function drawView(box: HTMLElement, item: MiniItem, range: Range, size: 'pop' | 
       if (hl) lines.push(h('div', { class: 'mc-hl small' }, h('span', {}, h('span', { class: 'muted' }, 'Range high '), fmtValue(item, hl.high)), h('span', {}, h('span', { class: 'muted' }, 'Range low '), fmtValue(item, hl.low))));
     }
     const source = s && !(s instanceof Error) && last ? `${s.source} · as of ${day(last[0])}` : s === null && key ? 'Loading…' : '';
-    const foot = h('div', { class: 'mc-foot muted tiny' }, source, size === 'pop' ? h('span', { class: 'mc-hint' }, lastPointer === 'touch' ? 'Tap again to open' : 'Click to open · Shift+click to compare') : null);
+    const foot = h('div', { class: 'mc-foot muted tiny' }, source, size === 'pop' ? h('span', { class: 'mc-hint' }, lastPointer === 'touch' ? 'Tap the row again to open' : 'Click: open · right-click: all places') : null);
 
     if (size === 'pop')
-      box.replaceChildren(head, key && !(s instanceof Error) ? seg : '', chart, ...lines, foot, h('span', { class: 'sr-only' }, `${shownEl && meta.get(shownEl)?.board.expandable ? 'Space expands the row, ' : ''}Shift+Enter adds it to Compare, Left and Right arrows change the range.`));
+      box.replaceChildren(
+        head,
+        key && !(s instanceof Error) ? seg : '',
+        chart,
+        ...lines,
+        actionBar(goActions(item, true), { title: item.label }),
+        foot,
+        h('span', { class: 'sr-only' }, `${shownEl && meta.get(shownEl)?.board.expandable ? 'Space expands the row, ' : ''}Shift+Enter adds it to Compare, the Menu key lists every place to go, ${shortcutWords(item)}Left and Right arrows change the range.`),
+      );
     // Expanded: the row above already names it, so the range switch takes the title's place.
     else box.replaceChildren(h('div', { class: 'mc-big-chart' }, h('div', { class: 'mc-head' }, key && !(s instanceof Error) ? seg : h('span'), head.lastChild!), chart), h('div', { class: 'mc-big-side' }, ...lines, ...(extra?.() ?? []), foot));
     if (size === 'pop' && shownEl) place(shownEl);
@@ -145,6 +154,41 @@ function drawView(box: HTMLElement, item: MiniItem, range: Range, size: 'pop' | 
       (err: Error) => err?.name !== 'AbortError' && paint(err instanceof Error ? err : new Error(String(err))),
     );
   return key;
+}
+
+// ---------- Go to (goTo.ts) ----------
+
+/**
+ * An item's Go-to list with Compare wired to this page's compare panel. From the popover every action closes it
+ * first (Compare excepted). Items without a list get "Open" and Compare.
+ */
+function goActions(item: MiniItem, fromPop: boolean): GoAction[] {
+  const list = item.actions?.() ?? [{ id: 'open', label: 'Open', icon: 'popout', hint: 'Open the full view', run: item.open } as GoAction, { id: 'compare' } as GoAction];
+  const inCompare = compare.some((c) => c.key === item.key);
+  return list.map((a) => {
+    if (a.id === 'compare') return { ...a, label: inCompare ? 'Comparing' : 'Compare', icon: 'positioning', hint: inCompare ? 'Remove from Compare' : 'Add to Compare (Shift+click a row)', pressed: inCompare, run: () => (toggleCompare(item), expanded?.item.key === item.key && drawBig(), shownEl && show(shownEl)) };
+    return fromPop ? { ...a, run: () => (hide(), a.run()) } : a;
+  });
+}
+
+const shortcutWords = (item: MiniItem) => {
+  const keys = (item.actions?.() ?? []).filter((a) => a.key).map((a) => `${a.key!.toUpperCase()} ${a.label}`);
+  return keys.length ? `${keys.join(', ')}, ` : '';
+};
+
+/** F / N / R / C on a focused row (or while its popover is open): the matching Go-to action. */
+function runShortcut(item: MiniItem, key: string): boolean {
+  const a = goActions(item, true).find((x) => x.key === key.toLowerCase());
+  if (!a) return false;
+  a.run();
+  return true;
+}
+
+function openMenuFor(el: HTMLElement, at?: { x: number; y: number }) {
+  const m = meta.get(el);
+  if (!m) return;
+  hide();
+  openGoMenu(goActions(m.item, false), at ?? el, m.item.label, el);
 }
 
 // ---------- popover ----------
@@ -171,7 +215,14 @@ function popEl() {
   }, true);
   window.addEventListener('scroll', (e) => shownEl && !(e.target instanceof Node && pop!.contains(e.target)) && hide(true), true);
   window.addEventListener('resize', () => hide());
-  document.addEventListener('keydown', (e) => e.key === 'Escape' && shownEl && (hide(), e.stopPropagation()));
+  document.addEventListener('keydown', (e) => {
+    if (!shownEl) return;
+    if (e.key === 'Escape') return (hide(), e.stopPropagation());
+    const t = e.target as HTMLElement | null;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || t?.closest?.('input, textarea, select, [contenteditable]') || rowOf(t)) return; // a focused row handles its own keys
+    const m = meta.get(shownEl);
+    if (m && e.key.length === 1 && runShortcut(m.item, e.key)) e.preventDefault();
+  });
   return pop;
 }
 
@@ -281,15 +332,9 @@ function drawBig() {
   const { item, board, box } = expanded;
   drawView(box, item, board.range(), 'big', (r) => (board.setRange(r), drawBig()), () => {
     const facts = item.facts?.() ?? [];
-    const inCompare = compare.some((c) => c.key === item.key);
     return [
       facts.length ? h('dl', { class: 'mc-facts' }, ...facts.flatMap((f) => [h('dt', { class: 'muted small' }, f.label), h('dd', {}, f.value)])) : '',
-      h(
-        'div',
-        { class: 'mc-actions' },
-        h('button', { type: 'button', class: 'btn primary small', onclick: () => item.open() }, 'Open full view'),
-        h('button', { type: 'button', class: 'btn small', 'aria-pressed': String(inCompare), onclick: () => (toggleCompare(item), drawBig()) }, inCompare ? 'Remove from compare' : 'Add to compare'),
-      ),
+      actionBar(goActions(item, false), { title: item.label, tabbable: true }),
     ];
   });
 }
@@ -471,6 +516,13 @@ function wire(container: HTMLElement) {
   popEl();
   // Shift+click picks rows for Compare; without this the browser would also select the text between clicks.
   container.addEventListener('mousedown', (e) => e.shiftKey && rowOf(e.target) && e.preventDefault());
+  // Right-click (or long-press menu): every place this row can go.
+  container.addEventListener('contextmenu', (e) => {
+    const el = rowOf(e.target);
+    if (!el || !meta.has(el) || (e.target as Element).closest('a, input, textarea')) return;
+    e.preventDefault();
+    openMenuFor(el, { x: e.clientX, y: e.clientY });
+  });
   container.addEventListener('pointerover', (e) => {
     if (e.pointerType === 'touch') return;
     const el = rowOf(e.target);
@@ -524,6 +576,11 @@ function wire(container: HTMLElement) {
       } else if (e.key === 'Enter' && e.shiftKey) {
         toggleCompare(m.item);
         stop();
+      } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+        openMenuFor(el);
+        stop();
+      } else if (!e.shiftKey && e.key.length === 1 && runShortcut(m.item, e.key)) {
+        stop();
       } else if (e.key === 'Escape' && !shownEl && expanded?.el === el) {
         collapse();
         stop();
@@ -562,5 +619,6 @@ export function resetInteractions() {
 /** Closes the popover and the expanded row but keeps Compare (it works across sections). */
 export function closeFloating() {
   hide();
+  closeGoMenu();
   collapse();
 }

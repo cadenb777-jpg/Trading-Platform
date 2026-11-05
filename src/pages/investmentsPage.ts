@@ -10,6 +10,7 @@ import { createBondsView } from '../invest/bondsView';
 import { BOARDS, CRYPTO_COINS, SECTIONS, searchCatalog, type Section } from '../invest/catalog';
 import { boardInsight, boardItem, boardTable, errorBox, loadBoard, openSymbol, showSymbol, skeletonBoard, tone, type BoardRow, type InvestContext } from '../invest/shared';
 import { closeFloating, interactive, resetInteractions, type MiniItem } from '../invest/rowInteract';
+import { coinActions } from '../invest/goTo';
 import { pageFrame, pct } from '../ui/charts';
 import { activatable, formatPrice, h } from '../ui/dom';
 import { tableTools } from '../ui/tableTools';
@@ -197,7 +198,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
     const draw = (rows: Map<string, BoardRow>) => {
       if (section !== id) return;
       ai.setRows(rows);
-      boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbol(s, l, rows.get(s), ctx))).filter((x): x is HTMLElement => !!x));
+      boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbol(s, l, rows.get(s), ctx), ctx)).filter((x): x is HTMLElement => !!x));
     };
     loadBoard(groups)
       .then(draw)
@@ -226,7 +227,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
                   h('td', {}, formatPrice(m.price)),
                   h('td', { class: tone(m.change) }, pct(m.change)),
                 ));
-                entries.push([tr, { ...boardItem(m.symbol, m.name || m.symbol, row, () => openSymbol(m.symbol, m.name || m.symbol, row, ctx)), sub: m.symbol }]);
+                entries.push([tr, { ...boardItem(m.symbol, m.name || m.symbol, row, () => openSymbol(m.symbol, m.name || m.symbol, row, ctx), ctx), sub: m.symbol }]);
                 return tr;
               }),
             ),
@@ -258,7 +259,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
             h('td', { class: 'muted', title: 'Waiting for the first price from Coinbase' }, '—'),
           ));
           rows.set(symbol, tr);
-          entries.push([tr, { key: symbol, label, sub: symbol, source: { kind: 'coin', symbol }, mode: 'price', open: () => ctx.openChart({ provider: 'coinbase', symbol }) }]);
+          entries.push([tr, { key: symbol, label, sub: symbol, source: { kind: 'coin', symbol }, mode: 'price', open: () => ctx.openChart({ provider: 'coinbase', symbol }), actions: () => coinActions(symbol, label, ctx) }]);
           return tr;
         }),
       ),
@@ -284,7 +285,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
       });
     });
     loadBoard(BOARDS.crypto)
-      .then((r) => section === 'crypto' && (ai.setRows(r), true) && boards.replaceChildren(...BOARDS.crypto.map((g) => boardTable(g, r, (s, l) => openSymbol(s, l, r.get(s), ctx)))))
+      .then((r) => section === 'crypto' && (ai.setRows(r), true) && boards.replaceChildren(...BOARDS.crypto.map((g) => boardTable(g, r, (s, l) => openSymbol(s, l, r.get(s), ctx), ctx))))
       .catch((err) => section === 'crypto' && boards.replaceChildren(errorBox(err, renderCrypto)));
   }
 
@@ -300,7 +301,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
         .then((rows) => {
           const boards = view.querySelector('.inv-boards');
           if (boards && section !== 'crypto' && section !== 'bonds' && section !== 'alts' && BOARDS[section] === groups)
-            boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbol(s, l, rows.get(s), ctx))).filter((x): x is HTMLElement => !!x));
+            boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbol(s, l, rows.get(s), ctx), ctx)).filter((x): x is HTMLElement => !!x));
         })
         .catch(() => {});
     }

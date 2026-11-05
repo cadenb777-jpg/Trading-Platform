@@ -56,6 +56,37 @@ What was removed: the ticker card on board rows (the popover replaces it there),
 (the popover's request is the same alts.fund reply, so resting on a card still preloads the fund page) and the tile
 tooltip "Click for the full history".
 
+## 2b. "Go to": each row leads into the rest of the platform
+
+Owner's feedback: he likes the chart on click and wants each row to lead on, "go to the financials or research page,
+so it's more interactive with the site". Options weighed:
+
+| Option | Verdict |
+|---|---|
+| A column of action icons on every row | Rejected: 8+ icons x 40 rows is the clutter the principles forbid, and it fights the one focal point. |
+| Only a right-click menu | Rejected alone: invisible on touch and to people who don't know to right-click. |
+| A few links in the popover only | Not enough: keyboard and touch users live in the expanded row. |
+| **One list, shown three ways (chosen)** | The same ordered list (src/invest/goTo.ts) appears as up to 5 labelled icon buttons + "More" in the popover and the expanded row, and in full in the right-click / Menu-key / Shift+F10 / ⋯ menu. One mental model; nothing extra on the rows themselves. |
+
+What the list holds, best first (the first five become buttons, the rest go under More). The security view is used
+when this build has it (`openSecurity(symbol, code)` from src/security/open.ts, found at build time); until then each
+item falls back to the page that already does that job, and items with no page are left out rather than dead:
+
+| Kind | Buttons | More | Fallback without the security view |
+|---|---|---|---|
+| Stock | Overview (DES), Chart (GP, key C), Financials (FA, key F), News (CN, key N), Research (key R) | Holders (HDS), Options (OMON), Dividends (DVD), Chart page, Compare, Watchlist, Alert, Ask AI, Journal (when that route exists) | DES = the symbol window; GP = Chart page; FA = Research > Financials; CN = Google News (new tab); HDS = Flow > Insiders; OMON = Flow > Options; DVD hidden |
+| ETF / fund | Overview, Chart, News, Dividends, Compare | Holders, Options, Chart page, Watchlist, Alert, Ask AI, Journal | as above |
+| Index | Overview, Chart, News, Compare, Ask AI | Chart page, Watchlist, Alert | as above |
+| Future | Chart, Futures page, Ask AI | | |
+| Coin | Chart, Compare, Watchlist, Alert, Ask AI | | |
+| Rate (FRED) | Full history, Yield curve, Auctions, Compare, Ask AI | Macro page | |
+| Private fund | Fund detail, NAV history (chart window), SEC filings (EDGAR), Compare, Ask AI | Manager's stock, fund website | |
+
+Schwab reports ETFs as "EQUITY", so a fund is also recognised by its description (ETF, FUND, TRUST, iShares, SPDR ...).
+Shortcuts (F financials, N news, R research, C chart) work on a focused row and while its popover is open; each button
+shows its Bloomberg code as a small hint and its key in the tooltip (`aria-keyshortcuts`). Watchlist and Alert reuse the
+platform's own state and alert dialog; Ask AI prefills the assistant; nothing here trades.
+
 ## 3. Numbers
 
 Tabular numerals everywhere in the popover, expanded row and compare panel; signed changes (+/−, bp for yields); a
@@ -83,4 +114,17 @@ open (it carries a screen-reader hint for Space, Shift+Enter and the arrows). Th
 
 ## Results
 
-RESULTS_PLACEHOLDER
+Playwright against `vite preview` and the fake helper (pretend Schwab, SEC, FRED), dark and light, 1440 and 390:
+
+- Sweep: the largest section (Stocks, 39 rows) crossed down and back up (78 row crossings, 2 mouse steps each):
+  **0 history requests**, worst frame 33 ms, median 16.7 ms, no frame over 34 ms. Resting on one row: 1 request,
+  layout shift 0; coming back to it: 0 requests (cache).
+- Popover, 1M-5Y switch, Esc, focus-follows (`aria-describedby` set), ← / → range, Space expands, one expanded row at
+  a time, the expanded row stays under its row when sorted, Compare capped at 4 with a toast, click opens the full
+  view, touch: first tap popover / second tap opens; no horizontal page scroll at 390.
+- Go to: F and R from the popover / a focused row go to Research; right-click and Shift+F10 open the menu with focus
+  inside, Esc returns focus to the row; rates, funds, coins and futures show their own lists.
+- Fake data caveats: index history in the fake helper is scaled differently from its quote, so board %s for indexes are
+  huge there (not in real data); its ETF names are placeholders, so sector ETFs show the stock list in the test (real
+  Schwab descriptions say SPDR/ETF); Coinbase is unreachable from the test sandbox, so coin popovers show the error
+  state.

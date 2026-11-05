@@ -5,6 +5,7 @@
  */
 import { coinbase } from '../data/coinbase';
 import { engineRequest, schwab } from '../data/schwab';
+import type { GoAction } from './goTo';
 import { cleanPoints, createSeriesCache, needsLong, type ChangeMode, type Point, type Range } from './miniMath';
 
 export type MiniSource =
@@ -37,6 +38,8 @@ export interface MiniItem {
   format?: (v: number) => string;
   /** Extra facts for the expanded row (P/E, dividend yield, ...). */
   facts?: () => { label: string; value: string }[];
+  /** Where it leads in the rest of the platform (goTo.ts), best first. */
+  actions?: () => GoAction[];
 }
 
 const dateToUnix = (d: string) => Date.parse(`${d}T00:00:00Z`) / 1000;

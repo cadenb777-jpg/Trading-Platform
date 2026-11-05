@@ -72,6 +72,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   hover/focus 150 ms = mini chart popover (1M..5Y; a board's range = its sorted period column), click = full view
   (`openSymbol`: src/security/open.ts via import.meta.glob when present, else the symbol window), Space/chevron = expand
   in place (tableTools keeps `tt-follow` rows under their row), Shift+click = Compare (max 4). Maths/cache: miniMath.ts.
+  "Go to" (src/invest/goTo.ts): one ordered action list per kind (stock/fund/index/future/coin/rate/private fund), 5
+  buttons + More in the popover and expanded row, all of it on right-click/Menu key; security view tabs (DES GP FA CN
+  HDS OMON DVD) when present, else Chart/Research/Flow fallbacks; keys F N R C.
   Futures page (v31, read-only; src/pages/futuresPage.ts, #futures, engine/futures_market.py): futures.board = 39 markets in
   8 sectors from the static SPECS table (CME/ICE/Cboe contract specs, cited there: multiplier, tick value, month cycle,
   expiry rule, CFTC code; micros use the parent's COT), Schwab quotes for root symbols ("/ES"), 1w/1m/YTD and the σ move

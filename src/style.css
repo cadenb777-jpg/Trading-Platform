@@ -8760,6 +8760,65 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .cmp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmp-change { text-align: right; }
 
+/* "Go to": up to 5 labelled icon buttons (Bloomberg code as a small hint) and More; the same list in the ⋯ menu. */
+.inv-pop { width: 344px; }
+.go-bar { display: flex; gap: 2px; border-top: 1px solid var(--line); padding-top: var(--sp-2); }
+.inv-exp .go-bar { border-top: 0; padding-top: 0; flex-wrap: wrap; }
+.go-btn {
+  flex: 1 1 0;
+  min-width: 52px;
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  padding: var(--sp-1) 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: 1.2;
+  cursor: pointer;
+}
+.go-btn svg { color: var(--muted); }
+.go-btn:hover, .go-btn:focus-visible { background: var(--raised); }
+.go-btn:hover svg, .go-btn:focus-visible svg { color: var(--accent-text); }
+.go-btn[aria-pressed='true'] { background: var(--accent-soft); }
+.go-btn[aria-pressed='true'] svg { color: var(--accent-text); }
+.go-label { white-space: nowrap; }
+.go-code { color: var(--muted); font-size: 10px; letter-spacing: 0.04em; }
+.go-dots { font-size: 16px; line-height: 16px; color: var(--muted); }
+.go-menu {
+  position: fixed;
+  z-index: 45;
+  min-width: 220px;
+  display: grid;
+  padding: var(--sp-1);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  animation: inv-pop-in var(--dur-1) var(--ease);
+}
+.go-menu-title { padding: var(--sp-1) var(--sp-2); }
+.go-item {
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px var(--sp-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.go-item svg { color: var(--muted); }
+.go-item:hover, .go-item:focus-visible { background: var(--raised); outline: none; }
+.go-item:focus-visible { box-shadow: inset 0 0 0 1px var(--focus); }
+
 @media (max-width: 700px) {
   .inv-exp { grid-template-columns: 1fr; gap: var(--sp-3); max-width: calc(100vw - 56px); }
   .inv-cmp { left: var(--sp-2); right: var(--sp-2); bottom: 76px; width: auto; max-height: 60vh; }
@@ -8767,7 +8826,8 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 @media (prefers-reduced-motion: reduce) {
   .inv-pop,
   .inv-exp,
-  .inv-cmp { animation: none; }
+  .inv-cmp,
+  .go-menu { animation: none; }
   .inv-chev::before { transition: none; }
 }
 /* ===== end Investments interaction ===== */

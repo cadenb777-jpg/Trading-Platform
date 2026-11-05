@@ -16,6 +16,10 @@ import { BOARDS, MANAGER_SITES, PRIVATE_FUNDS, STRATEGIES, STRUCTURES, type Priv
 import { holdingStats, parseCsv, rowsToHoldings, totals, type AltHolding } from './holdings';
 import { boardInsight, boardTable, errorBox, factSheetLink, loadBoard, openSymbol, skeletonBoard, tone, type BoardRow, type InvestContext } from './shared';
 import { interactive, type MiniItem } from './rowInteract';
+import { aiAction, compareAction, type GoAction } from './goTo';
+import { seriesCache, seriesKey } from './miniData';
+import { openChartWindow } from '../ui/chartWindow';
+import { THEME } from '../ui/theme';
 
 type Tab = 'market' | 'funds' | 'search' | 'latest' | 'mine';
 const TABS: [Tab, string][] = [
@@ -179,7 +183,7 @@ export function createAltsView(ctx: InvestContext) {
             }),
           ),
         );
-        boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbol(s, l, rows.get(s), ctx))));
+        boards.replaceChildren(...groups.map((g) => boardTable(g, rows, (s, l) => openSymbol(s, l, rows.get(s), ctx), ctx)));
       })
       .catch((err) => {
         pulse.replaceChildren(errorBox(err, renderMarket));
@@ -265,13 +269,14 @@ export function createAltsView(ctx: InvestContext) {
    */
   function fundItem(f: PrivateFund): MiniItem {
     const navFmt = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
-    return {
+    const item: MiniItem = {
       key: `fund:${f.id}`,
       label: f.short,
       sub: f.name,
       mode: 'price',
       format: navFmt,
       open: () => openFund(f),
+      actions: () => fundActions(f, item, navFmt),
       source: {
         kind: 'points',
         id: `fund:${f.id}`,
@@ -289,6 +294,41 @@ export function createAltsView(ctx: InvestContext) {
         },
       },
     };
+    return item;
+  }
+
+  /** A fund card's "Go to": its page, the NAV line in a chart window, its SEC filings, Compare, the assistant. */
+  function fundActions(f: PrivateFund, item: MiniItem, navFmt: (v: number) => string): GoAction[] {
+    const navHistory: GoAction = {
+      id: 'nav',
+      label: 'NAV history',
+      icon: 'popout',
+      hint: 'The NAV line in a chart window (zoom, ranges, stats)',
+      run: () => {
+        const key = seriesKey(item.source, '5Y')!;
+        seriesCache.get(key).then(
+          (s) => openChartWindow({ title: `${f.short} NAV per share`, subtitle: s.source, format: navFmt, lines: [{ name: f.short, color: THEME.viz1, data: s.points.map(([time, value]) => ({ time, value })) }] }),
+          (err: Error) => toast(err.message),
+        );
+      },
+    };
+    const filings: GoAction = {
+      id: 'filings',
+      label: 'SEC filings',
+      icon: 'clients',
+      hint: 'The fund\'s filings on SEC EDGAR (new tab)',
+      run: () => window.open(`https://www.sec.gov/cgi-bin/browse-edgar?company=${encodeURIComponent(f.name)}&owner=include&count=40`, '_blank', 'noopener'),
+    };
+    const list: (GoAction | null)[] = [
+      { id: 'fund', label: 'Fund detail', icon: 'info', hint: 'Latest NAV, holdings, returns and filings', run: () => openFund(f) },
+      navHistory,
+      filings,
+      compareAction(),
+      aiAction(`Give me a rundown of ${f.name} (${f.short}, ${f.manager}): what it invests in, its latest NAV and performance, distributions, liquidity terms and main risks.`),
+      f.managerTicker ? { id: 'manager', label: `${f.managerTicker} stock`, icon: 'chart', hint: `${f.manager}'s share price`, run: () => openSymbol(f.managerTicker!, f.manager, undefined, ctx) } : null,
+      f.site ? { id: 'site', label: 'Fund website', icon: 'popout', hint: f.site, run: () => window.open(f.site, '_blank', 'noopener') } : null,
+    ];
+    return list.filter((a): a is GoAction => !!a);
   }
 
   function snapshotPanel(snap: FundSnapshot): Node {

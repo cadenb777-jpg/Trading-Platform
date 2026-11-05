@@ -13,6 +13,7 @@ import type { BoardGroup } from './catalog';
 import { asOfStamp } from '../ui/dataHealth';
 import { rangeForColumn } from './miniMath';
 import { interactive, type MiniItem } from './rowInteract';
+import { openSecurity, symbolActions, symbolKind } from './goTo';
 
 export interface BoardRow {
   symbol: string;
@@ -59,6 +60,8 @@ const closeDate = (t: number) => new Date(t * 1000).toLocaleDateString('en-US', 
 export interface InvestContext {
   openChart(ref: MarketRef): void;
   openResearch(symbol: string): void;
+  /** Go to a page and call one of its methods (main.ts openPageWith), for the rows' "Go to" actions. */
+  openPage?(route: string, method?: string, ...args: unknown[]): void;
 }
 
 export const tone = (v: number | null | undefined): 'up' | 'down' | '' => (v == null || !Number.isFinite(v) || Math.abs(v) < 1e-9 ? '' : v > 0 ? 'up' : 'down');
@@ -92,24 +95,18 @@ function missingWhy(symbol: string, r: BoardRow | undefined) {
 }
 
 /**
- * Opens a symbol's full view: the security view when this build has one (src/security/open.ts, loaded on demand),
- * otherwise the symbol window below. Futures always use the window.
+ * Opens a symbol's full view: the security view when this build has one (goTo.ts), otherwise the symbol window below.
+ * Futures always use the window.
  */
-const securityModule = import.meta.glob<{ openSecurity?: (symbol: string, tab?: string) => unknown }>('../security/open.ts');
 export function openSymbol(symbol: string, label: string, row: BoardRow | undefined, ctx: InvestContext) {
-  const load = Object.values(securityModule)[0];
-  if (!load || symbol.startsWith('/')) return openSymbolDetail(symbol, label, row, ctx);
-  load()
-    .then(async (m) => {
-      if (typeof m.openSecurity !== 'function') throw new Error('no security view');
-      await m.openSecurity(symbol);
-    })
-    .catch(() => openSymbolDetail(symbol, label, row, ctx));
+  if (symbol.startsWith('/')) return openSymbolDetail(symbol, label, row, ctx);
+  openSecurity(symbol, undefined, () => openSymbolDetail(symbol, label, row, ctx));
 }
 
 /** What a board row shows in its mini chart and expanded view. */
-export function boardItem(symbol: string, label: string, r: BoardRow | undefined, open: () => void): MiniItem {
+export function boardItem(symbol: string, label: string, r: BoardRow | undefined, open: () => void, ctx?: InvestContext): MiniItem {
   return {
+    actions: ctx ? () => symbolActions(symbol, label, symbolKind(symbol, r?.assetType, r?.name), ctx, () => openSymbolDetail(symbol, label, r, ctx), r?.price) : undefined,
     key: symbol,
     label,
     sub: showSymbol(symbol),
@@ -130,7 +127,7 @@ export function boardItem(symbol: string, label: string, r: BoardRow | undefined
  * A market board: one row per symbol with price, today, 1 month, YTD, 1 year and a 3-month line. Rows follow the
  * page's interaction model (rowInteract.ts): hover for a mini chart, Space to expand, Shift+click to compare.
  */
-export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPick: (symbol: string, label: string) => void) {
+export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPick: (symbol: string, label: string) => void, ctx?: InvestContext) {
   const items = group.symbols.filter(([s]) => !group.hideEmpty || rows.get(s)?.price != null);
   if (!items.length) return h('div', { hidden: true });
   const id = `board:${group.title}`;
@@ -158,7 +155,7 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
           r?.tr1y != null && r.y1 != null ? h('td', { class: tone(r.tr1y), title: `Price ${pct(r.y1)} + dividends ${pct(r.tr1y - r.y1)}` }, pct(r.tr1y)) : naCell(symbol.startsWith('/') || symbol.startsWith('$') ? 'No dividends (index or future)' : 'Pays no dividend, or not enough history'),
           h('td', { class: 'inv-spark' }, r?.spark && r.spark.length > 1 ? sparkline(r.spark, null, up ? '#26a69a' : '#ef5350') : ''),
         ));
-        entries.push([tr, boardItem(symbol, label, r, () => onPick(symbol, label))]);
+        entries.push([tr, boardItem(symbol, label, r, () => onPick(symbol, label), ctx)]);
         return tr;
       }),
     ),

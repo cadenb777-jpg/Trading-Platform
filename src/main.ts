@@ -105,7 +105,7 @@ const pages: PageEntry[] = [
     label: 'Invest',
     icon: 'invest',
     title: 'Investments',
-    create: async () => (await import('./pages/investmentsPage')).createInvestmentsPage({ openChart, openResearch }),
+    create: async () => (await import('./pages/investmentsPage')).createInvestmentsPage({ openChart, openResearch, openPage: openPageWith }),
   },
   { route: 'futures', group: 'markets', label: 'Futures', icon: 'futures', title: 'Futures', create: async () => (await import('./pages/futuresPage')).createFuturesPage() },
   { route: 'macro', group: 'markets', label: 'Macro', icon: 'macro', title: 'Macro', create: async () => (await import('./pages/macroPage')).createMacroPage() },
