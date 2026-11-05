@@ -1,0 +1,58 @@
+{
+ "cursor": "",
+ "events": [
+  {
+   "event_ticker": "KXCPIYOY-26NOV",
+   "series_ticker": "KXCPIYOY",
+   "title": "CPI year-over-year in October 2026?",
+   "category": "Economics",
+   "markets": [
+    {
+     "ticker": "KXCPIYOY-26NOV-T3.0",
+     "title": "CPI year-over-year in October 2026?",
+     "yes_sub_title": "Above 3.0%",
+     "status": "active",
+     "yes_bid": 40,
+     "yes_ask": 44,
+     "last_price": 41,
+     "volume": 50000,
+     "close_time": "2026-11-12T13:30:00Z"
+    }
+   ]
+  },
+  {
+   "event_ticker": "KXSENATE-26",
+   "series_ticker": "KXSENATE",
+   "title": "Which party will win the Senate?",
+   "category": "Politics",
+   "markets": [
+    {
+     "ticker": "KXSENATE-26-R",
+     "title": "Which party will win the Senate?",
+     "yes_sub_title": "Republicans",
+     "status": "active",
+     "yes_bid": 55,
+     "yes_ask": 57,
+     "last_price": 56,
+     "volume": 900000,
+     "close_time": "2026-11-04T23:00:00Z"
+    }
+   ]
+  },
+  {
+   "event_ticker": "KXNFL-1",
+   "series_ticker": "KXNFL",
+   "title": "Who wins the game?",
+   "category": "Sports",
+   "markets": [
+    {
+     "ticker": "a",
+     "title": "x",
+     "status": "active",
+     "last_price": 50,
+     "volume": 5
+    }
+   ]
+  }
+ ]
+}

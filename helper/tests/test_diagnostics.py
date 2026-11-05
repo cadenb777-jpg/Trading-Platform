@@ -179,5 +179,50 @@ class Redaction(unittest.TestCase):
         self.assertEqual(out, {'appKey': '[redacted]', 'accountId': '••34', 'nested': [{'refresh_token': '[redacted]'}], 'aiKeySet': True, 'count': 3})
 
 
+BEA_ID = '7C3D2B1A-9F8E-4D6C-B5A4-0123456789AB'
+BLS_KEY = 'a1b2c3d4e5f60718293a4b5c6d7e8f90'
+EIA_KEY = 'EiaFakeKey0123456789AbCdEfGhIjKlMnOpQrSt'
+CENSUS_KEY = 'c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3'
+FINNHUB_KEY = 'fhFakeKey2026abcdefgh'
+DATA_KEYS = (BEA_ID, BLS_KEY, EIA_KEY, CENSUS_KEY, FINNHUB_KEY)
+DATA_LINES = [
+    f'GET https://apps.bea.gov/api/data/?UserID={BEA_ID}&method=GetData&TableName=T10102 failed',
+    f'POST https://api.bls.gov/publicAPI/v2/timeseries/data/ body seriesid=CUUR0000SA0&registrationkey={BLS_KEY}',
+    f'BLS said: The key provided by the User is invalid. registrationkey={BLS_KEY}',
+    f'GET https://api.eia.gov/v2/seriesid/PET.RWTC.D?api_key={EIA_KEY}&length=400 -> 403',
+    f'api_key={EIA_KEY} rejected',
+    f'GET https://api.census.gov/data/timeseries/eits/marts?get=cell_value&for=us:*&key={CENSUS_KEY} -> Invalid Key',
+    f'GET https://finnhub.io/api/v1/stock/recommendation?symbol=AAPL&token={FINNHUB_KEY} -> 401',
+    f'BEA: UserID={BEA_ID} is not valid; also {{"UserID": "{BEA_ID}"}}',
+]
+
+
+class DataKeyRedaction(unittest.TestCase):
+    """The free data keys (BEA, BLS, EIA, Census, Finnhub) never reach the diagnostics file, saved or not."""
+
+    def test_patterns_mask_keys_in_urls_and_pairs_without_knowing_them(self):
+        for line in DATA_LINES:
+            out = diagnostics.redact_text(line, [], set())
+            for key in DATA_KEYS:
+                self.assertNotIn(key, out, line)
+        self.assertIn('apps.bea.gov/api/data/?[query removed]', diagnostics.redact_text(DATA_LINES[0], [], set()))
+
+    def test_a_bare_bea_user_id_is_masked(self):
+        self.assertEqual(diagnostics.redact_text(f'BEA user {BEA_ID} not valid', [], set()), 'BEA user [uuid] not valid')
+
+    def test_saved_keys_are_masked_wherever_they_appear(self):
+        old = settings._cache
+        settings._cache = {'bea_key': BEA_ID, 'bls_key': BLS_KEY, 'eia_key': EIA_KEY, 'census_key': CENSUS_KEY, 'finnhub_key': FINNHUB_KEY}
+        try:
+            secrets = diagnostics.known_secrets()
+            for key in DATA_KEYS:
+                self.assertIn(key, secrets)
+            text = json.dumps(diagnostics.redact({'log': [f'odd echo {k} here' for k in DATA_KEYS], 'errors': DATA_LINES}, secrets, set()))
+            for key in DATA_KEYS:
+                self.assertNotIn(key, text)
+        finally:
+            settings._cache = old
+
+
 if __name__ == '__main__':
     unittest.main()

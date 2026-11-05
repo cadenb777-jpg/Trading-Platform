@@ -4,7 +4,7 @@
  * the reason), and says where every figure comes from and when.
  */
 import { combineHoldings, myPortfolios } from '../portfolio/account';
-import { engineRequest } from '../data/schwab';
+import { engineRequest, worldReady, worldAvailable } from '../data/schwab';
 import { NASDAQ_100 } from '../ui/command';
 import { h } from '../ui/dom';
 import { tabDef, type SecTab } from './codes';
@@ -129,6 +129,7 @@ export function desTab(ctx: TabCtx) {
             );
           })
         : null,
+      company ? slot(ctx, 'analyst views', () => analystPanel(s)) : null,
       company
         ? slot(ctx, 'company description', async () => {
             const d = await loadCompany(s);
@@ -175,12 +176,18 @@ export function desTab(ctx: TabCtx) {
           loadDividends(s).catch(() => null),
           loadScan().catch(() => null),
         ]);
-        const earn = setupsFor(scan, s).map((x) => x.setup.earnings).find((e) => e?.date);
+        let earn: { date?: string; time?: string } | null | undefined = setupsFor(scan, s).map((x) => x.setup.earnings).find((e) => e?.date);
+        if (!earn && worldReady()) {
+          // Finnhub's earnings calendar (free key) fills the date for companies the scanner doesn't cover.
+          const f = await engineRequest<{ events?: { date: string; hour: string }[] }>('finnhub.earnings', { symbol: s, days: 31 }, 30000).catch(() => null);
+          const next = f?.events?.[0];
+          if (next) earn = { date: next.date, time: next.hour };
+        }
         const dv = divs ? dividendSummary(divs.dividends, divs.closes[divs.closes.length - 1]?.[1] ?? null, new Date().toISOString().slice(0, 10)) : null;
         const lastDiv = divs?.dividends[divs.dividends.length - 1];
         return panel(
           'Events',
-          'Scanner earnings check (Nasdaq-100), SEC filings, Yahoo dividends',
+          'Scanner earnings check (Nasdaq-100) or Finnhub, SEC filings, Yahoo dividends',
           null,
           kvGrid([
             ['Next earnings', fig(earn?.date ? `${fmtDate(earn.date)}${earn.time ? ` (${earn.time})` : ''}` : DASH, { reason: NASDAQ_100.includes(s) ? 'the scanner has no date for it yet' : 'free data has no earnings calendar; the scanner checks Nasdaq-100 members only' })],
@@ -191,6 +198,38 @@ export function desTab(ctx: TabCtx) {
         );
       }),
     ),
+  );
+}
+
+interface AnalystReply {
+  needsKey?: boolean;
+  note?: string;
+  trends?: { period: string; strongBuy: number; buy: number; hold: number; sell: number; strongSell: number; total: number; consensus: string }[];
+  fetched?: number;
+}
+
+/** Analyst recommendation trends (ANR) from Finnhub's free tier; a note pointing to Settings without a key. */
+async function analystPanel(s: string): Promise<HTMLElement> {
+  if (!(await worldAvailable())) return panel('Analyst views', 'Finnhub', null, note('Analyst views need the updated helper (version 44 or newer).'));
+  const r = await engineRequest<AnalystReply>('finnhub.recommendations', { symbol: s }, 30000);
+  if (r.needsKey) return panel('Analyst views', 'Finnhub (free key)', null, note(r.note ?? 'Add a free Finnhub key in Settings > Data connections.'));
+  const t = r.trends?.[0];
+  if (!t) return panel('Analyst views', 'Finnhub', r.fetched ?? null, note('No analyst ratings published for this company.'));
+  const prev = r.trends?.[1];
+  const share = (n: number) => fmtPct(n / t.total, 0);
+  return panel(
+    'Analyst views',
+    `Finnhub (${t.total} analysts, month of ${t.period.slice(0, 7)})`,
+    r.fetched ?? null,
+    h('div', { class: 'sv-anr-bar', role: 'img', 'aria-label': `Strong buy ${t.strongBuy}, buy ${t.buy}, hold ${t.hold}, sell ${t.sell}, strong sell ${t.strongSell}` },
+      ...(['strongBuy', 'buy', 'hold', 'sell', 'strongSell'] as const).map((k) => h('span', { class: `sv-anr-${k}`, style: `width:${((t[k] / t.total) * 100).toFixed(1)}%` }))),
+    kvGrid([
+      ['Consensus', fig(t.consensus, { strong: true })],
+      ['Buy (incl. strong buy)', `${t.strongBuy + t.buy} · ${share(t.strongBuy + t.buy)}`],
+      ['Hold', `${t.hold} · ${share(t.hold)}`],
+      ['Sell (incl. strong sell)', `${t.sell + t.strongSell} · ${share(t.sell + t.strongSell)}`],
+      ['Month before', prev ? `${prev.consensus} (${prev.total} analysts)` : DASH],
+    ]),
   );
 }
 

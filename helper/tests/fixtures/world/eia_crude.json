@@ -1,0 +1,29 @@
+{
+ "response": {
+  "total": 3,
+  "dateFormat": "YYYY-MM-DD",
+  "frequency": "weekly",
+  "data": [
+   {
+    "period": "2026-10-31",
+    "series": "WCESTUS1",
+    "value": 421500,
+    "units": "MBBL"
+   },
+   {
+    "period": "2026-10-24",
+    "series": "WCESTUS1",
+    "value": 423100,
+    "units": "MBBL"
+   },
+   {
+    "period": "2026-10-17",
+    "series": "WCESTUS1",
+    "value": null,
+    "units": "MBBL"
+   }
+  ]
+ },
+ "request": {},
+ "apiVersion": "2.1.8"
+}

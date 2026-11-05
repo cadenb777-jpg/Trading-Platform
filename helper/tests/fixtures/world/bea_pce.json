@@ -1,0 +1,465 @@
+{
+ "BEAAPI": {
+  "Request": {
+   "RequestParam": []
+  },
+  "Results": {
+   "Statistic": "NIPA Table",
+   "UTCProductionTime": "2026-10-30T12:00:00.000",
+   "Dimensions": [],
+   "Data": [
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2024M09",
+     "DataValue": "120.000",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2024M10",
+     "DataValue": "120.300",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2024M11",
+     "DataValue": "120.601",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2024M12",
+     "DataValue": "120.902",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2025M01",
+     "DataValue": "121.205",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2025M02",
+     "DataValue": "121.508",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2025M03",
+     "DataValue": "121.811",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2025M04",
+     "DataValue": "122.116",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2025M05",
+     "DataValue": "122.421",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2025M06",
+     "DataValue": "122.727",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2025M07",
+     "DataValue": "123.034",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2025M08",
+     "DataValue": "123.342",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2025M09",
+     "DataValue": "123.650",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2025M10",
+     "DataValue": "123.959",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2025M11",
+     "DataValue": "124.269",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2025M12",
+     "DataValue": "124.580",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2026M01",
+     "DataValue": "124.891",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2026M02",
+     "DataValue": "125.203",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2026M03",
+     "DataValue": "125.516",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2026M04",
+     "DataValue": "125.830",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2026M05",
+     "DataValue": "126.145",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2026M06",
+     "DataValue": "126.460",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2026M07",
+     "DataValue": "126.776",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2026M08",
+     "DataValue": "127.093",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Personal consumption expenditures (PCE)",
+     "TimePeriod": "2026M09",
+     "DataValue": "127.411",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2024M09",
+     "DataValue": "121.000",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2024M10",
+     "DataValue": "121.302",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2024M11",
+     "DataValue": "121.606",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2024M12",
+     "DataValue": "121.910",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2025M01",
+     "DataValue": "122.215",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2025M02",
+     "DataValue": "122.520",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2025M03",
+     "DataValue": "122.826",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2025M04",
+     "DataValue": "123.133",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2025M05",
+     "DataValue": "123.441",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2025M06",
+     "DataValue": "123.750",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2025M07",
+     "DataValue": "124.059",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2025M08",
+     "DataValue": "124.369",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2025M09",
+     "DataValue": "124.680",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2025M10",
+     "DataValue": "124.992",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2025M11",
+     "DataValue": "125.305",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2025M12",
+     "DataValue": "125.618",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2026M01",
+     "DataValue": "125.932",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2026M02",
+     "DataValue": "126.247",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2026M03",
+     "DataValue": "126.562",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2026M04",
+     "DataValue": "126.879",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2026M05",
+     "DataValue": "127.196",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2026M06",
+     "DataValue": "127.514",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2026M07",
+     "DataValue": "127.833",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2026M08",
+     "DataValue": "128.152",
+     "NoteRef": "T20804"
+    },
+    {
+     "TableName": "T20804",
+     "SeriesCode": "x",
+     "LineNumber": "25",
+     "LineDescription": "PCE excluding food and energy",
+     "TimePeriod": "2026M09",
+     "DataValue": "128.473",
+     "NoteRef": "T20804"
+    }
+   ],
+   "Notes": []
+  }
+ }
+}

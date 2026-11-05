@@ -1,0 +1,13 @@
+{
+ "BEAAPI": {
+  "Request": {
+   "RequestParam": []
+  },
+  "Results": {
+   "Error": {
+    "APIErrorCode": "3",
+    "APIErrorDescription": "The UserId provided is not valid"
+   }
+  }
+ }
+}

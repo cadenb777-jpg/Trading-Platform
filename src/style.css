@@ -9279,8 +9279,7 @@ body[data-route='chart'] { background: var(--bg-chart); }
 .sp-alerts:empty { display: none; }
 /* ===== end design round 3 ===== */
 
-/* ===============================================================================================
-   App shell (src/main.ts, src/ui/nav.ts): a section rail, a sub-tab row with the command field, the status bar,
+/* ========================================================================================   App shell (src/main.ts, src/ui/nav.ts): a section rail, a sub-tab row with the command field, the status bar,
    the launchpad, function bars and Home's widget grid. Tokens only; both themes; phones get a bottom bar.
    ====================================================================================================== */
 
@@ -9939,3 +9938,114 @@ body.rail-collapsed .rail .health-nav .health-badge {
     margin-left: 0;
   }
 }
+=======
+/* ===== world macro, prediction markets, data connections (feat/world-macro) ===== */
+.macro-tabs { margin: 0 0 var(--sp-4); }
+.wm { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.wm-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: var(--sp-2) var(--sp-4); margin-bottom: var(--sp-3); }
+.wm-head .group-title { margin: 0; }
+.wm-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.wm-picker { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); align-items: center; margin-bottom: var(--sp-3); }
+.wm-pick-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); }
+.wm-pick-region { margin-right: var(--sp-1); }
+.wm-picker .chip { min-height: 28px; padding: 2px 10px; font-size: var(--fs-sm); }
+.wm-table-panel { padding: var(--sp-1) var(--sp-2); }
+.wm-wrap { max-height: none; }
+.wm-table th, .wm-table td { vertical-align: top; }
+.wm-col { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; }
+.wm-src { text-transform: none; letter-spacing: 0; }
+.wm-region th { text-align: left; background: var(--panel-2); color: var(--text-strong); font-size: var(--fs-xs); letter-spacing: 0.1em; padding: 6px 10px; }
+.wm-table .wm-country { text-align: left; font-weight: 400; white-space: nowrap; text-transform: none; letter-spacing: 0; font-size: var(--fs-base); color: var(--text); background: transparent; border-bottom: 1px solid var(--border); }
+.wm-cell { cursor: pointer; }
+.wm-cell:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.wm-fig { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
+.wm-sub { margin-top: 2px; }
+.wm-empty { color: var(--faint); cursor: default; }
+.wm-spark { flex: none; overflow: visible; }
+.wm-spark path { fill: none; stroke: var(--viz-1); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.wm-spark path.wm-forecast { stroke: var(--viz-2); stroke-dasharray: 2 2; }
+.wm-phase-expansion .wm-sub, .wm-phase-recovery .wm-sub { color: var(--up-text); }
+.wm-phase-downturn .wm-sub, .wm-phase-slowdown .wm-sub { color: var(--down-text); }
+.wm-errors .macro-error { margin: 0 0 var(--sp-2); }
+.wm-panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.wm-panel { min-width: 0; }
+.wm-panel .panel-head { flex-wrap: wrap; gap: var(--sp-2); }
+.wm-group { margin-top: var(--sp-2); }
+.wm-group-name { text-transform: uppercase; letter-spacing: 0.08em; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.wm-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 104px 72px; grid-template-areas: 'name val chg spark' 'when when when when'; align-items: center; column-gap: var(--sp-3); padding: 6px 4px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+.wm-row[tabindex] { cursor: pointer; }
+.wm-row[tabindex]:hover { background: var(--row-hover); }
+.wm-name { grid-area: name; min-width: 0; }
+.wm-val { grid-area: val; text-align: right; color: var(--text-strong); }
+.wm-chg { grid-area: chg; text-align: right; }
+.wm-row > :nth-child(4) { grid-area: spark; justify-self: end; }
+.wm-when { grid-area: when; }
+.wm-key p { margin: 0 0 var(--sp-2); }
+.wm-err { color: var(--warn-text); }
+
+/* Calendar: the Odds column */
+.cal-columns, .cal-row:not(.compact) { grid-template-columns: 76px 40px 52px minmax(0, 1fr) 76px 76px 76px minmax(150px, 200px); }
+.cal-columns span:nth-child(8) { text-align: right; }
+.cal-odds { text-align: right; font-size: var(--fs-sm); color: var(--accent-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cal-odds.muted { color: var(--faint); }
+@media (max-width: 700px) {
+  .cal-row:not(.compact) { grid-template-columns: 70px 40px repeat(3, minmax(0, 1fr)); grid-template-areas: 'time country title title title' 'impact impact title title title' '. . actual forecast previous' '. . odds odds odds'; }
+  .cal-row:not(.compact) .cal-odds.muted { display: none; }
+  .cal-row:not(.compact) .cal-odds { grid-area: odds; text-align: left; display: flex; flex-direction: column; white-space: normal; }
+  .cal-row:not(.compact) .cal-odds::before { content: attr(data-label); font-size: 10px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+  .wm-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name val' 'when chg'; }
+  .wm-row > :nth-child(4) { display: none; }
+}
+
+/* Prediction markets and earnings panels */
+.po-panel { margin-top: var(--sp-4); }
+.po-panel .panel-head { flex-wrap: wrap; gap: var(--sp-2); }
+.po-filters { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; margin: var(--sp-2) 0 var(--sp-3); }
+.po-filters .input[type='search'] { flex: 1 1 160px; min-width: 0; }
+.po-meetings { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.po-meetings:empty { display: none; }
+.po-meeting { display: block; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--panel-2); color: var(--text); text-decoration: none; }
+.po-meeting:hover { border-color: var(--border-strong); }
+.po-fed { margin-top: var(--sp-1); }
+.po-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--panel-3); }
+.po-seg { display: block; height: 100%; }
+.po-seg.po-cut, .po-key.po-cut i { background: var(--up); }
+.po-seg.po-hold, .po-key.po-hold i { background: var(--viz-1); }
+.po-seg.po-hike, .po-key.po-hike i { background: var(--down); }
+.po-legend { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); margin-top: var(--sp-1); color: var(--muted); }
+.po-key { display: inline-flex; align-items: center; gap: 5px; }
+.po-key i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+.po-list { display: flex; flex-direction: column; }
+.po-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: baseline; gap: var(--sp-3); padding: 7px 4px; border-bottom: 1px solid var(--border); color: var(--text); text-decoration: none; font-variant-numeric: tabular-nums; }
+a.po-row:hover { background: var(--row-hover); }
+.po-yes { color: var(--accent-text); text-align: right; }
+.po-q { min-width: 0; }
+.po-note.warn { color: var(--warn-text); }
+.po-item { margin: var(--sp-2) 0; }
+@media (max-width: 700px) {
+  .po-row { grid-template-columns: 48px minmax(0, 1fr); }
+  .po-meta { grid-column: 2; }
+}
+
+/* Settings > Data connections */
+.settings-label.dc-head { display: flex; align-items: center; justify-content: flex-start; gap: var(--sp-2); flex-wrap: wrap; }
+.dc-head .key-status { margin-left: auto; }
+.dc-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--faint); }
+.dc-dot.dc-ok { background: var(--up); }
+.dc-dot.dc-bad { background: var(--down); }
+.dc-dot.dc-testing { background: var(--warn); }
+.dc-unlocks, .dc-meta { margin: 2px 0; }
+.dc-result { margin: var(--sp-1) 0 0; }
+.dc-result.up { color: var(--up-text); }
+.dc-result.down { color: var(--down-text); }
+.dc-nokey { margin: 0 0 var(--sp-2); color: var(--text); }
+
+/* Security view: analyst views bar */
+.sv-anr-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--panel-3); margin: var(--sp-1) 0 var(--sp-2); }
+.sv-anr-bar span { display: block; height: 100%; }
+.sv-anr-strongBuy { background: var(--up-fill); }
+.sv-anr-buy { background: var(--up); }
+.sv-anr-hold { background: var(--viz-1); }
+.sv-anr-sell { background: var(--down); }
+.sv-anr-strongSell { background: var(--down-fill); }
+/* ===== end world macro ===== */

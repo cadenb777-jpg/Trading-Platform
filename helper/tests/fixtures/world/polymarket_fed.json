@@ -1,0 +1,98 @@
+[
+ {
+  "id": "101",
+  "slug": "fed-decision-in-december",
+  "title": "Fed decision in December?",
+  "endDate": "2026-12-09T00:00:00Z",
+  "closed": false,
+  "updatedAt": "2026-11-05T14:00:00Z",
+  "volume": 52000000,
+  "markets": [
+   {
+    "id": "m1",
+    "question": "Fed decreases interest rates by 50+ bps after December 2026 meeting?",
+    "groupItemTitle": "50+ bps decrease",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.03\", \"0.97\"]",
+    "volumeNum": 4000000,
+    "updatedAt": "2026-11-05T13:59:00Z",
+    "endDate": "2026-12-09T00:00:00Z",
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "m2",
+    "question": "Fed decreases interest rates by 25 bps after December 2026 meeting?",
+    "groupItemTitle": "25 bps decrease",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.62\", \"0.38\"]",
+    "volumeNum": 20000000,
+    "updatedAt": "2026-11-05T14:00:00Z",
+    "endDate": "2026-12-09T00:00:00Z",
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "m3",
+    "question": "No change in Fed interest rates after December 2026 meeting?",
+    "groupItemTitle": "No change",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.34\", \"0.66\"]",
+    "volumeNum": 18000000,
+    "updatedAt": "2026-11-05T13:58:00Z",
+    "endDate": "2026-12-09T00:00:00Z",
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "m4",
+    "question": "Fed increases interest rates by 25+ bps after December 2026 meeting?",
+    "groupItemTitle": "25+ bps increase",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"0.01\", \"0.99\"]",
+    "volumeNum": 3000000,
+    "updatedAt": "2026-11-05T13:00:00Z",
+    "endDate": "2026-12-09T00:00:00Z",
+    "active": true,
+    "closed": false
+   },
+   {
+    "id": "m5",
+    "question": "Old closed market",
+    "groupItemTitle": "x",
+    "outcomes": "[\"Yes\", \"No\"]",
+    "outcomePrices": "[\"1\", \"0\"]",
+    "volumeNum": 1,
+    "updatedAt": "",
+    "endDate": "2026-12-09T00:00:00Z",
+    "active": true,
+    "closed": true
+   }
+  ]
+ },
+ {
+  "id": "102",
+  "slug": "fed-rate-cuts-in-2026",
+  "title": "How many Fed rate cuts in 2026?",
+  "endDate": "2026-12-31T00:00:00Z",
+  "closed": false,
+  "markets": [
+   {
+    "id": "m6",
+    "question": "Will the Fed cut rates 3 times in 2026?",
+    "groupItemTitle": "",
+    "outcomes": [
+     "Yes",
+     "No"
+    ],
+    "outcomePrices": [
+     "0.4",
+     "0.6"
+    ],
+    "volumeNum": 900000,
+    "updatedAt": "2026-11-05T10:00:00Z",
+    "endDate": "2026-12-31T00:00:00Z"
+   }
+  ]
+ }
+]

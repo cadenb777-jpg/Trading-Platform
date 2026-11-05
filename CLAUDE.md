@@ -59,6 +59,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   data (DATA_RULE, <tool_data>); UI_CONFIRM actions (remove_from_watchlist, clear_indicators) always ask the owner;
   on timeout the helper sends ui_cancel and the browser checks the deadline after a confirm; Stop sends ai.stop.
   Older helpers keep the one-way ui_action. No action can trade.
+  World macro (v44, WORLD_HELPER_VERSION; engine/worldmacro.py, src/pages/macroWorld.ts = Macro > World tab):
+  world.table (World Bank, IMF WEO, OECD CLI by country, grouped Americas/Europe/Asia-Pacific in src/macro/world.ts),
+  world.panel {panel: bls|bea|census|fiscal|ecb|eia} (fiscal reuses bonds.auctions). predictions.markets
+  (engine/predictions.py: Polymarket gamma + Kalshi public, GET only, never bets) feeds the Calendar's Odds column and
+  Prediction markets panel (src/macro/odds.ts matchOdds, src/pages/calendarOdds.ts). finnhub.* (analyst trends on
+  DES, earnings on Calendar). Settings > Data connections (src/ui/connections.ts) holds every key (bls/bea/eia/census/
+  finnhub_key plus the old fields) with connections.test; keys list: docs/research/free-data-keys.md.
   Investments page (src/pages/investmentsPage.ts, src/invest/): boards via invest.board (quotes + 1m/3m/YTD/1y from
   daily closes), invest.history/movers/search; bonds.market (FRED yields/spreads), bonds.auctions (Treasury Fiscal Data),
   bonds.cusip (Schwab get_instrument_by_cusip); alts.fund (SEC: XBRL NAV per share, N-PORT, Form D, NAV sentences from

@@ -1,0 +1,246 @@
+{
+ "BEAAPI": {
+  "Request": {
+   "RequestParam": []
+  },
+  "Results": {
+   "Statistic": "NIPA Table",
+   "UTCProductionTime": "2026-10-30T12:00:00.000",
+   "Dimensions": [],
+   "Data": [
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Gross domestic product",
+     "TimePeriod": "2026Q1",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "1.60",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Gross domestic product",
+     "TimePeriod": "2026Q2",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "3.00",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "1",
+     "LineDescription": "Gross domestic product",
+     "TimePeriod": "2026Q3",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "3.80",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "2",
+     "LineDescription": "Personal consumption expenditures",
+     "TimePeriod": "2026Q1",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "1.20",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "2",
+     "LineDescription": "Personal consumption expenditures",
+     "TimePeriod": "2026Q2",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "1.90",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "2",
+     "LineDescription": "Personal consumption expenditures",
+     "TimePeriod": "2026Q3",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "2.40",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "3",
+     "LineDescription": "Goods",
+     "TimePeriod": "2026Q1",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "0.30",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "3",
+     "LineDescription": "Goods",
+     "TimePeriod": "2026Q2",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "0.40",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "3",
+     "LineDescription": "Goods",
+     "TimePeriod": "2026Q3",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "0.50",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "7",
+     "LineDescription": "Gross private domestic investment",
+     "TimePeriod": "2026Q1",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "0.20",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "7",
+     "LineDescription": "Gross private domestic investment",
+     "TimePeriod": "2026Q2",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "-0.40",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "7",
+     "LineDescription": "Gross private domestic investment",
+     "TimePeriod": "2026Q3",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "0.80",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "15",
+     "LineDescription": "Net exports of goods and services",
+     "TimePeriod": "2026Q1",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "-0.10",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "15",
+     "LineDescription": "Net exports of goods and services",
+     "TimePeriod": "2026Q2",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "1.10",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "15",
+     "LineDescription": "Net exports of goods and services",
+     "TimePeriod": "2026Q3",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "-0.20",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "22",
+     "LineDescription": "Government consumption expenditures and gross investment",
+     "TimePeriod": "2026Q1",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "0.30",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "22",
+     "LineDescription": "Government consumption expenditures and gross investment",
+     "TimePeriod": "2026Q2",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "0.40",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "22",
+     "LineDescription": "Government consumption expenditures and gross investment",
+     "TimePeriod": "2026Q3",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "0.60",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "26",
+     "LineDescription": "Personal consumption expenditures",
+     "TimePeriod": "2026Q1",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "9.00",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "26",
+     "LineDescription": "Personal consumption expenditures",
+     "TimePeriod": "2026Q2",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "9.00",
+     "NoteRef": "T10102"
+    },
+    {
+     "TableName": "T10102",
+     "SeriesCode": "x",
+     "LineNumber": "26",
+     "LineDescription": "Personal consumption expenditures",
+     "TimePeriod": "2026Q3",
+     "CL_UNIT": "Percentage points",
+     "UNIT_MULT": "0",
+     "DataValue": "9.00",
+     "NoteRef": "T10102"
+    }
+   ],
+   "Notes": []
+  }
+ }
+}

@@ -1,6 +1,6 @@
 """
 Settings the platform's Settings window can change: the AI key and model, an optional FRED key, optional Alpaca
-keys (free price history), the SEC contact email, Webull (keys, Test/Live, order limits) and where alerts are sent
+keys (free price history), free BLS / BEA / EIA / Census / Finnhub data keys, the SEC contact email, Webull (keys, Test/Live, order limits) and where alerts are sent
 (ntfy topic and server, Telegram bot token and chat id). They are saved on this computer (~/.trading-platform/settings.json). Keys are never
 sent back to the browser; it only learns whether each one is set.
 """
@@ -13,7 +13,7 @@ from .core import EngineError, handler
 
 SETTINGS_PATH = Path.home() / '.trading-platform' / 'settings.json'
 SECRET_KEYS = {'anthropic_key', 'fred_key', 'alpaca_key_id', 'alpaca_secret', 'webull_app_key', 'webull_app_secret',
-               'ntfy_topic', 'ntfy_server', 'telegram_token', 'telegram_chat'}
+               'ntfy_topic', 'ntfy_server', 'telegram_token', 'telegram_chat', 'bls_key', 'bea_key', 'eia_key', 'census_key', 'finnhub_key'}
 AI_MODELS = {
     'claude-opus-5-5': 'Best: Claude Opus 5.5',
     'claude-sonnet-5-5': 'Balanced: Claude Sonnet 5.5',
@@ -67,6 +67,11 @@ def public():
     return {
         'aiKeySet': bool(data.get('anthropic_key')),
         'fredKeySet': bool(data.get('fred_key')),
+        'blsKeySet': bool(data.get('bls_key')),
+        'beaKeySet': bool(data.get('bea_key')),
+        'eiaKeySet': bool(data.get('eia_key')),
+        'censusKeySet': bool(data.get('census_key')),
+        'finnhubKeySet': bool(data.get('finnhub_key')),
         'alpacaSet': bool(data.get('alpaca_key_id') and data.get('alpaca_secret')),
         'webullSet': bool(data.get('webull_app_key') and data.get('webull_app_secret')),
         'webullEnv': 'live' if data.get('webull_env') == 'live' else 'test',
@@ -105,6 +110,13 @@ async def set_settings(ctx, msg):
         if key and not (len(key) == 32 and key.isalnum()):
             raise EngineError('A FRED API key is 32 letters and numbers.')
         changes['fred_key'] = key
+    for field, name, label, site in (('blsKey', 'bls_key', 'BLS', 'data.bls.gov'), ('beaKey', 'bea_key', 'BEA', 'apps.bea.gov'), ('eiaKey', 'eia_key', 'EIA', 'eia.gov'),
+                                     ('censusKey', 'census_key', 'Census', 'census.gov'), ('finnhubKey', 'finnhub_key', 'Finnhub', 'finnhub.io')):
+        if field in msg:
+            key = str(msg[field] or '').strip()
+            if key and not re.fullmatch(r'[A-Za-z0-9-]{16,64}', key):
+                raise EngineError(f'That doesn’t look like a {label} key (16 to 64 letters, numbers or dashes). Copy it again from the email {site} sent you.')
+            changes[name] = key
     for field, name, label in (('alpacaKeyId', 'alpaca_key_id', 'key ID'), ('alpacaSecret', 'alpaca_secret', 'secret key')):
         if field in msg:
             key = str(msg[field] or '').strip()
