@@ -17,12 +17,15 @@ import { linkPanel } from '../ui/linkGroups';
 import { tickerAttr } from '../ui/tickerCard';
 import { chartTab, type ChartTab } from './chartTab';
 import { DEFAULT_TAB, SEC_TABS, tabDef, type SecTab } from './codes';
-import { forget, loadBoard, loadCompany, loadDaily, loadPortfolios } from './data';
-import { DASH, fmtChange, fmtCompact, fmtNum, fmtPct, fmtPrice, ok, tone } from './format';
+import { cancelExcept, forget, loadBoard, loadCompany, loadDaily, loadDividends, loadPortfolios } from './data';
+import { DASH, fmtChange, fmtCompact, fmtNum, fmtPct, fmtPrice, fmtX, ok, tone } from './format';
 import { relatedFor } from './related';
-import { keyLevels } from './stats';
+import { dividendSummary, keyLevels } from './stats';
 import { TAB_RENDER, isCompanyLike, type SecurityDeps } from './tabs';
 import { asOfText, fig } from './ui';
+
+/** How long a security must stay loaded before its data is requested. */
+export const SWITCH_DEBOUNCE_MS = 150;
 
 export interface ViewOptions {
   mode: 'page' | 'panel';
@@ -41,6 +44,7 @@ export function createSecurityView(o: ViewOptions) {
   let seq = 0;
   /** Counts security loads (the header's late replies are dropped; a tab switch doesn't cancel them). */
   let loadSeq = 0;
+  let startTimer: ReturnType<typeof setTimeout> | undefined;
   let stopQuote = () => {};
   let chart: ChartTab | null = null;
   let shared: Record<string, unknown> = {};
@@ -171,10 +175,11 @@ export function createSecurityView(o: ViewOptions) {
         h('span', { class: 'sv-num tiny' }, fmtPrice(hi)),
       );
     };
-    const [board, bars, company] = await Promise.all([
+    const [board, bars, company, divs] = await Promise.all([
       loadBoard(symbol).catch(() => null),
       loadDaily(symbol).catch(() => null),
       isCompanyLike(symbol) ? loadCompany(symbol).catch((err: Error) => err) : Promise.resolve(null),
+      loadDividends(symbol).catch(() => null),
     ]);
     if (!still()) return;
     const row = board?.row ?? null;
@@ -188,14 +193,15 @@ export function createSecurityView(o: ViewOptions) {
     }
     if (prevClose == null) prevClose = row?.price != null && row.change != null ? row.price / (1 + row.change) : (k?.prevClose ?? null);
     paintQuote();
-    shared.quote = { last, prevClose, high52: row?.high52 ?? k?.high52, low52: row?.low52 ?? k?.low52, peRatio: row?.peRatio, divYield: row?.divYield, name: row?.name };
+    shared.quote = { last, prevClose, high52: row?.high52 ?? k?.high52, low52: row?.low52 ?? k?.low52, name: row?.name };
     const mc = co?.valuation.marketCap ?? null;
+    const dvd = divs ? dividendSummary(divs.dividends, divs.closes[divs.closes.length - 1]?.[1] ?? null, new Date().toISOString().slice(0, 10)) : null;
     statsEl.replaceChildren(
       stat('Day range', range(k?.dayLow ?? null, k?.dayHigh ?? null, last), 'The latest session’s low and high (Schwab daily bar)'),
       stat('52-week range', range(row?.low52 ?? k?.low52 ?? null, row?.high52 ?? k?.high52 ?? null, last)),
       stat('Market cap', fig(fmtCompact(mc, { money: true }), { reason: company instanceof Error ? company.message : isCompanyLike(symbol) ? 'share count not in the SEC data' : 'not a company' }), 'Price × shares outstanding (SEC)'),
-      stat('P/E', fig(row?.peRatio && row.peRatio > 0 ? `${fmtNum(row.peRatio, 1)}×` : DASH, { reason: 'no profit, or not a company' })),
-      stat('Div. yield', fig(row?.divYield ? `${fmtNum(row.divYield, 2)}%` : DASH, { reason: 'no dividend' })),
+      stat('P/E (TTM)', fig(fmtX(co?.valuation.pe), { reason: co ? 'no profit over the last 12 months' : 'needs SEC company data' }), 'Price ÷ the last 12 months of diluted earnings per share (SEC filings)'),
+      stat('Yield (TTM)', fig(fmtPct(dvd?.yield ?? null), { reason: divs ? 'no dividend in the last 12 months' : 'no dividend history' }), 'Dividends with an ex-date in the last 12 months ÷ the latest close (Yahoo dividends, Schwab price), as on the DVD tab'),
     );
     // your position, across your own accounts (client portfolios left out)
     const pfs = await loadPortfolios().catch(() => []);
@@ -269,6 +275,7 @@ export function createSecurityView(o: ViewOptions) {
     symbol = s;
     tab = t;
     seq++;
+    const mine = ++loadSeq;
     shared = {};
     last = prevClose = quoteAt = null;
     input.value = s.replace(/^\$/, '');
@@ -277,22 +284,34 @@ export function createSecurityView(o: ViewOptions) {
     statsEl.replaceChildren();
     posEl.hidden = true;
     ai.panel.hidden = true;
+    chart?.destroy();
+    chart = null;
+    body.replaceChildren(h('p', { class: 'sv-note muted small', 'aria-busy': 'true' }, `Loading ${s.replace(/^\$/, '')}…`));
+    related.replaceChildren();
+    stopQuote();
+    stopQuote = () => {};
     paintQuote();
     paintTabs();
-    renderTab();
-    fillRelated();
-    void fillHeader(++loadSeq);
-    stopQuote();
-    stopQuote = subscribeQuote({ provider: 'schwab', symbol: s }, (q) => {
-      if (q.last == null) return;
-      last = q.last;
-      if (q.prevClose) prevClose = q.prevClose;
-      quoteAt = Date.now();
-      paintQuote();
-    });
-    if (publish) link.publish(s);
     o.onShow(symbol, tab, 'load');
     paintNav();
+    // Ask for data only once the owner stops on a security (Back/Forward or typing through several in a row would
+    // otherwise queue every one's history, board and SEC requests behind Schwab's pacing).
+    clearTimeout(startTimer);
+    startTimer = setTimeout(() => {
+      if (mine !== loadSeq) return;
+      if (publish) link.publish(s); // linked panels follow only the security the owner stopped on
+      cancelExcept([s, s === 'SPY' ? 'QQQ' : 'SPY']);
+      renderTab();
+      fillRelated();
+      void fillHeader(mine);
+      stopQuote = subscribeQuote({ provider: 'schwab', symbol: s }, (q) => {
+        if (q.last == null) return;
+        last = q.last;
+        if (q.prevClose) prevClose = q.prevClose;
+        quoteAt = Date.now();
+        paintQuote();
+      });
+    }, SWITCH_DEBOUNCE_MS);
   }
 
   function addToWatchlist() {
@@ -323,6 +342,8 @@ export function createSecurityView(o: ViewOptions) {
     },
     /** The view was hidden or closed: stop live quotes and the chart. */
     stop() {
+      clearTimeout(startTimer);
+      cancelExcept([]); // requests still on their way for this view
       stopQuote();
       stopQuote = () => {};
       chart?.destroy();

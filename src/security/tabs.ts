@@ -17,6 +17,7 @@ import {
   loadInsiders,
   loadNewsFor,
   loadOptions,
+  loadBoards,
   loadPortfolios,
   loadScan,
   type CompanyData,
@@ -93,7 +94,6 @@ export function desTab(ctx: TabCtx) {
         const last = row?.price ?? bars[bars.length - 1]?.close ?? null;
         const vsAvg = (avg: number | null) => (ok(avg) && ok(last) ? fmtPct(last / avg - 1, 1, true) : DASH);
         const rows: KV[] = [
-          ['Last', fig(fmtPrice(last), { strong: true })],
           ['Previous close', fmtPrice(k.prevClose)],
           ['Day range', `${fmtPrice(k.dayLow)} – ${fmtPrice(k.dayHigh)}`],
           ['52-week high', fig(fmtPrice(row?.high52 ?? k.high52), { title: `${fmtPct(ok(last) && ok(row?.high52 ?? k.high52) ? last / (row?.high52 ?? k.high52)! - 1 : null, 1, true)} from the high` })],
@@ -121,12 +121,10 @@ export function desTab(ctx: TabCtx) {
               kvGrid([
                 ['Market cap', fig(money(v.marketCap), { reason: 'share count not in the filings' })],
                 ['Enterprise value', fig(money(v.enterpriseValue), { reason: 'debt or cash not reported' }), 'Market cap + debt − cash'],
-                ['P/E (trailing)', fig(fmtX(v.pe ?? d.quote.peRatio), { reason: 'no profit over the last 12 months' })],
                 ['Price / sales', fig(fmtX(v.ps), { reason: 'no revenue reported' })],
                 ['Price / free cash flow', fig(fmtX(v.pfcf), { reason: 'free cash flow negative or not reported' })],
                 ['EV / EBITDA', fig(fmtX(v.evEbitda), { reason: 'EBITDA negative or not reported' })],
                 ['FCF yield', fig(fmtPct(v.fcfYield, 1), { reason: 'free cash flow not reported' })],
-                ['Beta (5y, SEC page)', fig(fmtNum(v.beta), { reason: 'not enough history' })],
               ]),
             );
           })
@@ -504,8 +502,12 @@ export function betaTab(ctx: TabCtx) {
 async function portfolioPanel(s: string, asset: Close[]): Promise<Node> {
   const all = await loadPortfolios().catch(() => []);
   const rows = combineHoldings(myPortfolios(all)).filter((r) => r.kind === 'security' && r.shares > 0 && isCompanyLike(r.symbol));
-  const others = rows.filter((r) => r.symbol !== s).sort((x, y) => y.shares - x.shares).slice(0, 15);
-  if (!others.length) return panel('Correlation to your holdings', 'your Account holdings', null, note('No share holdings on the Account page yet (import a statement or sync Webull).'));
+  const candidates = rows.filter((r) => r.symbol !== s);
+  if (!candidates.length) return panel('Correlation to your holdings', 'your Account holdings', null, note('No share holdings on the Account page yet (import a statement or sync Webull).'));
+  // the largest by value (shares × last price, one board request), so a big position in a cheap stock counts
+  const prices = new Map((await loadBoards(candidates.map((r) => r.symbol)).catch(() => ({ rows: [] }))).rows.map((r) => [r.symbol, r.price]));
+  const worth = (r: (typeof candidates)[number]) => r.shares * (prices.get(r.symbol) ?? (r.cost != null && r.shares ? r.cost / r.shares : 0));
+  const others = [...candidates].sort((x, y) => worth(y) - worth(x)).slice(0, 15);
   const loaded = await Promise.all(others.map((r) => loadDaily(r.symbol).then((bars) => ({ r, bars }), () => null)));
   const ok2 = loaded.filter((x): x is NonNullable<typeof x> => !!x && x.bars.length > 1);
   const value = (x: (typeof ok2)[number]) => x.r.shares * x.bars[x.bars.length - 1].close;
@@ -518,7 +520,7 @@ async function portfolioPanel(s: string, asset: Close[]): Promise<Node> {
   const heldValue = held && asset.length ? held.shares * asset[asset.length - 1][1] : 0;
   return panel(
     'Correlation to your holdings',
-    `your Account holdings (${ok2.length} largest by shares, value-weighted at today’s prices), ${SCHWAB}`,
+    `your Account holdings (${ok2.length} largest by value, weighted by value at the latest close), ${SCHWAB}`,
     last ? dayKey(last) : null,
     kvGrid([
       ['Correlation (1 year, daily)', fig(fmtNum(correlation(p.a, p.b)), { reason: 'not enough shared history' }), '1 = always moves with your holdings; 0 = unrelated; below 0 = tends to offset them'],

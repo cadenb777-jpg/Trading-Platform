@@ -7276,7 +7276,7 @@ summary:focus-visible {
 
 /* ---------- Ticker card (src/ui/tickerCard.ts): any [data-ticker] shows it on hover, tap or focus ---------- */
 [data-ticker] {
-  cursor: help;
+  cursor: pointer;
   text-decoration: underline dotted var(--faint);
   text-underline-offset: 3px;
 }
@@ -8666,8 +8666,8 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   .sv-symbol { width: 80px; }
 }
 /* Account holdings: the records button beside the ticker */
-.acct-sym-cell { display: inline-flex; align-items: center; gap: 2px; }
-.acct-records { width: 22px; height: 22px; font-size: var(--fs-sm); }
+.acct-sym-cell { display: inline-flex; align-items: baseline; gap: var(--sp-2); }
+.acct-records { font-size: var(--fs-xs); color: var(--muted); }
 /* ====================================== end security view ====================================== */
 
 /* ---------- AI actions: compact lines under the assistant's message (src/ai/assistant.ts stepsLine) ---------- */

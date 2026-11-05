@@ -3,6 +3,8 @@ import scannerPy from '../../helper/engine/scanner.py?raw';
 import { DEFAULT_TAB, SEC_TABS, cleanSymbol, createSecHistory, parseSecRoute, secHash, tabForCode } from './codes';
 import { DASH, fmtChange, fmtCompact, fmtDate, fmtNum, fmtPct, fmtPrice, fmtX, tone } from './format';
 import { SECTOR_LISTS, relatedFor } from './related';
+import { keySymbol } from './data';
+import { tickerRuns } from '../ui/markTickers';
 import {
   annualVol,
   beta,
@@ -197,5 +199,24 @@ describe('related securities', () => {
     expect(r.etfs.map(([e]) => e)).toEqual(['SMH', 'QQQ']);
     expect(r.futures[0]).toBe('/NQ');
     expect(relatedFor('KO')).toMatchObject({ sector: null, peers: [], futures: ['/ES', 'E-mini S&P 500'] });
+  });
+});
+
+describe('tickers in AI replies and request bookkeeping', () => {
+  it('splits text into ticker runs', () => {
+    expect(tickerRuns('Buy $AAPL and watch NVDA, not CEO or ON.', ['NVDA', 'ON'])).toEqual([
+      { text: 'Buy ' },
+      { text: '$AAPL', symbol: 'AAPL' },
+      { text: ' and watch ' },
+      { text: 'NVDA', symbol: 'NVDA' },
+      { text: ', not CEO or ON.' },
+    ]);
+    expect(tickerRuns('nothing here', ['AAPL'])).toEqual([{ text: 'nothing here' }]);
+    expect(tickerRuns('NVDAX is not NVDA', ['NVDA']).filter((r) => r.symbol)).toEqual([{ text: 'NVDA', symbol: 'NVDA' }]);
+  });
+  it('cache keys name their symbol; shared ones none', () => {
+    expect(keySymbol('daily:BRK.B')).toBe('BRK.B');
+    expect(keySymbol('scan:all')).toBeNull();
+    expect(keySymbol('pf:all')).toBeNull();
   });
 });

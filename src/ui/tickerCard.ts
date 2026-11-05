@@ -63,15 +63,15 @@ const isInteractive = (el: TickerNode, hasClick: (el: TickerNode) => boolean) =>
 };
 
 /**
- * What a click or tap on a ticker does: 'pin' opens the pinned card (and stops the click), 'pass' leaves the page's
- * own click alone (a watchlist row still opens its chart, a Setups row still selects). On touch screens a long press
- * opens the card there instead. `data-ticker-click="pin|pass"` overrides.
+ * What a click or tap on a ticker does: 'open' opens the security view (and stops the click, so a row or link around
+ * the ticker text keeps its own action for clicks elsewhere on it); 'pass' leaves the click alone when the ticker is
+ * itself a button or link with its own action (Trade's "Load AAPL", Account's symbol button). `data-ticker-click=
+ * "open|pass"` overrides (the watchlist passes: its symbols switch the chart).
  */
-export function clickMode(ticker: TickerNode, hasClick: (el: TickerNode) => boolean = () => false): 'pin' | 'pass' {
+export function clickMode(ticker: TickerNode, hasClick: (el: TickerNode) => boolean = () => false): 'open' | 'pass' {
   const forced = ticker.getAttribute('data-ticker-click');
-  if (forced === 'pin' || forced === 'pass') return forced;
-  for (let el: TickerNode | null = ticker, i = 0; el && i < 8; el = el.parentElement, i++) if (isInteractive(el, hasClick)) return 'pass';
-  return 'pin';
+  if (forced === 'open' || forced === 'pass') return forced;
+  return isInteractive(ticker, hasClick) ? 'pass' : 'open';
 }
 
 /** Words in capitals that look like tickers but aren't, when matched without a "$" or exchange prefix. */

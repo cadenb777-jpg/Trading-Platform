@@ -89,26 +89,35 @@ export async function openSecurity(raw: string, tabOrCode?: string): Promise<voi
   await openDrawer(symbol, tab);
 }
 
-async function openDrawer(symbol: string, tab?: SecTab) {
-  if (!drawer) {
-    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+/** The one slide-over (built once and reused: a new view per open would keep old ones alive through their links). */
+let built: Promise<{ el: HTMLElement; view: SecurityView }> | null = null;
+function buildDrawer() {
+  built ??= (async () => {
     const expand = h('button', { type: 'button', class: 'btn small', title: 'Open this security as a full page', onclick: () => expandDrawer() }, '⤢ Full page');
     const close = h('button', { type: 'button', class: 'icon-btn', title: 'Close (Esc)', 'aria-label': 'Close the security panel', onclick: () => closeDrawer() }, '✕');
     const view = await makeView('panel', [expand, close]);
-    if (drawer) return (drawer as { view: SecurityView }).view.load(symbol, tab);
-    const el = h('aside', { class: 'sv-drawer', role: 'dialog', 'aria-label': 'Security' }, view.el);
-    document.body.append(el);
-    document.body.classList.add('sv-drawer-open');
-    drawer = { el, view, returnFocus };
-    view.load(symbol, tab, true);
-    requestAnimationFrame(() => el.classList.add('open'));
-    el.querySelector<HTMLElement>('.sv-name')?.setAttribute('tabindex', '-1');
-    el.querySelector<HTMLElement>('.sv-name')?.focus({ preventScroll: true });
-    return;
-  }
-  drawer.view.load(symbol, tab, true);
+    return { el: h('aside', { class: 'sv-drawer', role: 'dialog', 'aria-label': 'Security' }, view.el), view };
+  })();
+  return built;
 }
 
+async function openDrawer(symbol: string, tab?: SecTab) {
+  if (drawer) return drawer.view.load(symbol, tab, true);
+  const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const { el, view } = await buildDrawer();
+  if (drawer) return view.load(symbol, tab, true);
+  el.classList.remove('open');
+  document.body.append(el);
+  document.body.classList.add('sv-drawer-open');
+  drawer = { el, view, returnFocus };
+  view.load(symbol, tab, true);
+  requestAnimationFrame(() => el.classList.add('open'));
+  const head = el.querySelector<HTMLElement>('.sv-name');
+  head?.setAttribute('tabindex', '-1');
+  head?.focus({ preventScroll: true });
+}
+
+/** Closes the slide-over: its live quote, chart and requests stop; the panel is kept for next time. */
 export function closeDrawer() {
   if (!drawer) return;
   const { el, view, returnFocus } = drawer;

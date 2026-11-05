@@ -65,6 +65,9 @@ export function chartTab(symbol: string, still: () => boolean): ChartTab {
   let compare: { symbol: string; series: ISeriesApi<'Line'> } | null = null;
   let seq = 0;
   let alive = true;
+  /** The history request on its way (aborted when the timeframe changes or the tab closes). */
+  let pending: AbortController | null = null;
+  let pendingCompare: AbortController | null = null;
 
   const addStudy = (key: string) => {
     const spec = STUDIES.find((s) => s.key === key)!;
@@ -98,13 +101,15 @@ export function chartTab(symbol: string, still: () => boolean): ChartTab {
     const ref = guessMarket(symbol);
     if (!ref) return;
     message.hidden = true;
+    pending?.abort();
+    const ctl = (pending = new AbortController());
     try {
-      const bars = await getProvider(ref.provider).loadHistory(ref.symbol, tf, new AbortController().signal);
+      const bars = await getProvider(ref.provider).loadHistory(ref.symbol, tf, ctl.signal);
       if (!alive || mine !== seq || !still()) return;
       view.setBars(bars, tf);
       if (compare) await drawCompare(compare.symbol);
     } catch (err) {
-      if (!alive || mine !== seq) return;
+      if (!alive || mine !== seq || ctl.signal.aborted) return;
       view.setBars([], tf);
       message.hidden = false;
       message.replaceChildren(note(`${symbol}: ${reasonOf(err)}`, 'sv-error'));
@@ -114,9 +119,11 @@ export function chartTab(symbol: string, still: () => boolean): ChartTab {
   async function drawCompare(sym: string) {
     const ref = guessMarket(sym);
     if (!ref) return;
+    pendingCompare?.abort();
+    const ctl = (pendingCompare = new AbortController());
     try {
-      const bars = await getProvider(ref.provider).loadHistory(ref.symbol, tf, new AbortController().signal);
-      if (!alive) return;
+      const bars = await getProvider(ref.provider).loadHistory(ref.symbol, tf, ctl.signal);
+      if (!alive || ctl.signal.aborted) return;
       compare ??= { symbol: sym, series: view.chart.addSeries(LineSeries, { color: THEME.text, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: sym }) };
       compare.symbol = sym;
       compare.series.applyOptions({ title: sym });
@@ -126,7 +133,7 @@ export function chartTab(symbol: string, still: () => boolean): ChartTab {
       const z = bars[bars.length - 1]?.close;
       compareNote.textContent = a && z ? `${sym} ${fmtPct(z / a - 1, 1, true)} over the loaded bars` : '';
     } catch (err) {
-      compareNote.textContent = `${sym}: ${reasonOf(err)}`;
+      if (alive && !ctl.signal.aborted) compareNote.textContent = `${sym}: ${reasonOf(err)}`;
     }
   }
 
@@ -151,8 +158,10 @@ export function chartTab(symbol: string, still: () => boolean): ChartTab {
     timeframe: () => tf,
     destroy() {
       alive = false;
+      pending?.abort();
+      pendingCompare?.abort();
       try {
-        view.chart.remove();
+        view.destroy();
       } catch {
         // already gone
       }

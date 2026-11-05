@@ -82,6 +82,7 @@ export class ChartView {
   private readonly primitives: ISeriesPrimitive<Time>[] = [];
   private markersApi: ISeriesMarkersPluginApi<Time> | null = null;
   private readonly paneObserver: ResizeObserver;
+  private stopTheme: () => void = () => {};
 
   /** Called with the bar index under the mouse (or the latest bar when the mouse leaves). */
   onHover: (index: number) => void = () => {};
@@ -106,13 +107,21 @@ export class ChartView {
       rightPriceScale: { borderColor: THEME.border, tickMarkDensity: 1.6 },
       timeScale: { borderColor: THEME.border, timeVisible: true, secondsVisible: false, rightOffset: 8 },
     });
-    followTheme(this.chart, { onChange: () => this.chart.applyOptions({ layout: { panes: { separatorColor: THEME.border } } }) });
+    this.stopTheme = followTheme(this.chart, { onChange: () => this.chart.applyOptions({ layout: { panes: { separatorColor: THEME.border } } }) });
     this.main = this.createMainSeries('candles');
     this.chart.subscribeCrosshairMove((param) => {
       const idx = param.time === undefined ? undefined : this.timeIndex.get(param.time as number);
       this.onHover(idx ?? this.bars.length - 1);
     });
     this.paneObserver = new ResizeObserver(() => this.onLayout());
+  }
+
+  /** Removes the chart and its theme listener (a view that is thrown away, e.g. the security view's chart tab). */
+  destroy() {
+    this.stopTheme();
+    this.paneObserver.disconnect();
+    this.indicators.clear();
+    this.chart.remove();
   }
 
   get barCount() {
