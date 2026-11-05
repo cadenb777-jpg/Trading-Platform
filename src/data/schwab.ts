@@ -55,11 +55,11 @@ const PROSPECT_CONTACTS_REQUEST = /^prospect\.(crawl|contacts|email_check|ai_pro
 /** True when the connected helper has prospect contacts (v41+). */
 export const prospectContactsReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_CONTACTS_HELPER_VERSION;
 /** True when the connected helper has the complete Prospecting downloads (v38+). */
+export const prospectCompleteReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_COMPLETE_HELPER_VERSION;
 /** The trading journal (journal.*: Webull backfill, broker imports, AI coach) needs at least this version. */
 export const JOURNAL_HELPER_VERSION = 43;
 /** True when the connected helper has the trading journal (v43+). */
 export const journalReady = () => !helper.tooOld && (helper.version ?? 0) >= JOURNAL_HELPER_VERSION;
-export const prospectCompleteReady = () => !helper.tooOld && (helper.version ?? 0) >= PROSPECT_COMPLETE_HELPER_VERSION;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';

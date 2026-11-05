@@ -97,15 +97,49 @@ class Journal(tw.Base):
         # the same fills from another export (a few seconds apart, other time of day) are recognised
         other = [{**f, 'time': f['time'] + 7} for f in csv]
         self.assertEqual(journal.import_batch(other, 'csv:schwab')['skipped'], 2)
-        # an order id seen before is skipped even at a different price rounding
+        # the same order fill seen again (same order id, quantity, price and time) is skipped
         journal.import_batch([{'symbol': 'MSFT', 'side': 'BUY', 'qty': 1, 'price': 400, 'time': T0, 'orderId': 'X1'}], 'csv:ibkr')
-        self.assertEqual(journal.import_batch([{'symbol': 'MSFT', 'side': 'BUY', 'qty': 1, 'price': 400.004, 'time': T0, 'orderId': 'X1'}], 'csv:ibkr')['added'], 0)
+        self.assertEqual(journal.import_batch([{'symbol': 'MSFT', 'side': 'BUY', 'qty': 1, 'price': 400, 'time': T0, 'orderId': 'X1'}], 'csv:ibkr')['added'], 0)
         self.assertEqual(len(journal.all_trades()), 2)
 
     def test_two_identical_fills_on_one_day_both_count(self):
         same = {'symbol': 'AAPL', 'side': 'BUY', 'qty': 1, 'price': 100, 'time': T0}
         self.assertEqual(journal.import_batch([same, {**same, 'time': T0 + 60}], 'csv:robinhood')['added'], 2)
         self.assertEqual(journal.import_batch([same, {**same, 'time': T0 + 60}], 'csv:fidelity')['added'], 0)
+        # a third identical fill later in the same source (another file) is a new fill, not a duplicate
+        self.assertEqual(journal.import_batch([{**same, 'time': T0 + 120}], 'csv:robinhood')['added'], 1)
+
+    def test_identical_fills_in_two_accounts_both_count(self):
+        same = {'symbol': 'AAPL', 'side': 'BUY', 'qty': 1, 'price': 100, 'time': T0}
+        self.assertEqual(journal.import_batch([{**same, 'account': 'Roth'}], 'csv:schwab')['added'], 1)
+        self.assertEqual(journal.import_batch([{**same, 'account': 'Margin'}], 'csv:fidelity')['added'], 1)
+        self.assertEqual(journal.import_batch([{**same, 'account': 'Margin'}], 'csv:etrade')['added'], 0)  # same account, other source
+        self.assertEqual(sorted(t['account'] for t in journal.all_trades()), ['Margin', 'Roth'])
+
+    def test_same_source_fills_with_other_execution_ids_or_times_both_count(self):
+        same = {'symbol': 'AAPL', 'side': 'BUY', 'qty': 1, 'price': 100, 'time': T0, 'account': 'A'}
+        self.assertEqual(journal.import_batch([{**same, 'execId': 'e1'}, {**same, 'execId': 'e2'}], 'csv:ibkr')['added'], 2)
+        self.assertEqual(journal.import_batch([{**same, 'execId': 'e3'}], 'csv:ibkr')['added'], 1)  # same day and price, new execution
+        self.assertEqual(journal.import_batch([{**same, 'execId': 'e1'}], 'csv:ibkr')['added'], 0)  # seen before
+        self.assertEqual(journal.import_batch([{**same, 'time': T0 + 30}], 'csv:robinhood')['skipped'], 1)  # other source: same fill
+        self.assertEqual(journal.import_batch([{**same, 'time': T0 + 600}, {**same, 'time': T0 + 900}], 'manual')['added'], 2)  # manual: never matched
+
+    def test_partial_fills_of_one_order_stay_apart(self):
+        part = {'symbol': 'MSFT', 'side': 'BUY', 'orderId': 'O7', 'account': 'A'}
+        r = journal.import_batch([{**part, 'qty': 3, 'price': 400, 'time': T0}, {**part, 'qty': 2, 'price': 400.05, 'time': T0 + 2},
+                                  {**part, 'qty': 3, 'price': 400, 'time': T0 + 5}], 'csv:webull')
+        self.assertEqual(r['added'], 3)
+        t = journal.all_trades()[0]
+        self.assertEqual(sum(e['qty'] for e in t['entries']), 8)
+
+    def test_same_second_fills_keep_their_arrival_order(self):
+        # the sell's id sorts before the buy's, but the buy came first: one closed long, not an orphan sell
+        rows = [{'symbol': 'AAPL', 'side': 'BUY', 'qty': 5, 'price': 100, 'time': T0, 'execId': 'zz'},
+                {'symbol': 'AAPL', 'side': 'SELL', 'qty': 5, 'price': 101, 'time': T0, 'execId': 'aa'}]
+        journal.import_batch(rows, 'csv:ibkr')
+        t = journal.all_trades()
+        self.assertEqual([(x['side'], x['status'], x['costUnknown']) for x in t], [('long', 'closed', False)])
+        self.assertAlmostEqual(t[0]['pnl'], 5.0)
 
     def test_owner_notes_survive_a_rebuild(self):
         journal.import_batch([{'symbol': 'AAPL', 'side': 'BUY', 'qty': 10, 'price': 100, 'time': T0}], 'manual')

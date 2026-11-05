@@ -7,7 +7,7 @@
  */
 import { parseMoney } from '../invest/holdings';
 
-export type ImportField = 'date' | 'time' | 'symbol' | 'side' | 'qty' | 'price' | 'fees' | 'fees2' | 'orderId' | 'account' | 'description' | 'assetClass' | 'multiplier' | 'status' | 'openClose';
+export type ImportField = 'date' | 'time' | 'symbol' | 'side' | 'qty' | 'price' | 'fees' | 'fees2' | 'orderId' | 'execId' | 'account' | 'description' | 'assetClass' | 'multiplier' | 'status' | 'openClose';
 
 export const IMPORT_FIELDS: Record<ImportField, string> = {
   date: 'Date (or date and time)',
@@ -18,7 +18,8 @@ export const IMPORT_FIELDS: Record<ImportField, string> = {
   price: 'Price',
   fees: 'Fees / commission',
   fees2: 'Other fees',
-  orderId: 'Order / trade id',
+  orderId: 'Order id',
+  execId: 'Execution / trade id',
   account: 'Account',
   description: 'Description',
   assetClass: 'Asset class',
@@ -40,6 +41,8 @@ export interface ImportFill {
   time: number;
   fees: number;
   orderId?: string;
+  /** One execution (fill) of an order, when the export has an id for it. */
+  execId?: string;
   account?: string;
   assetClass?: 'stock' | 'futures' | 'option';
   multiplier?: number;
@@ -62,11 +65,11 @@ export const PRESETS: Preset[] = [
     ['symbol', 'side', 'status', 'qty', 'price', 'date'], 'Webull app or desktop: Orders > Order history > Export. Only filled orders are imported.'),
   P('schwab', 'Charles Schwab (Transactions)', { date: ['date'], side: ['action'], symbol: ['symbol'], description: ['description'], qty: ['quantity'], price: ['price'], fees: ['fees & comm', 'fees & commissions'] },
     ['date', 'side', 'symbol', 'qty', 'price', 'fees'], 'schwab.com: Accounts > History > Transactions > Export.'),
-  P('tda', 'TD Ameritrade (old transactions export)', { date: ['date'], orderId: ['transaction id'], description: ['description'], qty: ['quantity'], symbol: ['symbol'], price: ['price'], fees: ['commission'], fees2: ['reg fee'] },
-    ['date', 'orderId', 'description', 'qty', 'symbol', 'price'], 'TD Ameritrade accounts moved to Schwab: older history is in the TD transactions.csv file.'),
+  P('tda', 'TD Ameritrade (old transactions export)', { date: ['date'], execId: ['transaction id'], description: ['description'], qty: ['quantity'], symbol: ['symbol'], price: ['price'], fees: ['commission'], fees2: ['reg fee'] },
+    ['date', 'execId', 'description', 'qty', 'symbol', 'price'], 'TD Ameritrade accounts moved to Schwab: older history is in the TD transactions.csv file.'),
   P('fidelity', 'Fidelity (Activity & Orders history)', { date: ['run date'], side: ['action'], symbol: ['symbol'], description: ['description'], qty: ['quantity'], price: ['price ($)', 'price'], fees: ['commission ($)'], fees2: ['fees ($)'], account: ['account'] },
     ['date', 'side', 'symbol', 'qty', 'price'], 'fidelity.com: Accounts & Trade > Activity & Orders > History > Download.'),
-  P('ibkr', 'Interactive Brokers (Flex query: Trades)', { account: ['clientaccountid', 'accountid'], symbol: ['symbol'], assetClass: ['assetclass'], side: ['buy/sell'], qty: ['quantity'], price: ['tradeprice'], date: ['datetime', 'tradedate'], fees: ['ibcommission'], multiplier: ['multiplier'], orderId: ['tradeid', 'iborderid'], openClose: ['open/closeindicator', 'opencloseindicator'] },
+  P('ibkr', 'Interactive Brokers (Flex query: Trades)', { account: ['clientaccountid', 'accountid'], symbol: ['symbol'], assetClass: ['assetclass'], side: ['buy/sell'], qty: ['quantity'], price: ['tradeprice'], date: ['datetime', 'tradedate'], fees: ['ibcommission'], multiplier: ['multiplier'], execId: ['tradeid', 'execid'], orderId: ['iborderid', 'orderid'], openClose: ['open/closeindicator', 'opencloseindicator'] },
     ['symbol', 'side', 'qty', 'price', 'date'], 'Client Portal: Performance & Reports > Flex Queries > Trades (CSV), with Date/Time, Buy/Sell, Multiplier and TradeID.'),
   P('ibkr_activity', 'Interactive Brokers (Activity Statement)', { assetClass: ['asset category'], symbol: ['symbol'], date: ['date/time'], qty: ['quantity'], price: ['t. price'], fees: ['comm/fee', 'comm in usd'], openClose: ['code'] },
     ['assetClass', 'symbol', 'date', 'qty', 'price'], 'Client Portal: Statements > Activity > CSV. Only the Trades section is read.'),
@@ -78,7 +81,8 @@ export const PRESETS: Preset[] = [
 
 /** The generic match for any other export (the owner checks the columns in the preview). */
 const GENERIC: [ImportField, RegExp][] = [
-  ['orderId', /(order|trade|transaction|execution) ?(id|#|number)/i],
+  ['execId', /(trade|transaction|execution|exec) ?(id|#|number)/i],
+  ['orderId', /order ?(id|#|number)/i],
   ['date', /(date|time|executed|filled)/i],
   ['symbol', /(symbol|ticker|instrument)/i],
   ['side', /(side|action|buy\/sell|b\/s|type)/i],
@@ -252,6 +256,7 @@ export function rowsToFills(rows: string[][], headerAt: number, columns: ImportC
       time: when.hasTime ? when.time : when.time + i,
       fees,
       ...(get(r, 'orderId') ? { orderId: get(r, 'orderId') } : {}),
+      ...(get(r, 'execId') ? { execId: get(r, 'execId') } : {}),
       ...(get(r, 'account') ? { account: get(r, 'account') } : {}),
       ...(assetClass ? { assetClass } : {}),
       ...(multiplier ? { multiplier } : {}),

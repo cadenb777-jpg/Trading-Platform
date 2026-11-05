@@ -27,6 +27,7 @@ import {
   breakdown,
   calendarMonth,
   computeStats,
+  csvCell,
   counted,
   dailyPnl,
   equityCurve,
@@ -278,7 +279,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
       { label: 'Avg win / loss', value: `${usd(s.avgWin)} / ${usd(s.avgLoss)}`, hint: s.payoff != null ? `Payoff ratio ${s.payoff.toFixed(2)}` : '' },
       { label: 'Max drawdown', value: usd(s.maxDrawdown), tone: s.maxDrawdown < 0 ? 'down' : '', hint: 'Deepest fall from a high in the equity curve' },
       { label: 'Streak', value: s.currentStreak ? `${Math.abs(s.currentStreak)} ${s.currentStreak > 0 ? (s.currentStreak === 1 ? 'win' : 'wins') : s.currentStreak === -1 ? 'loss' : 'losses'}` : '—', hint: `Longest: ${s.maxConsecWins} wins, ${s.maxConsecLosses} losses` },
-      { label: 'Sharpe / Sortino', value: `${num2(s.sharpe)} / ${num2(s.sortino)}`, hint: 'On daily P&L, yearly scale' },
+      { label: 'Sharpe / Sortino', value: `${num2(s.sharpe)} / ${num2(s.sortino)}`, hint: `Daily $ P&L over ${s.sharpeDays} weekdays (no-trade days = $0), yearly scale` },
       { label: 'Fees', value: usd(s.fees), hint: `Gross ${usd(s.gross, true)}` },
     ]);
     const pickRow = (t: Trade) => h('button', { class: 'jr-pick', type: 'button', onclick: () => openTrade(t) }, h('b', {}, t.symbol), h('span', { class: 'muted small' }, tradeDay(t)), h('span', { class: `num ${tone(tradePnl(t)!.net)}` }, usd(tradePnl(t)!.net, true)));
@@ -952,7 +953,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
               { v: l.symbol, cls: 'label' }, l.account, l.acquired, l.sold, { v: String(+l.qty.toFixed(4)), cls: 'num' }, { v: usd(l.proceeds), cls: 'num' }, { v: usd(l.cost), cls: 'num' }, { v: usd(l.gain, true), cls: `num ${tone(l.gain)}` }, l.term,
             ]), undefined, { id: 'journal:lots' })
           : h('p', { class: 'muted small' }, 'No closed lots in this year.'),
-        h('button', { class: 'btn ghost small', onclick: () => download(`realized-gains-estimate-${year}.csv`, ['symbol,account,acquired,sold,qty,proceeds,cost,gain,term', ...lots.map((l) => [l.symbol, l.account, l.acquired, l.sold, l.qty, l.proceeds.toFixed(2), l.cost.toFixed(2), l.gain.toFixed(2), l.term].join(','))].join('\n')) }, 'Download CSV'),
+        h('button', { class: 'btn ghost small', onclick: () => download(`realized-gains-estimate-${year}.csv`, ['symbol,account,acquired,sold,qty,proceeds,cost,gain,term', ...lots.map((l) => [l.symbol, l.account, l.acquired, l.sold, l.qty, l.proceeds.toFixed(2), l.cost.toFixed(2), l.gain.toFixed(2), l.term].map(csvCell).join(','))].join('\n')) }, 'Download CSV'),
       );
     };
     drawLots();
@@ -1053,6 +1054,10 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
     const first = parseExport(rows);
     let preset: Preset = first.preset;
     let columns: ImportColumns = first.columns;
+    // the account these fills belong to (when the file has no account column): the same name as an earlier import of
+    // that account lets overlapping trades be recognised instead of doubled
+    const knownAccounts = [...new Set(trades.map((t) => t.account))].sort();
+    let account = knownAccounts.length === 1 ? knownAccounts[0] : first.preset.label.split(' (')[0];
     const box = h('div', { class: 'jr-preview' });
     const close = openModal(`Import ${fileName}`, box, { wide: true, noAutofocus: true });
     box.closest('.modal')?.classList.add('jr-modal');
@@ -1070,7 +1075,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
       save.addEventListener('click', async () => {
         save.disabled = true;
         try {
-          const r = await engineRequest<{ message: string }>('journal.import_fills', { source: `csv:${preset.id}`, fills: res.fills, fileName }, 120000);
+          const r = await engineRequest<{ message: string }>('journal.import_fills', { source: `csv:${preset.id}`, fills: res.fills.map((x) => ({ ...x, account: x.account || account })), fileName }, 120000);
           close();
           toast(r.message);
           reload();
@@ -1089,8 +1094,13 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
             } }, ...[...PRESETS, GENERIC_PRESET].map((p) => h('option', { value: p.id, selected: p.id === preset.id }, p.label)))),
           h('span', { class: 'muted small' }, preset.id === first.preset.id ? 'Detected from the headings.' : 'Chosen by you.'),
         ),
-        h('details', { class: 'small', open: preset.id === 'generic' }, h('summary', {}, 'Columns'), h('div', { class: 'jr-form' }, ...(['date', 'time', 'symbol', 'side', 'qty', 'price', 'fees', 'orderId', 'account'] as ImportField[]).map(colSelect))),
-        h('p', { class: 'small' }, `${res.fills.length} fills read · ${res.skipped} rows that aren’t trades skipped${res.problems.length ? ` · ${res.problems.length} rows couldn’t be read` : ''}. Fills already in the journal (same order id, or same day, symbol, side, quantity and price from any source) are skipped when saving.`),
+        h('details', { class: 'small', open: preset.id === 'generic' }, h('summary', {}, 'Columns'), h('div', { class: 'jr-form' }, ...(['date', 'time', 'symbol', 'side', 'qty', 'price', 'fees', 'orderId', 'execId', 'account'] as ImportField[]).map(colSelect))),
+        columns.account == null
+          ? h('label', { class: 'jr-field' }, h('span', { class: 'muted small' }, 'Account (use the same name as earlier imports of this account, so overlapping trades aren’t doubled)'),
+              h('input', { class: 'input', value: account, list: 'jr-accounts', onchange: (e: Event) => (account = (e.target as HTMLInputElement).value.trim() || account) }),
+              h('datalist', { id: 'jr-accounts' }, ...knownAccounts.map((a) => h('option', { value: a }))))
+          : '',
+        h('p', { class: 'small' }, `${res.fills.length} fills read · ${res.skipped} rows that aren’t trades skipped${res.problems.length ? ` · ${res.problems.length} rows couldn’t be read` : ''}. Fills already in the journal (same execution or order id, or the same account, day, symbol, side, quantity and price from another source) are skipped when saving.`),
         res.problems.length ? h('details', { class: 'small' }, h('summary', {}, 'Rows not read'), h('ul', {}, ...res.problems.slice(0, 20).map((p) => h('li', {}, p)))) : '',
         res.fills.length
           ? dataTable(['Time (New York)', 'Symbol', 'Side', 'Qty', 'Price', 'Fees', 'Order id'], res.fills.slice(0, 50).map((x) => [when(x.time), { v: x.symbol, cls: 'label' }, `${x.side}${x.open ? ' (short)' : ''}`, { v: String(x.qty), cls: 'num' }, { v: String(x.price), cls: 'num' }, { v: x.fees ? x.fees.toFixed(2) : '', cls: 'num' }, x.orderId ?? '']), undefined, false)

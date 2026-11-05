@@ -68,7 +68,7 @@ NVIDIA CORP,NVDA,Buy,Filled,10,10,@130.00,129.95,DAY,10/21/2024 09:31:00 EDT,10/
 ***END OF FILE***
 `);
     expect(r.preset.id).toBe('tda');
-    expect(r.fills.map((f) => [f.side, f.qty, f.price, f.fees, f.orderId])).toEqual([
+    expect(r.fills.map((f) => [f.side, f.qty, f.price, f.fees, f.execId])).toEqual([
       ['BUY', 20, 78.1, 0, '48213307542'],
       ['SELL', 20, 81, 0.05, '48299901234'],
     ]);
@@ -100,7 +100,7 @@ U1234567,AAPL,STK,BUY,100,232.10,20241021;094000,-0.50,1,701113,O,USD
 `);
     expect(r.preset.id).toBe('ibkr');
     expect(r.fills[0]).toEqual({ symbol: 'MESZ4', side: 'SELL', open: 'short', qty: 2, price: 5850.25, time: Date.UTC(2024, 9, 21, 13, 31, 5) / 1000, fees: 1.24,
-      orderId: '701111', account: 'U1234567', assetClass: 'futures', multiplier: 5 });
+      execId: '701111', account: 'U1234567', assetClass: 'futures', multiplier: 5 });
     expect(r.fills[2]).toMatchObject({ symbol: 'AAPL', side: 'BUY', assetClass: 'stock', multiplier: 1 });
   });
 

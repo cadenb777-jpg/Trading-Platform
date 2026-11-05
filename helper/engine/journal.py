@@ -65,7 +65,7 @@ def _rows(sql, args=()):
 
 
 def all_fills():
-    return _rows('SELECT data FROM journal_fills ORDER BY time, fill_id')
+    return _rows('SELECT data FROM journal_fills ORDER BY time, rowid')
 
 
 def all_trades():
@@ -122,38 +122,54 @@ def clean_fill(f, source):
     out = {'symbol': symbol.lstrip('/') if asset == 'futures' else symbol, 'side': side, 'qty': qty, 'price': price, 'time': when,
            'fees': max(0.0, _num(f.get('fees')) or 0.0), 'account': str(f.get('account') or 'Default')[:80], 'orderId': str(f.get('orderId') or '')[:80],
            'assetClass': asset, 'multiplier': mult, 'source': source, 'open': opening, 'env': f.get('env') or None,
-           'preJournal': bool(f.get('preJournal'))}
+           'preJournal': bool(f.get('preJournal')), 'execId': str(f.get('execId') or '')[:80]}
     return out
 
 
 def dup_base(f):
-    """Day (New York), symbol, side, quantity and price: the same fill seen through two sources."""
-    return f"{ny_day(f['time'])}|{f['symbol']}|{f['side']}|{f['qty']:g}|{f['price']:.4f}"
+    """Account, day (New York), symbol, side, quantity and price: the same fill seen through two different sources."""
+    return f"{f['account']}|{ny_day(f['time'])}|{f['symbol']}|{f['side']}|{f['qty']:g}|{f['price']:.4f}"
 
 
 def keyed(fills, source):
-    """(fill_id, dup_key, fill) for a batch. Identical rows in one batch are told apart by their count (#1, #2), so two
-    real identical fills on a day both save, while the same two seen again from another source don't."""
+    """(fill_id, dup_key, fill) for a batch.
+    fill_id identifies the fill within its source: the execution id when the source has one, else the order id with
+    quantity, price and time (partial fills of one order stay apart), else a hash of the row and its count among
+    identical rows in the batch (so re-importing the same file adds nothing, while two real identical fills both save).
+    dup_key (None for manual entries) matches the same fill from a different source (Webull API vs a CSV export); the
+    count (#1, #2) keeps two identical fills apart there too."""
     seen = {}
     out = []
+    base_src = source.split(':')[0]
     for f in fills:
         base = dup_base(f)
         seen[base] = seen.get(base, 0) + 1
         dup = f'{base}#{seen[base]}'
-        fid = f"{source.split(':')[0]}:{f['orderId']}:{f['side']}" if f['orderId'] else f"{source}:{hashlib.sha1(dup.encode()).hexdigest()[:16]}"
-        out.append((fid, dup, f))
+        if f.get('execId'):
+            fid = f"{base_src}:x:{f['execId']}"
+        elif f['orderId']:
+            fid = f"{base_src}:{f['orderId']}:{f['side']}:{f['qty']:g}:{f['price']:.4f}:{int(f['time'])}"
+        else:
+            row = f"{dup}|{int(f['time'])}"
+            fid = f"{source}:{hashlib.sha1(row.encode()).hexdigest()[:16]}"
+        out.append((fid, None if source == 'manual' else dup, f))
     return out
 
 
 def save_fills(fills, source):
-    """Saves new fills; returns (added, skipped as duplicates)."""
+    """Saves new fills; returns (added, skipped as duplicates). A fill is a duplicate when its id is already saved, or
+    when the same fill (dup_key) came from another source; never matched by dup_key within one source or for manual
+    entries. Each fill keeps `seq`, the order it arrived in, to break ties between fills in the same second."""
     c = db()
     added = skipped = 0
+    seq = c.execute('SELECT COALESCE(MAX(rowid), 0) FROM journal_fills').fetchone()[0]
     for fid, dup, f in keyed(fills, source):
-        if c.execute('SELECT 1 FROM journal_fills WHERE fill_id = ? OR dup_key = ?', (fid, dup)).fetchone():
+        if c.execute('SELECT 1 FROM journal_fills WHERE fill_id = ?', (fid,)).fetchone() or (
+                dup and c.execute("SELECT 1 FROM journal_fills WHERE dup_key = ? AND source != ? AND source != 'manual'", (dup, source)).fetchone()):
             skipped += 1
             continue
-        f = {**f, 'fillId': fid}
+        seq += 1
+        f = {**f, 'fillId': fid, 'seq': seq}
         c.execute('INSERT INTO journal_fills VALUES (?, ?, ?, ?, ?, ?, ?)', (fid, dup, source, f['account'], f['symbol'], f['time'], json.dumps(f)))
         added += 1
     c.commit()
@@ -180,7 +196,7 @@ def group_fills(fills):
     trade with an unknown cost (openedBefore, costUnknown), left out of the statistics. Pure."""
     trades = []
     open_by = {}
-    for f in sorted((x for x in fills if not x.get('ignored')), key=lambda x: (x['time'], x.get('fillId', ''))):
+    for f in sorted((x for x in fills if not x.get('ignored')), key=lambda x: (x['time'], x.get('seq', 0), x.get('fillId', ''))):
         key = (f['account'], f['symbol'])
         t = open_by.get(key)
         signed = 1 if f['side'] == 'BUY' else -1

@@ -162,8 +162,12 @@ export interface Stats {
   /** +3 = three wins in a row now, -2 = two losses. */
   currentStreak: number;
   maxDrawdown: number;
+  /** On daily net P&L over every weekday from the first to the last closing day (no-trade days count as $0),
+   * scaled by the square root of 252. */
   sharpe: number | null;
   sortino: number | null;
+  /** Weekdays in that series. */
+  sharpeDays: number;
   avgHoldWin: number | null;
   avgHoldLoss: number | null;
   open: number;
@@ -188,7 +192,7 @@ export function computeStats(all: Trade[]): Stats {
     maxL = Math.max(maxL, -run);
   }
   const rs = done.map(rOf).filter((r): r is { r: number; estimated: boolean } => r != null).map((r) => r.r);
-  const daily = [...dailyPnl(done).values()].map((d) => d.net);
+  const daily = dailySeries(done).map((d) => d.net);
   const dm = mean(daily);
   const sd = daily.length > 1 ? Math.sqrt(sum(daily.map((x) => (x - dm!) ** 2)) / (daily.length - 1)) : null;
   const down = daily.length > 1 ? Math.sqrt(sum(daily.map((x) => Math.min(0, x) ** 2)) / daily.length) : null;
@@ -218,6 +222,7 @@ export function computeStats(all: Trade[]): Stats {
     maxDrawdown: Math.min(0, ...equityCurve(done).map((p) => p.drawdown)),
     sharpe: dm != null && sd ? (dm / sd) * Math.sqrt(252) : null,
     sortino: dm != null && down ? (dm / down) * Math.sqrt(252) : null,
+    sharpeDays: daily.length,
     avgHoldWin: holds((x) => x > 0),
     avgHoldLoss: holds((x) => x < 0),
     open: all.filter((t) => t.status === 'open').length,
@@ -259,6 +264,23 @@ export function dailyPnl(trades: Trade[]): Map<string, DayCell> {
     c.wins += net > 0 ? 1 : 0;
     c.ids.push(t.id);
     out.set(day, c);
+  }
+  return out;
+}
+
+/** Net P&L for every weekday (Mon-Fri) from the first to the last day with a closed trade; days without one are $0
+ * (market holidays are counted as $0 days too: a small, conservative effect). */
+export function dailySeries(trades: Trade[]): { day: string; net: number }[] {
+  const daily = dailyPnl(trades);
+  const days = [...daily.keys()].sort();
+  if (!days.length) return [];
+  const out: { day: string; net: number }[] = [];
+  const end = Date.parse(`${days[days.length - 1]}T00:00:00Z`);
+  for (let t = Date.parse(`${days[0]}T00:00:00Z`); t <= end; t += 86400000) {
+    const d = new Date(t);
+    if (d.getUTCDay() === 0 || d.getUTCDay() === 6) continue;
+    const day = d.toISOString().slice(0, 10);
+    out.push({ day, net: daily.get(day)?.net ?? 0 });
   }
   return out;
 }
@@ -494,9 +516,12 @@ export function realizedLots(trades: Trade[]): LotRow[] {
   return out.sort((a, b) => a.sold.localeCompare(b.sold));
 }
 
-const csvCell = (v: unknown) => {
-  const s = v == null ? '' : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+/** A CSV cell that a spreadsheet won't run as a formula (text starting with = + - @ tab or CR gets a '; plain numbers
+ * such as -12.50 stay numbers) and quoted when it holds a comma, quote or line break. */
+export const csvCell = (v: unknown) => {
+  let s = v == null ? '' : String(v);
+  if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
 /** One row per trade, for a spreadsheet. */

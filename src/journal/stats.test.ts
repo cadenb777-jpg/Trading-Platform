@@ -9,6 +9,8 @@ import {
   breakdown,
   calendarMonth,
   computeStats,
+  csvCell,
+  dailySeries,
   dailyPnl,
   equityCurve,
   excursions,
@@ -86,6 +88,16 @@ describe('statistics', () => {
     // daily: 50, 30, -20, -10 -> mean 12.5, sample sd 33.0404, downside RMS sqrt((400+100)/4)=11.180
     expect(s.sharpe).toBeCloseTo((12.5 / 33.0404) * Math.sqrt(252), 2);
     expect(s.sortino).toBeCloseTo((12.5 / 11.1803) * Math.sqrt(252), 2);
+  });
+  it('counts weekdays without trades as $0 days', () => {
+    // Mon +$100, Thu -$40 (Tue and Wed count as $0; the weekend between isn't in range)
+    const two = [trade(100, 110, { fees: 0, day: 2 }), trade(100, 96, { fees: 0, day: 5 })];
+    expect(dailySeries(two).map((d) => d.net)).toEqual([100, 0, 0, -40]);
+    const st = computeStats(two);
+    expect(st.sharpeDays).toBe(4);
+    // mean 15, sample sd sqrt((85² + 15² + 15² + 55²) / 3) = 59.722
+    expect(st.sharpe).toBeCloseTo((15 / 59.7216) * Math.sqrt(252), 2);
+    expect(dailySeries([trade(100, 101, { day: 6 }), trade(100, 101, { day: 9 })]).map((d) => d.day)).toEqual(['2026-03-06', '2026-03-09']);
   });
   it('leaves out open trades and trades from before the journal', () => {
     const more = [...list, { ...trade(1, 2), status: 'open' as const, exits: [] }, { ...trade(1, 50), openedBefore: true }];
@@ -166,6 +178,16 @@ describe('excursions, plan adherence and realized lots', () => {
       ['2024-01-02', '2025-07-01', 5, 149, 50, 99, 'Long'],
       ['2025-06-02', '2025-07-01', 5, 149, 100, 49, 'Short'],
     ]);
+  });
+  it('CSV cells never run as spreadsheet formulas', () => {
+    expect(csvCell('=HYPERLINK("http://x")')).toBe(`"'=HYPERLINK(""http://x"")"`);
+    expect(csvCell('+1+1')).toBe("'+1+1");
+    expect(csvCell('-cmd')).toBe("'-cmd");
+    expect(csvCell('@SUM(A1)')).toBe("'@SUM(A1)");
+    expect(csvCell('\tx')).toBe("'\tx");
+    expect(csvCell('a\rb')).toBe('"a\rb"');
+    expect(csvCell('-12.50')).toBe('-12.50');
+    expect(csvCell('plain')).toBe('plain');
   });
   it('CSV export quotes text', () => {
     const csv = tradesCsv([trade(1, 2, { notes: 'a, "b"' })]);

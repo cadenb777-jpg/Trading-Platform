@@ -118,8 +118,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Journal (src/pages/journalPage.ts, #journal, code JRNL; docs/research/trading-journal.md): helper engine/journal.py
   keeps fills/trades/days/playbooks/plans/imports in platform.db tables journal_* (screenshots in ~/.trading-platform/
   journal/). Fills -> round trips FIFO per account+symbol (group_fills: scale-ins, partials, shorts need an explicit
-  short on stocks, futures multipliers; a stock sell with nothing held = costUnknown). Dedupe: order id, else NY day +
-  symbol + side + qty + price (#n within a batch), across every source. Sources: Webull backfill (webull.order_history,
+  short on stocks, futures multipliers; a stock sell with nothing held = costUnknown; same-second ties by arrival `seq`).
+  Fill id = execution id, else order id + qty + price + time, else a row hash; dup_key (account + NY day + symbol +
+  side + qty + price, #n in a batch) only matches other sources, never manual entries. Sources: Webull backfill (webull.order_history,
   read-only, ~2 years, paged; pre-history positions at average cost = openedBefore, out of stats), broker CSV/Excel
   presets in src/journal/importers.ts (tested per broker), PDF via ai.chat, manual. Trade page orders: journal.plan
   (stop/target/strategy by order id) + orders.log tagging. Maths in src/journal/stats.ts (tested; < 30 trades = "not
