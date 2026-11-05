@@ -9,7 +9,7 @@ export interface WorldCell {
   period: string;
   previous: number | null;
   source: string;
-  /** When the source last updated the indicator ('' when it doesn't say). */
+  /** How current the figure is, ready to show: 'updated 2026-10-15' (World Bank), the WEO edition (IMF) or 'downloaded 2026-11-05'. */
   asOf: string;
   data: { time: string; value: number }[];
   /** IMF forecasts: next year's figure. */

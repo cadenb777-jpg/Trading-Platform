@@ -11,7 +11,7 @@ import re
 import time
 
 from .core import EngineError, handler
-from .worldmacro import fetch
+from .worldmacro import fetch, masked
 
 POLY_EVENTS = 'https://gamma-api.polymarket.com/events'
 KALSHI_EVENTS = 'https://api.elections.kalshi.com/trade-api/v2/events'
@@ -223,6 +223,7 @@ async def load_all(ctx):
 
 
 @handler('predictions.markets')
+@masked
 async def markets(ctx, msg):
     """Open prediction markets (Polymarket + Kalshi) with Fed-meeting odds. Optional filters: category
     ('fed', 'macro', 'politics'), source and a search text."""

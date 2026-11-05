@@ -136,7 +136,7 @@ export function createWorldTab() {
   function openCell(country: string, indicator: string, unit: string, cell: WorldCell) {
     openChartWindow({
       title: `${country}: ${indicator}`,
-      subtitle: `${cell.source} · latest ${fmtPeriod(cell.period)}${cell.forecastFrom ? ` · IMF forecast from ${cell.forecastFrom.slice(0, 4)}` : ''}${cell.asOf ? ` · updated ${cell.asOf}` : ''}`,
+      subtitle: `${cell.source} · latest ${fmtPeriod(cell.period)}${cell.forecastFrom ? ` · IMF forecast from ${cell.forecastFrom.slice(0, 4)}` : ''}${cell.asOf ? ` · ${cell.asOf}` : ''}`,
       lines: [{ name: country, color: THEME.viz1, data: cell.data }],
       format: (v) => fmtWorld(v, unit),
       changeAs: unit ? 'points' : 'percent',
@@ -158,8 +158,8 @@ export function createWorldTab() {
   function cellNode(r: WorldTable['rows'][number], key: string, unit: string, indName: string) {
     const c = r.cells[key];
     if (!c) return h('td', { class: 'wm-cell wm-empty', title: `No ${indName.toLowerCase()} figure for ${r.name} from this source` }, '—');
-    const sub = [c.phase ?? '', fmtPeriod(c.period), c.next != null ? `${c.nextPeriod}: ${fmtWorld(c.next, unit)}` : ''].filter(Boolean).join(' · ');
-    const title = `${r.name} · ${indName}: ${fmtWorld(c.value, unit)} (${fmtPeriod(c.period)}). Source: ${c.source}${c.asOf ? `, updated ${c.asOf}` : ''}. Click for the history.`;
+    const sub = [c.phase ?? '', fmtPeriod(c.period), c.next != null ? `${c.nextPeriod}: ${fmtWorld(c.next, unit)}` : '', /sparse/.test(c.source) ? 'WB, central gov.' : ''].filter(Boolean).join(' · ');
+    const title = `${r.name} · ${indName}: ${fmtWorld(c.value, unit)} (${fmtPeriod(c.period)}). Source: ${c.source}${c.asOf ? ` (${c.asOf})` : ''}. Click for the history.`;
     const td = h(
       'td',
       { class: `wm-cell${c.phase ? ` wm-phase-${c.phase.toLowerCase()}` : ''}`, title },

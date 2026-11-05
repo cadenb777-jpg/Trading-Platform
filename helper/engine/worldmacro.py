@@ -20,7 +20,9 @@ in ~/.trading-platform/settings.json (Settings window) and never go back to the 
 import asyncio
 import csv
 import datetime as dt
+import functools
 import io
+import re
 import time
 
 import httpx
@@ -47,6 +49,65 @@ SIGNUP = {
     'eia': 'https://www.eia.gov/opendata/register.php',
     'census': 'https://api.census.gov/data/key_signup.html',
 }
+
+
+# ---------- Secrets never leave ----------
+
+MASKED = '•••'
+#: key=value pairs in text that carry a key (api_key=, registrationkey=, UserID=, token=, key=, x-api-key: ...)
+_KEY_PAIR = re.compile(r'(?i)\b((?:api[_-]?key|registration[_-]?key|user[_-]?id|token|key|x-api-key)\s*[=:]\s*)([^\s&"\',;}]+)')
+_URL_QUERY = re.compile(r'(https?://[^\s?#"\'<>]+)\?[^\s"\'<>]*')
+
+
+def saved_secrets():
+    """Every saved key value (BEA, BLS, EIA, Census, Finnhub, FRED, Anthropic, Alpaca ...), longest first."""
+    try:
+        s = _settings()
+        data = s.load()
+        values = {data.get(k) for k in s.SECRET_KEYS}
+    except Exception:
+        values = set()
+    return sorted((v for v in values if isinstance(v, str) and len(v) >= 6), key=len, reverse=True)
+
+
+def mask_secrets(text, *extra):
+    """`text` with every saved key (and `extra` values), URL query strings and key=value pairs masked. The one masker
+    for provider errors, the log and anything sent to the browser from these modules."""
+    out = str(text)
+    for value in sorted({*saved_secrets(), *(e for e in extra if isinstance(e, str) and e)}, key=len, reverse=True):
+        out = out.replace(value, MASKED)
+    out = _URL_QUERY.sub(r'\1?' + MASKED, out)
+    return _KEY_PAIR.sub(lambda m: m.group(1) + MASKED, out)
+
+
+def masked_reply(value, _depth=0):
+    """A copy of a reply with every string run through mask_secrets (numbers and structure kept)."""
+    if _depth > 8:
+        return value
+    if isinstance(value, str):
+        return mask_secrets(value) if value else value
+    if isinstance(value, dict):
+        return {k: masked_reply(v, _depth + 1) for k, v in value.items()}
+    if isinstance(value, list):
+        return [masked_reply(v, _depth + 1) for v in value]
+    return value
+
+
+def masked(fn):
+    """Handler decorator: the reply's text and any error message go through mask_secrets."""
+    @functools.wraps(fn)
+    async def run(ctx, msg):
+        try:
+            reply = await fn(ctx, msg)
+        except EngineError as err:
+            raise EngineError(mask_secrets(err)) from None
+        return masked_reply(reply)
+    return run
+
+
+def source_error(text):
+    """An EngineError whose text (often a provider's own message) is masked before anyone sees or logs it."""
+    return EngineError(mask_secrets(text))
 
 
 # ---------- Fetching ----------
@@ -114,6 +175,16 @@ def yoy(rows, lag=12):
     return out
 
 
+def mom(rows):
+    """% change from the previous month (consecutive months only)."""
+    out = []
+    for (d0, v0), (d1, v1) in zip(rows, rows[1:]):
+        y0, m0, y1, m1 = int(d0[:4]), int(d0[5:7]), int(d1[:4]), int(d1[5:7])
+        if v0 and (y1 * 12 + m1) - (y0 * 12 + m0) == 1:
+            out.append((d1, 100 * (v1 / v0 - 1)))
+    return out
+
+
 def diff(rows):
     return [(rows[i][0], rows[i][1] - rows[i - 1][1]) for i in range(1, len(rows))]
 
@@ -145,7 +216,8 @@ WB_INDICATORS = [
     ('gdp', 'NY.GDP.MKTP.KD.ZG', 'GDP growth', '%'),
     ('inflation', 'FP.CPI.TOTL.ZG', 'Inflation', '%'),
     ('unemployment', 'SL.UEM.TOTL.ZS', 'Unemployment', '%'),
-    ('debt', 'GC.DOD.TOTL.GD.ZS', 'Government debt', '% GDP'),
+    # Central government only and sparse; the table prefers the IMF's general government gross debt (GGXWDG_NGDP).
+    ('debt', 'GC.DOD.TOTL.GD.ZS', 'Central government debt (% GDP), World Bank (sparse)', '% GDP'),
 ]
 
 
@@ -153,7 +225,7 @@ def parse_worldbank(payload):
     """World Bank JSON ([meta, rows]) -> ({ISO3: [(year, value)] oldest first}, last updated)."""
     if isinstance(payload, list) and payload and isinstance(payload[0], dict) and 'message' in payload[0]:
         msg = (payload[0]['message'] or [{}])[0]
-        raise EngineError(f"World Bank: {msg.get('value') or msg.get('key') or 'request rejected'}")
+        raise source_error(f"World Bank: {msg.get('value') or msg.get('key') or 'request rejected'}")
     if not isinstance(payload, list) or len(payload) < 2:
         raise EngineError('World Bank sent an unexpected reply.')
     meta, rows = payload[0] or {}, payload[1] or []
@@ -181,7 +253,9 @@ IMF_URL = 'https://www.imf.org/external/datamapper/api/v1/{indicator}/{codes}'
 IMF_INDICATORS = [
     ('gdpForecast', 'NGDP_RPCH', 'IMF GDP forecast', '%'),
     ('inflationForecast', 'PCPIPCH', 'IMF inflation forecast', '%'),
+    ('debtImf', 'GGXWDG_NGDP', 'General government gross debt (% GDP)', '% GDP'),
 ]
+IMF_INDICATORS_URL = 'https://www.imf.org/external/datamapper/api/v1/indicators'
 
 
 def parse_imf(payload, indicator):
@@ -197,10 +271,20 @@ def parse_imf(payload, indicator):
     return out
 
 
+def imf_vintage(payload, indicator):
+    """The WEO edition an indicator comes from ("World Economic Outlook (October 2026)"), or ''."""
+    meta = ((payload or {}).get('indicators') or {}).get(indicator) if isinstance(payload, dict) else None
+    return str((meta or {}).get('source') or '').strip()
+
+
 async def imf(ctx, indicator):
     async def load():
-        payload = await fetch(ctx, 'IMF DataMapper', IMF_URL.format(indicator=indicator, codes='/'.join(CODES)))
-        return {'values': parse_imf(payload, indicator), 'fetched': time.time()}
+        payload, meta = await asyncio.gather(fetch(ctx, 'IMF DataMapper', IMF_URL.format(indicator=indicator, codes='/'.join(CODES))),
+                                             fetch(ctx, 'IMF DataMapper', IMF_INDICATORS_URL), return_exceptions=True)
+        if isinstance(payload, Exception):
+            raise payload
+        vintage = '' if isinstance(meta, Exception) else imf_vintage(meta, indicator)
+        return {'values': parse_imf(payload, indicator), 'vintage': vintage, 'fetched': time.time()}
     return await ctx.cached(('world', 'imf', indicator), DAY, load, persist=True, stale_ok=True)
 
 
@@ -257,7 +341,7 @@ INDICATORS = [
     {'key': 'inflation', 'name': 'Inflation', 'unit': '%', 'source': 'World Bank', 'freq': 'yearly'},
     {'key': 'inflationForecast', 'name': 'Inflation forecast', 'unit': '%', 'source': 'IMF WEO', 'freq': 'yearly'},
     {'key': 'unemployment', 'name': 'Unemployment', 'unit': '%', 'source': 'World Bank', 'freq': 'yearly'},
-    {'key': 'debt', 'name': 'Gov. debt', 'unit': '% GDP', 'source': 'World Bank', 'freq': 'yearly'},
+    {'key': 'debt', 'name': 'Gov. debt', 'unit': '% GDP', 'source': 'IMF WEO (general gov.)', 'freq': 'yearly'},
     {'key': 'cli', 'name': 'Leading indicator', 'unit': '', 'source': 'OECD CLI', 'freq': 'monthly'},
 ]
 
@@ -272,8 +356,15 @@ def _cell(rows, source, asof, *, keep=12, until=None):
             'source': source, 'asOf': asof, 'data': [{'time': d if len(d) > 4 else f'{d}-01-01', 'value': round(v, 3)} for d, v in rows[-keep:]]}
 
 
+def _fetched_label(src):
+    """'downloaded 2026-11-05' from a load's fetch time (when the source names no edition of its own)."""
+    t = (src or {}).get('fetched')
+    return f"downloaded {dt.datetime.fromtimestamp(t).date().isoformat()}" if t else ''
+
+
 def build_table(wb, imf_data, cli, codes, this_year):
-    """Rows per country from the downloaded sources (any of which may be None after a failure)."""
+    """Rows per country from the downloaded sources (any of which may be None after a failure). Each figure's asOf
+    says how current it is: the World Bank's update date, the IMF WEO edition, or (OECD) the download date."""
     rows = []
     for code, name, region in COUNTRIES:
         if code not in codes:
@@ -281,10 +372,21 @@ def build_table(wb, imf_data, cli, codes, this_year):
         cells = {}
         for key, _, _, _ in WB_INDICATORS:
             got = (wb.get(key) or {}).get('values', {}).get(code) if wb.get(key) else None
-            cells[key] = _cell(got, 'World Bank', (wb.get(key) or {}).get('updated', '')) if got else None
+            updated = (wb.get(key) or {}).get('updated', '')
+            cells[key] = _cell(got, 'World Bank', f'updated {updated}' if updated else _fetched_label(wb.get(key))) if got else None
+        imf_asof = {key: (imf_data.get(key) or {}).get('vintage') or _fetched_label(imf_data.get(key)) for key, _, _, _ in IMF_INDICATORS}
+        # Government debt: the IMF's general government gross debt (last completed year), else the World Bank's
+        # sparse central-government figure, labelled as such.
+        got = (imf_data.get('debtImf') or {}).get('values', {}).get(code) if imf_data.get('debtImf') else None
+        debt = _cell(got, 'IMF WEO (general government gross debt)', imf_asof['debtImf'], until=str(this_year - 1)) if got else None
+        if debt is None and cells.get('debt'):
+            debt = {**cells['debt'], 'source': 'World Bank (central government debt, sparse)'}
+        cells['debt'] = debt
         for key, _, _, _ in IMF_INDICATORS:
+            if key == 'debtImf':
+                continue
             got = (imf_data.get(key) or {}).get('values', {}).get(code) if imf_data.get(key) else None
-            cell = _cell(got, 'IMF WEO', '', until=str(this_year)) if got else None
+            cell = _cell(got, 'IMF WEO', imf_asof[key], until=str(this_year)) if got else None
             if cell:
                 nxt = next((v for y, v in got if y == str(this_year + 1)), None)
                 cell['next'] = round(nxt, 3) if nxt is not None else None
@@ -295,7 +397,7 @@ def build_table(wb, imf_data, cli, codes, this_year):
             cells[key] = cell
         got = (cli or {}).get('values', {}).get(code) if cli else None
         if got:
-            cell = _cell(got, 'OECD CLI', '', keep=36)
+            cell = _cell(got, 'OECD CLI', _fetched_label(cli), keep=36)
             cell['phase'] = cli_phase(got)
             cells['cli'] = cell
         else:
@@ -305,6 +407,7 @@ def build_table(wb, imf_data, cli, codes, this_year):
 
 
 @handler('world.table')
+@masked
 async def world_table(ctx, msg):
     """The multi-country table (Americas / Europe / Asia-Pacific). Each source loads on its own: a failure fills
     `errors` with that source's message and leaves its columns empty."""
@@ -333,15 +436,19 @@ BLS_V1 = 'https://api.bls.gov/publicAPI/v1/timeseries/data/'
 BLS_V2 = 'https://api.bls.gov/publicAPI/v2/timeseries/data/'
 # id, name, group, transform ('yoy' % change from a year ago, 'diff' monthly change, '' level), unit, needs key
 BLS_SERIES = [
-    ('CUSR0000SA0', 'CPI: all items', 'CPI', 'yoy', '%', False),
-    ('CUSR0000SA0L1E', 'CPI: core (ex food & energy)', 'CPI', 'yoy', '%', False),
-    ('CUSR0000SAF1', 'CPI: food', 'CPI', 'yoy', '%', False),
-    ('CUSR0000SA0E', 'CPI: energy', 'CPI', 'yoy', '%', False),
-    ('CUSR0000SAH1', 'CPI: shelter', 'CPI', 'yoy', '%', False),
-    ('CUSR0000SASLE', 'CPI: services less energy', 'CPI', 'yoy', '%', False),
-    ('CUSR0000SETA02', 'CPI: used cars', 'CPI', 'yoy', '%', False),
-    ('CUSR0000SAM', 'CPI: medical care', 'CPI', 'yoy', '%', True),
-    ('CUSR0000SAA', 'CPI: apparel', 'CPI', 'yoy', '%', True),
+    # Year-on-year from the unadjusted (CUUR) indexes, as BLS publishes the headline; month-on-month from the
+    # seasonally adjusted (CUSR) ones.
+    ('CUUR0000SA0', 'CPI: all items (yearly)', 'CPI', 'yoy', '%', False),
+    ('CUUR0000SA0L1E', 'CPI: core, ex food & energy (yearly)', 'CPI', 'yoy', '%', False),
+    ('CUSR0000SA0', 'CPI: all items (monthly, seas. adj.)', 'CPI', 'mom', '%', False),
+    ('CUSR0000SA0L1E', 'CPI: core (monthly, seas. adj.)', 'CPI', 'mom', '%', False),
+    ('CUUR0000SAF1', 'CPI: food (yearly)', 'CPI', 'yoy', '%', False),
+    ('CUUR0000SA0E', 'CPI: energy (yearly)', 'CPI', 'yoy', '%', False),
+    ('CUUR0000SAH1', 'CPI: shelter (yearly)', 'CPI', 'yoy', '%', False),
+    ('CUUR0000SASLE', 'CPI: services less energy (yearly)', 'CPI', 'yoy', '%', False),
+    ('CUUR0000SETA02', 'CPI: used cars (yearly)', 'CPI', 'yoy', '%', False),
+    ('CUUR0000SAM', 'CPI: medical care (yearly)', 'CPI', 'yoy', '%', True),
+    ('CUUR0000SAA', 'CPI: apparel (yearly)', 'CPI', 'yoy', '%', True),
     ('CES0500000003', 'Average hourly earnings (private)', 'Wages', 'yoy', '%', False),
     ('CES0500000002', 'Average weekly hours (private)', 'Wages', '', 'h', True),
     ('JTS000000000000000JOL', 'Job openings', 'JOLTS', '', 'K', False),
@@ -365,7 +472,7 @@ def parse_bls(payload):
     if payload.get('status') != 'REQUEST_SUCCEEDED':
         messages = '; '.join(str(m) for m in payload.get('message') or []) or str(payload.get('status') or 'request failed')
         hint = ' A free BLS key (Settings) raises the daily limit.' if 'threshold' in messages.lower() else ''
-        raise EngineError(f'BLS: {messages}.{hint}')
+        raise source_error(f'BLS: {messages}.{hint}')
     out = {}
     for s in (payload.get('Results') or {}).get('series') or []:
         rows = []
@@ -393,11 +500,13 @@ async def bls_panel(ctx):
             rows = raw.get(sid) or []
             if kind == 'yoy':
                 rows = yoy(rows)
+            elif kind == 'mom':
+                rows = mom(rows)
             elif kind == 'diff':
                 rows = diff(rows)
             out.append(series_entry(sid, name, unit, rows[-36:], group=group, source='BLS'))
         return {'series': out, 'fetched': time.time()}
-    data = await ctx.cached(('world', 'bls', bool(key)), 6 * 3600, load, persist=True, stale_ok=True)
+    data = await ctx.cached(('world', 'bls2', bool(key)), 6 * 3600, load, persist=True, stale_ok=True)
     return {'source': 'BLS', 'title': 'US prices, wages and jobs (BLS)', 'link': 'https://www.bls.gov/data/',
             'keyed': bool(key), **({} if key else {'tip': 'Add a free BLS key in Settings for more series and a higher daily limit.', 'signup': SIGNUP['bls']}),
             **data}
@@ -442,7 +551,7 @@ def parse_bea(payload):
         err = err[0] if isinstance(err, list) else err
         text = err.get('APIErrorDescription') or err.get('ErrorDetail', {}).get('Description') or 'request rejected'
         hint = ' Check the BEA key in Settings.' if 'user' in str(text).lower() or 'key' in str(text).lower() else ''
-        raise EngineError(f'BEA: {text}.{hint}')
+        raise source_error(f'BEA: {text}.{hint}')
     data = (api.get('Results') or {}).get('Data') or []
     first_line = {}
     out = {}
@@ -634,7 +743,7 @@ def parse_eia(payload):
         raise EngineError('EIA sent an unexpected reply.')
     if payload.get('error'):
         err = payload['error']
-        raise EngineError(f"EIA: {err.get('message') if isinstance(err, dict) else err}")
+        raise source_error(f"EIA: {err.get('message') if isinstance(err, dict) else err}")
     rows = ((payload.get('response') or {}).get('data')) or []
     out = []
     for r in rows:
@@ -725,6 +834,7 @@ PANELS = {'bls': bls_panel, 'bea': bea_panel, 'census': census_panel, 'fiscal': 
 
 
 @handler('world.panel')
+@masked
 async def world_panel(ctx, msg):
     """One source's panel: {source, title, link, series: [...], errors, fetched} or {needsKey, signup, note}."""
     name = str(msg.get('panel') or '')

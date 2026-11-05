@@ -9,17 +9,14 @@ import httpx
 
 from . import settings
 from .core import EngineError, handler
+from .worldmacro import mask_secrets
 
 TIMEOUT = httpx.Timeout(12, connect=6)
 
 
 def _clean(message, *secrets):
-    """Drops any secret that might have slipped into a message (belt and braces)."""
-    text = str(message)
-    for s in secrets:
-        if s:
-            text = text.replace(s, '•••')
-    return text
+    """The shared masker (worldmacro.mask_secrets): saved keys, URL queries and key=value pairs."""
+    return mask_secrets(message, *secrets)
 
 
 async def _get(ctx, url, params=None, headers=None, client=None):

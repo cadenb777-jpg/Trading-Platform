@@ -1186,6 +1186,30 @@ class Isolation(unittest.TestCase):
             text = path.read_text(encoding='utf-8')
             self.assertIsNone(re.search(r'orders/place|place_order|order/place', text), f'{path.name} must not place orders')
 
+    #: The only POST requests the read-only data modules may make (both are data queries, not orders).
+    READ_ONLY_POSTS = {
+        'worldmacro.py': {'json=json_body'},                      # fetch(): used only for the BLS timeseries data query
+        'connections.py': {"'https://api.bls.gov/publicAPI/"},    # the BLS key test (the same data query)
+        'predictions.py': set(),
+        'finnhub.py': set(),
+    }
+
+    def test_prediction_markets_and_finnhub_never_trade(self):
+        trading = re.compile(r'clob\.polymarket\.com|data-api\.polymarket\.com|/portfolio|/orders?\b|order/|place_?order|create_?order|'
+                             r'cancel_?order|/positions\b|demo-api\.kalshi|private[_-]?key|signature|\bsign\(|hmac|wallet', re.I)
+        for name, allowed in self.READ_ONLY_POSTS.items():
+            text = (self.ENGINE / name).read_text(encoding='utf-8')
+            if name in ('predictions.py', 'finnhub.py'):
+                self.assertIsNone(trading.search(text), f'{name} mentions a trading endpoint')
+            posts = re.findall(r'\.post\(([^\n]*)', text)
+            if not allowed:
+                self.assertEqual(posts, [], f'{name} must make GET requests only')
+            for call in posts:
+                self.assertTrue(any(a in call for a in allowed), f'{name}: unexpected POST {call}')
+        world = (self.ENGINE / 'worldmacro.py').read_text(encoding='utf-8')
+        self.assertEqual([m for m in re.findall(r"json_body=(\w+)", world) if m != 'None'], ['body'])
+        self.assertIn("fetch(ctx, 'BLS', BLS_V2 if key else BLS_V1, json_body=body)", world)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -126,11 +126,12 @@ _TEXT_RULES = [
     (re.compile(r'(?i)\bbearer\s+[\w.~+/=-]+'), 'Bearer ' + MASK),
     (re.compile(r'[\w.+-]+@[\w-]+(\.[\w-]+)+'), '[email]'),
     (re.compile(r'(https?://[^\s?#"\'<>]+)\?[^\s"\'<>]*'), r'\1?[query removed]'),
-    (re.compile(r'(?i)\b([\w-]*(?:token|secret|password|passwd|key|authorization|signature|client[_-]?id|chat[_-]?id|topic)[\w-]*)'
+    (re.compile(r'(?i)\b([\w-]*(?:token|secret|password|passwd|key|authorization|signature|client[_-]?id|chat[_-]?id|user[_-]?id|topic)[\w-]*)'
                 r'(\\?["\']?\s*[:=]\s*\\?["\']?)(?!\[)([^\s"\'\\,;&}\]]+)'), r'\1\2' + MASK),
     (re.compile(r'(?<!\d)\d{5,15}:[A-Za-z0-9_-]{30,}'), MASK),  # Telegram bot token (also inside /bot<token>/ paths)
     (re.compile(r'(?i)\b(account|acct)(s?(?:[ _-]?(?:id|number|no\.?|hash))?\s*[:=#]?\s*["\']?)([A-Za-z0-9-]*\d[A-Za-z0-9-]{2,})'),
      lambda m: m.group(1) + m.group(2) + _last2(m.group(3))),
+    (re.compile(r'\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b'), '[uuid]'),  # e.g. a BEA UserID
     (re.compile(r'\b[0-9a-fA-F]{24,}\b'), '[hex]'),
     (re.compile(r'(?=[A-Za-z0-9+_-]*\d)[A-Za-z0-9+_-]{32,}={0,2}'), '[long string]'),  # base64-like (has a digit)
     (re.compile(r'\b\d{7,}\b'), lambda m: _last2(m.group(0))),  # long numbers: account numbers, phone numbers

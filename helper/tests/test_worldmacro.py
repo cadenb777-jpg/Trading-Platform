@@ -102,7 +102,7 @@ class Parsers(unittest.TestCase):
 
     def test_bls_monthly_rows_skip_annual_average(self):
         out = wm.parse_bls(fixture('bls_ok.json'))
-        cpi = out['CUSR0000SA0']
+        cpi = out['CUUR0000SA0']
         self.assertEqual(len(cpi), 26)
         self.assertEqual(cpi[0], ('2024-08-01', 310.0))
         self.assertNotIn(999.0, [v for _, v in cpi])
@@ -149,19 +149,49 @@ class Parsers(unittest.TestCase):
         self.assertEqual(wm.yoy(rows), [('2026-01-01', 100 * (113 / 101 - 1)), ('2026-03-01', 100 * (115 / 103 - 1))])
         self.assertEqual(wm.diff([('a', 1), ('b', 4)]), [('b', 3)])
 
+    def test_month_on_month_needs_consecutive_months(self):
+        rows = [('2026-01-01', 100.0), ('2026-02-01', 100.5), ('2026-04-01', 101.0)]
+        self.assertEqual([(d, round(v, 3)) for d, v in wm.mom(rows)], [('2026-02-01', 0.5)])
+
+    def test_cpi_yearly_uses_unadjusted_and_monthly_adjusted(self):
+        by = {s[0]: s for s in wm.BLS_SERIES}
+        self.assertEqual(by['CUUR0000SA0'][3], 'yoy')
+        self.assertEqual(by['CUSR0000SA0'][3], 'mom')
+        self.assertFalse([s for s in wm.BLS_SERIES if s[0].startswith('CUSR') and s[3] == 'yoy'])
+        self.assertLessEqual(len([s for s in wm.BLS_SERIES if not s[5]]), 25)  # v1 (no key) takes 25 series
+        self.assertLessEqual(len(wm.BLS_SERIES), 50)
+
     def test_series_entry_without_data_says_so(self):
         e = wm.series_entry('x', 'X', '%', [])
         self.assertIsNone(e['value'])
         self.assertIn('No data', e['note'])
 
+    def test_debt_prefers_imf_general_government_then_labelled_world_bank(self):
+        wb = {'debt': {'values': {'USA': [('2023', 99.0)], 'DEU': [('2022', 45.0)]}, 'updated': '2026-10-15'}}
+        imf = {'debtImf': {'values': {'USA': [('2024', 121.0), ('2025', 122.5), ('2026', 124.0)]}, 'vintage': 'World Economic Outlook (October 2026)'}}
+        rows = {r['code']: r['cells']['debt'] for r in wm.build_table(wb, imf, None, ['USA', 'DEU'], 2026)}
+        self.assertEqual((rows['USA']['value'], rows['USA']['period']), (122.5, '2025'))  # last completed year
+        self.assertEqual(rows['USA']['source'], 'IMF WEO (general government gross debt)')
+        self.assertEqual(rows['USA']['asOf'], 'World Economic Outlook (October 2026)')
+        self.assertEqual(rows['DEU']['source'], 'World Bank (central government debt, sparse)')
+        self.assertEqual(next(i for i in wm.WB_INDICATORS if i[0] == 'debt')[2], 'Central government debt (% GDP), World Bank (sparse)')
+
+    def test_imf_vintage(self):
+        meta = {'indicators': {'NGDP_RPCH': {'label': 'Real GDP growth', 'source': 'World Economic Outlook (October 2026)'}}}
+        self.assertEqual(wm.imf_vintage(meta, 'NGDP_RPCH'), 'World Economic Outlook (October 2026)')
+        self.assertEqual(wm.imf_vintage({}, 'NGDP_RPCH'), '')
+
     def test_table_groups_by_region_and_carries_source(self):
         wb = {'gdp': {'values': {'USA': [('2023', 2.9), ('2024', 2.8)]}, 'updated': '2026-10-15'}}
-        imf = {'gdpForecast': {'values': {'USA': [('2025', 2.0), ('2026', 2.1), ('2027', 2.0)]}}}
-        rows = wm.build_table(wb, imf, None, ['USA', 'DEU'], 2026)
+        imf = {'gdpForecast': {'values': {'USA': [('2025', 2.0), ('2026', 2.1), ('2027', 2.0)]}, 'fetched': 1793000000}}
+        rows = wm.build_table(wb, imf, {'values': {'USA': [('2026-08-01', 100.2)]}, 'fetched': 1793000000}, ['USA', 'DEU'], 2026)
         self.assertEqual([(r['code'], r['region']) for r in rows], [('USA', 'Americas'), ('DEU', 'Europe')])
         usa = rows[0]['cells']
         self.assertEqual((usa['gdp']['value'], usa['gdp']['period'], usa['gdp']['source']), (2.8, '2024', 'World Bank'))
         self.assertEqual((usa['gdpForecast']['value'], usa['gdpForecast']['next']), (2.1, 2.0))
+        self.assertEqual(usa['gdp']['asOf'], 'updated 2026-10-15')
+        self.assertTrue(usa['gdpForecast']['asOf'].startswith('downloaded '))  # no WEO edition known: the fetch date, said so
+        self.assertTrue(usa['cli']['asOf'].startswith('downloaded '))
         self.assertIsNone(usa['inflation'])
         self.assertIsNone(rows[1]['cells']['gdp'])
 
@@ -206,6 +236,8 @@ class Handlers(Base):
             r'api\.worldbank\.org/.*NY\.GDP': fixture('worldbank_gdp.json'),
             r'api\.worldbank\.org': 500,
             r'imf\.org/.*NGDP_RPCH': fixture('imf_ngdp.json'),
+            r'imf\.org/.*GGXWDG': {'values': {'GGXWDG_NGDP': {'USA': {'2024': 121.0, '2025': 122.5}}}},
+            r'imf\.org/.*/indicators': {'indicators': {'PCPIPCH': {'source': 'World Economic Outlook (October 2026)'}}},
             r'imf\.org': {'values': {'PCPIPCH': {'USA': {'2026': 2.9, '2027': 2.4}}}},
             r'sdmx\.oecd\.org': fixture('oecd_cli.csv'),
         }
@@ -216,7 +248,9 @@ class Handlers(Base):
         self.assertIn('busy', out['errors']['World Bank'])
         usa = next(r for r in out['rows'] if r['code'] == 'USA')
         self.assertEqual(usa['cells']['gdp']['value'], 2.8)  # GDP worked, the other World Bank indicators failed
-        self.assertIsNone(usa['cells']['debt'])
+        self.assertIsNone(usa['cells']['unemployment'])  # a failed World Bank indicator leaves its column empty
+        self.assertEqual(usa['cells']['debt']['source'], 'IMF WEO (general government gross debt)')  # IMF debt, not World Bank
+        self.assertEqual(usa['cells']['inflationForecast']['asOf'], 'World Economic Outlook (October 2026)')
         self.assertEqual(usa['cells']['cli']['phase'], 'Expansion')
         self.assertEqual(usa['cells']['inflationForecast']['source'], 'IMF WEO')
         self.assertEqual([r['region'] for r in out['rows']][:4], ['Americas'] * 4)
@@ -264,9 +298,12 @@ class Handlers(Base):
         self.assertIn('signup', out)
         by = {s['id']: s for s in out['series']}
         self.assertAlmostEqual(by['CES0000000001']['value'], 150.0)  # monthly change in thousands
-        self.assertAlmostEqual(by['CUSR0000SA0']['value'], 100 * (328.75 / 319.75 - 1), places=4)
+        # Year-on-year from the unadjusted index (the published headline); the adjusted index gives month-on-month.
+        self.assertAlmostEqual(by['CUUR0000SA0']['value'], 100 * (328.75 / 319.75 - 1), places=4)
+        self.assertEqual(by['CUUR0000SA0']['name'], 'CPI: all items (yearly)')
+        self.assertIn('No data', by['CUSR0000SA0']['note'])  # the fixture has no adjusted series
         self.assertNotIn('CES2000000001', by)  # key-only series
-        self.assertIn('No data', by['CUSR0000SETA02']['note'])
+        self.assertIn('No data', by['CUUR0000SETA02']['note'])
 
         settings._cache = {'bls_key': '0123456789abcdef0123456789abcdef'}
         sent = []
@@ -314,6 +351,49 @@ class Handlers(Base):
     def test_unknown_panel(self):
         with self.assertRaisesRegex(EngineError, 'Unknown'):
             self.run_async(lambda c: wm.world_panel(c, {'panel': 'nope'}))
+
+
+class Masking(Base):
+    KEY = 'ABCDEF01-2345-6789-ABCD-EF0123456789'
+    EIA = 'eiaSecretKey0123456789abcdefghijklmnopqr'
+
+    def test_mask_secrets_saved_values_urls_and_pairs(self):
+        settings._cache = {'bea_key': self.KEY, 'eia_key': self.EIA}
+        text = (f'bad {self.KEY}; GET https://api.eia.gov/v2/x?api_key={self.EIA}&length=1; registrationkey=zzzzzz12; '
+                f'UserID=qq{self.KEY[:6]}; token=abcdef123 and api_key: xyz987')
+        out = wm.mask_secrets(text)
+        for secret in (self.KEY, self.EIA, 'zzzzzz12', 'abcdef123', 'xyz987'):
+            self.assertNotIn(secret, out)
+        self.assertIn('https://api.eia.gov/v2/x?•••', out)
+        self.assertEqual(wm.mask_secrets('Check the key in Settings.'), 'Check the key in Settings.')
+
+    def test_provider_errors_echoing_a_key_are_masked(self):
+        settings._cache = {'bea_key': self.KEY, 'eia_key': self.EIA}
+        echo = {'BEAAPI': {'Results': {'Error': {'APIErrorDescription': f'The UserId {self.KEY} provided is not valid'}}}}
+        with self.assertRaises(EngineError) as caught:
+            wm.parse_bea(echo)
+        self.assertNotIn(self.KEY, str(caught.exception))
+        with self.assertRaises(EngineError) as caught:
+            wm.parse_eia({'error': f'api_key {self.EIA} invalid'})
+        self.assertNotIn(self.EIA, str(caught.exception))
+        with self.assertRaises(EngineError) as caught:
+            wm.parse_bls({'status': 'REQUEST_NOT_PROCESSED', 'message': [f'registrationkey={self.KEY} is invalid']})
+        self.assertNotIn(self.KEY, str(caught.exception))
+
+    def test_handler_replies_and_errors_are_masked(self):
+        from engine import finnhub
+        settings._cache = {'bea_key': self.KEY, 'eia_key': self.EIA, 'finnhub_key': 'finnhubkey1234567890'}
+        echo = {'BEAAPI': {'Results': {'Error': {'APIErrorDescription': f'UserID={self.KEY} is not valid'}}}}
+        self.replies = {r'apps\.bea\.gov': echo, r'api\.eia\.gov': {'error': f'bad api_key {self.EIA}'},
+                        r'finnhub\.io': {'earningsCalendar': [{'symbol': 'X', 'date': '2026-11-06', 'hour': f'token=finnhubkey1234567890'}]}}
+        with self.assertRaises(EngineError) as caught:
+            self.run_async(lambda c: wm.world_panel(c, {'panel': 'bea'}))
+        self.assertNotIn(self.KEY, str(caught.exception))
+        with self.assertRaises(EngineError) as caught:
+            self.run_async(lambda c: wm.world_panel(c, {'panel': 'eia'}))
+        self.assertNotIn(self.EIA, str(caught.exception))
+        out = self.run_async(lambda c: finnhub.earnings(c, {}))
+        self.assertNotIn('finnhubkey1234567890', json.dumps(out))
 
 
 class KeysInSettings(Base):

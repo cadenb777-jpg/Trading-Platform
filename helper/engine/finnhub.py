@@ -8,7 +8,7 @@ import re
 import time
 
 from .core import EngineError, handler
-from .worldmacro import fetch
+from .worldmacro import fetch, masked
 
 BASE = 'https://finnhub.io/api/v1/'
 SIGNUP = 'https://finnhub.io/register'
@@ -60,6 +60,7 @@ def parse_earnings(payload):
 
 
 @handler('finnhub.recommendations')
+@masked
 async def recommendations(ctx, msg):
     symbol = _symbol(msg)
     key = _key()
@@ -73,6 +74,7 @@ async def recommendations(ctx, msg):
 
 
 @handler('finnhub.earnings')
+@masked
 async def earnings(ctx, msg):
     """Earnings dates from `start` (default today) for `days` (default 14, max 31); optional `symbol`."""
     key = _key()
