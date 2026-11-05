@@ -95,6 +95,7 @@ export const FUNCTIONS: readonly NavFunction[] = [
   { code: 'AISUM', label: 'AI page summary', section: 'ai', icon: 'spark', keywords: 'insight explain summary', target: 'act:ai-summary' },
   { code: 'DATA', label: 'Data health', section: 'system', icon: 'pulse', keywords: 'diagnostics status feeds schwab sec webull', target: 'act:health' },
   { code: 'PREF', label: 'Settings', section: 'system', icon: 'gear', keywords: 'settings preferences keys theme', target: 'set:' },
+  { code: 'PUP', label: 'Market buddy (show or hide)', section: 'system', icon: 'spark', keywords: 'dog pet buddy mascot bull', target: 'act:buddy' },
   { code: 'HELP', label: 'Keyboard shortcuts', section: 'system', icon: 'info', keywords: 'help keys shortcuts', target: 'act:shortcuts' },
 ];
 

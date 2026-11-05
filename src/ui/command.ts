@@ -603,6 +603,7 @@ export const ACTIONS: ActionEntry[] = [
   { id: 'act:sync', title: 'Sync accounts (Webull)', subtitle: 'Saves your Webull holdings as portfolios; reads only', keywords: 'sync webull refresh holdings' },
   { id: 'act:health', title: 'Diagnostics: data health', subtitle: 'When each feed last updated', keywords: 'diagnostics status feeds' },
   { id: 'act:connection', title: 'Diagnostics: connection check', subtitle: 'Helper, Schwab login, keys', keywords: 'diagnostics helper status' },
+  { id: 'act:buddy', title: 'Market buddy (show or hide Bull)', keywords: 'dog pet buddy mascot pup' },
   { id: 'act:shortcuts', title: 'Keyboard shortcuts', hint: '?', keywords: 'help keys' },
   ...SETTINGS_SECTIONS.map((s) => ({ id: `set:${s}`, title: `Settings: ${s}`, keywords: 'settings preferences' })),
 ];
@@ -762,6 +763,7 @@ async function runAction(name: string) {
   else if (name === 'connection') (await import('./settings')).openSettings('connection');
   else if (name === 'shortcuts') openShortcutSheet();
   else if (name === 'launchpad') d.openLaunchpad?.();
+  else if (name === 'buddy') (await import('./buddy')).toggleBuddy();
 }
 
 async function runCode(code: string, symbol: string | null) {

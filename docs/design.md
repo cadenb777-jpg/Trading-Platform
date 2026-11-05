@@ -101,6 +101,8 @@ tabs, a function bar, a launchpad, a status bar and a widget dashboard, all in o
 - **Navigation shows where everything is.** The rail lists every page by name under its section (one click to any
   page); the top row holds the current section's pages as tabs and the command field (codes like `AAPL GP`).
 - **Motion explains.** Animate only what changed or what the pointer touches; ≤ 200 ms, eased; nothing loops.
+- **One companion, by request.** Bull (the market buddy) is the only character on screen: small, out of the way, hidden
+  on the Chart page and with one click (code PUP); his face is information (the S&P's day), not decoration.
 - **Remove before adding.** A new visual touch replaces an old one or proves it helps a task; review new pages
   against this list before merging.
 

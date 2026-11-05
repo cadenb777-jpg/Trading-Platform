@@ -22,7 +22,7 @@ import { panelHeader } from '../ui/panel';
 import { LAYOUT_KEY, WIDGETS, addWidget, defaultLayout, hiddenWidgets, moveWidget, nextSpan, parseLayout, removeWidget, updateWidget, type Layout, type WidgetId } from '../home/widgets';
 import type { ReadySetup } from '../home/brief';
 import { greeting, marketStatus } from '../ui/marketClock';
-import { createBridge } from '../home/bridge';
+import { createTickerTape } from '../home/tickerTape';
 import { THEME, chartThemeOptions, followTheme } from '../ui/theme';
 import { createWatchlist } from '../ui/watchlist';
 import { tickerAttr, tickersIn } from '../ui/tickerCard';
@@ -600,7 +600,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     h(
       'header',
       { class: 'home-hero' },
-      createBridge(),
+      createTickerTape().el,
       h('div', { class: 'hero-left' }, greetingEl, h('div', { class: 'hero-sub' }, dateEl, marketPill)),
       brief.strip,
     ),

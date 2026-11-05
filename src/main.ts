@@ -21,6 +21,7 @@ import { createStatusBar } from './ui/statusBar';
 import { openSettings } from './ui/settings';
 import { initTheme } from './ui/theme';
 import { initAtmosphere, markRoute } from './ui/atmosphere';
+import { initBuddy } from './ui/buddy';
 import { PAGE_SUGGESTIONS, screenText } from './ai/screen';
 import { followHealth, openDataHealth } from './ui/dataHealth';
 import { initTickerCards } from './ui/tickerCard';
@@ -34,6 +35,7 @@ captureConsoleErrors(); // kept for Settings > Send diagnostics
 
 initTheme();
 initAtmosphere();
+initBuddy();
 
 interface Page {
   el: HTMLElement;
