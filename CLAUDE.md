@@ -329,6 +329,24 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Pop-out charts: `openChartWindow` (src/ui/chartWindow.ts); `createLineChart` adds hover values and an expand button;
   `openFredWindow` opens a FRED series' full history.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).
+  Data hub (v44, helper/engine/datahub.py; audit in docs/research/data-aggregation-audit.md): every outside call goes
+  through `datahub.get(ctx.http, '<source>', url, params=...)` or `datahub.call('<source>', fn, key=...)`, never a bare
+  `ctx.http.get`. One gate per source in `SOURCES` (gap, per-minute budget, requests at once; Schwab 120/min of which
+  background work such as the scanner uses at most 90 via `ctx.schwab.background()`), 429/5xx/network retries with
+  backoff (only GETs; `retry=False` for POSTs), identical in-flight calls joined, failures raised as `DataError` (an
+  EngineError without query strings). `ctx.schwab` is already routed (`datahub.raw(...)` for code doing its own call);
+  SEC goes through `sec.sec_get` (streamed downloads: `async with datahub.Turn('sec')`). Name cache keys by source
+  (first part in `CACHE_PREFIXES`, e.g. ('fred', id)) so hits count toward that source. Figures needing a source and
+  date: `datahub.envelope(value, source, as_of)`; every engine reply gets `provenance` {fetchedAt, stale, sources}
+  automatically (engine_reply), and the browser stamps a stale saved copy with its own time (src/data/provenance.ts).
+  Symbols: `engine/symbols.py` (`normalize`, `to_source(s, 'sec'|'yahoo'|'alpaca'|...)`, `lookup` for replies keyed
+  BRK/B or BRK-B); canonical = BRK.B, $SPX, /ES, BTC-USD. Times are UTC seconds (`datahub.utc_seconds`, `ny_date`,
+  `ny_session_close`); units via `fraction`/`percent`/`bp_to_fraction`. Health per source (`data.health`) shows in the
+  Data window's Sources table and the diagnostics file. Checks (engine/datacheck.py): data.identifiers (spellings, CIK,
+  share classes, CUSIP), data.dividends (Yahoo vs 10-K XBRL), data.splits (Yahoo splits vs Schwab closes). Alpaca bars
+  are split-adjusted only (like Schwab), re-downloaded when Yahoo shows a split after they were saved, and rescaled to
+  Schwab over a 3-day overlap (charts and the scanner). One-time cache clean-ups go in `datahub.MIGRATIONS` (in order; each backs
+  up what it touches to the cache_backup table first; a failure stops the chain; never delete kept 30-minute bars). Browser gate: DATAHUB_HELPER_VERSION = 44 for `data.*`.
   Alpaca (engine/alpaca.py, optional free keys in Settings): market-data-only history back to 2016 via
   `alpaca.bars(ctx, symbol, tf, start, end)` (intraday only, saved in cache.db, extended incrementally). With keys set,
   30m-4h charts ask for 3 years and the helper fills what Schwab lacks (Schwab wins); the AI reads regular-session

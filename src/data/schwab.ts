@@ -81,6 +81,11 @@ export const gameReady = () => !helper.tooOld && (helper.version ?? 0) >= GAME_H
 export const QUANT_HELPER_VERSION = 44;
 /** True when the connected helper has the quant pack (v44+). */
 export const quantReady = () => !helper.tooOld && (helper.version ?? 0) >= QUANT_HELPER_VERSION;
+/** The data hub (v44): data.health (the Data window's Sources table), data.identifiers, data.dividends, data.splits
+ * and `provenance` on every engine reply. HELPER_VERSION stays as it is; older helpers simply lack these. */
+export const DATAHUB_HELPER_VERSION = 44;
+/** True when the connected helper has the data hub (v44+). */
+export const datahubReady = () => !helper.tooOld && (helper.version ?? 0) >= DATAHUB_HELPER_VERSION;
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
@@ -336,6 +341,7 @@ class HelperConnection {
     if ((type.startsWith('futures.') || (type === 'ai.insight' && msg.topic === 'futures')) && (this.version ?? 0) < FUTURES_MARKET_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('alerts.') && (this.version ?? 0) < ALERTS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('crosscheck.') && (this.version ?? 0) < CROSSCHECK_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if (type.startsWith('data.') && (this.version ?? 0) < DATAHUB_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('prospect.') || String(msg.collection ?? '').startsWith('prospect_') || (type === 'ai.insight' && msg.topic === 'prospect')) && (this.version ?? 0) < PROSPECT_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type === 'prospect.adv_pdf' || type === 'prospect.adv_pdf_reader' || (type === 'prospect.ingest' && (msg.source === 'failed' || msg.source === 'state'))) && (this.version ?? 0) < PROSPECT_COMPLETE_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('prospect.sources.') && (this.version ?? 0) < PROSPECT_SOURCES_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
@@ -544,6 +550,9 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'research.company': 5 * 60_000,
   'alts.fund': 15 * 60_000,
   'crosscheck.value': 60_000,
+  'data.identifiers': 60 * 60_000,
+  'data.dividends': 30 * 60_000,
+  'data.splits': 30 * 60_000,
   'alts.search_private': 15 * 60_000,
   'alts.latest_private': 10 * 60_000,
   'risk.account': 5 * 60_000,

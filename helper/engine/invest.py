@@ -10,6 +10,7 @@ import math
 import re
 import time
 
+from . import datahub
 from . import dividends, macro
 from .core import EngineError, handler, market_session
 
@@ -273,7 +274,7 @@ async def bond_market(ctx, msg):
 
 
 async def fiscal(ctx, dataset, params):
-    response = await ctx.http.get(FISCAL + dataset, params=params)
+    response = await datahub.get(ctx.http, 'treasury', FISCAL + dataset, params=params)
     response.raise_for_status()
     return response.json().get('data') or []
 

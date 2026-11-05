@@ -6,6 +6,7 @@ positioning comes from FINRA's free daily short-sale volume files, options activ
 import asyncio
 import datetime as dt
 
+from . import datahub, symbols
 from . import flow, sec
 from .core import EngineError, handler
 
@@ -74,7 +75,7 @@ def rolling_index(values, window=156):
 async def cot_rows(ctx, code):
     async def load():
         params = {'cftc_contract_market_code': code, '$order': 'report_date_as_yyyy_mm_dd DESC', '$limit': '520'}
-        response = await ctx.http.get(flow.COT_URL, params=params)
+        response = await datahub.get(ctx.http, 'cftc', flow.COT_URL, params=params)
         response.raise_for_status()
         return flow.parse_cot(response.json())
     return await ctx.cached(('cot-long', code), 6 * 3600, load, persist=True, stale_ok=True)
@@ -118,7 +119,7 @@ def parse_short_file(text):
 async def short_day(ctx, day):
     async def load():
         async with _finra_slots:
-            response = await ctx.http.get(FINRA_URL.format(day=day.strftime('%Y%m%d')))
+            response = await datahub.get(ctx.http, 'finra', FINRA_URL.format(day=day.strftime('%Y%m%d')), retries=0)
         if response.status_code in (403, 404):
             return {}  # market holiday or not published yet
         response.raise_for_status()
@@ -144,7 +145,7 @@ async def short_volume(ctx, msg):
     for day, data in zip(dates, files):
         if isinstance(data, Exception) or not data:
             continue
-        hit = data.get(symbol) or data.get(symbol.replace('/', '.')) or data.get(symbol.replace('.', '/'))
+        hit = symbols.lookup(data, symbol)  # BRK.B / BRK/B / BRK-B
         if hit and hit[1]:
             rows.append({'date': day.isoformat(), 'short': hit[0], 'total': hit[1], 'ratio': hit[0] / hit[1]})
     if not rows and all(isinstance(f, Exception) for f in files):

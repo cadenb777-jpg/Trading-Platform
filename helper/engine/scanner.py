@@ -25,6 +25,7 @@ from zoneinfo import ZoneInfo
 
 from . import alpaca, flow, lab, positioning, ruletests, sec
 from . import strategies as st
+from . import datahub
 from .core import EngineError, background, handler, market_session
 
 log = logging.getLogger('engine.scanner')
@@ -61,8 +62,7 @@ NDX_COT = '209742'  # Nasdaq-100 E-mini futures: the COT market for Nasdaq stock
 # Schwab allows about 120 requests a minute for the whole app, and the charts share it: the scanner sends one
 # request at a time, at most one every 0.7 s (about 85 a minute), so the owner's own charts always have room.
 REQUEST_GAP = 0.7
-_pace = asyncio.Lock()
-_last_request = [0.0]
+_last_request = [0.0]  # (kept for older tests; the data hub's 'schwab' gate does the pacing)
 BAD_SYMBOL_RETRY = 24 * 3600
 DAILY_DAYS = 15 * 366  # swing time frame: about 15 years of daily bars
 SCHWAB_30M_DAYS = 270  # Schwab keeps about 9 months of 30-minute bars
@@ -88,7 +88,7 @@ class _PacedClient:
     """The Schwab client with every call going through the scanner's pacer."""
 
     def __init__(self, client):
-        self._client = client
+        self._client = datahub.raw(client)  # the data hub's own routing is replaced by the background one below
 
     def __getattr__(self, name):
         attr = getattr(self._client, name)
@@ -122,14 +122,12 @@ def bad_symbols(now=None):
 
 
 async def _paced(call):
-    async with _pace:
-        wait = _last_request[0] + REQUEST_GAP - time.monotonic()
-        if wait > 0:
-            await asyncio.sleep(wait)
-        try:
-            return await call()
-        finally:
-            _last_request[0] = time.monotonic()
+    """One Schwab call as background work in the data hub: one at a time, REQUEST_GAP after the previous one ends, and
+    within the per-minute budget it shares with charts and quotes (leaving them their reserve)."""
+    try:
+        return await datahub.call('schwab', call, background=True, gap=REQUEST_GAP, gap_from='end')
+    except datahub.DataError as err:  # busy/unreachable after retries: skip this symbol, never stop the scan
+        raise TemporaryError(str(err)) from err
 
 
 def _remember(cache, key, value, limit):
@@ -255,7 +253,7 @@ def _candles(response, symbol):
 
 async def _fetch(ctx, symbol, method, days):
     now = dt.datetime.now(dt.timezone.utc)
-    response = await _paced(lambda: getattr(ctx.schwab, method)(symbol, start_datetime=now - dt.timedelta(days=days), end_datetime=now))
+    response = await _paced(lambda: getattr(datahub.raw(ctx.schwab), method)(symbol, start_datetime=now - dt.timedelta(days=days), end_datetime=now))
     return _candles(response, symbol)
 
 
@@ -478,6 +476,73 @@ def _row(b):
     return (b['time'], b['open'], b['high'], b['low'], b['close'], b['volume'])
 
 
+def _alpaca_prefix(rows, old, to):
+    """How many of the symbol's oldest 30-minute rows came from the old dividend-adjusted Alpaca download: the longest
+    run from the start, strictly before that download's end `to` (the fill asked it to end at Schwab's first bar), whose
+    every value (volume included) equals the download's bar at the same time."""
+    n = 0
+    for r in rows:
+        if r[0] >= to:
+            break
+        a = old.get(r[0])
+        if a is None or any(abs(float(x) - float(y)) > 1e-9 * max(1.0, abs(float(y))) for x, y in zip(r[1:6], a[1:6])):
+            break
+        n += 1
+    return n
+
+
+def migrate_30m_split_only(con, name, keys_available=None):
+    """Puts the old dividend-adjusted Alpaca bars of the kept 30-minute record on Schwab's basis. It never deletes a bar.
+
+    Per stock with a saved old Alpaca download: the Alpaca run (`_alpaca_prefix`) is rescaled (prices / r, volume x r)
+    by r = median of download close / record close over the record's other bars the download also has (Schwab's
+    bars). Without such an overlap, or when r is 1, nothing changes (logged). Bars outside the run, Schwab's, are never
+    changed. Stocks without a saved download are left alone. Each month row it changes is first copied to
+    cache_backup. Returns the number of bars rescaled. (`keys_available` is not used: rescaling never needs Alpaca.)"""
+    import ast
+    import json
+    prefix = "('scan-30m', '"
+    by_symbol = {}
+    for key, _saved, data in con.execute('SELECT key, saved, data FROM cache WHERE substr(key, 1, ?) = ?', (len(prefix), prefix)):
+        try:
+            _, symbol, month = ast.literal_eval(key)
+            by_symbol.setdefault(symbol, {})[month] = [tuple(r) for r in json.loads(data)]
+        except (ValueError, SyntaxError, TypeError):
+            continue
+    changed_total = 0
+    for symbol, months in by_symbol.items():
+        row = con.execute('SELECT data FROM cache WHERE key = ?', (repr(('alpaca', symbol, '30m')),)).fetchone()
+        if not row:
+            continue  # never had an Alpaca download (or it is gone): nothing to tell apart, nothing changed
+        try:
+            saved = json.loads(row[0])
+            old = {r[0]: r for r in saved.get('bars') or []}
+            to = float(saved.get('to') or 0)
+        except (ValueError, AttributeError, TypeError):
+            continue
+        rows = sorted(r for m in months.values() for r in m)
+        n = _alpaca_prefix(rows, old, to)
+        if not n:
+            continue
+        cut = rows[n - 1][0]
+        ratios = sorted(old[r[0]][4] / r[4] for r in rows[n:] if r[0] in old and r[4])
+        r = ratios[len(ratios) // 2] if ratios else None
+        if r is None or abs(r - 1) <= 1e-9:
+            log.info('30-minute record %s: %d older Alpaca bars left as they are (%s)', symbol, n,
+                     'no Schwab overlap to align them' if r is None else 'already on Schwab\'s basis')
+            continue
+        run = {x[0] for x in rows[:n]}
+        touched = sorted(m for m, rs in months.items() if any(x[0] in run for x in rs))
+        datahub.backup_rows(con, name, [repr(('scan-30m', symbol, m)) for m in touched])
+        for m in touched:
+            new = [[x[0], x[1] / r, x[2] / r, x[3] / r, x[4] / r, x[5] * r] if x[0] in run else list(x) for x in months[m]]
+            con.execute('UPDATE cache SET data = ? WHERE key = ?', (json.dumps(new), repr(('scan-30m', symbol, m))))
+        changed_total += n
+        log.info('30-minute record %s: rescaled %d older Alpaca bars (up to %s) by %.4f to Schwab\'s basis (backed up in '
+                 'cache_backup); Schwab bars untouched', symbol, n, _month(cut), 1 / r)
+    return changed_total
+
+
 def _bar(r):
     return {'time': r[0], 'open': r[1], 'high': r[2], 'low': r[3], 'close': r[4], 'volume': r[5]}
 
@@ -512,7 +577,9 @@ async def thirty_minute_bars(ctx, symbol):
         start = time.time() - ALPACA_30M_YEARS * 365 * 86400 + 86400
         if not merged or merged[0]['time'] > start + 7 * 86400:
             try:
-                older = alpaca.regular_session(await alpaca.bars(ctx, symbol, '30m', start, merged[0]['time'] if merged else None))
+                end = merged[0]['time'] + alpaca.SEAM_OVERLAP_DAYS * 86400 if merged else None  # overlap for the seam check
+                older = alpaca.regular_session(await alpaca.bars(ctx, symbol, '30m', start, end))
+                older = alpaca.align_to_schwab(symbol, merged, older)  # Schwab's basis wins
                 merged = alpaca.merge_with_schwab(merged, older)
             except Exception as err:
                 log.info('Alpaca 30-minute history for %s not added: %s', symbol, err)
@@ -1436,6 +1503,10 @@ async def background_loop(ctx, news=None, first_delay=15):
     removed = await asyncio.to_thread(prune_old_cache, ctx.disk)
     if removed:
         log.info('Removed %d old dated scanner history rows from cache.db', removed)
+    # One-time cache clean-ups (data hub v44): the 30-minute record first, while the old Alpaca rows still exist.
+    migrations = (('scan-30m-split-only', migrate_30m_split_only),
+                  *datahub.MIGRATIONS)
+    await asyncio.to_thread(datahub.run_migrations, ctx.disk, migrations)
     while True:
         try:
             await run_once(ctx, news)

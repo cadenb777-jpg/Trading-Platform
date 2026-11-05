@@ -3,6 +3,8 @@
  * and the Data button can list every feed. Pure bookkeeping; schwab.ts records successes and failures.
  */
 
+import { replyProvenance } from './provenance';
+
 export type FeedId = 'quotes' | 'stream' | 'alpaca' | 'sec' | 'fred' | 'cftc' | 'webull';
 
 /** Each feed, its stamp label and how often it is normally refreshed (stale after twice that). 0 = on request only. */
@@ -78,8 +80,23 @@ export function markFetched(type: string, data?: unknown, at = Date.now()) {
   if (feed) recordOk(feed, at);
 }
 
-/** When this exact reply arrived from the helper (ms), or null. */
-export const replyTime = (data: unknown): number | null => (data && typeof data === 'object' ? (replies.get(data) ?? null) : null);
+/** The helper's data-hub source name for each feed (reply provenance is keyed by these). */
+const FEED_SOURCE: Partial<Record<FeedId, string>> = { quotes: 'schwab', alpaca: 'alpaca', sec: 'sec', fred: 'fred', cftc: 'cftc', webull: 'webull' };
+
+/**
+ * When this reply's data was fetched (ms), or null. With reply provenance (v44) it is the helper's own fetch time of
+ * the cached inputs (the feed's source when given and present, else the oldest input), so a saved copy is stamped
+ * with its real age; older helpers: the time the reply arrived.
+ */
+export const replyTime = (data: unknown, feed?: FeedId | null): number | null => {
+  if (!data || typeof data !== 'object') return null;
+  const prov = replyProvenance(data);
+  if (prov) {
+    const own = feed ? prov.sources?.[FEED_SOURCE[feed] ?? ''] : undefined;
+    return (own?.fetchedAt ?? prov.fetchedAt) * 1000;
+  }
+  return replies.get(data) ?? null;
+};
 
 /** Stale = older than twice the feed's refresh interval (feeds refreshed only on request never go stale). */
 export function isStale(at: number | null, refreshMs: number, now = Date.now()): boolean {

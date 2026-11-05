@@ -88,6 +88,7 @@ class AlpacaBase(unittest.TestCase):
         settings._cache = dict(KEYS)
         self.addCleanup(setattr, settings, '_cache', None)
         alpaca._locks.clear()
+        alpaca._SPLIT_MEMO.clear()
         alpaca._pace_lock = None
         gap = mock.patch.object(alpaca, 'MIN_CALL_GAP', 0)
         gap.start()
@@ -112,7 +113,7 @@ class Pagination(AlpacaBase):
         self.assertEqual(len(fake.calls), 4)  # 3 + 3 + 3 + 1
         self.assertEqual(fake.calls[1]['params']['page_token'], '3')
         p = fake.calls[0]['params']
-        self.assertEqual((p['symbols'], p['timeframe'], p['adjustment'], p['feed']), ('AAPL', '1Hour', 'all', 'sip'))
+        self.assertEqual((p['symbols'], p['timeframe'], p['adjustment'], p['feed']), ('AAPL', '1Hour', 'split', 'sip'))
         self.assertTrue(fake.calls[0]['url'].startswith('https://data.alpaca.markets/'))
         self.assertEqual(set(bars[0]), {'time', 'open', 'high', 'low', 'close', 'volume'})
 
@@ -429,6 +430,78 @@ class Bounds(AlpacaBase):
         # json.dumps runs in C without releasing the GIL, so the worker thread can still pause the loop briefly
         # (~70-90 ms for 10 years of hours, saved at most every few minutes). The bound guards against regressions.
         self.assertLess(asyncio.run(run()), 0.2)
+
+
+class SplitAfterSaving(AlpacaBase):
+    def test_a_split_after_saving_refetches_even_inside_the_saved_range(self):
+        base = int(dt.datetime(2026, 6, 1, 14, tzinfo=dt.timezone.utc).timestamp())
+        fake = FakeAlpaca([base + k * HOUR for k in range(5)], page=100)
+        path = os.path.join(self.tmp.name, 'cache.db')
+        ctx = Ctx(fake, path)
+        asyncio.run(alpaca.bars(ctx, 'NVDA', '1h', base, base + 4 * HOUR))
+        self.assertEqual(len(fake.calls), 1)
+        asyncio.run(alpaca.bars(ctx, 'NVDA', '1h', base, base + 4 * HOUR))
+        self.assertEqual(len(fake.calls), 1)  # inside the saved range, no split known: from the cache
+
+        async def splits(symbol):
+            return {dt.date(2026, 9, 1): 4.0}  # after the bars were saved (the clock says Oct 1)
+        ctx.splits = splits
+        saved = ctx._cache[('alpaca', 'NVDA', '1h', 'split')][1]
+        saved['built'] = int(dt.datetime(2026, 8, 1, tzinfo=dt.timezone.utc).timestamp())
+        asyncio.run(alpaca.bars(ctx, 'NVDA', '1h', base, base + 4 * HOUR))
+        self.assertEqual(len(fake.calls), 2)  # downloaded again
+        asyncio.run(alpaca.bars(ctx, 'NVDA', '1h', base, base + 4 * HOUR))
+        self.assertEqual(len(fake.calls), 2)  # and marked as on the new basis
+
+    def test_split_since(self):
+        june = int(dt.datetime(2026, 6, 1, tzinfo=dt.timezone.utc).timestamp())
+        now = int(dt.datetime(2026, 10, 1, tzinfo=dt.timezone.utc).timestamp())
+        splits = {dt.date(2026, 9, 1): 4.0, dt.date(2020, 1, 2): 2.0}
+        self.assertEqual(alpaca.split_since(splits, june, june - 86400 * 30, now), '2026-09-01')
+        self.assertIsNone(alpaca.split_since(splits, now, june, now))  # downloaded after the split
+        self.assertIsNone(alpaca.split_since({dt.date(2026, 9, 1): 4.0}, june, now, now))  # no bars before it
+        self.assertIsNone(alpaca.split_since({}, 0, 0, now))
+
+    def test_split_dates_are_asked_once_per_symbol_per_day(self):
+        calls = []
+
+        class C:
+            async def splits(self, symbol):
+                calls.append(symbol)
+                raise RuntimeError('Yahoo down')  # a failure is remembered for the day too
+
+        async def main():
+            for _ in range(5):
+                self.assertEqual(await alpaca._known_splits(C(), 'AAPL'), {})
+        asyncio.run(main())
+        self.assertEqual(calls, ['AAPL'])
+
+
+class Seam(unittest.TestCase):
+    def bars(self, closes, start, step=1800, volume=100.0):
+        return [{'time': start + i * step, 'open': c, 'high': c, 'low': c, 'close': c, 'volume': volume} for i, c in enumerate(closes)]
+
+    def test_rescaled_from_the_overlap_when_alpaca_lacks_the_boundary_bar(self):
+        schwab = self.bars([100.0, 101.0, 102.0, 103.0], start=10_000)
+        # Alpaca is on a 2x basis, has no bar at Schwab's first time (10_000) but two later ones in the overlap
+        older = self.bars([196.0, 198.0], start=10_000 - 2 * 1800) + self.bars([202.0, 204.0], start=10_000 + 1800)
+        out = alpaca.align_to_schwab('X', schwab, older)
+        self.assertAlmostEqual(out[0]['close'], 98.0)
+        self.assertAlmostEqual(out[0]['volume'], 200.0)  # half the price, twice the shares
+        merged = alpaca.merge_with_schwab(schwab, out)
+        self.assertEqual([b['close'] for b in merged], [98.0, 99.0, 100.0, 101.0, 102.0, 103.0])
+
+    def test_fill_older_asks_past_schwabs_first_bar(self):
+        seen = {}
+
+        async def fake_bars(ctx, symbol, tf, start, end=None):
+            seen['end'] = end
+            return []
+        now = int(time.time())
+        schwab = self.bars([100.0], start=now - 30 * 86400)
+        with mock.patch.object(alpaca, 'bars', fake_bars), mock.patch.object(alpaca, 'available', return_value=True):
+            asyncio.run(alpaca.fill_older(None, 'X', '5m', 200, schwab))
+        self.assertEqual(seen['end'], schwab[0]['time'] + alpaca.SEAM_OVERLAP_DAYS * 86400)
 
 
 if __name__ == '__main__':

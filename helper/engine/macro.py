@@ -6,6 +6,7 @@ import datetime as dt
 
 import httpx
 
+from . import datahub
 from .core import EngineError, handler
 
 FRED_CSV = 'https://fred.stlouisfed.org/graph/fredgraph.csv'
@@ -64,16 +65,16 @@ async def _fred_download(ctx, series_id):
     async with _fred_slots:
         if key:
             # The free FRED API (with a key) is faster and more reliable than the CSV download.
-            response = await ctx.http.get(FRED_API, params={'series_id': series_id, 'api_key': key, 'file_type': 'json', 'observation_start': START})
+            response = await datahub.get(ctx.http, 'fred', FRED_API, params={'series_id': series_id, 'api_key': key, 'file_type': 'json', 'observation_start': START})
             response.raise_for_status()
             return [(o['date'], float(o['value'])) for o in response.json().get('observations', []) if o.get('value') not in ('.', '', None)]
         last = None
         for attempt in range(2):
             try:
-                response = await ctx.http.get(FRED_CSV, params={'id': series_id, 'cosd': START}, headers={'Accept': 'text/csv,*/*'})
+                response = await datahub.get(ctx.http, 'fred', FRED_CSV, retries=0, params={'id': series_id, 'cosd': START}, headers={'Accept': 'text/csv,*/*'})
                 response.raise_for_status()
                 return parse_fred_csv(response.text)
-            except httpx.HTTPError as err:
+            except (httpx.HTTPError, datahub.DataError) as err:
                 last = err
                 await asyncio.sleep(0.5 * (attempt + 1))
         raise last
@@ -85,7 +86,7 @@ async def treasury_yields(ctx):
         year = dt.date.today().year
         out = {sid: [] for sid in TREASURY_COLUMNS}
         for y in (year - 1, year):
-            response = await ctx.http.get(TREASURY_CSV.format(year=y))
+            response = await datahub.get(ctx.http, 'treasury', TREASURY_CSV.format(year=y))
             response.raise_for_status()
             lines = response.text.strip().splitlines()
             header = [h.strip().strip('"') for h in lines[0].split(',')]

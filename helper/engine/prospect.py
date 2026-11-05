@@ -37,6 +37,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
+from . import datahub
 from .core import EngineError, background, handler
 
 log = logging.getLogger('engine.prospect')
@@ -1646,8 +1647,8 @@ async def download(ctx, url, dest, emit=None, label='', client=None, attempts=5)
         try:
             if sec_host:
                 await _sec_pace()
-                await sec.pace()  # the helper-wide SEC limit (sec_get paces itself; streamed downloads do it here)
-            slots = sec._sec_slots if sec_host else asyncio.Semaphore(1)
+            # the helper-wide SEC limit and request cap (data hub 'sec' gate; sec_get uses it too)
+            slots = datahub.Turn('sec', gap=sec.SEC_SPACING) if sec_host else asyncio.Semaphore(1)
             async with slots:
                 async with http.stream('GET', url, headers=headers, timeout=120) as response:
                     if response.status_code == 416 and have:
@@ -2003,8 +2004,9 @@ async def ingest_geo(ctx, emit, db_path):
         result = None
         for attempt in range(3):
             try:
-                resp = await ctx.http.post(CENSUS_BATCH, data={'benchmark': 'Public_AR_Current'},
-                                           files={'addressFile': ('addresses.csv', body, 'text/csv')}, timeout=600)
+                resp = await datahub.call('census', lambda: ctx.http.post(  # paced + health; this loop does the retries
+                    CENSUS_BATCH, data={'benchmark': 'Public_AR_Current'},
+                    files={'addressFile': ('addresses.csv', body, 'text/csv')}, timeout=600), retry=False)
                 resp.raise_for_status()
                 result = parse_census_batch(resp.text)
                 break
@@ -2742,7 +2744,7 @@ async def h_geocode(ctx, msg):
             raise EngineError(f'ZIP {address[:5]} has no known location yet (run "Map locations" in the Data panel).')
         return {'lat': point[0], 'lon': point[1], 'label': f'ZIP {address[:5]} (centre)', 'method': 'zip'}
     try:
-        resp = await ctx.http.get(CENSUS_ONE, params={'address': address, 'benchmark': 'Public_AR_Current', 'format': 'json'}, timeout=30)
+        resp = await datahub.get(ctx.http, 'census', CENSUS_ONE, params={'address': address, 'benchmark': 'Public_AR_Current', 'format': 'json'}, timeout=30)
         resp.raise_for_status()
         hit = parse_census_one(resp.json())
     except Exception as err:
