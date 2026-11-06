@@ -496,6 +496,12 @@ confirm window, typed LIVE opt-in), and Test (paper) comes first.
   changed -> `supermatt:qa` click-through and `scripts/release-audit.cjs` -> an independent reviewer
   (`supermatt:code-review`) -> publish. Check that every entity links onward (a stock: overview, chart, financials,
   options, research, trade ticket) so the site loops with no dead ends.
+- Skills in the repo by prefix: `fin-*` (Anthropic FSI valuation and research methods: use them to check that
+  Research valuation, comps, DCF/LBO, earnings and catalyst features follow institutional practice), `ria-*`
+  (client review/report/proposal standards for Clients & Reports), `eng-*` (architecture, code review, testing,
+  security, TypeScript, Python, debugging, WebSocket, Playwright). Finance rule: every figure shows its source and
+  as-of date, maths is pure and tested against hand-worked reference values, no look-ahead in backtests, costs
+  included, and paid-data steps in a skill are replaced by the free sources already in the helper.
 - Reviewed plugins the owner may enable in their account (Anthropic directory): Design (Anthropic), UX Agent
   Skills (usability and critical-user-journey audits), ux-ui-audit (measured contrast, tap targets, Hick/Fitts),
   VectorLab UI/UX Skills (errors, empty states, loaders, forms), A11y Enforcer. Use them when they are present.

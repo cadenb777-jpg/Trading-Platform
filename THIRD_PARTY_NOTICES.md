@@ -58,3 +58,10 @@ Inter and Source Serif 4 are loaded from Google Fonts and are licensed under the
 - `frontend-design`, `webapp-testing`: from github.com/anthropics/skills, Apache License 2.0 (LICENSE.txt in each folder).
 - `unslop`: by Damir Sokolovsky (@heydamir, https://heydamir.design/unslop), from github.com/heydamir/unslop,
   licensed CC BY 4.0 (LICENSE in the folder). Unmodified except the `agents/` folder (OpenAI agent config) was left out.
+- `fin-*` (comps, DCF, LBO, 3-statement models; earnings analysis/preview, morning note, catalyst calendar, thesis
+  tracker, sector overview, idea generation) and `ria-*` (client review, client report, investment proposal): from
+  github.com/anthropics/financial-services (Anthropic FSI), Apache License 2.0 (`.claude/skills/_licenses`). Copied
+  as written methods only; the plugins' data-vendor connections (`.mcp.json`) were left out (this platform uses free
+  data). Folders renamed with a prefix; the `name:` line follows the folder.
+- `eng-*` (architecture, code review, testing, secure code, TypeScript, Python, debugging, WebSocket, Playwright):
+  from github.com/Jeffallan/claude-skills, MIT (`.claude/skills/_licenses`). Renamed with a prefix.
