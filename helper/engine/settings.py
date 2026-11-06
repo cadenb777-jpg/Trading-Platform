@@ -86,7 +86,7 @@ def public():
         'secContact': data.get('sec_contact', ''),
         'model': data.get('model') or DEFAULT_MODEL,
         'openBrowser': data.get('open_browser') is not False,
-        'autoUpdate': data.get('auto_update') is True,
+        'autoUpdate': data.get('auto_update') is not False,  # on unless turned off
         'prospectSmtpCheck': data.get('prospect_smtp_check') is True,
         'models': [{'id': k, 'name': v} for k, v in AI_MODELS.items()],
     }

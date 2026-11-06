@@ -579,7 +579,7 @@ export async function openSettings(focus?: string) {
               'div',
               { class: 'settings-row' },
               h('label', { class: 'check-item' }, box, h('b', {}, 'Install updates automatically')),
-              h('p', { class: 'muted small' }, 'Off: you get an "Update now" button when a new version is out. On: the helper installs it by itself (it checks every 10 minutes) and restarts. Your settings and data are kept either way.'),
+              h('p', { class: 'muted small' }, 'On (recommended): the helper checks every 2 minutes and installs a new version by itself, waiting until nothing is loading and no order is waiting for your Confirm; the page reconnects and the bottom bar shows the new version. Off: you get an "Update now" button. Your settings and data are kept either way.'),
             );
           })()]
         : []),

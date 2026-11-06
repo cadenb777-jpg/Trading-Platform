@@ -18,6 +18,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   quote {last, prevClose}, alert {title, message}. HELPER_VERSION in the helper must match LATEST_HELPER_VERSION in schwab.ts. Older helpers
   keep working for core requests (charts/quotes/news/calendar); engine requests need ENGINE_HELPER_VERSION, and the
   site shows an update banner instead of blocking. Unknown requests get an error reply (never silence).
+  Updates (v46): the helper checks GitHub every 2 minutes (owner's choice) and installs by itself unless Settings turns
+  auto_update off, only when no request is in flight and no Webull preview waits for Confirm; the page hides the Update
+  button then, toasts the new version, and src/ui/autoReload.ts reloads a stale page (new build or newer helper) when idle.
   Engine modules load independently (`engine.LOAD_ERRORS`); optional packages are in requirements-extra.txt and the
   helper logs to ~/.trading-platform/helper.log. Pages are created on first visit (dynamic import) in main.ts.
   Replies carry the request id; failures come back as error. Keys/token live in `~/.trading-platform/`.

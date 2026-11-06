@@ -1558,8 +1558,21 @@ async def preview_futures(ctx, msg):
             'limits': lim, 'placedToday': placed_today()}
 
 
+def preview_waiting():
+    """True while an order preview is still waiting for its Confirm (the helper won't restart for an update then)."""
+    now = time.monotonic()
+    return any(v['expires'] >= now for v in _previews.values())
+
+
+#: Set by the helper while it installs an update and restarts: new previews and orders are refused (never cut off).
+UPDATING = False
+UPDATING_MESSAGE = 'The helper is installing an update and restarts in a moment. Nothing was sent to Webull; try again in a minute.'
+
+
 @handler('webull.preview_order')
 async def preview_order(ctx, msg):
+    if UPDATING:
+        raise EngineError(UPDATING_MESSAGE)
     if _asset(msg) == 'futures':
         return await preview_futures(ctx, msg)
     order = normalise(msg)
@@ -1594,6 +1607,8 @@ async def preview_order(ctx, msg):
 
 @handler('webull.place_order')
 async def place_order(ctx, msg):
+    if UPDATING:
+        raise EngineError(UPDATING_MESSAGE)
     deadline = time.monotonic() + PLACE_DEADLINE  # the order must be sent by then, or it is refused as not placed
     extra = {k for k in msg if k not in ('id', 'type', 'token') and not str(k).startswith('_')}  # '_emit' is added by the helper
     token = msg.get('token')
@@ -1706,6 +1721,8 @@ async def order_exists(ctx, account_id, client_order_id):
 
 @handler('webull.cancel_order')
 async def cancel_order(ctx, msg):
+    if UPDATING:
+        raise EngineError(UPDATING_MESSAGE.replace('sent to Webull', 'cancelled'))
     order_id = str(msg.get('orderId') or '').strip()
     if not re.fullmatch(r'[A-Za-z0-9_\-]{1,64}', order_id):
         raise EngineError('Unknown order.')

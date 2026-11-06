@@ -51,7 +51,7 @@ from engine.core import is_safe_url  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 45
+HELPER_VERSION = 46
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -635,6 +635,8 @@ class Market:
             self.engine.news = self.news
         self.stream_factory = stream_factory
         self.browsers = set()
+        self.inflight = 0  # requests being answered now (an automatic update waits for 0)
+        self.auto_failed = {}  # version -> time an automatic install of it failed
         self.listeners = {}  # symbol -> set of browser connections
         self.quotes = {}  # symbol -> {'last': ..., 'prevClose': ...}
         # Schwab's official quote (REST) per symbol: the previous close it measures the day's change from. The stream's
@@ -668,7 +670,7 @@ class Market:
                 'officialQuotes': len(self.official), 'update': self.updater.public(), 'uptimeSeconds': round(now - STARTED)}
 
     def set_status(self, status, message):
-        self.status = {**self._status(status, message), 'update': self.updater.public()}
+        self.status = {**self._status(status, message), 'update': {**self.updater.public(), 'auto': auto_update_on()}}
         broadcast(self.browsers, json.dumps(self.status))
         if SCREEN:
             SCREEN.status(status, message)
@@ -847,24 +849,57 @@ class Market:
         up = self.updater
         if up.available and up.state == 'idle' and self.offered != up.latest:
             self.offered = up.latest
-            SCREEN.message(f'Update available (v{HELPER_VERSION} → v{up.latest}): click Update now in the platform.', tone='ok')
+            SCREEN.message(f'Update available (v{HELPER_VERSION} → v{up.latest}): ' + ('it installs by itself in a moment.' if auto_update_on() else 'click Update now in the platform.'), tone='ok')
         elif up.state == 'failed':
             SCREEN.message(up.message, tone='bad')
         elif up.state in ('updating', 'restarting') and up.message:
             SCREEN.message(up.message, tone='ok')
 
+    def safe_to_restart(self):
+        """True when restarting loses nothing: no request is being answered and no order preview is waiting for its
+        Confirm (the one-time token lives in memory and would be gone after the restart)."""
+        try:
+            from engine import webull
+            waiting = webull.preview_waiting()
+        except Exception:
+            waiting = False
+        return self.inflight == 0 and not waiting
+
+    @staticmethod
+    def hold_orders(on):
+        """While an update installs: new previews, orders and cancels are refused (so none is ever cut off)."""
+        try:
+            from engine import webull
+            webull.UPDATING = on
+        except Exception:
+            pass
+
     async def update_loop(self):
-        """Checks GitHub for a newer helper at start and every 10 minutes. Installs it by itself only if Settings allows
-        and no platform tab is open (with a tab open, the page offers the Update now button instead)."""
+        """Checks GitHub for a newer helper at start and every 2 minutes and installs it by itself (on unless
+        Settings turns it off), also with the platform open: only at a safe moment (checked every 30 s), then
+        restarts; open tabs reconnect and say which version is now running."""
         await asyncio.sleep(5)
         while True:
             await self.updater.check(self.news.http)
-            if self.updater.available and self.updater.state == 'idle' and not self.browsers and auto_update_on():
+            failed_at = self.auto_failed.get(self.updater.latest, 0)
+            while (self.updater.available and self.updater.state == 'idle' and auto_update_on()
+                   and time.time() - failed_at > 3600):  # a release that failed to install is retried after an hour
+                if not self.safe_to_restart():
+                    await asyncio.sleep(30)
+                    continue
+                self.hold_orders(True)  # set with no await since the check above: no order can start in between
                 try:
                     await self.updater.update(self.news.http)
-                    self.restart.set()
                 except updater.UpdateError as err:
+                    self.hold_orders(False)
+                    self.auto_failed[self.updater.latest] = time.time()
                     log.warning('Automatic update failed: %s', err)
+                    break  # the page shows the error and an Update now button
+                while self.inflight:  # requests that began before the hold finish first
+                    await asyncio.sleep(1)
+                await asyncio.sleep(1.5)  # lets tabs hear "restarting" first
+                self.restart.set()
+                return
             await asyncio.sleep(updater.CHECK_EVERY_SECONDS)
 
     async def summary_reply(self, links, title):
@@ -878,6 +913,14 @@ class Market:
 
     async def reply(self, ws, request_id, work, kind=None):
         started = time.time()
+        counted = kind != 'update'  # the update request itself restarts on purpose
+        self.inflight += counted
+        try:
+            await self._answer(ws, request_id, work, kind, started)
+        finally:
+            self.inflight -= counted  # after the reply was sent, so a restart never swallows it
+
+    async def _answer(self, ws, request_id, work, kind, started):
         try:
             reply = await work
         except Exception as err:  # Report every failure to the browser instead of crashing.
@@ -1038,11 +1081,12 @@ class Market:
 
 
 def auto_update_on():
+    """Automatic helper updates: on unless the owner turned them off in Settings."""
     try:
         from engine import settings
-        return settings.load().get('auto_update') is True
+        return settings.load().get('auto_update') is not False
     except Exception:
-        return False
+        return True
 
 
 async def screen_clock():

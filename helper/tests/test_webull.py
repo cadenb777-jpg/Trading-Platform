@@ -1254,3 +1254,32 @@ class RealReplyShapes(unittest.TestCase):
         with mock.patch.object(webull, '_call', call):
             out = asyncio.run(webull.balances(None, 'x'))
         self.assertEqual((out['value'], out['cash'], out['buyingPower']), (2489.37, 0.01, 0.01))
+
+
+class PreviewWaiting(unittest.TestCase):
+    """An automatic helper update must not restart while an order preview waits for its Confirm."""
+
+    def tearDown(self):
+        webull._previews.clear()
+
+    def test_handlers_are_the_order_functions(self):
+        self.assertIs(core.HANDLERS['webull.preview_order'], webull.preview_order)
+        self.assertIs(core.HANDLERS['webull.place_order'], webull.place_order)
+        self.assertIs(core.HANDLERS['webull.cancel_order'], webull.cancel_order)
+
+    def test_orders_refused_while_updating(self):
+        webull.UPDATING = True
+        try:
+            for fn, msg in ((webull.preview_order, {'symbol': 'AAPL'}), (webull.place_order, {'token': 'x'}), (webull.cancel_order, {'orderId': 'a1'})):
+                with self.assertRaises(core.EngineError) as e:
+                    asyncio.run(fn(None, msg))
+                self.assertIn('installing an update', str(e.exception))
+        finally:
+            webull.UPDATING = False
+
+    def test_waiting_until_the_token_expires(self):
+        self.assertFalse(webull.preview_waiting())
+        webull._previews['t'] = {'expires': time.monotonic() + 60}
+        self.assertTrue(webull.preview_waiting())
+        webull._previews['t']['expires'] = time.monotonic() - 1
+        self.assertFalse(webull.preview_waiting())

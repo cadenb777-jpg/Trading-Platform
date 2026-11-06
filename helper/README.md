@@ -76,9 +76,12 @@ market dropdown.
 again (step 2), copy the new files into your helper folder (or replace it) and start it as usual.
 Your keys and login are kept.
 
-**After that, updating is one click.** The helper checks GitHub for a newer version when it starts and
-every 10 minutes. When there is one, the platform shows **"Update available (v X → v Y)"** with an
-**Update now** button (the helper window points you to it). Clicking it:
+**After that, updates install by themselves** (from v46). The helper checks GitHub for a newer version when it
+starts and every 2 minutes. When there is one, it waits for a quiet moment (nothing loading, no order preview waiting
+for your Confirm), installs it and restarts; the page reconnects, says "Helper updated to vNN" and the bottom bar
+shows the version. The website itself also reloads to its newest version when you are idle. To be asked first
+instead, turn off **Install updates automatically** in Settings: then the platform shows **"Update available
+(v X → v Y)"** with an **Update now** button. Either way, an update:
 
 1. downloads the newest ZIP straight from GitHub (only from GitHub's own download servers, over HTTPS),
 2. checks it (a real ZIP with the expected newer helper inside) before anything from it runs,
