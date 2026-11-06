@@ -489,6 +489,16 @@ confirm window, typed LIVE opt-in), and Test (paper) comes first.
   every UI change and before each release. The owner's brief wins over a skill's taste (amber labels, the flowing
   background and Bull are the owner's choices). Release gate: the audit script (every route x dark/light x 1536/390:
   console errors, overlapping controls, clipped text, sideways overflow) must come back clean.
+- Owner's standard: no corner cutting, professional product quality, easy for an older person yet sleek. Every
+  feature goes through, in order: `superpowers:brainstorming` (options, then a recommendation) ->
+  `supermatt:grilling` on the plan when it is big -> build with `frontend-design` -> `design:design-critique`,
+  `design:accessibility-review` (WCAG 2.2: contrast, keyboard, tap targets >= 24px) and `design:ux-copy` on what
+  changed -> `supermatt:qa` click-through and `scripts/release-audit.cjs` -> an independent reviewer
+  (`supermatt:code-review`) -> publish. Check that every entity links onward (a stock: overview, chart, financials,
+  options, research, trade ticket) so the site loops with no dead ends.
+- Reviewed plugins the owner may enable in their account (Anthropic directory): Design (Anthropic), UX Agent
+  Skills (usability and critical-user-journey audits), ux-ui-audit (measured contrast, tap targets, Hick/Fitts),
+  VectorLab UI/UX Skills (errors, empty states, loaders, forms), A11y Enforcer. Use them when they are present.
 
 ## Agent skills
 
