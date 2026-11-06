@@ -21,10 +21,8 @@ import { activeAlertCount, onAlertsChange, openAlertsDialog } from '../ui/alerts
 import { createWatchlist, displaySymbol } from '../ui/watchlist';
 import { linkPanel } from '../ui/linkGroups';
 import { frameBatch, latestPerFrame } from '../chart/frame';
-import { HoverCard, type CardNote, type CardRow } from '../chart/hoverCard';
+import { HoverCard } from '../chart/hoverCard';
 import type { PointerInfo } from '../chart/ChartView';
-import { INDICATOR_GUIDES } from '../indicators/info';
-import { CATALOG_GUIDES } from '../indicators/catalog';
 import { createSecurityHeader } from '../chart/securityHeader';
 import { createRangeBar } from '../chart/rangeBar';
 import { LegendBox } from '../chart/legendBox';
@@ -113,6 +111,7 @@ export function createChartPage() {
       forcedDays = days;
       reload();
     },
+    setTimeframe: (tf) => setTimeframe(tf),
   });
 
   const tfPicker = createTimeframePicker({
@@ -368,6 +367,8 @@ export function createChartPage() {
   let legendValues: { uid: string; spans: HTMLElement[]; nums: (HTMLElement | null)[]; row: HTMLElement }[] = [];
   let ohlcValues: HTMLElement | null = null;
   let ohlcNums: HTMLElement[] = [];
+  /** The hovered bar's time and volume, under the O H L C row (the legend replaces the old floating card). */
+  let ohlcWhen: HTMLElement | null = null;
 
   const legendBtn = (iconName: IconName, title: string, onclick: () => void, extra = '') =>
     h('button', { class: `legend-btn${extra}`, title, 'aria-label': title, onclick: (e: Event) => (e.stopPropagation(), onclick()) }, icon(iconName, 16));
@@ -389,7 +390,8 @@ export function createChartPage() {
     legendBox.rows.replaceChildren();
     chartWrap.querySelectorAll(':scope > .pane-legend').forEach((n) => n.remove());
     ohlcNums = [0, 1, 2, 3, 4].map(() => h('span', { class: 'legend-num' }));
-    ohlcValues = h('span', { class: 'legend-ohlc' }, ...['O', 'H', 'L', 'C'].map((label, i) => h('span', { class: 'kv' }, label, ohlcNums[i])), ohlcNums[4]);
+    ohlcWhen = h('span', { class: 'legend-when' });
+    ohlcValues = h('span', { class: 'legend-ohlc' }, ...['O', 'H', 'L', 'C'].map((label, i) => h('span', { class: 'kv' }, label, ohlcNums[i])), ohlcNums[4], ohlcWhen);
     legendBox.title.append(h('div', { class: 'legend-row legend-title' }, h('b', {}, `${displaySymbol(symbol())} · ${state.timeframe} · ${provider().name}`), ohlcValues));
     legendValues = [];
     for (const instance of state.indicators) {
@@ -455,6 +457,7 @@ export function createChartPage() {
         const change = prev ? ((bar.close - prev.close) / prev.close) * 100 : 0;
         [bar.open, bar.high, bar.low, bar.close].forEach((v, i) => setText(ohlcNums[i], formatNumber(v)));
         setText(ohlcNums[4], `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`);
+        if (ohlcWhen) setText(ohlcWhen, `${timeLabel(bar.time)} · Vol ${fmtVolume(bar.volume)}`);
       }
     }
     // On the latest bar an indicator may not have caught up yet (it follows ticks a little behind, or is still in the
@@ -506,63 +509,15 @@ export function createChartPage() {
   const dailyFormat = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   const timeLabel = (t: number) => (TIMEFRAME_SECONDS[state.timeframe] < 86400 ? intradayFormat : dailyFormat).format(t * 1000);
 
-  /** Signals (pattern/strategy markers) on a bar, with the first line of the indicator's guide explaining them. */
-  function signalsAt(index: number): CardNote[] {
-    const notes: CardNote[] = [];
-    for (const instance of state.indicators) {
-      const def = getIndicator(instance.defId);
-      if (!def || !instance.visible) continue;
-      for (const plot of def.plots) {
-        if (plot.type !== 'marker' || instance.hiddenPlots?.includes(plot.key)) continue;
-        const v = chart.markerValueAt(instance.uid, plot.key, index);
-        if (!v) continue;
-        const guide = INDICATOR_GUIDES[def.id] ?? CATALOG_GUIDES[def.id];
-        const title = plot.title === def.name || def.plots.length === 1 ? def.name : `${def.shortName}: ${plot.title}`;
-        notes.push({ title, text: guide ? ` ${guide.signals[0] ?? guide.what}` : '', color: instance.colors[plot.key] ?? plot.color });
-        if (notes.length >= 3) return notes;
-      }
-    }
-    return notes;
-  }
 
-  function showCard(p: PointerInfo) {
-    const bar = chart.barAt(p.index);
-    if (!bar) return card.hide();
-    const prev = chart.barAt(p.index - 1);
-    const change = prev ? bar.close - prev.close : 0;
-    const pctChange = prev ? (change / prev.close) * 100 : 0;
-    const dir = bar.close >= bar.open ? THEME.up : THEME.down;
-    const rows: CardRow[] = [
-      { label: 'Open', value: formatNumber(bar.open) },
-      { label: 'High', value: formatNumber(bar.high) },
-      { label: 'Low', value: formatNumber(bar.low) },
-      { label: 'Close', value: formatNumber(bar.close), color: dir },
-      { label: 'Change', value: `${change >= 0 ? '+' : '−'}${chart.formatPrice(Math.abs(change))} (${pctChange >= 0 ? '+' : '−'}${Math.abs(pctChange).toFixed(2)}%)`, color: change >= 0 ? THEME.up : THEME.down },
-      { label: 'Volume', value: fmtVolume(bar.volume) },
-    ];
-    if (!card.narrow) {
-      for (const instance of state.indicators) {
-        if (!instance.visible || instance.defId === 'volume') continue;
-        const def = getIndicator(instance.defId);
-        if (!def) continue;
-        for (const v of chart.valuesAt(instance.uid, p.index)) {
-          if (v.hidden || !Number.isFinite(v.value)) continue;
-          rows.push({ label: def.plots.length > 1 ? `${def.shortName} ${v.title}` : indicatorLabel(def, instance), value: legendNumber(v.value), color: v.color });
-          if (rows.length >= 14) break;
-        }
-        if (rows.length >= 14) break;
-      }
-    }
-    card.show(p.x, p.y, p.snappedY, { title: timeLabel(bar.time), rows, notes: signalsAt(p.index) });
-  }
 
+  // The hovered bar's numbers go to the legend box (top left), not a card next to the cursor (owner: less clutter).
   const pointerFrame = latestPerFrame<PointerInfo | null>((p) => {
+    card.hide();
     if (!p) {
-      card.hide();
       hoverLine(null);
       return;
     }
-    showCard(p);
     hoverLine(p.hoveredUid);
   });
 
@@ -662,7 +617,6 @@ export function createChartPage() {
     extBtn.hidden = !ext;
     extBtn.classList.toggle('on', state.extendedHours);
     shading.setEnabled(ext && state.extendedHours);
-    shading.setGuides(ext);
 
     chart.setBars(bars, tf);
     rangeBar.apply();

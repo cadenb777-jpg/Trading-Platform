@@ -152,3 +152,8 @@ export function saveRange(tf: Timeframe, range: RangeId | null) {
     // private window: the choice just isn't remembered
   }
 }
+
+/** The timeframe a range is read on when the current one can't show it (as trading platforms do: 1Y -> daily). */
+export function timeframeFor(range: RangeId): Timeframe {
+  return ({ '1D': '5m', '3D': '15m', '1M': '1h', '6M': '1D', YTD: '1D', '1Y': '1D', '5Y': '1W', MAX: '1W' } as Record<RangeId, Timeframe>)[range];
+}

@@ -80,15 +80,13 @@ export function sessionGuides(barAt: (i: number) => Bar | undefined, count: numb
  */
 export class SessionShading {
   private enabled = false;
-  private guides = false;
   private readonly views: IPanePrimitivePaneView[] = [
     {
       zOrder: () => 'bottom',
-      renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(({ context, mediaSize }) => this.draw(context, mediaSize.width, mediaSize.height)) }),
+      renderer: () => ({ draw: (target) => target.useMediaCoordinateSpace(({ context, mediaSize }) => this.draw(context, mediaSize.height)) }),
     },
   ];
   private requestUpdate: (() => void) | null = null;
-  private cache: { key: string; value: ReturnType<typeof sessionGuides> } | null = null;
 
   constructor(private readonly view: ChartView) {
     view.chart.panes()[0]?.attachPrimitive(this.primitive());
@@ -99,15 +97,8 @@ export class SessionShading {
     this.requestUpdate?.();
   }
 
-  /** Prev close / today's open lines, for intraday stock charts (with or without extended hours). */
-  setGuides(on: boolean) {
-    this.guides = on;
-    this.requestUpdate?.();
-  }
-
-  private draw(ctx: CanvasRenderingContext2D, width: number, height: number) {
+  private draw(ctx: CanvasRenderingContext2D, height: number) {
     if (this.enabled) this.drawShading(ctx, height);
-    if (this.guides) this.drawGuides(ctx, width);
   }
 
   private drawShading(ctx: CanvasRenderingContext2D, height: number) {
@@ -135,44 +126,7 @@ export class SessionShading {
     flush();
   }
 
-  private drawGuides(ctx: CanvasRenderingContext2D, width: number) {
-    const n = this.view.barCount;
-    const last = this.view.barAt(n - 1);
-    if (!last) return;
-    const key = `${n}:${this.view.barAt(0)?.time}:${last.time}`;
-    if (this.cache?.key !== key) this.cache = { key, value: sessionGuides((i) => this.view.barAt(i), n) };
-    const { prevClose, todayOpen } = this.cache.value;
-    ctx.save();
-    ctx.font = "11px 'Inter', -apple-system, sans-serif";
-    ctx.textBaseline = 'bottom';
-    ctx.setLineDash([1, 4]);
-    ctx.lineWidth = 1;
-    const color = withAlpha(THEME.crosshair, 0.7);
-    const lines: { y: number; text: string }[] = [];
-    const yOf = (p: number | null) => (p === null ? null : this.view.priceToY(p));
-    const yOpen = yOf(todayOpen);
-    const yPrev = yOf(prevClose);
-    for (const y of [yOpen, yPrev]) {
-      if (y === null) continue;
-      ctx.strokeStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(0, Math.round(y) + 0.5);
-      ctx.lineTo(width, Math.round(y) + 0.5);
-      ctx.stroke();
-    }
-    // Labels closer than 14px would overlap: one merged label instead.
-    if (yOpen !== null && yPrev !== null && Math.abs(yOpen - yPrev) < 14) {
-      const [o, p] = [this.view.formatPrice(todayOpen!), this.view.formatPrice(prevClose!)];
-      lines.push({ y: Math.min(yOpen, yPrev), text: o === p ? `Open/Prev ${o}` : `Open ${o} · Prev ${p}` });
-    } else {
-      if (yPrev !== null) lines.push({ y: yPrev, text: `Prev close ${this.view.formatPrice(prevClose!)}` });
-      if (yOpen !== null) lines.push({ y: yOpen, text: `Open ${this.view.formatPrice(todayOpen!)}` });
-    }
-    ctx.fillStyle = withAlpha(THEME.text, 0.55);
-    // At the pane's right edge (inside it, never on the price scale where it would cover the scale's own labels).
-    for (const { y, text } of lines) ctx.fillText(text, width - ctx.measureText(text).width - 8, y - 2);
-    ctx.restore();
-  }
+
 
   private primitive(): IPanePrimitive<Time> {
     return {

@@ -208,3 +208,22 @@ describe('square grid', () => {
     ]);
   });
 });
+
+import { chooseStep, stepCandidates } from './grid';
+import { timeframeFor } from './range';
+describe('uniform grid columns', () => {
+  it('natural bar counts per timeframe', () => {
+    expect(stepCandidates(300)).toContain(6); // 30 minutes of 5m bars
+    expect(stepCandidates(300)).toContain(12); // an hour
+    expect(stepCandidates(86400)).toEqual(expect.arrayContaining([5, 21, 63, 252]));
+    expect(stepCandidates(7 * 86400)).toContain(52);
+  });
+  it('picks the count that makes square cells', () => {
+    expect(chooseStep(86400, 4, 80)).toBe(21); // 4 px a day, 80 px rows -> a month (84 px)
+    expect(chooseStep(300, 10, 60)).toBe(6); // 10 px per 5m bar, 60 px rows -> 30 minutes
+  });
+  it('ranges read on their natural timeframe', () => {
+    expect(timeframeFor('1Y')).toBe('1D');
+    expect(timeframeFor('1D')).toBe('5m');
+  });
+});

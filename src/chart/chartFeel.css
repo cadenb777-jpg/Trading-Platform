@@ -182,3 +182,4 @@
 .cf-legend .legend-ohlc .kv { display: flex; gap: 3px; min-width: 0; }
 .cf-legend .legend-ohlc .legend-num { display: inline-block; min-width: 0; overflow: hidden; text-overflow: clip; }
 .cf-legend .legend-ohlc > .legend-num:last-child { min-width: 6.5ch; text-align: right; }
+.cf-legend .legend-when { grid-column: 1 / -1; color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -164,6 +164,38 @@ export function isDaily(times: number[]): boolean {
   return gaps[Math.floor(gaps.length / 2)] >= 20 * 3600;
 }
 
+/**
+ * Bar counts between vertical lines that read naturally for a timeframe: minutes (5, 15, 30, 60...) intraday, trading
+ * days (1, 5 = a week, 21 = a month, 63 = a quarter...) on daily bars, weeks (4, 13, 26, 52) on weekly bars.
+ */
+export function stepCandidates(barSeconds: number): number[] {
+  if (barSeconds >= 7 * 86400) return [1, 2, 4, 8, 13, 26, 52, 104, 260, 520];
+  if (barSeconds >= 86400) return [1, 2, 5, 10, 21, 42, 63, 126, 252, 504, 1260, 2520];
+  const minutes = [1, 2, 5, 10, 15, 30, 60, 120, 240, 480, 960, 1440, 2880, 5760, 11520];
+  const n = minutes.map((m) => (m * 60) / barSeconds).filter((x) => Number.isInteger(x) && x >= 1);
+  return n.length ? n : [1];
+}
+
+/** The bar count whose spacing on screen is closest (log scale) to `targetPx`: uniform, near-square cells. */
+export function chooseStep(barSeconds: number, pxPerBar: number, targetPx: number): number {
+  let best = 1;
+  let score = Infinity;
+  for (const n of stepCandidates(barSeconds)) {
+    const s = Math.abs(Math.log((n * pxPerBar) / targetPx));
+    if (s < score) (score = s), (best = n);
+  }
+  return best;
+}
+
+/** The typical seconds between bars (median gap of the last 60). */
+export function barSeconds(times: number[]): number {
+  if (times.length < 2) return 86400;
+  const gaps: number[] = [];
+  for (let i = Math.max(1, times.length - 60); i < times.length; i++) gaps.push(times[i] - times[i - 1]);
+  gaps.sort((a, b) => a - b);
+  return gaps[Math.floor(gaps.length / 2)] || 86400;
+}
+
 // ---------- Drawing ----------
 
 /** Dot pitch in CSS pixels. */
@@ -318,29 +350,27 @@ class SquareGrid {
     const to = Math.min(times.length - 1, Math.floor(range.to));
     const zone: Zone = this.daily ? 'utc' : 'local';
     const pxPerBar = to > from ? ((ts.logicalToCoordinate(to as never) ?? 0) - (ts.logicalToCoordinate(from as never) ?? 0)) / (to - from) : ts.options().barSpacing;
-    const pick = chooseLevel(times, from, to, pxPerBar, spanPx || 60, this.daily ? DAILY_LEVELS : INTRADAY_LEVELS, zone);
+    // Uniform columns: a line every `step` bars (a natural count for the timeframe), spaced like the rows, carried on
+    // past the data on both sides. Anchored to bar index multiples so the lines move with the candles, never swim.
+    const secs = barSeconds(times);
+    const step = chooseStep(secs, pxPerBar, spanPx || 60);
+    const spacing = step * pxPerBar;
     const xs: number[] = [];
     const labelTimes: number[] = [];
-    for (const i of pick?.indexes ?? []) {
-      // between the period's first bar and the bar before (the library maps whole bar indexes only)
-      const x = ts.logicalToCoordinate(i as never);
-      if (x === null) continue;
-      xs.push(x - pxPerBar / 2);
-      labelTimes.push(times[i]);
+    const x0 = ts.logicalToCoordinate(0 as never);
+    if (x0 !== null && spacing >= 6) {
+      const first = Math.floor((range.from - 2) / step) * step;
+      for (let i = first; ; i += step) {
+        const x = x0 + i * pxPerBar - pxPerBar / 2;
+        if (x > width + spacing) break;
+        if (x < -spacing) continue;
+        xs.push(x);
+        labelTimes.push(i >= 0 && i < times.length ? times[i] : NaN);
+      }
     }
-    const cell = xs.length > 1 ? (xs[xs.length - 1] - xs[0]) / (xs.length - 1) : spanPx;
-    // Past the data (the empty space right of the last candle, or left of the first) there are no calendar
-    // boundaries: carry the lines on at the same spacing so the cells stay square there too (no labels).
-    if (xs.length && cell >= 8) {
-      const dataEnd = (ts.logicalToCoordinate((times.length - 1) as never) ?? width) + pxPerBar / 2;
-      for (let x = xs[xs.length - 1] + cell; x < width; x += cell) if (x > dataEnd) (xs.push(x), labelTimes.push(NaN));
-      const dataStart = (ts.logicalToCoordinate(0 as never) ?? 0) - pxPerBar / 2;
-      const before: number[] = [];
-      for (let x = xs[0] - cell; x > 0; x -= cell) if (x < dataStart) before.unshift(x);
-      xs.unshift(...before);
-      labelTimes.unshift(...before.map(() => NaN));
-    }
-    this.layout = { key, xs, labelTimes, level: pick?.level ?? 'day', zone, cell };
+    const level: Level = this.daily ? (step >= 252 ? 'year' : step >= 21 ? 'month' : 'day') : 'h1';
+    const cell = spacing || spanPx;
+    this.layout = { key, xs, labelTimes, level, zone, cell };
     // for checks: the cell size in CSS pixels (horizontal x vertical spacing)
     try {
       this.chart.chartElement().dataset.gridCell = `${Math.round(cell)}x${Math.round(this.hLines(pane0, height, cell).ys.reduce((d, y, i, a) => (i ? Math.min(d, Math.abs(y - a[i - 1])) : d), Infinity))}`;
@@ -356,6 +386,8 @@ class SquareGrid {
     const height = bitmap.height / vpr;
     const pane0 = this.chart.panes()[0];
     const layout = pane0 ? this.computeLayout(pane0, width, pane0.getHeight()) : null;
+    // the grid belongs to the price pane only: indicator panes below stay plain (owner)
+    if (pane.paneIndex() !== 0) return;
     const { ys } = this.hLines(pane, height, layout?.cell ?? null);
     const dot = Math.max(1, Math.round(hpr));
     const pitchX = Math.max(2, Math.round(PITCH * hpr));
@@ -394,9 +426,14 @@ class SquareGrid {
     ctx.textBaseline = 'top';
     const placed: { x: number; t: number }[] = [];
     let right = -Infinity;
+    let lastDay = NaN;
     layout.xs.forEach((x, i) => {
       if (!Number.isFinite(layout.labelTimes[i])) return; // a line carried past the data
-      const text = gridLabel(layout.labelTimes[i], layout.level, layout.zone);
+      // intraday: the clock time, or the date at the first line of a new day
+      const t = layout.labelTimes[i];
+      const day = levelKey(t, 'day', layout.zone);
+      const text = layout.zone === 'local' && day !== lastDay ? gridLabel(t, 'day', layout.zone) : gridLabel(t, layout.level, layout.zone);
+      lastDay = day;
       const w = ctx.measureText(text).width;
       const left = Math.round(x - w / 2);
       if (left < 2 || left + w > width - 2 || left < right + 10) return;

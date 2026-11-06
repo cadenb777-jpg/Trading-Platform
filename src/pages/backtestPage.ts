@@ -127,6 +127,27 @@ function fanChart(bands: { trade: number; p5: number; p25: number; p50: number; 
   return h('div', { class: 'curve-wrap' }, legend, svg);
 }
 
+/** The test window from the date boxes, in unix seconds (end of the end day). */
+export function testWindow(from: string, to: string): { from?: number; to?: number; error?: string } {
+  const f = from ? Date.parse(`${from}T00:00:00Z`) / 1000 : undefined;
+  const t = to ? Date.parse(`${to}T23:59:59Z`) / 1000 : undefined;
+  if (f != null && t != null && f >= t) return { error: 'The start date must be before the end date.' };
+  if (f != null && f > Date.now() / 1000) return { error: 'The start date is in the future.' };
+  return { from: f, to: t };
+}
+
+/** Calendar days of extra history before the start so indicators are ready (about 250 bars). */
+export function warmupDays(tf: string): number {
+  return ({ '1m': 2, '5m': 5, '15m': 12, '30m': 20, '1h': 45, '4h': 120, '1D': 380, '1W': 1800 } as Record<string, number>)[tf] ?? 30;
+}
+
+/** No new trades before `start` (the bars before it only warm the indicators up). */
+export function onlyFrom(s: Signals, start: number): Signals {
+  if (start <= 0) return s;
+  const cut = (a?: boolean[]) => a && a.map((v, i) => (i < start ? false : v));
+  return { ...s, enterLong: cut(s.enterLong)!, enterShort: cut(s.enterShort) };
+}
+
 export function createBacktestPage() {
   let strategyId = CHART_ID;
   let params: Record<string, number> = {};
@@ -141,11 +162,16 @@ export function createBacktestPage() {
   const symbolInput = h('input', { class: 'input symbol', value: 'SPY', 'aria-label': 'Symbol', spellcheck: false });
   const tfSelect = h('select', { class: 'input', 'aria-label': 'Timeframe' }, ...BASE_TIMEFRAMES.map((t) => h('option', { value: t }, tfLabel(t))));
   const stratSelect = h('select', { class: 'input', 'aria-label': 'Strategy' }, h('option', { value: CHART_ID }, 'My chart’s indicators (rules)'), ...STRATEGIES.map((s) => h('option', { value: s.id }, s.name)));
+  // The test window: from / to dates (empty = all the history the timeframe has). Indicators warm up on the bars
+  // before the start; trades only open inside the window.
+  const fromInput = h('input', { class: 'input bt-date', type: 'date', 'aria-label': 'Start date', title: 'Start date (empty: as far back as the data goes)' }) as HTMLInputElement;
+  const toInput = h('input', { class: 'input bt-date', type: 'date', 'aria-label': 'End date', title: 'End date (empty: today)' }) as HTMLInputElement;
   const runBtn = h('button', { class: 'btn primary', onclick: () => run() }, 'Run backtest');
   const frame = pageFrame('Backtest', 'Test a strategy on history, then stress-test it: Monte Carlo, random-walk test and parameter sweep. Signals on a bar’s close are traded at the next bar’s open.', [
     h('button', { class: 'btn', onclick: () => fromChart(true) }, 'Use my chart'),
     symbolInput,
     tfSelect,
+    h('label', { class: 'bt-range' }, h('span', { class: 'muted small' }, 'From'), fromInput, h('span', { class: 'muted small' }, 'to'), toInput),
     stratSelect,
     runBtn,
   ]);
@@ -344,9 +370,19 @@ export function createBacktestPage() {
     results.replaceChildren(h('div', { class: 'muted pad' }, `Loading ${displaySymbol(ref.symbol)} history…`));
     resultTabs.hidden = true;
     try {
-      const [bars] = await Promise.all([getProvider(ref.provider).loadHistory(ref.symbol, tf, new AbortController().signal), loadExternal(ref.symbol)]);
-      if (bars.length < 50) throw new Error('Not enough history for a backtest.');
-      const result = backtest(bars, signalsFor(bars), backtestOpts());
+      const win = testWindow(fromInput.value, toInput.value);
+      if (win.error) throw new Error(win.error);
+      const provider = getProvider(ref.provider);
+      // ask for enough history to reach the start date, plus room for the indicators to warm up before it
+      const days = win.from ? Math.min(provider.maxHistoryDays(tf), Math.ceil((Date.now() / 1000 - win.from) / 86400) + warmupDays(tf)) : undefined;
+      const [all] = await Promise.all([provider.loadHistory(ref.symbol, tf, new AbortController().signal, days), loadExternal(ref.symbol)]);
+      const bars = win.to ? all.filter((b) => b.time <= win.to!) : all;
+      if (bars.length < 50) throw new Error('Not enough history for a backtest in that window.');
+      const signals = signalsFor(bars);
+      const startIndex = win.from ? bars.findIndex((b) => b.time >= win.from!) : 0;
+      if (startIndex < 0) throw new Error('The start date is after the last bar of history.');
+      if (win.from && bars[0].time > win.from + 7 * 86400) toast(`History at this timeframe starts ${date(bars[0].time)}, so the test starts there.`);
+      const result = backtest(bars, onlyFrom(signals, startIndex), backtestOpts());
       last = { bars, result, label: `${displaySymbol(ref.symbol)} · ${tfLabel(tf)} · ${preset()?.name ?? 'Chart rules'}`, symbol: displaySymbol(ref.symbol), timeframe: tfLabel(tf) };
       ai.panel.hidden = true;
       resultTabs.hidden = false;

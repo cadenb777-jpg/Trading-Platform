@@ -4,10 +4,10 @@
  * A range longer than the provider keeps at that timeframe (1Y of 1-minute crypto) is capped to what it has, and the
  * bar says so; it is never refetched in a loop or on every symbol switch.
  */
-import type { Timeframe } from '../types';
+import { TIMEFRAME_SECONDS, type Timeframe } from '../types';
 import { h } from '../ui/dom';
 import type { ChartView } from './ChartView';
-import { RANGES, daysNeeded, marketTimeZone, rangeFits, rangeStart, saveRange, savedRange, type RangeId } from './range';
+import { RANGES, daysNeeded, marketTimeZone, rangeFits, rangeStart, saveRange, savedRange, timeframeFor, type RangeId } from './range';
 
 export interface RangeHost {
   view: () => ChartView | null;
@@ -16,6 +16,8 @@ export interface RangeHost {
   maxDays: () => number;
   /** Load the history again asking for at least `days` calendar days. */
   reload: (days: number) => void;
+  /** Switch the chart's timeframe (a range the current one can't show switches to one that can). */
+  setTimeframe?: (tf: Timeframe) => void;
 }
 
 const fmtDays = (d: number) => (d >= 730 ? `${Math.round(d / 365)} years` : d >= 60 ? `${Math.round(d / 30)} months` : `${Math.max(1, Math.floor(d))} days`);
@@ -35,12 +37,21 @@ export function createRangeBar(host: RangeHost) {
     return need > max ? { days: max, capped: true } : { days: need, capped: false };
   }
 
+  /** A range this timeframe can't show well: too few bars, more history than it keeps, or thousands of bars. */
+  function needsSwitch(range: RangeId, tf: Timeframe): boolean {
+    if (timeframeFor(range) === tf) return false;
+    if (!rangeFits(range, tf)) return true;
+    const days = daysNeeded(range, Date.now() / 1000);
+    return want(range).capped || (days * 86400) / TIMEFRAME_SECONDS[tf] > 3000;
+  }
+
   function render() {
     const tf = host.timeframe();
     const active = savedRange(tf);
     buttons.replaceChildren(
       ...RANGES.map((r) => {
-        const fits = rangeFits(r.id, tf) && host.maxDays() > 0;
+        const switches = needsSwitch(r.id, tf) && !!host.setTimeframe;
+        const fits = (rangeFits(r.id, tf) && host.maxDays() > 0) || switches;
         return h(
           'button',
           {
@@ -48,7 +59,7 @@ export function createRangeBar(host: RangeHost) {
             class: r.id === active ? 'active' : '',
             'aria-pressed': String(r.id === active),
             disabled: !fits,
-            title: fits ? `${r.title} (remembered for ${tf} bars)` : `${r.title}: too few ${tf} bars; pick a shorter timeframe`,
+            title: switches ? `${r.title} (switches to ${timeframeFor(r.id)} bars)` : fits ? `${r.title} (remembered for ${tf} bars)` : `${r.title}: too few ${tf} bars; pick a shorter timeframe`,
             onclick: () => select(r.id === active ? null : r.id),
           },
           r.label,
@@ -71,6 +82,13 @@ export function createRangeBar(host: RangeHost) {
   }
 
   function select(range: RangeId | null) {
+    if (range && needsSwitch(range, host.timeframe()) && host.setTimeframe) {
+      // the range needs longer bars: switch timeframe; the new load asks for enough history and shows the range
+      const tf = timeframeFor(range);
+      saveRange(tf, range);
+      host.setTimeframe(tf);
+      return;
+    }
     saveRange(host.timeframe(), range);
     render();
     if (range) apply(true);
