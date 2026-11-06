@@ -52,3 +52,9 @@ Python environment for the full list.
 ## Fonts
 
 Inter and Source Serif 4 are loaded from Google Fonts and are licensed under the SIL Open Font License 1.1.
+
+## Agent skills in .claude/skills (instructions for Claude Code, not shipped on the website)
+
+- `frontend-design`, `webapp-testing`: from github.com/anthropics/skills, Apache License 2.0 (LICENSE.txt in each folder).
+- `unslop`: by Damir Sokolovsky (@heydamir, https://heydamir.design/unslop), from github.com/heydamir/unslop,
+  licensed CC BY 4.0 (LICENSE in the folder). Unmodified except the `agents/` folder (OpenAI agent config) was left out.

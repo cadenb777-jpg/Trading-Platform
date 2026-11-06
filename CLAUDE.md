@@ -483,6 +483,13 @@ Secrets (including the Webull keys) stay in the helper on the owner's computer, 
 engine (stage 11) would need the same rule. Real-money trading stays behind explicit confirmation (preview token +
 confirm window, typed LIVE opt-in), and Test (paper) comes first.
 
+### Design and QA skills (.claude/skills)
+
+- `frontend-design` and `webapp-testing` (Anthropic, Apache-2.0) and `unslop` (Damir Sokolovsky, CC BY 4.0): use them for
+  every UI change and before each release. The owner's brief wins over a skill's taste (amber labels, the flowing
+  background and Bull are the owner's choices). Release gate: the audit script (every route x dark/light x 1536/390:
+  console errors, overlapping controls, clipped text, sideways overflow) must come back clean.
+
 ## Agent skills
 
 ### Issue tracker

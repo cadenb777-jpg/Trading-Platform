@@ -93,6 +93,7 @@ export function createSecurityView(o: ViewOptions) {
     h('button', { type: 'button', class: 'btn small', onclick: () => addToWatchlist() }, '+ Watchlist'),
     h('button', { type: 'button', class: 'btn small', onclick: async () => (await import('../ui/alerts')).openAlertsDialog({ provider: 'schwab', symbol }, last) }, 'Alert'),
     h('button', { type: 'button', class: 'btn small', title: 'The full Chart page with this symbol and timeframe', onclick: () => openInChart() }, 'Open in Chart'),
+    h('button', { type: 'button', class: 'btn small', title: 'Financial statements, ratios and valuation (DCF, comparables) on the Research page', onclick: () => (location.hash = `#research/${symbol.replace(/^\$/, '')}`) }, 'Research'),
     h('button', { type: 'button', class: 'btn small', title: 'Fills in the Trade page’s ticket. You still preview and confirm there; nothing is placed from here.', onclick: async () => isCompanyLike(symbol) ? (await import('../trade/webull')).openOrderTicket({ symbol, side: 'BUY' }) : toast('The order ticket takes US stocks and ETFs') }, 'Trade ticket'),
     ai.button,
     h('button', { type: 'button', class: 'btn small ghost', title: 'Load fresh data', onclick: () => (forget(symbol), load(symbol, tab, false, true)) }, 'Refresh'),

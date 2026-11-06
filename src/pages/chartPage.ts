@@ -540,6 +540,9 @@ export function createChartPage() {
 
   function showMessage(text: string | null, actions: Node[] = []) {
     messageEl.hidden = !text;
+    // while the chart shows a problem, its legend steps aside so the message and its button are clear
+    legendBox?.el.classList.toggle('cf-legend-off', !!text);
+    chartWrap.classList.toggle('has-message', !!text);
     messageEl.replaceChildren(...(text ? [h('p', {}, text), h('div', { class: 'message-actions' }, ...actions)] : []));
   }
 

@@ -76,6 +76,9 @@ export function createSecurityHeader() {
     const px = input.price ?? formatPrice;
     const p = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : px(v));
     set(sym, input.symbol);
+    // the symbol opens its security view (overview, financials, options...), like a ticker anywhere else; crypto has none
+    if (/^[A-Z][A-Z.]{0,5}$/.test(input.symbol)) sym.setAttribute('data-ticker', input.symbol);
+    else sym.removeAttribute('data-ticker');
     el.classList.toggle('cf-empty', !s);
     const dir = !s || s.change === null ? '' : s.change >= 0 ? 'up' : 'down';
     el.dataset.dir = dir;

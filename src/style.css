@@ -10474,6 +10474,8 @@ body.rail-collapsed .rail .rail-bottom {
 .views > * {
   position: relative;
   overscroll-behavior: contain;
+  /* nothing (a pop-up, a wide row) may make a page scroll sideways; wide tables scroll inside their own box */
+  overflow-x: hidden;
 }
 @media (min-width: 901px) {
   .sp-detail {
@@ -10922,3 +10924,6 @@ body[data-route='chart'] .buddy {
   .chart-page .toolbar { gap: 3px; }
   .chart-page .toolbar .input.chart-type { width: 100px; }
 }
+
+/* while the chart shows a problem, the indicator legends step aside too */
+.has-message .pane-legend { visibility: hidden; }
