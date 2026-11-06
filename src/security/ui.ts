@@ -4,6 +4,7 @@
  */
 import { h } from '../ui/dom';
 import { DASH, fmtDate } from './format';
+import { HELPER_NOT_RUNNING } from '../data/schwab';
 
 /** A figure. A missing value ("—") carries its reason as a tooltip and for screen readers. */
 export function fig(text: string, opts: { tone?: string; title?: string; reason?: string; strong?: boolean } = {}): HTMLElement {
@@ -57,4 +58,8 @@ export const note = (text: string, cls = '') => h('p', { class: `sv-note muted s
 export const loadingNote = (what: string) => h('p', { class: 'sv-note muted small', 'aria-busy': 'true' }, `Loading ${what}…`);
 
 /** The error text for a failed request, in plain words. */
-export const reasonOf = (err: unknown) => ((err as Error)?.message || String(err || 'unknown error')).replace(/\s+/g, ' ').slice(0, 240);
+/** The error's message, shortened. The long "helper isn't running" text becomes one short line (each card would repeat it). */
+export const reasonOf = (err: unknown) => {
+  const msg = ((err as Error)?.message || String(err || 'unknown error')).replace(/\s+/g, ' ');
+  return msg === HELPER_NOT_RUNNING ? 'the helper isn\'t running. Start it, then reload this page.' : msg.slice(0, 240);
+};

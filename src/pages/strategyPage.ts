@@ -699,6 +699,7 @@ export function createStrategyPage() {
                   title: 'Delete this branch',
                   'aria-label': 'Delete this branch',
                   onclick: () => {
+                    if (!confirm('Delete this branch and every branch under it?')) return;
                     const drop = new Set([key]);
                     let grew = true;
                     while (grew) {

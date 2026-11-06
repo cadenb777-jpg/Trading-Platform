@@ -8,16 +8,27 @@ describe('dcf', () => {
     const r = dcf(base);
     expect(r.years).toHaveLength(10);
     expect(r.years[0].fcf).toBeCloseTo(110);
-    expect(r.years[0].pv).toBeCloseTo(110 / 1.09);
+    expect(r.years[0].pv).toBeCloseTo(110 / 1.09 ** 0.5); // mid-year convention
     expect(r.years[9].growth).toBeCloseTo(0.03);
     const fcf10 = r.years[9].fcf;
     expect(r.terminalValue).toBeCloseTo((fcf10 * 1.03) / 0.06);
-    expect(r.perShare).toBeCloseTo((r.pvCashFlows + r.terminalValue / 1.09 ** 10 - 200) / 10);
+    expect(r.perShare).toBeCloseTo((r.pvCashFlows + r.terminalValue / 1.09 ** 9.5 - 200) / 10);
+    expect(r.terminalShare).toBeCloseTo(r.pvTerminal / r.enterpriseValue);
+  });
+
+  it('end-of-year convention when asked', () => {
+    const r = dcf({ ...base, midYear: false });
+    expect(r.years[0].pv).toBeCloseTo(110 / 1.09);
+    expect(r.pvTerminal).toBeCloseTo(r.terminalValue / 1.09 ** 10);
+    // mid-year is worth exactly (1 + r)^0.5 more: every cash flow arrives half a year sooner
+    expect(dcf(base).enterpriseValue / r.enterpriseValue).toBeCloseTo(1.09 ** 0.5, 9);
   });
 
   it('flat cash flow with no growth equals a perpetuity', () => {
-    const r = dcf({ ...base, growth: 0, terminalGrowth: 0, discountRate: 0.1, netDebt: 0, shares: 1 });
+    const r = dcf({ ...base, growth: 0, terminalGrowth: 0, discountRate: 0.1, netDebt: 0, shares: 1, midYear: false });
     expect(r.enterpriseValue).toBeCloseTo(1000, 6);
+    // the same perpetuity paid through the year: 100 / 0.1 x 1.1^0.5 = 1048.81
+    expect(dcf({ ...base, growth: 0, terminalGrowth: 0, discountRate: 0.1, netDebt: 0, shares: 1 }).enterpriseValue).toBeCloseTo(1048.8088, 3);
   });
 
   it('is NaN when growth is at or above the discount rate', () => {

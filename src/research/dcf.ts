@@ -12,6 +12,11 @@ export interface DcfInputs {
   /** Debt minus cash ($). */
   netDebt: number;
   shares: number;
+  /**
+   * Mid-year convention (institutional default, true when left out): cash flows arrive through each year, so year t is
+   * discounted t - 0.5 years and the terminal value at 9.5. Off: each year-end (end-of-year convention).
+   */
+  midYear?: boolean;
 }
 
 export interface DcfResult {
@@ -22,6 +27,8 @@ export interface DcfResult {
   enterpriseValue: number;
   equityValue: number;
   perShare: number;
+  /** Share of enterprise value that comes from after year 10 (healthy: about 0.4-0.75; outside that the page warns). */
+  terminalShare: number;
 }
 
 /** Ten-year model: `growth` for years 1–5, then fading in a straight line to `terminalGrowth` by year 10. */
@@ -29,18 +36,19 @@ export function dcf(i: DcfInputs): DcfResult {
   const years: DcfResult['years'] = [];
   let fcf = i.baseFcf;
   let pvCashFlows = 0;
+  const shift = i.midYear === false ? 0 : 0.5;
   for (let year = 1; year <= 10; year++) {
     const growth = year <= 5 ? i.growth : i.growth + ((i.terminalGrowth - i.growth) * (year - 5)) / 5;
     fcf *= 1 + growth;
-    const pv = fcf / (1 + i.discountRate) ** year;
+    const pv = fcf / (1 + i.discountRate) ** (year - shift);
     pvCashFlows += pv;
     years.push({ year, growth, fcf, pv });
   }
   const terminalValue = i.discountRate > i.terminalGrowth ? (fcf * (1 + i.terminalGrowth)) / (i.discountRate - i.terminalGrowth) : NaN;
-  const pvTerminal = terminalValue / (1 + i.discountRate) ** 10;
+  const pvTerminal = terminalValue / (1 + i.discountRate) ** (10 - shift);
   const enterpriseValue = pvCashFlows + pvTerminal;
   const equityValue = enterpriseValue - i.netDebt;
-  return { years, pvCashFlows, terminalValue, pvTerminal, enterpriseValue, equityValue, perShare: i.shares > 0 ? equityValue / i.shares : NaN };
+  return { years, pvCashFlows, terminalValue, pvTerminal, enterpriseValue, equityValue, perShare: i.shares > 0 ? equityValue / i.shares : NaN, terminalShare: pvTerminal / enterpriseValue };
 }
 
 export interface WaccInputs {

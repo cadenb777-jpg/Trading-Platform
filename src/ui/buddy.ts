@@ -47,9 +47,12 @@ export function isEmptyAt(el: Element | null): boolean {
   return ![...el.childNodes].some((n) => n.nodeType === 3 && (n.textContent ?? '').trim());
 }
 
-/** True when nothing you read or press is under the box (sampled on a 3 x 3 grid of points). */
+/** Sample points across the box: 5 x 5, about 18 px apart on the dog, so a 24 px button row can't slip between rows. */
+const SAMPLES = [0.05, 0.275, 0.5, 0.725, 0.95];
+
+/** True when nothing you read or press is under the box. */
 export function spotIsFree(x: number, y: number, w: number, hgt: number, topAt: (px: number, py: number) => Element | null): boolean {
-  for (const fx of [0.1, 0.5, 0.9]) for (const fy of [0.1, 0.5, 0.9]) if (!isEmptyAt(topAt(x + w * fx, y + hgt * fy))) return false;
+  for (const fy of SAMPLES) for (const fx of SAMPLES) if (!isEmptyAt(topAt(x + w * fx, y + hgt * fy))) return false;
   return true;
 }
 

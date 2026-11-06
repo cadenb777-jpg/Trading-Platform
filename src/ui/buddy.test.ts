@@ -58,3 +58,14 @@ describe('buddy keeps clear of the page', () => {
     expect(nearestFree(400, 300, 1440, 900, () => false)).toBeNull();
   });
 });
+
+import { spotIsFree } from './buddy';
+describe('buddy sees a thin row of buttons', () => {
+  it('a 24 px button row across the middle of the box is not free', () => {
+    // box 0..78 x 0..78; a button row from y 40 to 64 (the old 3 x 3 grid sampled y 7.8, 39 and 70.2 and missed it)
+    const btn = { closest: (sel: string) => (sel.includes('button') ? btn : null), childNodes: [] } as unknown as Element;
+    const gap = { closest: () => null, childNodes: [] } as unknown as Element;
+    expect(spotIsFree(0, 0, 78, 78, (_x, y) => (y >= 40 && y <= 64 ? btn : gap))).toBe(false);
+    expect(spotIsFree(0, 0, 78, 78, () => gap)).toBe(true);
+  });
+});

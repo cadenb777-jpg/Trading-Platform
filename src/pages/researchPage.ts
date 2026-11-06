@@ -179,7 +179,7 @@ export function createResearchPage() {
     const header = h(
       'section',
       { class: 'panel company-head' },
-      h('div', { class: 'panel-head' }, h('h3', {}, `${d.profile.name} (`, h('span', tickerAttr(d.symbol), d.symbol), ')'), h('span', { class: 'spacer' }), livePrice, liveChange),
+      h('div', { class: 'panel-head' }, h('h3', {}, h('span', {}, `${d.profile.name} (`, h('span', tickerAttr(d.symbol), d.symbol), ')')), h('span', { class: 'spacer' }), livePrice, liveChange),
       h('div', { class: 'profile-line muted small' }, h('span', {}, d.profile.industry || 'Industry n/a'), h('span', {}, d.profile.exchange), d.profile.fiscalYearEnd ? h('span', {}, `Fiscal year ends ${d.profile.fiscalYearEnd.slice(0, 2)}/${d.profile.fiscalYearEnd.slice(2)}`) : null, h('span', {}, `SEC CIK ${d.profile.cik}`), d.filings?.[0]?.filed ? asOfStamp('sec').set(d.filings[0].filed, { prefix: 'latest SEC filing', source: d.filings[0].form }).el : null),
       d.totalReturn?.tr1y != null
         ? h('div', { class: 'profile-line small' }, termLabel('Total return', 'totalreturn'), ...([1, 3, 5] as const).map((y) => {
@@ -358,7 +358,7 @@ export function createResearchPage() {
           { label: Number.isFinite(upside) ? (upside >= 0 ? 'Upside' : 'Downside') : 'Upside', value: pct(upside, 1), tone: upside >= 0 ? 'up' : 'down' },
           { label: 'Growth the price implies', value: implied == null ? '—' : pct(implied, 1), hint: 'The 5-year free cash flow growth needed to justify today’s price with these other inputs' },
           { label: 'Enterprise value', value: money(out.enterpriseValue) },
-          { label: 'Terminal value share', value: pct(out.pvTerminal / out.enterpriseValue, 0), hint: 'How much of the value comes from after year 10. Over ~75% means the result depends heavily on long-run guesses.' },
+          { label: 'Terminal value share', value: pct(out.terminalShare, 0), hint: out.terminalShare > 0.75 ? 'Over 75% of the value comes after year 10: the result rests heavily on long-run guesses. Check the growth and discount rate.' : out.terminalShare < 0.4 ? 'Under 40% comes after year 10: the long-run assumptions may be too cautious.' : 'How much of the value comes from after year 10 (about 40-75% is typical).', tone: out.terminalShare > 0.75 || out.terminalShare < 0.4 ? 'warn' : '' },
         ]),
         h(
           'div',

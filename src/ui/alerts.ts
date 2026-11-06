@@ -268,6 +268,7 @@ export async function openAlertsDialog(ref?: MarketRef, lastPrice: number | null
             title: 'Delete alert',
             'aria-label': `Delete alert ${describeAlert(a)}`,
             onclick: async () => {
+              if (!confirm(`Delete the alert "${describeAlert(a)}"?`)) return;
               try {
                 await deleteHelperAlert({ docId: a.id });
                 if (editing?.id === a.id) resetForm();
@@ -289,7 +290,7 @@ export async function openAlertsDialog(ref?: MarketRef, lastPrice: number | null
       { class: `alert-item${a.triggeredAt ? ' done' : ''}` },
       h('div', { class: 'alert-main' }, h('b', {}, `${displaySymbol(a.symbol)} ${a.condition === 'above' ? 'rises to' : 'falls to'} ${formatPrice(a.price)}`), a.note ? h('span', { class: 'muted small' }, ` · ${a.note}`) : null),
       h('div', { class: 'alert-state small muted' }, a.triggeredAt ? `Fired ${new Date(a.triggeredAt).toLocaleString()}` : 'This browser only (while the platform is open)'),
-      h('div', { class: 'alert-actions' }, h('button', { class: 'mini-btn', title: 'Delete alert', 'aria-label': 'Delete alert', onclick: () => ((state.alerts = state.alerts.filter((x) => x.id !== a.id)), persist(), draw()) }, '✕')),
+      h('div', { class: 'alert-actions' }, h('button', { class: 'mini-btn', title: 'Delete alert', 'aria-label': 'Delete alert', onclick: () => confirm(`Delete the alert on ${displaySymbol(a.symbol)} at ${formatPrice(a.price)}?`) && ((state.alerts = state.alerts.filter((x) => x.id !== a.id)), persist(), draw()) }, '✕')),
     );
 
   function renderList() {

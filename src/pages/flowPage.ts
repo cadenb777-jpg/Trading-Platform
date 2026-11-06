@@ -103,6 +103,9 @@ const pcTone = (v: number | null | undefined) => (v == null ? '' : v > 1 ? 'down
 /** A plain-language reading of a put/call ratio for a single stock (index products normally run higher). */
 const pcReading = (v: number | null | undefined) => (v == null ? 'No volume yet' : v < 0.5 ? 'Strongly bullish' : v < 0.7 ? 'Bullish lean' : v <= 1 ? 'Neutral' : v <= 1.5 ? 'Bearish lean' : 'Strongly bearish');
 
+/** "1 buyer", "3 buyers", "no buyers". */
+const plural = (n: number, word: string) => (n === 0 ? `no ${word}s` : `${n} ${word}${n === 1 ? '' : 's'}`);
+
 export function createFlowPage() {
   let tab: Tab = 'positioning';
   /** The data on screen, handed to the AI analysis button. */
@@ -397,7 +400,7 @@ export function createFlowPage() {
         { label: 'Short volume 5-day vs 40-day', value: sv ? `${(sv.avg5 * 100).toFixed(1)}% vs ${(sv.avgAll * 100).toFixed(1)}%` : '—', hint: 'Rising short volume can mean more selling pressure (or market makers hedging heavy buying).', tone: sv ? (sv.avg5 > sv.avgAll ? 'down' : 'up') : '' },
         { label: 'Options put/call (volume)', value: o?.summary.putCallVolume?.toFixed(2) ?? '—', hint: 'Above 1 = more puts than calls traded today', tone: o?.summary.putCallVolume != null ? (o.summary.putCallVolume > 1 ? 'down' : 'up') : '' },
         { label: 'Max pain', value: o?.summary.maxPain != null ? formatPrice(o.summary.maxPain) : '—', hint: o ? `Expiry ${o.expiration}; price ${formatPrice(o.spot)}` : d.errors.options },
-        { label: 'Insider open-market buys − sells', value: insiderNet != null ? money(insiderNet) : '—', hint: ins ? `${ins.summary.buyers} buyer(s), ${ins.summary.sellers} seller(s) since ${ins.summary.since}` : d.errors.insiders, tone: insiderNet != null ? (insiderNet > 0 ? 'up' : insiderNet < 0 ? 'down' : '') : '' },
+        { label: 'Insider open-market buys − sells', value: insiderNet != null ? money(insiderNet) : '—', hint: ins ? `${plural(ins.summary.buyers, 'buyer')}, ${plural(ins.summary.sellers, 'seller')}${ins.summary.since ? ` since ${ins.summary.since}` : ' in the recent filings'}` : d.errors.insiders, tone: insiderNet != null ? (insiderNet > 0 ? 'up' : insiderNet < 0 ? 'down' : '') : '' },
       ]),
       // COT: one line here; the full table and charts are on Futures
       cotSummary(cot, d.errors.cot),

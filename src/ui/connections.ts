@@ -184,6 +184,7 @@ export function connectionRow(c: Connection, s: PlatformSettings, deps: RowDeps)
     rerender();
   };
   const remove = async () => {
+    if (!confirm(`Remove your saved ${c.name} key? Features that use it switch off until you paste it again.`)) return;
     try {
       await deps.save(Object.fromEntries(c.fields.map((f) => [f.field, ''])));
       for (const p of c.refreshes) clearEngineCache(p);

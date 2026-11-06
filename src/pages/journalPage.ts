@@ -584,6 +584,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
         engineRequest<{ data: string; mediaType: string }>('journal.screenshot', { name }).then((d) => (img.src = `data:${d.mediaType};base64,${d.data}`), () => (img.alt = 'Missing file'));
         return h('figure', {}, h('a', { href: '#', onclick: (e: Event) => (e.preventDefault(), img.src && window.open()?.document.write(`<img src="${img.src}" style="max-width:100%">`)) }, img),
           h('button', { class: 'icon-btn', 'aria-label': 'Delete screenshot', onclick: async () => {
+            if (!confirm('Delete this screenshot from the trade? The image file is removed too.')) return;
             const d = await engineRequest<{ trade: Trade }>('journal.screenshot_delete', { tradeId: t.id, name });
             Object.assign(t, d.trade);
             drawShots(t.screenshots ?? []);

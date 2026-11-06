@@ -10927,3 +10927,31 @@ body[data-route='chart'] .buddy {
 
 /* while the chart shows a problem, the indicator legends step aside too */
 .has-message .pane-legend { visibility: hidden; }
+
+.stat-value.warn { color: var(--warn-text); }
+
+/* ======================================================================================================
+   v45.2 review fixes (ux-ui-audit probes, WCAG 2.2): figures readable, targets at least 24px.
+   ====================================================================================================== */
+/* Legend figures in white (Bloomberg: the number is white, its colour chip says which line). A blue or purple line
+   colour as text measured 2.4-3.7:1 on the chart background; white is above 12:1. */
+.legend-value { color: var(--text-strong); }
+.legend-value.off { color: var(--muted); }
+
+/* SC 2.5.8 target size: small controls get at least a 24px hit area (most by height, a few by an invisible pad). */
+.sb-item { height: 24px; }
+.fn-rel { min-height: 28px; align-items: center; }
+.inv-chev, .link-chip { min-width: 24px; min-height: 24px; }
+.link-btn, .sv-rel { min-height: 24px; }
+.tt-sort { min-height: 24px; }
+.sp-star { min-width: 24px; min-height: 24px; }
+.segmented button { min-height: 24px; }
+input[type='checkbox'], input[type='radio'] { width: 16px; height: 16px; }
+label:has(> input[type='checkbox']), label:has(> input[type='radio']) { min-height: 24px; }
+.cmd-field { cursor: pointer; }
+/* warning text in tables uses the text shade (light: #865300 is 5.9:1 on cream; #a86a00 measured 4.08:1) */
+td.warn, .data-table td.warn { color: var(--warn-text); }
+/* phones: the overnight boxes two a row, so names like "S&P 500 fut" read in full (they were cut to 36px) */
+@media (max-width: 700px) {
+  .home-hero .brief-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: row; overflow-x: visible; }
+}

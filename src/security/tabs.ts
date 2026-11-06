@@ -4,7 +4,7 @@
  * the reason), and says where every figure comes from and when.
  */
 import { combineHoldings, myPortfolios } from '../portfolio/account';
-import { engineRequest, worldReady, worldAvailable } from '../data/schwab';
+import { engineRequest, helper, worldReady, worldAvailable } from '../data/schwab';
 import { optionsAnalyticsBlock } from '../flow/optionsAnalytics';
 import { NASDAQ_100 } from '../ui/command';
 import { h } from '../ui/dom';
@@ -211,7 +211,10 @@ interface AnalystReply {
 
 /** Analyst recommendation trends (ANR) from Finnhub's free tier; a note pointing to Settings without a key. */
 async function analystPanel(s: string): Promise<HTMLElement> {
-  if (!(await worldAvailable())) return panel('Analyst views', 'Finnhub', null, note('Analyst views need the updated helper (version 44 or newer).'));
+  if (!(await worldAvailable())) {
+    const why = helper.isConnected ? 'Analyst views need the updated helper (version 44 or newer).' : 'Analyst views appear when the helper is running.';
+    return panel('Analyst views', 'Finnhub', null, note(why));
+  }
   const r = await engineRequest<AnalystReply>('finnhub.recommendations', { symbol: s }, 30000);
   if (r.needsKey) return panel('Analyst views', 'Finnhub (free key)', null, note(r.note ?? 'Add a free Finnhub key in Settings > Data connections.'));
   const t = r.trends?.[0];
