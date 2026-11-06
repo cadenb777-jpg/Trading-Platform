@@ -1213,3 +1213,44 @@ class Isolation(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RealReplyShapes(unittest.TestCase):
+    """Webull's actual US replies (checked 2026-11-06, values trimmed): order rows use total_quantity and
+    place_time in milliseconds; balances carry total_net_liquidation_value, not total_asset."""
+
+    ORDER = {'client_order_id': 'c6ef', 'combo_type': 'NORMAL', 'orders': [{
+        'symbol': 'YMAG', 'side': 'SELL', 'status': 'FILLED', 'client_order_id': 'c6ef', 'order_type': 'LIMIT',
+        'instrument_type': 'EQUITY', 'entrust_type': 'QTY', 'total_quantity': '62.68726', 'filled_quantity': '62.68726',
+        'place_time': '1793738625829', 'place_time_at': '2026-11-03T20:43:45.829Z', 'filled_price': '10.55',
+        'time_in_force': 'DAY', 'limit_price': '10.55'}]}
+
+    def test_order_rows_read_total_quantity(self):
+        rows = webull._order_rows([self.ORDER])
+        self.assertEqual(rows[0]['qty'], 62.68726)
+        self.assertEqual(rows[0]['filled'], 62.68726)
+        self.assertEqual(rows[0]['placedAt'], '2026-11-03T20:43:45.829000Z')
+
+    def test_place_time_in_milliseconds_becomes_iso(self):
+        row = json.loads(json.dumps(self.ORDER))
+        del row['orders'][0]['place_time_at']
+        self.assertTrue(webull._order_rows([row])[0]['placedAt'].startswith('2026-11-03T20:43:45'))
+
+    def test_missing_quantity_still_refused_and_logged(self):
+        row = json.loads(json.dumps(self.ORDER))
+        del row['orders'][0]['total_quantity']
+        with self.assertLogs('engine.webull', 'WARNING') as logs:
+            with self.assertRaises(core.EngineError):
+                webull._order_rows([row])
+        self.assertIn('quantity/total_quantity', logs.output[0])
+        self.assertIn('_order_rows', logs.output[0])
+
+    def test_balance_value_from_net_liquidation(self):
+        reply = {'total_asset_currency': 'USD', 'total_net_liquidation_value': '2489.37', 'total_cash_balance': '0.01',
+                 'account_currency_assets': [{'currency': 'USD', 'cash_balance': '0.01', 'buying_power': '0.01'}]}
+
+        async def call(*_a, **_k):
+            return reply
+        with mock.patch.object(webull, '_call', call):
+            out = asyncio.run(webull.balances(None, 'x'))
+        self.assertEqual((out['value'], out['cash'], out['buyingPower']), (2489.37, 0.01, 0.01))

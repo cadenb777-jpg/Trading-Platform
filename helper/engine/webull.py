@@ -30,7 +30,9 @@ import hmac
 import json
 import math
 import re
+import logging
 import secrets
+import sys
 import time
 import uuid
 from decimal import Decimal, InvalidOperation
@@ -40,6 +42,8 @@ from zoneinfo import ZoneInfo
 
 from . import diagnostics, settings
 from .core import EngineError, handler, market_session
+
+log = logging.getLogger('engine.webull')
 
 DATA_DIR = Path.home() / '.trading-platform'
 ORDERS_LOG = DATA_DIR / 'orders.log'
@@ -389,13 +393,23 @@ FORMAT = 'Webull’s reply was not in the expected format, so nothing was guesse
 STOCK_TYPES = {'EQUITY', 'STOCK', 'ETF'}
 
 
+def _bad(what=''):
+    """The FORMAT error, with where it happened (function, line, field) written to the helper log so it can be fixed.
+    Only names are logged, never values, keys or account numbers."""
+    f = sys._getframe(1)
+    if f.f_code.co_name in ('_need', '_list'):
+        f = f.f_back
+    log.warning('Webull reply not in the expected format: %s line %s%s', f.f_code.co_name, f.f_lineno, f' (field {what})' if what else '')
+    return EngineError(FORMAT)
+
+
 def _list(data, key):
     """The list in a reply: the reply itself, or data[key]. Anything else is refused."""
     if isinstance(data, list):
         return data
     if isinstance(data, dict) and isinstance(data.get(key), list):
         return data[key]
-    raise EngineError(FORMAT)
+    raise _bad()
 
 
 def _num(value):
@@ -406,12 +420,14 @@ def _num(value):
     return out if out == out and out not in (float('inf'), float('-inf')) else None
 
 
-def _need(row, key):
-    """A required number from a reply row; missing or not a number -> refuse, never a default."""
-    v = _num(row.get(key)) if isinstance(row, dict) else None
-    if v is None:
-        raise EngineError(FORMAT)
-    return v
+def _need(row, *keys):
+    """A required number from a reply row, under the first of `keys` that holds one (Webull names some fields
+    differently per endpoint, e.g. order replies use total_quantity); missing or not a number -> refuse, never a default."""
+    for key in keys:
+        v = _num(row.get(key)) if isinstance(row, dict) else None
+        if v is not None:
+            return v
+    raise _bad('/'.join(keys))
 
 
 def _mask(account_id):
@@ -436,7 +452,7 @@ def account_info(row):
     stocks=False (futures, crypto, anything unknown) means it is listed but never read, synced or traded here.
     managed=True (Webull's robo-advisor IRAs) can be viewed and synced, but orders are refused."""
     if not isinstance(row, dict) or not row.get('account_id'):
-        raise EngineError(FORMAT)
+        raise _bad()
     cls = str(row.get('account_class') or '').strip().upper()
     typ = str(row.get('account_type') or '').strip().upper()
     label = row.get('account_label').strip() if isinstance(row.get('account_label'), str) else ''
@@ -502,14 +518,17 @@ async def _account_id(ctx, msg):
 async def balances(ctx, account_id):
     d = await _call(ctx, 'GET', '/trading/assets/balances/get', {'account_id': account_id, 'total_asset_currency': 'USD'})
     if not isinstance(d, dict):
-        raise EngineError(FORMAT)
+        raise _bad()
     usd = next((c for c in d.get('account_currency_assets') or [] if isinstance(c, dict) and c.get('currency') == 'USD'), {})
     cash = _num(d.get('total_cash_balance'))
     if cash is None:
         cash = _num(usd.get('cash_balance'))
     if cash is None:
         raise EngineError('Webull’s balance reply has no cash balance, so nothing is shown rather than a guess.')
-    return {'value': _num(d.get('total_asset')), 'cash': cash, 'buyingPower': _num(usd.get('buying_power'))}
+    value = _num(d.get('total_asset'))
+    if value is None:
+        value = _num(d.get('total_net_liquidation_value'))  # what Webull's US balance reply actually carries
+    return {'value': value, 'cash': cash, 'buyingPower': _num(usd.get('buying_power'))}
 
 
 def _first_item(row):
@@ -523,11 +542,11 @@ async def positions(ctx, account_id):
     out = []
     for p in _list(data, 'positions'):
         if not isinstance(p, dict):
-            raise EngineError(FORMAT)
+            raise _bad()
         item = _first_item(p)
         symbol = p.get('symbol') or item.get('symbol')
         if not isinstance(symbol, str) or not symbol:
-            raise EngineError(FORMAT)
+            raise _bad()
         qty = _need(p, 'quantity')
         avg = _num(p.get('cost_price'))
         out.append({'symbol': symbol.upper(), 'qty': qty, 'avgCost': avg, 'cost': avg * qty if avg is not None else None,
@@ -541,27 +560,27 @@ def _order_rows(data):
     out = []
     for o in _list(data, 'orders'):
         if not isinstance(o, dict):
-            raise EngineError(FORMAT)
+            raise _bad()
         subs = o['orders'] if isinstance(o.get('orders'), list) else [o]  # combo orders hold their legs in 'orders'
         for s in subs:
             if not isinstance(s, dict):
-                raise EngineError(FORMAT)
+                raise _bad()
             order_id = s.get('client_order_id') or o.get('client_order_id')
             symbol, side, status = s.get('symbol'), s.get('side'), s.get('status') or o.get('status')
             if not all(isinstance(v, str) and v for v in (order_id, symbol, side, status)):
-                raise EngineError(FORMAT)
+                raise _bad()
             out.append({
                 'orderId': order_id,
                 'symbol': symbol.upper(),
                 'side': side.upper(),
-                'qty': _need(s, 'quantity'),
+                'qty': _need(s, 'quantity', 'total_quantity'),  # orders lists use total_quantity
                 'filled': _num(s.get('filled_quantity')) or 0,  # missing = nothing filled: the cautious reading
                 'type': str(s.get('order_type') or '').upper(),
                 'limitPrice': _num(s.get('limit_price')),
                 'stopPrice': _num(s.get('stop_price')),
                 'tif': str(s.get('time_in_force') or '').upper(),
                 'status': status.upper(),
-                'placedAt': s.get('place_time') or '',
+                'placedAt': _iso(s.get('place_time_at') or s.get('place_time')),
             })
     return out
 
@@ -614,6 +633,12 @@ HISTORY_PAGE = 100
 HISTORY_PAGES = 60
 
 
+def _iso(value):
+    """A Webull time as ISO text the page can read ('' when missing): place_time is unix milliseconds as text."""
+    t = _when(value) if value not in (None, '') else None
+    return dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat().replace('+00:00', 'Z') if t else ''
+
+
 def _when(value):
     """A Webull time (ISO text, or unix seconds/milliseconds) as unix seconds; None when unreadable."""
     n = _num(value)
@@ -632,10 +657,10 @@ def filled_rows(data):
     out = []
     for o in _list(data, 'orders'):
         if not isinstance(o, dict):
-            raise EngineError(FORMAT)
+            raise _bad()
         for s in o['orders'] if isinstance(o.get('orders'), list) else [o]:
             if not isinstance(s, dict):
-                raise EngineError(FORMAT)
+                raise _bad()
             qty = _num(s.get('filled_quantity')) or 0
             if qty <= 0 or not isinstance(s.get('symbol'), str):
                 continue
@@ -674,7 +699,7 @@ async def order_history(ctx, account_id):
             raise
         except EngineError as err:
             last_error = err
-    raise last_error or EngineError(FORMAT)
+    raise last_error or _bad()
 
 
 # ---------- order log and limits ----------
@@ -962,14 +987,14 @@ def contract_info(row, today=None):
     tradable = new positions may be opened (OC and more than EXPIRY_DAYS trading days left); closable = a closing order
     may be sent (OC or CO, up to and including the last trading day)."""
     if not isinstance(row, dict):
-        raise EngineError(FORMAT)
+        raise _bad()
     symbol, code = row.get('symbol'), row.get('code')
     if not (isinstance(symbol, str) and isinstance(code, str) and symbol.startswith(code)):
-        raise EngineError(FORMAT)
+        raise _bad()
     size, tick = _need(row, 'size'), _need(row, 'min_tick')
     last_trade = _date(row.get('last_trading_date'))
     if size <= 0 or tick <= 0 or last_trade is None:
-        raise EngineError(FORMAT)
+        raise _bad()
     today = today or _today()
     notice, settle = _date(row.get('first_notice_date')), _date(row.get('settlement_date'))
     # the earliest of last trading day, first notice day (physically delivered contracts) and settlement day
@@ -1045,7 +1070,7 @@ def _root_of(symbol):
 async def futures_balances(ctx, account_id):
     d = await _call(ctx, 'GET', '/trading/assets/balances/get', {'account_id': account_id, 'total_asset_currency': 'USD'})
     if not isinstance(d, dict):
-        raise EngineError(FORMAT)
+        raise _bad()
     usd = next((c for c in d.get('account_currency_assets') or [] if isinstance(c, dict) and c.get('currency') == 'USD'), {})
     cash = _num(d.get('total_cash_balance'))
     if cash is None:
@@ -1078,7 +1103,7 @@ async def futures_positions(ctx, account_id):
     out = []
     for p in _list(data, 'positions'):
         if not isinstance(p, dict) or not isinstance(p.get('symbol'), str) or not p['symbol']:
-            raise EngineError(FORMAT)
+            raise _bad()
         symbol = p['symbol'].upper()
         qty = _need(p, 'quantity')
         mult = None

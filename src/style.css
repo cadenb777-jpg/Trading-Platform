@@ -6951,9 +6951,11 @@ summary:focus-visible {
 .trade-page { --page-max: 1560px; }
 .tr-top {
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3);
-  padding: var(--sp-2) 0; margin-bottom: var(--sp-3);
-  background: var(--scrim); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
+  /* side padding so the title and Refresh don't touch the bar's edges; rounded like the cards */
+  padding: var(--sp-2) var(--sp-4); margin-bottom: var(--sp-3); border-radius: var(--radius);
+  background: var(--scrim); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); border: 1px solid var(--border);
 }
+.tr-top .tr-updated { margin-left: auto; } /* "As of" and Refresh stay on the right, also when the bar wraps */
 .tr-top h1 { margin: 0; font-family: var(--font-display); font-size: clamp(28px, 4vw, var(--fs-display)); font-weight: 500; line-height: 1.1; color: var(--text-strong); }
 .tr-stats { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); }
 .tr-stat { display: flex; flex-direction: column; line-height: 1.25; }

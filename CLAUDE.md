@@ -381,7 +381,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   order value / orders per day, Test-by-default and a typed LIVE opt-in in Settings; US stocks only, no sells beyond
   the position minus open sells (stock positions only), every attempt logged to ~/.trading-platform/orders.log and
   counted toward the daily limit (unreadable log = refuse). A timeout/5xx on place is "unknown": looked up once by
-  client_order_id, never reported as not placed. Reply fields are the documented names; missing ones fail closed.
+  client_order_id, never reported as not placed. Reply fields are the documented names; missing ones fail closed (and log function/line/field to helper.log). Real
+  replies (checked 2026-11): order rows use total_quantity and place_time in ms; balances carry total_net_liquidation_value.
   Futures (v31): only in the FUTURES account (account_class FUTURES; stock accounts take only stocks), requests carry
   asset 'futures' (snapshot, preview, cancel), webull.futures_contracts lists a root's contracts (size = multiplier,
   min_tick, last_trading_date/first_notice_date). Guards: separate typed FUTURES opt-in (plus LIVE for real money), max
