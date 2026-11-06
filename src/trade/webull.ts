@@ -184,9 +184,15 @@ export const usd = (v: number | null | undefined) =>
 export const TYPE_LABELS: Record<OrderType, string> = { MARKET: 'Market', LIMIT: 'Limit', STOP: 'Stop', STOP_LIMIT: 'Stop-limit' };
 export const OPEN = /SUBMITTED|PARTIAL|PENDING|WORKING|NEW/;
 
-/** The environment badge: calm for Test, red for Live. */
+/** The environment pill near the top: a small red dot for Live, calm for Test (no big banners; the confirm window still warns). */
 export function envBadge(env: Env) {
-  return env === 'live' ? h('span', { class: 'badge down wb-env' }, 'LIVE — real money') : h('span', { class: 'badge accent wb-env' }, 'TEST — no real money');
+  const live = env === 'live';
+  return h(
+    'span',
+    { class: `wb-env${live ? ' live' : ''}`, title: live ? 'Orders use real money in your Webull account' : 'Practice account: nothing real is bought or sold' },
+    h('span', { class: 'wb-env-dot', 'aria-hidden': 'true' }),
+    live ? 'Live trading' : 'Test (practice)',
+  );
 }
 
 export function friendly(err: unknown) {

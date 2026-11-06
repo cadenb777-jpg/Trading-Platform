@@ -342,7 +342,7 @@ function webullRow(s: PlatformSettings, refresh: () => void): HTMLElement {
     result,
     h('div', { class: 'settings-label' }, h('b', {}, 'Environment')),
     envSeg,
-    live ? h('p', { class: 'wb-warning small' }, 'LIVE: orders use real money in your Webull account.') : h('p', { class: 'muted small' }, 'Test: orders go to Webull’s practice environment. Nothing real is bought or sold.'),
+    live ? h('p', { class: 'muted small' }, 'Live: orders use real money in your Webull account.') : h('p', { class: 'muted small' }, 'Test: orders go to Webull’s practice environment. Nothing real is bought or sold.'),
     h('div', { class: 'settings-label' }, h('b', {}, 'Order limits')),
     h('p', { class: 'muted small' }, 'Safety limits checked by the helper before every order. An order above the maximum value, or after the daily number of orders, is refused.'),
     h(

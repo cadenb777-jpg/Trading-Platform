@@ -178,11 +178,11 @@ Nothing extra needs installing: the helper talks to Webull directly.
 4. In the platform, open **Settings** → **Trading** → **Webull**, paste the App Key and App Secret, click
    **Save**, then **Test connection**. It should say "Connected to Webull Test". If Webull asks you to
    approve the API login, open the Webull app on your phone, approve it, and click Test connection again.
-5. Open **Portfolios** → **Webull**. You'll see a calm blue "TEST — no real money" badge. Try **Sync to
+5. Open **Portfolios** → **Webull**. You'll see a small "Test (practice)" tag near the top. Try **Sync to
    Portfolios** and a small test order: fill in the ticket, click **Preview order**, read the confirm
    window, then **Place test order**.
 6. Only when you're comfortable: paste **your own** App Key/Secret, then in Settings click **Live (real
-   money)** and type `LIVE` to confirm. The badge turns red: "LIVE — real money". Switch back to Test
+   money)** and type `LIVE` to confirm. The tag changes to "Live trading" with a red dot. Switch back to Test
    any time.
 
 Safety rails (all checked by the helper, not the web page):

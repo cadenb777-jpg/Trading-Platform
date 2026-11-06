@@ -640,7 +640,6 @@ export function createTradePage() {
       stale && snap.asOf
         ? h('div', { class: 'tr-stale' }, h('b', {}, `${/took too long|busy/i.test(stale) ? 'Webull is busy' : 'Can’t reach the helper'} — showing data as of ${clock(snap.asOf)}.`), h('span', { class: 'muted small' }, ` ${stale} The page tries again by itself.`))
         : '',
-      snap.env === 'live' ? h('p', { class: 'wb-warning small' }, 'LIVE: orders placed here use real money in your Webull account.') : '',
       snap.retirement ? h('p', { class: 'muted small' }, `${snap.account}: ${IRA_NOTE}`) : '',
       gapNote ? h('p', { class: 'muted small tr-value-gap' }, gapNote) : '',
       ...[...new Set(errs)].map((e) => h('div', { class: 'ap-error' }, e)),
@@ -671,7 +670,6 @@ export function createTradePage() {
     const errs = Object.values(snap.errors ?? {});
     notice.replaceChildren(
       stale && snap.asOf ? h('div', { class: 'tr-stale' }, h('b', {}, `Showing data as of ${clock(snap.asOf)}.`), h('span', { class: 'muted small' }, ` ${stale} The page tries again by itself.`)) : '',
-      snap.env === 'live' ? h('p', { class: 'wb-warning small' }, 'LIVE: futures orders placed here use real money and can lose more than the account holds.') : '',
       ...[...new Set(errs)].map((e) => h('div', { class: 'ap-error' }, e)),
     );
     drawLists();
