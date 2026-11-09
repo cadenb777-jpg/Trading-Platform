@@ -41,7 +41,7 @@ if os.environ.get('TP_SPLASH'):
     logging.getLogger().addHandler(logging.NullHandler())
 warnings.showwarning = lambda *args, **kwargs: None
 import httpx  # noqa: E402
-from schwab.auth import RedirectTimeoutError, easy_client  # noqa: E402
+from schwab.auth import RedirectTimeoutError, client_from_token_file, easy_client  # noqa: E402
 from schwab.streaming import StreamClient  # noqa: E402
 from websockets.asyncio.server import broadcast, serve  # noqa: E402
 import updater  # noqa: E402  (standard library only)
@@ -51,7 +51,7 @@ from engine.core import is_safe_url  # noqa: E402
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 46
+HELPER_VERSION = 47
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -249,7 +249,7 @@ async def fetch_history(client, symbol, resolution, days):
     method = getattr(datahub.raw(client), RESOLUTIONS[resolution])
     response = await datahub.call('schwab', lambda: method(symbol, **kwargs), key=('history', symbol, resolution, days))
     if response.status_code == 401:
-        raise HelperError('Schwab login expired. Close the helper and start it again to log in.')
+        raise HelperError('Schwab login expired (401)')  # Market.history_reply turns this into the login page
     if response.status_code != 200:
         raise HelperError(f'Schwab returned {response.status_code}: {response.text[:200]}')
     bars, dropped = clean_candles(response.json().get('candles', []))
@@ -650,6 +650,12 @@ class Market:
         self.updater = updater.Updater(HELPER_VERSION, on_change=self.update_changed)
         self.restart = asyncio.Event()
         self.offered = None
+        # Logging in to Schwab again while running (the saved login was refused): see relogin().
+        self.config = None  # set by run(): the Schwab app key/secret the login page needs
+        self.login_task = None
+        self.login_wake = asyncio.Event()  # set when a fresh login is in use
+        self.stream_live = False  # the Schwab stream is connected right now
+        self.auto_login_at = 0.0  # last time the login page opened by itself (at most every 30 minutes)
         self.status = {**self._status('connecting', 'Connecting to Schwab'), 'update': self.updater.public()}
         # The diagnostics file (Settings > Send diagnostics): outside calls' status/latency and this helper's state.
         diagnostics.watch_http(getattr(self.news, 'http', None))
@@ -698,6 +704,8 @@ class Market:
                     engine.background(self.reply(ws, msg.get('id'), self.calendar_reply(), 'calendar'))
                 elif kind == 'update':
                     engine.background(self.reply(ws, msg.get('id'), self.update_reply(), 'update'))
+                elif kind == 'schwab_login':
+                    engine.background(self.reply(ws, msg.get('id'), self.login_reply(), 'schwab_login'))
                 elif kind == 'summary':
                     links = [str(u) for u in msg.get('links') or [] if str(u).startswith(('https://', 'http://'))]
                     engine.background(self.reply(ws, msg.get('id'), self.summary_reply(links, str(msg.get('title', ''))), 'summary'))
@@ -775,7 +783,13 @@ class Market:
         # Intraday history older than Schwab keeps comes from Alpaca when its keys are saved (Schwab wins where both exist).
         from engine import alpaca
         days = max(1, min(int(days or 30), MAX_HISTORY_DAYS))
-        bars = await fetch_history(self.client, symbol, resolution, alpaca.schwab_days(resolution, days))
+        try:
+            bars = await fetch_history(self.client, symbol, resolution, alpaca.schwab_days(resolution, days))
+        except Exception as err:
+            if not schwab_login_refused(err):
+                raise
+            opened = self.start_login('chart history')  # opens the login page (at most every 30 minutes)
+            raise HelperError(LOGIN_OPENED if opened else LOGIN_NEEDED)
         bars = await alpaca.fill_older(self.engine, symbol, resolution, days, bars)
         log.info('Sent %d %s bars for %s', len(bars), resolution, symbol)
         return {'type': 'history', 'bars': bars}
@@ -863,7 +877,8 @@ class Market:
             waiting = webull.preview_waiting()
         except Exception:
             waiting = False
-        return self.inflight == 0 and not waiting
+        logging_in = self.login_task is not None and not self.login_task.done()  # the login page is open
+        return self.inflight == 0 and not waiting and not logging_in
 
     @staticmethod
     def hold_orders(on):
@@ -1035,6 +1050,68 @@ class Market:
                 except Exception as err:  # alerts must never stop the quotes
                     log.warning('Alert check failed: %s', err)
 
+    async def relogin(self, reason='', manual=False):
+        """Schwab refused the saved login: opens the Schwab login page and, once you approve, uses the new login
+        straight away (no restart; everything else keeps running meanwhile). One login page at a time; opened by
+        itself at most every 30 minutes, any time from the "Log in to Schwab" button."""
+        task = self.start_login(reason, manual)
+        if task is None:
+            raise HelperError(LOGIN_NEEDED)
+        return await asyncio.shield(task)
+
+    def start_login(self, reason='', manual=False):
+        """The running login (or a new one); None when one opened by itself less than 30 minutes ago."""
+        if self.login_task and not self.login_task.done():
+            return self.login_task
+        if not manual and time.time() - self.auto_login_at < 1800:
+            return None
+        self.auto_login_at = time.time()
+        self.login_task = asyncio.ensure_future(self._relogin(reason))
+        self.login_task.add_done_callback(lambda t: t.cancelled() or t.exception())  # failures are reported, not raised here
+        return self.login_task
+
+    async def _relogin(self, reason):
+        if not self.config:
+            raise HelperError(LOGIN_NEEDED)
+        # the other helper (desktop app / website) may already have logged in again: use its newer login, no page
+        fresh = await asyncio.to_thread(newer_saved_login, self.client, self.config)
+        if fresh is None:
+            log.warning('Schwab refused the saved login (%s): opening the Schwab login page', reason or 'asked')
+            self.set_status('error', LOGIN_OPENED)
+            if SCREEN:
+                SCREEN.pause()  # schwab-py prints its login steps; the start screen comes back afterwards
+            try:
+                TOKEN_PATH.unlink()  # the refused login; the login page writes the new one here
+            except FileNotFoundError:
+                pass
+            try:
+                fresh = await asyncio.to_thread(schwab_login, self.config)
+            except Exception as err:
+                log.warning('Schwab login not finished: %s', err)
+                self.set_status(*(('live', 'Streaming from Schwab') if self.stream_live else ('error', LOGIN_NEEDED)))
+                raise HelperError('The Schwab login wasn\u2019t finished. Press "Log in to Schwab" to try again.')
+            finally:
+                if SCREEN:
+                    SCREEN.resume()
+        # the same client object everywhere (stream, quotes, charts, engine) now uses the new login
+        old = self.client.session
+        self.client.session, self.client.token_metadata = fresh.session, fresh.token_metadata
+        try:
+            await old.aclose()
+        except Exception:
+            pass
+        self.set_status(*(('live', 'Streaming from Schwab') if self.stream_live else ('connecting', 'Logged in to Schwab again; connecting')))
+        self.auto_login_at = 0.0
+        self.login_wake.set()
+        self.login_wake = asyncio.Event()
+        log.info('Logged in to Schwab again')
+        if SCREEN:
+            SCREEN.message('Logged in to Schwab again.', tone='ok')
+        return {'type': 'schwab_login', 'ok': True}
+
+    async def login_reply(self):
+        return await self.relogin('the Log in to Schwab button', manual=True)
+
     async def run_stream(self):
         attempt = 0
         while True:
@@ -1047,6 +1124,7 @@ class Market:
                 await stream.login()
                 stream.add_level_one_equity_handler(self.on_quote)
                 self.set_status('live', 'Streaming from Schwab')
+                self.stream_live = True
                 log.info('Connected to the Schwab live stream')
                 attempt = 0
                 while True:
@@ -1073,6 +1151,20 @@ class Market:
                     except asyncio.TimeoutError:
                         pass
             except Exception as err:
+                self.stream_live = False
+                if schwab_login_refused(err):
+                    wake = self.login_wake
+                    try:
+                        await self.relogin('live stream')
+                        attempt = 0
+                        continue
+                    except Exception:
+                        self.set_status('error', LOGIN_NEEDED)
+                        try:  # wait for the button (or try the login page again in 30 minutes)
+                            await asyncio.wait_for(wake.wait(), timeout=1800)
+                        except asyncio.TimeoutError:
+                            pass
+                        continue
                 delay = min(60, 2 ** attempt)
                 attempt += 1
                 log.warning('Schwab stream problem: %s. Retrying in %ss', err, delay)
@@ -1094,6 +1186,31 @@ async def screen_clock():
     while True:
         await asyncio.sleep(1)
         SCREEN.tick()
+
+
+LOGIN_OPENED = ('Schwab needs you to log in again: the Schwab login page opened in your browser. Log in and approve '
+                '(if you see "connection is not private", click Advanced, then Proceed). Prices come back by themselves.')
+LOGIN_NEEDED = 'Schwab needs you to log in again. Press "Log in to Schwab" (Settings, or the Schwab dot at the bottom).'
+
+
+def newer_saved_login(client, config):
+    """A client for the saved login when it is newer than the one this helper uses (the other helper, website or
+    desktop app, already logged in again: they share the file), else None."""
+    try:
+        saved = json.loads(TOKEN_PATH.read_text())
+        mine = getattr(getattr(client, 'token_metadata', None), 'creation_timestamp', None) or 0
+        if float(saved.get('creation_timestamp', 0)) <= float(mine):
+            return None
+        return client_from_token_file(str(TOKEN_PATH), config['app_key'], config['app_secret'], asyncio=True)
+    except Exception:
+        return None
+
+
+def schwab_login_refused(err):
+    """True when Schwab turned the saved login down (expired or cancelled), not a network hiccup."""
+    text = f'{type(err).__name__} {err}'.lower()
+    return any(k in text for k in ('invalid_grant', 'refresh_token_authentication_error', 'invalid_client', 'invalid_token',
+                                   'unauthorized', "'401", ' 401 ', 'status code 401', 'schwab login expired'))
 
 
 def needs_login():
@@ -1207,9 +1324,10 @@ async def open_when_ready(market, enabled):
         print(f'Opened the platform in {where}.')
 
 
-async def run(client, sec_contact='', open_browser=True):
+async def run(client, sec_contact='', open_browser=True, config=None):
     diagnostics.PERSIST = True  # remember account ids between runs so the diagnostics file masks them from the start
     market = Market(client, engine_ctx=engine.EngineContext(client, sec_contact))
+    market.config = config
     try:
         # Room for files attached to AI questions (spreadsheets, PDFs, images).
         server = await serve(market.handle_browser, HOST, PORT, origins=ALLOWED_ORIGINS, max_size=40 * 2**20)
@@ -1371,7 +1489,7 @@ def serve_forever(args):
         SCREEN.resume()  # puts the start screen back after the login steps
         SCREEN.step('Starting the live data server...', 99, 1)
     try:
-        restart = asyncio.run(run(client, config.get('sec_contact', ''), open_browser=not args.no_browser))
+        restart = asyncio.run(run(client, config.get('sec_contact', ''), open_browser=not args.no_browser, config=config))
     finally:
         scanner = sys.modules.get('engine.scanner')
         if scanner is not None:

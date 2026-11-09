@@ -221,6 +221,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (topic/token in settings.json, never sent back), plus an `alert` push to open tabs; failures logged and kept on the
   alert (lastDelivery). Alerts never touch orders (a test checks). Browser: Alerts window (rail bell, chart bell;
   src/ui/alerts.ts), crypto/old helpers keep browser-only alerts. Home/Account show news on the owner's holdings.
+  Schwab login (v47): a refused saved login (schwab_login_refused: 401/invalid_grant, even when the token is < 6.5 days
+  old) makes Market.relogin open the login page in a thread and swap client.session/token_metadata in place (no
+  restart; the launcher would treat a failed restart as a bad update). Opens by itself at most every 30 min; the page's
+  "Log in to Schwab" (src/ui/schwabLogin.ts, request schwab_login) any time.
   Quotes: the helper polls Schwab's REST quotes every 30 s (`refresh_official`); prevClose = lastPrice - netChange.
   The stream's CLOSE_PRICE is only a fallback (after the session it becomes today's close, which read as 0%).
   Scanner (engine/scanner.py + engine/strategies.py): a background task (`market_scanner`) scans the

@@ -5,8 +5,9 @@ import { buddySettings } from './buddy';
  * keys, Test/Live, order limits) and where alerts are sent (ntfy, Telegram). Values go straight to the helper,
  * which saves them on this computer; keys are never stored in the browser or shown again.
  */
+import { schwabLoginButton } from './schwabLogin';
 import { chartEffectsSetting, reducedMotion, setChartEffects } from '../chart/frame';
-import { LATEST_HELPER_VERSION, engineRequest, helper, prospectContactsReady, setAlpacaConnected } from '../data/schwab';
+import { LATEST_HELPER_VERSION, engineRequest, helper, prospectContactsReady, setAlpacaConnected, SCHWAB_LOGIN_HELPER_VERSION } from '../data/schwab';
 import { smtpCheckRow } from '../prospect/smtpSetting';
 import { dataConnectionsSection } from './connections';
 import { deliverySummary } from './alertsLogic';
@@ -408,6 +409,7 @@ function webullRow(s: PlatformSettings, refresh: () => void): HTMLElement {
 /** A quick health check of the helper connection, shown at the top of Settings. */
 function connectionCheck(): HTMLElement {
   const rows: [string, string, 'ok' | 'warn' | 'bad'][] = [];
+  let loginBtn: HTMLButtonElement | null = null;
   if (!helper.isConnected) {
     rows.push(['Schwab helper', 'Not running. Double-click start-windows.bat (or start-mac.command) in your helper folder.', 'bad']);
   } else {
@@ -418,6 +420,7 @@ function connectionCheck(): HTMLElement {
     const st = helper.status;
     rows.push(['Schwab data', st.status === 'live' ? 'Streaming live prices' : st.message || st.status, st.status === 'live' ? 'ok' : st.status === 'error' ? 'bad' : 'warn']);
     for (const p of helper.problems) rows.push(['Feature unavailable', p, 'bad']);
+    loginBtn = v >= SCHWAB_LOGIN_HELPER_VERSION && (helper.needsSchwabLogin || st.status === 'error') ? schwabLoginButton() : null;
     if (helper.logPath) rows.push(['Log file', helper.logPath, 'ok']);
   }
   return h(
@@ -425,6 +428,7 @@ function connectionCheck(): HTMLElement {
     { class: 'settings-row', id: 'settings-connection' },
     h('div', { class: 'settings-label' }, h('b', {}, 'Connection check')),
     ...rows.map(([label, text, tone]) => h('div', { class: `check-row ${tone}` }, h('span', { class: 'check-dot' }), h('b', {}, label), h('span', {}, text))),
+    loginBtn ? h('div', { class: 'ap-controls' }, loginBtn, h('span', { class: 'muted small' }, 'Opens Schwab’s login page on this computer; prices resume once you approve.')) : null,
     helper.problems.length ? h('p', { class: 'muted small' }, 'If something says unavailable, close the helper window and start it again. If that doesn’t help, send me the log file above.') : null,
   );
 }

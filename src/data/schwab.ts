@@ -14,7 +14,9 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 46;
+export const LATEST_HELPER_VERSION = 47;
+/** The "Log in to Schwab" request (schwab_login) and the in-place re-login need this version. */
+export const SCHWAB_LOGIN_HELPER_VERSION = 47;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
@@ -259,6 +261,7 @@ class HelperConnection {
   problems: string[] = [];
   logPath = '';
   /** Self-update state; null for helpers too old to update themselves (they need one manual download). */
+  private statusListeners = new Set<() => void>();
   update: HelperUpdate | null = null;
   /** Finishes connecting once the helper's first status message (with its version) arrives. */
   private onReady: (() => void) | null = null;
@@ -276,6 +279,23 @@ class HelperConnection {
   onUpdateChange(fn: () => void): () => void {
     this.updateListeners.add(fn);
     return () => this.updateListeners.delete(fn);
+  }
+
+  /** Calls `fn` whenever the helper's status (connecting / live / error and its message) arrives. */
+  onStatusChange(fn: () => void): () => void {
+    this.statusListeners.add(fn);
+    return () => this.statusListeners.delete(fn);
+  }
+
+  /** True when Schwab refused the saved login and needs you to log in again (helper v47+). */
+  get needsSchwabLogin(): boolean {
+    if ((this.version ?? 0) < SCHWAB_LOGIN_HELPER_VERSION) return false; // older helpers have no Log in button request
+    return /log in again/i.test(this.helperStatus?.message ?? '') && this.helperStatus?.status !== 'live';
+  }
+
+  /** Opens the Schwab login page on this computer and waits (up to 15 minutes) until you have approved it. */
+  async loginToSchwab(): Promise<void> {
+    await this.request({ type: 'schwab_login' }, undefined, 16 * 60 * 1000);
   }
 
   /** Calls `fn` when one of the helper's alerts fires. */
@@ -439,6 +459,7 @@ class HelperConnection {
         this.onReady?.();
         this.helperStatus = { status: msg.status, message: msg.message };
         for (const l of this.allListeners()) l.onStatus?.(msg.status, msg.message);
+        for (const fn of this.statusListeners) fn();
         if (updateChanged) for (const fn of this.updateListeners) fn();
         break;
       }
