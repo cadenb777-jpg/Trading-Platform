@@ -335,8 +335,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   refresh (src/data/health.ts FEEDS); engineRequest/history/quote/trade record each feed's last success, listed by
   the rail's Data button. Risk drill-downs: risk.account replies `series` {dates, account, spy} (daily returns);
   src/portfolio/riskCharts.ts opens the P/L histogram, beta scatter and drawdown curve from the risk card.
+  Stock news anywhere (src/ui/stockNews.ts): openStockNews window, stockNewsCard (Research overview), newsButton (Chart
+  toolbar, Trade chart head), ticker card "News", Research fn key and command code CN all use it.
+  Research "Sales and profit, year by year" = src/research/yearBars.ts (one bar chart per measure, own scale, sentence).
   Line-chart indicators: chart windows have an Indicators menu (src/ui/windowIndicators.ts, LINE_INDICATORS run on
-  the first line as flat bars); page charts have an fx button that opens it.
+  the first line as flat bars); page charts have an fx button (class chart-ind-btn; never chart-fx, the engine's click-through layer) that opens it.
   Command bar (src/ui/command.ts, browser only): / or Ctrl/Cmd+K opens a palette over symbols (watchlist, holdings,
   NASDAQ_100 copy checked against the scanner's by a test, futures roots, invest.search), pages, accounts, clients,
   portfolios and actions; Bloomberg codes (CODES: "AAPL GP/DES/FA/CN/OMON/TRADE/ALRT/WL", WEI, ECO, FUT/CTM, PORT, ACCT,

@@ -5968,7 +5968,7 @@ a.btn {
 .modal:has(.trade-guide) { max-width: 780px; }
 
 /* Indicators on line charts (src/ui/windowIndicators.ts) */
-.chart-expand.chart-fx { right: 32px; font-style: italic; font-weight: 600; }
+.chart-expand.chart-ind-btn { right: 32px; font-style: italic; font-weight: 600; }
 /* Touch screens have no hover: keep the chart buttons visible there. */
 @media (hover: none) { .chart-expand { opacity: 0.8; } }
 .win-ind-menu { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel-2); max-height: 40%; overflow: auto; }
@@ -10964,3 +10964,22 @@ td.warn, .data-table td.warn { color: var(--warn-text); }
    buttons move under the price instead of squeezing */
 .idx-ranges button { white-space: nowrap; }
 .idx-quote { flex-wrap: wrap; row-gap: 8px; }
+
+/* Research: "Sales and profit, year by year" (src/research/yearBars.ts). One calm colour; a loss year is red (bad). */
+.yb-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); }
+@media (max-width: 900px) { .yb-grid { grid-template-columns: minmax(0, 1fr); } }
+.yb-card { display: flex; flex-direction: column; gap: 4px; padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2); }
+.yb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.yb-title { color: var(--label); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.yb-value { color: var(--text-strong); font-size: var(--fs-lg); font-variant-numeric: tabular-nums; }
+.yb-value.down { color: var(--down-text); }
+.yb-sentence { margin: 0; color: var(--text); min-height: 2.6em; }
+.yb-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.yb-bar { fill: var(--accent); opacity: 0.55; }
+.yb-bar.latest { opacity: 1; }
+.yb-bar.loss { fill: var(--down); opacity: 0.85; }
+.yb-col:hover .yb-bar { opacity: 1; }
+.yb-hit { fill: transparent; cursor: default; }
+.yb-zero { stroke: var(--border-strong, var(--border)); stroke-width: 1; }
+.yb-year { fill: var(--muted); font-size: 10px; text-anchor: middle; font-variant-numeric: tabular-nums; }
+.yb-readout { font-variant-numeric: tabular-nums; min-height: 1.4em; }

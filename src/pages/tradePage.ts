@@ -10,6 +10,7 @@
  * Stocks | Futures (shown only when the owner has a Webull futures account): Futures swaps the watchlist and chart for
  * the futures ticket (src/trade/futuresTicket.ts) and reads the futures account; positions show P/L in dollars.
  */
+import { newsButton } from '../ui/stockNews';
 import { CandlestickSeries, ColorType, LineStyle, createChart, type IChartApi, type IPriceLine, type ISeriesApi } from 'lightweight-charts';
 import { quoteChange, subscribeQuote, type Quote } from '../data/quotes';
 import { engineRequest, helper, journalReady, schwab } from '../data/schwab';
@@ -107,7 +108,7 @@ export function createTradePage() {
   // The link chip: a symbol picked here tells its colour group, and the group's symbol only PRE-FILLS the ticket
   // (it never previews or places anything).
   const link = linkPanel({ id: 'trade', label: 'Trade', accepts: isStockSymbol, apply: (s) => select(s), active: () => started && !el.hidden });
-  const chartPanel = h('section', { class: 'panel tr-chart', 'data-link-keys': 'own' }, h('div', { class: 'tr-chart-head' }, link.chip, chartTitle, h('span', { class: 'spacer' }), tfEl), chartBox);
+  const chartPanel = h('section', { class: 'panel tr-chart', 'data-link-keys': 'own' }, h('div', { class: 'tr-chart-head' }, link.chip, chartTitle, h('span', { class: 'spacer' }), newsButton(() => symbol, 'btn small'), tfEl), chartBox);
   markPanel(chartPanel, 'trade', 'Trade');
   /** A symbol the user picked on this page: the chart, quote and ticket, and its linked panels. */
   const userSelect = (s: string) => (select(s), link.publish(s));

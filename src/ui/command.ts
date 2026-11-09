@@ -9,13 +9,13 @@
 import { journalSymbols } from '../journal/links';
 import { prefillAssistant } from '../ai/hub';
 import { guessMarket, type MarketRef } from '../data/quotes';
-import { engineRequest, helper, loadNews } from '../data/schwab';
+import { engineRequest, helper } from '../data/schwab';
 import { listDocs } from '../data/store';
 import { BOARDS } from '../invest/catalog';
 import { combineHoldings, myPortfolios } from '../portfolio/account';
 import type { Portfolio } from '../portfolio/types';
 import { persist, state } from '../state';
-import { h, openModal, timeAgo, toast } from './dom';
+import { h, openModal, toast } from './dom';
 import { icon } from './icons';
 import { LINK_LABELS, focusPanel, focusedPanel, links, visiblePanels } from './linkGroups';
 import { normalizeTicker, tickerPreview } from './tickerCard';
@@ -805,24 +805,9 @@ async function runCode(code: string, symbol: string | null) {
   if (CODE_ROUTE[c.code]) location.hash = `#${CODE_ROUTE[c.code]}`;
 }
 
-/** CN for a ticker: its latest headlines (Google News and CNBC through the helper); a headline opens its summary. */
+/** CN for a ticker: its latest headlines (the shared news window, src/ui/stockNews.ts). */
 function openNews(symbol: string) {
-  const list = h('div', { class: 'cmd-news' }, h('div', { class: 'muted pad' }, 'Loading headlines…'));
-  openModal(`${symbol} news`, list, { wide: true, noAutofocus: true });
-  loadNews([symbol]).then(
-    async ({ items }) => {
-      const { openNewsSummary } = await import('./newsSummary');
-      const rows = items.sort((a, b) => b.published - a.published).slice(0, 20);
-      list.replaceChildren(
-        ...(rows.length
-          ? rows.map((item) =>
-              h('button', { type: 'button', class: 'cmd-news-row', onclick: () => openNewsSummary(item) }, h('b', {}, item.title), h('span', { class: 'muted small' }, `${item.source} · ${timeAgo(item.published)}`)),
-            )
-          : [h('div', { class: 'muted pad' }, 'No recent headlines.')]),
-      );
-    },
-    () => list.replaceChildren(h('div', { class: 'muted pad' }, 'News appears when the helper is running.')),
-  );
+  void import('./stockNews').then((m) => m.openStockNews(symbol));
 }
 
 // ----- the palette -----

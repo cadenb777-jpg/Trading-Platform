@@ -1,5 +1,7 @@
 import { toneVsPrev } from '../research/tone';
 /** Research: a company's financial statements, ratios, valuation (DCF) and SEC filings. */
+import { yearBars } from '../research/yearBars';
+import { openStockNews, stockNewsCard } from '../ui/stockNews';
 import { runId } from '../ui/command';
 import { cotSummary } from '../futures/cot';
 import { insightButton } from '../ai/insight';
@@ -7,7 +9,7 @@ import { subscribeQuote } from '../data/quotes';
 import { engineRequest } from '../data/schwab';
 import { dcf, impliedGrowth, sensitivity, wacc, type DcfInputs } from '../research/dcf';
 import { compsView, lboView, mergerView } from '../research/valuationTools';
-import { compact, createLineChart, dataTable, money, numberField, pageFrame, pct, rangeBar, statCards } from '../ui/charts';
+import { compact, dataTable, money, numberField, pageFrame, pct, rangeBar, statCards } from '../ui/charts';
 import { formatPrice, h } from '../ui/dom';
 import { termLabel } from '../ui/glossary';
 import { tickerAttr } from '../ui/tickerCard';
@@ -130,6 +132,7 @@ export function createResearchPage() {
       { label: 'AI summary', icon: 'spark', run: () => ai.button.click() },
       { label: 'Security view', title: 'DES: the security view of this company', run: () => void runId(`tk:${symbolNow()}:DES`) },
       { label: 'Chart', icon: 'chart', title: 'GP: chart this company', run: () => void runId(`tk:${symbolNow()}:GP`) },
+      { label: 'News', icon: 'news', title: 'CN: the latest headlines for this company', run: () => openStockNews(symbolNow()) },
     ],
     ['flow', 'setups', 'invest'],
   );
@@ -195,7 +198,6 @@ export function createResearchPage() {
   function overview(d: CompanyData): Node[] {
     const v = d.valuation;
     const range = d.quote.low52 && d.quote.high52 ? rangeBar(d.quote.low52, d.quote.high52, v.price, formatPrice) : undefined;
-    const chartBox = h('div', {});
     const a = d.annual;
     const lastRatio = (k: string) => [...(d.ratios[k] ?? [])].reverse().find((x) => x != null) ?? null;
     const nodes: Node[] = [
@@ -215,7 +217,13 @@ export function createResearchPage() {
       ]),
       // futures positioning for the company's market: one line, the full COT table is on Futures
       cotSummary(d.symbol, undefined, { quiet: true }),
-      h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Revenue, net income and free cash flow (yearly)')), chartBox),
+      stockNewsCard(d.symbol, 5),
+      h(
+        'section',
+        { class: 'panel' },
+        h('div', { class: 'panel-head' }, h('h3', {}, 'Sales and profit, year by year'), h('span', { class: 'muted small' }, 'From SEC filings · each chart has its own scale · point at a bar for its number')),
+        yearBars(a.periods.map((p) => periodLabel(p, false)), a.values),
+      ),
       h(
         'section',
         { class: 'panel' },
@@ -226,15 +234,6 @@ export function createResearchPage() {
         ),
       ),
     ];
-    queueMicrotask(() => {
-      const chart = createLineChart(chartBox, { height: 300, format: (x) => money(x) });
-      const line = (key: string) => a.periods.map((p, i) => ({ time: p, value: a.values[key][i] ?? NaN }));
-      chart.set([
-        { name: 'Revenue', color: '#2962ff', data: line('revenue') },
-        { name: 'Net income', color: '#26a69a', data: line('netIncome') },
-        { name: 'Free cash flow', color: '#ff9800', data: line('freeCashFlow') },
-      ]);
-    });
     return nodes;
   }
 

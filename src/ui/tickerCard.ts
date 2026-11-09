@@ -252,6 +252,7 @@ function buildCard(symbol: string, pinned: boolean, embedded = false) {
       { class: 'tc-actions' },
       !future ? btn('Details', `${symbol}: description, chart, financials, holders, news, options, dividends and risk (click the ticker)`, () => actions.openSecurity(symbol)) : '',
       ref ? btn('Open chart', `Open ${symbol} on the Chart page`, () => actions.openChart(ref)) : '',
+      !future ? btn('News', `The latest ${symbol.replace(/^\$/, '')} headlines`, () => void import('./stockNews').then((m) => m.openStockNews(symbol))) : '',
       !crypto && !index && !future
         ? btn('Trade', 'Opens the Trade page with this symbol filled in. You still preview and confirm; nothing is placed from here.', async () =>
             (await import('../trade/webull')).openOrderTicket({ symbol, side: 'BUY' }),

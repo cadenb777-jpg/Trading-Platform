@@ -1,4 +1,5 @@
 /** The full chart screen: toolbar, drawing tools, chart with indicators, and watchlist. */
+import { newsButton } from '../ui/stockNews';
 import { CHART_TYPES, ChartView, THEME, type ChartType } from '../chart/ChartView';
 import { DRAWING_TOOLS, DrawingManager, type Tool } from '../chart/drawings';
 import { getClock, setClock } from '../chart/clock';
@@ -144,6 +145,7 @@ export function createChartPage() {
       clockBtn,
       fitBtn,
       h('button', { class: 'btn fit-btn', title: 'Backtest this chart: a strategy from its symbol, timeframe and indicators', 'aria-label': 'Backtest this chart', onclick: () => window.dispatchEvent(new Event('tp:backtest-chart')) }, icon('backtest', 18)),
+      newsButton(() => symbol(), 'btn fit-btn'),
       h('span', { class: 'spacer' }),
       statusEl,
       watchToggle,

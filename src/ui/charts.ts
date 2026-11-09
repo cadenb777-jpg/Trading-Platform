@@ -44,7 +44,7 @@ export function createLineChart(container: HTMLElement, opts: { percent?: boolea
       h(
         'button',
         {
-          class: 'chart-expand chart-fx',
+          class: 'chart-expand chart-ind-btn', // not 'chart-fx': that is the chart engine's click-through motion layer
           title: 'Add indicators (moving averages, RSI, MACD, z-score...)',
           'aria-label': 'Add indicators',
           onclick: (e: Event) => (e.stopPropagation(), open(true)),
