@@ -169,11 +169,23 @@ export function isDaily(times: number[]): boolean {
  * days (1, 5 = a week, 21 = a month, 63 = a quarter...) on daily bars, weeks (4, 13, 26, 52) on weekly bars.
  */
 export function stepCandidates(barSeconds: number): number[] {
+  if (barSeconds >= 27 * 86400) return [1, 3, 6, 12, 24, 60, 120]; // monthly bars: quarters, half-years, years
   if (barSeconds >= 7 * 86400) return [1, 2, 4, 8, 13, 26, 52, 104, 260, 520];
   if (barSeconds >= 86400) return [1, 2, 5, 10, 21, 42, 63, 126, 252, 504, 1260, 2520];
   const minutes = [1, 2, 5, 10, 15, 30, 60, 120, 240, 480, 960, 1440, 2880, 5760, 11520];
   const n = minutes.map((m) => (m * 60) / barSeconds).filter((x) => Number.isInteger(x) && x >= 1);
   return n.length ? n : [1];
+}
+
+/** How a vertical line is labelled: by the time between lines. Daily bars count trading days (21 = a month, 252 = a
+ *  year); weekly and monthly bars count calendar time, so monthly candles read "Jan"/"2025", never "Aug 1". */
+export function labelLevel(daily: boolean, barSecs: number, step: number): Level {
+  if (!daily) return 'h1';
+  if (barSecs >= 6 * 86400) {
+    const days = (step * barSecs) / 86400;
+    return days >= 330 ? 'year' : days >= 27 ? 'month' : 'day';
+  }
+  return step >= 252 ? 'year' : step >= 21 ? 'month' : 'day';
 }
 
 /** The bar count whose spacing on screen is closest (log scale) to `targetPx`: uniform, near-square cells. */
@@ -368,7 +380,7 @@ class SquareGrid {
         labelTimes.push(i >= 0 && i < times.length ? times[i] : NaN);
       }
     }
-    const level: Level = this.daily ? (step >= 252 ? 'year' : step >= 21 ? 'month' : 'day') : 'h1';
+    const level = labelLevel(this.daily, secs, step);
     const cell = spacing || spanPx;
     this.layout = { key, xs, labelTimes, level, zone, cell };
     // for checks: the cell size in CSS pixels (horizontal x vertical spacing)

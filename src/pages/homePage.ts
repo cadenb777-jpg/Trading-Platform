@@ -45,23 +45,36 @@ function lastSessions(bars: Bar[], sessions: number): Bar[] {
   return bars.filter((b) => days.includes(day(b.time)));
 }
 
-type CardRange = '1D' | '5D' | '1M';
-const CARD_RANGES: Record<CardRange, { timeframe: Timeframe; sessions: number; label: string }> = {
-  '1D': { timeframe: '10m', sessions: 1, label: '1 day, 10-minute candles' },
-  '5D': { timeframe: '30m', sessions: 5, label: '5 days, 30-minute candles' },
-  '1M': { timeframe: '1D', sessions: 22, label: '1 month, daily candles' },
+/** The card's candle size (owner's choice of four). `sessions` = trading days shown (daily: candles; monthly: months);
+ *  `last` keeps only the newest candles (1-minute: the last two hours, so the candles stay readable on a small card). */
+export type CardRange = '1m' | '5m' | '1D' | '1M';
+export const CARD_RANGES: Record<CardRange, { timeframe: Timeframe; sessions: number; last?: number; button: string; label: string }> = {
+  '1m': { timeframe: '1m', sessions: 1, last: 120, button: '1 min', label: 'Last 2 hours, 1-minute candles' },
+  '5m': { timeframe: '5m', sessions: 1, button: '5 min', label: '1 day, 5-minute candles' },
+  '1D': { timeframe: '1D', sessions: 66, button: '1 day', label: '3 months, daily candles' },
+  '1M': { timeframe: '1M', sessions: 60, button: '1 mo', label: '5 years, monthly candles' },
 };
+const RANGE_KEY = 'tp:indexCardRange';
+const intraday = (r: CardRange) => r === '1m' || r === '5m';
+
+/** The bars a card shows for a candle size, from the loaded history. */
+export function cardBars(all: Bar[], r: CardRange): Bar[] {
+  const cfg = CARD_RANGES[r];
+  if (!intraday(r)) return all.slice(-cfg.sessions);
+  const day = lastSessions(all, cfg.sessions);
+  return cfg.last ? day.slice(-cfg.last) : day;
+}
 
 const nyTime = (t: number, withDay: boolean) =>
   new Date(t * 1000).toLocaleString('en-US', { timeZone: 'America/New_York', ...(withDay ? { month: 'short', day: 'numeric' } : {}), hour: 'numeric', minute: '2-digit' });
 const nyDate = (t: number) => new Date(t * 1000).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
 /** Short axis labels for the small cards: "Mon 27" where a new session starts (the chart marks a new UTC day there,
  *  which is the same day in New York during market hours), "10:30" otherwise, "Oct 3" on daily candles. */
-export function cardTick(t: number, tickType: TickMarkType, range: '1D' | '5D' | '1M') {
-  if (range === '1M') return nyDate(t);
+export function cardTick(t: number, tickType: TickMarkType, range: CardRange) {
+  if (range === '1M') // monthly candles: the year where it starts, the month otherwise
+    return new Date(t * 1000).toLocaleDateString('en-US', { timeZone: 'UTC', ...(tickType === TickMarkType.Year ? { year: 'numeric' } : { month: 'short' }) });
+  if (range === '1D') return nyDate(t);
   const d = new Date(t * 1000);
-  if (range === '5D' && tickType <= TickMarkType.DayOfMonth)
-    return `${d.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'short' })} ${d.toLocaleDateString('en-US', { timeZone: 'America/New_York', day: 'numeric' })}`;
   return d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true }).replace(/\s?[AP]M$/, '');
 }
 const signed = (v: number, digits = 2) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
@@ -72,9 +85,15 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
   const chartBox = h('div', { class: 'idx-chart' });
   const legend = h('div', { class: 'idx-legend' });
   const rangePrev = h('span', {}, '');
-  let range: CardRange = '1D';
+  let range: CardRange = '5m';
+  try {
+    const saved = localStorage.getItem(RANGE_KEY) as CardRange | null;
+    if (saved && saved in CARD_RANGES) range = saved;
+  } catch {
+    /* no storage: start on 5 minutes */
+  }
   const rangeButtons = (Object.keys(CARD_RANGES) as CardRange[]).map((r) =>
-    h('button', { class: r === range ? 'active' : '', title: CARD_RANGES[r].label, onclick: (e: Event) => (e.stopPropagation(), setRange(r)) }, r),
+    h('button', { class: r === range ? 'active' : '', 'data-range': r, title: CARD_RANGES[r].label, 'aria-label': CARD_RANGES[r].label, onclick: (e: Event) => (e.stopPropagation(), setRange(r)) }, CARD_RANGES[r].button),
   );
   const card = h(
     'div',
@@ -86,7 +105,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
   );
 
   // ----- Candles -----
-  const daily = () => CARD_RANGES[range].timeframe === '1D';
+  const daily = () => !intraday(range);
   const chart = createChart(chartBox, {
     autoSize: true,
     ...chartThemeOptions(true),
@@ -128,7 +147,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
     const start = bucketStart(Math.floor(Date.now() / 1000), tf);
     const p = quote.last;
     // Only extend while the market session the bars belong to is still going (no candles after the close).
-    if (start === last.time || (tf === '1D' && start <= last.time)) return [...bars.slice(0, -1), { ...last, close: p, high: Math.max(last.high, p), low: Math.min(last.low, p) }];
+    if (start === last.time || ((tf === '1D' || tf === '1M') && start <= last.time)) return [...bars.slice(0, -1), { ...last, close: p, high: Math.max(last.high, p), low: Math.min(last.low, p) }];
     if (marketStatus(new Date()).phase === 'open' && start > last.time) return [...bars, { time: start, open: last.close, high: Math.max(last.close, p), low: Math.min(last.close, p), close: p, volume: 0 }];
     return bars;
   };
@@ -140,20 +159,25 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
     candles.setData(data.map((b) => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close })));
     if (prevLine) candles.removePriceLine(prevLine);
     // Just the line: its price is written under the chart, and an axis tag would cover the scale's own labels.
-    prevLine = range === '1D' && quote?.prevClose ? candles.createPriceLine({ price: quote.prevClose, color: THEME.crosshair, lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: '' }) : null;
+    prevLine = intraday(range) && quote?.prevClose ? candles.createPriceLine({ price: quote.prevClose, color: THEME.crosshair, lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: '' }) : null;
     chart.timeScale().fitContent();
-    const session = range === '1D' ? data : lastSessions(data, 1);
+    const session = intraday(range) ? data : lastSessions(data, 1);
     const hi = session.length ? Math.max(...session.map((b) => b.high)) : null;
     const lo = session.length ? Math.min(...session.map((b) => b.low)) : null;
     rangePrev.textContent = quote?.prevClose
-      ? `${usingLastSession ? 'At close · ' : ''}Prev close ${formatPrice(quote.prevClose)}${hi != null && lo != null && range === '1D' ? ` · Day range ${formatPrice(lo)} – ${formatPrice(hi)}` : ''}`
+      ? `${usingLastSession ? 'At close · ' : ''}Prev close ${formatPrice(quote.prevClose)}${hi != null && lo != null && range === '5m' ? ` · Day range ${formatPrice(lo)} – ${formatPrice(hi)}` : ''}`
       : '';
     showLegend();
   };
 
   function setRange(r: CardRange) {
     range = r;
-    rangeButtons.forEach((b) => b.classList.toggle('active', b.textContent === r));
+    try {
+      localStorage.setItem(RANGE_KEY, r); // every card and the next visit start on your choice
+    } catch {
+      /* no storage */
+    }
+    rangeButtons.forEach((b) => b.classList.toggle('active', b.dataset.range === r));
     chart.applyOptions({ timeScale: { timeVisible: !daily() } });
     loadCandles();
   }
@@ -176,7 +200,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
     try {
       const all = await schwab.loadHistory(index.symbol, cfg.timeframe, new AbortController().signal);
       if (id !== loading) return;
-      bars = cfg.timeframe === '1D' ? all.slice(-cfg.sessions) : lastSessions(all, cfg.sessions);
+      bars = cardBars(all, range);
     } catch {
       // The helper may still be starting; the card keeps showing the live price.
     }

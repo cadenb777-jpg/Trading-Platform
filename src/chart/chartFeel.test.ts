@@ -227,3 +227,24 @@ describe('uniform grid columns', () => {
     expect(timeframeFor('1D')).toBe('5m');
   });
 });
+
+import { labelLevel } from './grid';
+describe('grid labels on weekly and monthly candles', () => {
+  const day = 86400;
+  it('monthly candles step by quarters, half-years and years', () => expect(stepCandidates(30 * day).slice(0, 4)).toEqual([1, 3, 6, 12]));
+  it('monthly candles are labelled by month or year, never by date', () => {
+    expect(labelLevel(true, 30 * day, 3)).toBe('month');
+    expect(labelLevel(true, 30 * day, 12)).toBe('year');
+    expect(labelLevel(true, 30 * day, 1)).toBe('month');
+  });
+  it('weekly candles: a 4-week step is a month, 52 weeks a year', () => {
+    expect(labelLevel(true, 7 * day, 4)).toBe('month');
+    expect(labelLevel(true, 7 * day, 52)).toBe('year');
+    expect(labelLevel(true, 7 * day, 2)).toBe('day');
+  });
+  it('daily candles keep counting trading days', () => {
+    expect(labelLevel(true, day, 21)).toBe('month');
+    expect(labelLevel(true, day, 5)).toBe('day');
+    expect(labelLevel(false, 300, 12)).toBe('h1');
+  });
+});
