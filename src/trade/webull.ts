@@ -82,6 +82,29 @@ export interface Order {
   status: string;
   placedAt: string;
 }
+/** An order still working in one of your accounts (helper v48 webull.working_orders). */
+export interface WorkingOrder extends Order {
+  account: string;
+  accountId: string;
+  asset: Asset;
+}
+export interface WorkingOrders {
+  ok: boolean;
+  message?: string;
+  orders: WorkingOrder[];
+  /** Accounts that were read; errors holds the ones that couldn't be (by account name). */
+  accounts: string[];
+  errors: Record<string, string>;
+  asOf: number | null;
+}
+/** The all-accounts working orders list needs this helper version. */
+export const WORKING_ORDERS_HELPER_VERSION = 48;
+
+/** Every working order in all your Webull accounts (read-only; nothing here places or changes an order). */
+export function loadWorkingOrders(): Promise<WorkingOrders> {
+  return engineRequest<WorkingOrders>('webull.working_orders', {}, 60000);
+}
+
 /** One Webull account: "Roth IRA ••1234". stocks=false (futures, crypto) = listed only, never viewed or traded here.
  * Helpers before the account names send only id and label. */
 export interface WebullAccount {

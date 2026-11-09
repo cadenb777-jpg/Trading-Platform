@@ -651,6 +651,27 @@ class FiveAccounts(Base):
 
 class Accounts(FiveAccounts):
 
+    def test_working_orders_from_every_stock_account_read_only(self):
+        # Webull's real order-list shape: total_quantity, place_time_at
+        self.fake.open_orders = [{'client_order_id': 'w1', 'orders': [{'symbol': 'NVDA', 'side': 'BUY', 'total_quantity': '3', 'filled_quantity': '1',
+                                  'order_type': 'LIMIT', 'limit_price': '180', 'time_in_force': 'GTC', 'status': 'PARTIAL_FILLED',
+                                  'client_order_id': 'w1', 'place_time_at': '2026-11-09T15:00:00Z'}]}]
+        r = run(webull.working_orders(self.ctx, {}))
+        self.assertTrue(r['ok'])
+        self.assertEqual(sorted(o['accountId'] for o in r['orders']), ['CASH0001', 'MRGN0001', 'ROTH0001', 'TRAD0001'])  # futures off: not read
+        o = r['orders'][0]
+        self.assertEqual((o['symbol'], o['qty'], o['filled'], o['status'], o['asset']), ('NVDA', 3.0, 1.0, 'PARTIAL_FILLED', 'stocks'))
+        self.assertTrue(o['account'])
+        self.assertEqual(r['errors'], {})
+        self.assertTrue(all(c['method'] == 'GET' for c in self.fake.calls))  # only reads
+
+    def test_working_orders_reports_an_account_it_could_not_read(self):
+        self.fake.open_orders = [{'client_order_id': 'bad', 'orders': [{'symbol': 'NVDA', 'side': 'BUY', 'status': 'SUBMITTED', 'client_order_id': 'bad'}]}]  # no quantity
+        r = run(webull.working_orders(self.ctx, {}))
+        self.assertEqual(r['orders'], [])
+        self.assertEqual(len(r['errors']), 4)  # each account named with the reason, nothing guessed
+
+
     def test_recent_buys_read_every_stock_account(self):
         r = run(webull.recent_buys(self.ctx))
         history = [c for c in self.fake.calls if c['path'] == '/trading/orders/historical-orders/list']

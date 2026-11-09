@@ -12,13 +12,13 @@
  */
 import { CandlestickSeries, ColorType, LineStyle, createChart, type IChartApi, type IPriceLine, type ISeriesApi } from 'lightweight-charts';
 import { quoteChange, subscribeQuote, type Quote } from '../data/quotes';
-import { engineRequest, journalReady, schwab } from '../data/schwab';
+import { engineRequest, helper, journalReady, schwab } from '../data/schwab';
 import { state } from '../state';
 import { createFuturesTicket, type FuturesTicket } from '../trade/futuresTicket';
 import { positionPnl } from '../trade/futuresMath';
 import { createTicket, type TicketQuote } from '../trade/ticket';
 import { createPlanCard } from '../trade/planCard';
-import { cancelOrder, envBadge, friendly, futuresAccount, IRA_NOTE, loadSnapshot, OPEN, orderPrice, stockAccounts, takePrefill, usd, type Asset, type Order, type PlacedOrder, type Position, type Snapshot, type TicketPrefill } from '../trade/webull';
+import { cancelOrder, envBadge, friendly, futuresAccount, IRA_NOTE, loadSnapshot, loadWorkingOrders, OPEN, WORKING_ORDERS_HELPER_VERSION, type WorkingOrder, type WorkingOrders, orderPrice, stockAccounts, takePrefill, usd, type Asset, type Order, type PlacedOrder, type Position, type Snapshot, type TicketPrefill } from '../trade/webull';
 import { dataTable } from '../ui/charts';
 import { activatable, activatableRows, formatPrice, h, timeAgo, toast } from '../ui/dom';
 import { fallbackNotice, valueGapNote } from '../trade/accountNotes';
@@ -207,12 +207,53 @@ export function createTradePage() {
     acctSlot.replaceChildren();
   }
 
-  const tabs: { key: 'positions' | 'open' | 'fills'; label: string }[] = [
+  const tabs: { key: 'positions' | 'open' | 'working' | 'fills'; label: string; title?: string }[] = [
     { key: 'positions', label: 'Positions' },
-    { key: 'open', label: 'Open orders' },
+    { key: 'open', label: 'Open orders', title: 'Orders still working in the account shown above' },
+    { key: 'working', label: 'All working orders', title: 'Orders still working in every one of your Webull accounts' },
     { key: 'fills', label: 'Recent fills' },
   ];
   let tab: (typeof tabs)[number]['key'] = 'positions';
+  // All working orders (every account): loaded when that tab is open, and again with each refresh while it is
+  let working: WorkingOrders | null = null;
+  let workingError = '';
+  let workingLoading: Promise<void> | null = null;
+  const loadWorking = (): Promise<void> => {
+    if ((helper.version ?? 0) < WORKING_ORDERS_HELPER_VERSION) {
+      workingError = 'This list needs the updated helper (version 48 or newer). It updates itself within a few minutes.';
+      drawLists();
+      return Promise.resolve();
+    }
+    workingLoading ??= loadWorkingOrders()
+      .then((r) => {
+        working = r;
+        workingError = r.ok ? '' : r.message || 'Webull isn’t connected.';
+      })
+      .catch((err) => {
+        workingError = friendly(err);
+      })
+      .finally(() => {
+        workingLoading = null;
+        drawLists();
+      });
+    return workingLoading;
+  };
+  const showTab = (key: (typeof tabs)[number]['key']) => {
+    tab = key;
+    drawLists();
+    if (key === 'working') void loadWorking();
+  };
+  // "See all" on the Account page opens this tab
+  try {
+    if (sessionStorage.getItem('tp:tradeTab') === 'working') {
+      sessionStorage.removeItem('tp:tradeTab');
+      tab = 'working';
+      void Promise.resolve().then(loadWorking);
+    }
+  } catch {
+    /* no storage */
+  }
+  window.addEventListener('tp:trade-tab', (e) => showTab((e as CustomEvent<'working'>).detail));
   const tabsEl = h('div', { class: 'tabs tr-tabs', role: 'tablist' });
   const listBody = h('div', { class: 'tr-list-body' });
   const listsPanel = h('section', { class: 'panel tr-lists' }, tabsEl, listBody);
@@ -566,6 +607,7 @@ export function createTradePage() {
         }
       }
       drawAccount();
+      if (tab === 'working') void loadWorking();
     })();
     return refreshing;
   }
@@ -758,15 +800,19 @@ export function createTradePage() {
 
   // ----- lists -----
   function drawTabs() {
-    const count = { positions: snap?.positions?.length ?? 0, open: (snap?.open ?? []).length, fills: fills().length };
+    const count = { positions: snap?.positions?.length ?? 0, open: (snap?.open ?? []).length, working: working?.orders.length ?? null, fills: fills().length };
     tabsEl.replaceChildren(
-      ...tabs.map((t) => h('button', { type: 'button', class: `tab${t.key === tab ? ' active' : ''}`, role: 'tab', 'aria-selected': t.key === tab, onclick: () => ((tab = t.key), drawLists()) }, t.label, snap?.ok ? h('span', { class: 'tr-count' }, String(count[t.key])) : null)),
+      ...tabs.map((t) => {
+        const n = count[t.key];
+        return h('button', { type: 'button', class: `tab${t.key === tab ? ' active' : ''}`, role: 'tab', 'aria-selected': t.key === tab, title: t.title ?? '', onclick: () => showTab(t.key) }, t.label, snap?.ok && n != null ? h('span', { class: 'tr-count' }, String(n)) : null);
+      }),
     );
   }
   const fills = () => (snap?.recent ?? []).filter((o) => o.filled > 0 || /FILLED/.test(o.status));
 
   function drawLists() {
     drawTabs();
+    if (tab === 'working') return listBody.replaceChildren(workingList());
     if (!snap?.ok) return listBody.replaceChildren(h('p', { class: 'muted small pad' }, 'Your positions and orders show here once Webull is connected.'));
     const err = (k: string) => h('div', { class: 'ap-error' }, snap?.errors?.[k] ?? 'Not available right now.');
     if (tab === 'positions' && snap.asset === 'futures') {
@@ -861,6 +907,46 @@ export function createTradePage() {
         { id: 'trade:fills' },
       ),
     );
+  }
+
+  /** Every working order in all your accounts: account, what, how many (filled so far), price, status, placed, Cancel. */
+  function workingList(): HTMLElement {
+    if (workingError && !working?.ok) return h('div', { class: 'ap-error' }, workingError);
+    if (!working) return h('p', { class: 'muted small pad' }, 'Loading your working orders from every account…');
+    const notes = Object.entries(working.errors).map(([name, why]) => h('div', { class: 'ap-error' }, `${name}: ${why}`));
+    const when = working.asOf ? h('p', { class: 'muted small pad' }, `From Webull ${timeAgo(working.asOf)} · ${working.accounts.length} account${working.accounts.length === 1 ? '' : 's'} checked · refreshes every 30 seconds while this tab is open`) : null;
+    if (!working.orders.length) return h('div', {}, ...notes, h('div', { class: 'empty-state' }, `No working orders in ${working.accounts.length === 1 ? 'your account' : `any of your ${working.accounts.length} accounts`}.`), when);
+    const table = dataTable(
+      ['Account', 'Symbol', 'Side', 'Filled / qty', 'Type', 'Price', 'Time in force', 'Status', 'Placed', ''],
+      working.orders.map((o) => [
+        { v: o.account, cls: 'label' },
+        { v: o.symbol, cls: 'label' },
+        { v: o.side, cls: o.side === 'BUY' ? 'up' : 'down' },
+        { v: `${o.filled || 0} / ${o.qty ?? '—'}`, cls: 'num' },
+        o.type.replace(/_/g, ' ').toLowerCase(),
+        orderPrice(o),
+        o.tif,
+        { v: o.status.replace(/_/g, ' ').toLowerCase(), cls: 'wb-warn' },
+        o.placedAt ? new Date(o.placedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—',
+        workingCancel(o),
+      ]),
+      undefined,
+      { id: 'trade:working' },
+    );
+    return h('div', {}, ...notes, table, when);
+  }
+
+  function workingCancel(o: WorkingOrder) {
+    if (!o.orderId) return '';
+    const btn = h('button', { class: 'btn small', type: 'button', title: `Cancel this order in ${o.account}` }, 'Cancel') as HTMLButtonElement;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      if (await cancelOrder(o, o.accountId, o.asset)) {
+        await loadWorking();
+        refresh(true);
+      } else btn.disabled = false;
+    });
+    return btn;
   }
 
   function cancelButton(o: Order) {

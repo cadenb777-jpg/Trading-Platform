@@ -21,6 +21,7 @@ import { isMine, type Holding, type Portfolio } from '../portfolio/types';
 import { renderWebullCard, syncAccounts, syncButton } from '../portfolio/webullView';
 import { notice19aLink, periods, rocText, splitPeriod, yieldCheck, type YieldCheck } from '../portfolio/yieldQuality';
 import { loadSnapshot } from '../trade/webull';
+import { workingOrdersCard } from '../portfolio/workingOrders';
 import { pct, pctU, statCards, pageFrame, dataTable } from '../ui/charts';
 import { h, openModal, openPopover, timeAgo, toast } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
@@ -306,6 +307,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
       overviewBox,
       unpriced.length ? h('p', { class: 'badge warn' }, `No live price for ${unpriced.join(', ')}: left out of the totals. Check the helper is logged in to Schwab, then Refresh.`) : '',
       panel(single ? 'Account' : 'Accounts', 'Imported statements, synced Webull accounts and portfolios marked as yours', accountsBox, webull),
+      workingOrdersCard(),
       holdingsBox,
       riskBox,
       tearSheetFor(riskRows(valued)),

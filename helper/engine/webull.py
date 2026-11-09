@@ -1444,6 +1444,30 @@ async def snapshot(ctx, msg):
     return out
 
 
+@handler('webull.working_orders')
+async def working_orders(ctx, msg):
+    """Every order still working (open, pending or part-filled) in all your Webull accounts, newest first, read-only:
+    {ok, env, orders: [order row + account, accountId, asset], accounts (read), errors {account label: reason}, asOf}.
+    Stock accounts always; the futures account when futures are switched on. Reads share the Trade page's 20 s cache."""
+    head = await status(ctx, msg)
+    if not head['ok']:
+        return {**head, 'orders': [], 'accounts': [], 'errors': {}, 'asOf': None}
+    chosen = [a for a in await accounts(ctx) if a['stocks'] or (a.get('futures') and futures_enabled())]
+    rows, read, errors, stamps = [], [], {}, []
+    for a in chosen:
+        try:
+            got = await cached_orders(ctx, a['id'])
+        except EngineError as err:
+            errors[a['label']] = str(err)
+            continue
+        read.append(a['label'])
+        stamps.append(fetched_at(('orders', a['id'])) or time.time())
+        asset = 'futures' if a.get('futures') else 'stocks'
+        rows += [{**o, 'account': a['label'], 'accountId': a['id'], 'asset': asset} for o in got['open']]
+    rows.sort(key=lambda o: o.get('placedAt') or '', reverse=True)
+    return {'ok': True, 'env': env(), 'orders': rows, 'accounts': read, 'errors': errors, 'asOf': min(stamps) if stamps else None}
+
+
 @handler('webull.sync')
 async def sync(ctx, msg):
     """Saves (or updates, by account id) one portfolio per Webull stock account, e.g. "Webull Roth IRA ••1234", with

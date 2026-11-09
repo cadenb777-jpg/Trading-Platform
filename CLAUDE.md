@@ -410,7 +410,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   `webull.snapshot` = status + balances + positions (Schwab prices, dayGain) + open/recent orders in one request.
   The AI never trades (a test scans ai.py; another checks no other helper file places orders).
   UI: Trade page (src/pages/tradePage.ts, #trade: watchlist, chart with avg cost/open orders, ticket, positions/
-  orders/fills, snapshot every 30 s while visible). Ticket = src/trade/ticket.ts (shares/dollars/risk sizing, maths in
+  orders/fills, snapshot every 30 s while visible; "All working orders" tab = webull.working_orders (v48): open orders of every
+  stock account, plus futures when switched on, read-only with per-row Cancel; the Account page shows them read-only
+  (src/portfolio/workingOrders.ts, "Manage in Trade" opens the tab). Ticket = src/trade/ticket.ts (shares/dollars/risk sizing, maths in
   src/trade/sizing.ts); preview -> confirm window = src/trade/webull.ts (the only copy). Keys: B/S side, Enter
   previews; nothing places without the confirm button. Account's Webull cards (webullView.ts) show balances and Sync
   (the old Portfolios > Webull view is gone; #portfolio/webull -> #trade); the trade guide's "Open in order ticket" only pre-fills #trade (BUY, plus its stop for "Protect").
