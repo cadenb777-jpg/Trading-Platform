@@ -25,7 +25,7 @@ HERE = Path(__file__).resolve().parent
 MIN_ZIP_BYTES, MAX_ZIP_BYTES = 20_000, 150_000_000
 MAX_DESKTOP_BYTES = 20_000_000
 REQUIRED = ('launch.py', 'desktop_update.py', 'shortcut.py', 'requirements.txt', 'tp_desktop/__init__.py', 'tp_desktop/app.py',
-            'tp_desktop/choice.py', 'tp_desktop/chooser.py')
+            'tp_desktop/choice.py', 'tp_desktop/chooser.py', 'tp_desktop/titlebar.py')
 
 
 class UpdateError(Exception):

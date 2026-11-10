@@ -82,5 +82,34 @@ class Links(unittest.TestCase):
         self.assertFalse(policy.stays_in_app('https://news.google.com/', local))
 
 
+class Speed(unittest.TestCase):
+    def test_fast_flags_added_once(self):
+        flags = policy.chromium_flags('')
+        for f in policy.FAST_FLAGS:
+            self.assertEqual(flags.split().count(f), 1)
+        self.assertEqual(policy.chromium_flags(flags), flags)  # starting again adds nothing twice
+
+    def test_existing_flags_kept_and_disable_gpu_respected(self):
+        flags = policy.chromium_flags('--disable-gpu --lang=en').split()
+        self.assertEqual(flags[:2], ['--disable-gpu', '--lang=en'])
+        self.assertNotIn('--ignore-gpu-blocklist', flags)
+        self.assertNotIn('--enable-zero-copy', flags)
+        self.assertIn('--disable-background-timer-throttling', flags)
+
+
+class TitleBar(unittest.TestCase):
+    def test_page_name(self):
+        self.assertEqual(policy.page_name('Research · Trading Platform'), 'Research')
+        self.assertEqual(policy.page_name('Trading Platform'), '')
+        self.assertEqual(policy.page_name('https://x'), '')
+        self.assertEqual(policy.page_name(None), '')
+
+    def test_resize_edges(self):
+        self.assertEqual(policy.resize_edges(500, 400, 1000, 800), set())
+        self.assertEqual(policy.resize_edges(2, 400, 1000, 800), {'left'})
+        self.assertEqual(policy.resize_edges(997, 798, 1000, 800), {'right', 'bottom'})
+        self.assertEqual(policy.resize_edges(0, 0, 1000, 800), {'left', 'top'})
+
+
 if __name__ == '__main__':
     unittest.main()

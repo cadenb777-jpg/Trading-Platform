@@ -13,10 +13,10 @@ import argparse
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QStandardPaths, QTimer, QUrl, Qt
+from PySide6.QtCore import QEvent, QObject, QSettings, QStandardPaths, QTimer, QUrl, Qt
 from PySide6.QtGui import QColor, QDesktopServices, QIcon, QKeySequence, QPainter, QPixmap, QPolygonF, QShortcut
 from PySide6.QtCore import QPointF
-from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QSystemTrayIcon, QVBoxLayout, QWidget
 
 from . import APP_VERSION, choice, policy
 
@@ -36,6 +36,17 @@ background:#7ac3ee;color:#0a1a2e;text-decoration:none;font-weight:600}p{margin:6
 
 ASSETS = Path(__file__).resolve().parent / 'assets'
 APP_NAME = 'Trading Terminal'
+#: The app draws its own title bar (logo, page name, slim buttons) instead of the classic Windows frame; a Mac keeps its own.
+OWN_TITLE_BAR = sys.platform != 'darwin'
+#: The website's colours for the title bar and the page background behind it (no white flash between pages); read again
+#: every 1.5 s so the bar follows light and dark mode.
+#: (Joined with | because PySide gives JavaScript arrays back as empty text.)
+THEME_JS = ("(() => { const s = getComputedStyle(document.documentElement); "
+            "return ['--bg-deep', '--text', '--muted', '--line', '--bg'].map((k) => s.getPropertyValue(k).trim()).join('|'); })()")
+#: What the window's graphics card does (written to ~/.trading-platform/desktop-graphics.txt on each start, for help).
+GPU_JS = ("(() => { try { const g = document.createElement('canvas').getContext('webgl'); "
+          "const d = g.getExtension('WEBGL_debug_renderer_info'); "
+          "return d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER); } catch (e) { return 'no WebGL: ' + e; } })()")
 
 
 def app_icon():
@@ -138,11 +149,32 @@ class Window(QMainWindow):
         WINDOWS.append(self)
         self.view = QWebEngineView(self)
         self.page = Page.make(profile, self, base)
+        self.page.setBackgroundColor(QColor('#050d19'))  # the website's navy, never white, while a page draws
         self.view.setPage(self.page)
-        self.setCentralWidget(self.view)
+        self.bar = None
+        if OWN_TITLE_BAR:
+            from .titlebar import TitleBar
+
+            self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
+            self.bar = TitleBar(self, ASSETS / 'logo.png' if (ASSETS / 'logo.png').exists() else None)
+            self.frame = QWidget(self)
+            self.frame.setObjectName('tpFrame')
+            self.frame.setAttribute(Qt.WA_StyledBackground, True)
+            box = QVBoxLayout(self.frame)
+            box.setContentsMargins(1, 0, 1, 1)  # a 1 px edge in the site's line colour around the window
+            box.setSpacing(0)
+            box.addWidget(self.bar)
+            box.addWidget(self.view, 1)
+            self.setCentralWidget(self.frame)
+            self.paint_frame()
+            self.theme_timer = QTimer(self, interval=1500, timeout=self.follow_theme)
+            self.theme_timer.start()
+            self.page.loadFinished.connect(lambda *_: self.follow_theme())
+        else:
+            self.setCentralWidget(self.view)
         self.setWindowIcon(app_icon())
         self.setWindowTitle(APP_NAME)
-        self.view.titleChanged.connect(lambda t: self.setWindowTitle(window_title(t)))
+        self.view.titleChanged.connect(self.on_title)
         self.settings = QSettings('TradingPlatform', 'Desktop')
         self.retry = QTimer(self, interval=15000, singleShot=True, timeout=self.go_home)
         self.page.loadingChanged.connect(self.on_loading)
@@ -159,6 +191,40 @@ class Window(QMainWindow):
             self.view.setZoomFactor(float(self.settings.value('zoom', 1.0)))
         if url is not None:
             self.view.setUrl(QUrl(url))
+
+    # ----- the app's own title bar -----
+    def on_title(self, t):
+        self.setWindowTitle(window_title(t))
+        if self.bar:
+            self.bar.set_title(policy.page_name(t))
+
+    def follow_theme(self):
+        from PySide6.QtWebEngineCore import QWebEngineScript
+
+        def got(text):
+            values = str(text or '').split('|')
+            if not values or len(values) < 5 or not all(QColor(v).isValid() for v in values):
+                return
+            deep, text, muted, line, bg = values
+            self.bar.set_colors(deep, text, muted, line)
+            self.page.setBackgroundColor(QColor(bg))
+            self.paint_frame(line)
+        self.page.runJavaScript(THEME_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld, got)
+
+    def paint_frame(self, line=None):
+        line = line or (self.bar.line if self.bar else '#16283d')
+        if getattr(self, '_frame_line', None) != line:
+            self._frame_line = line
+            self.frame.setStyleSheet(f'QWidget#tpFrame {{ background: {line}; }}')
+
+    def changeEvent(self, event):
+        if self.bar and event.type() == QEvent.WindowStateChange:
+            full = self.isFullScreen()
+            self.bar.setVisible(not full)
+            edge = 0 if (full or self.isMaximized()) else 1  # no edge when it fills the screen
+            self.frame.layout().setContentsMargins(edge, 0, edge, edge)
+            self.bar.buttons['max'].update()
+        super().changeEvent(event)
 
     # ----- keys (none the website itself uses) -----
     def shortcuts(self):
@@ -217,6 +283,8 @@ class Window(QMainWindow):
         win.destroyed.connect(lambda *_: self.children_windows.remove(win) if win in self.children_windows else None)
         win.setAttribute(Qt.WA_DeleteOnClose)
         win.show()
+        EdgeResizer.attach(win)
+        round_corners(win)
 
     # ----- printing (client reports, the prospects comparison) -----
     def print_page(self, page):
@@ -245,6 +313,92 @@ def window_title(page_title):
     """"Research · Trading Terminal" from the website's "Research · Trading Platform" (or just the app's name)."""
     t = (page_title or '').replace('Trading Platform', '').strip(' ·-—|')
     return f'{t} · {APP_NAME}' if t and t != 'about:blank' and not t.startswith('http') else APP_NAME
+
+
+class EdgeResizer(QObject):
+    """Resizing a window that draws its own title bar: near an edge the pointer becomes a resize arrow and dragging there
+    resizes with the system's own resize (the page under it doesn't get that click). It watches only that window's
+    own system window (not every event in the app), so it costs nothing while you use the page."""
+
+    def __init__(self, win):
+        super().__init__(win)
+        self.win = win
+        self.app = QApplication.instance()
+        self.shown = None
+
+    @classmethod
+    def attach(cls, win):
+        if win.bar is not None:
+            win.winId()  # makes the system window now
+            win.windowHandle().installEventFilter(cls(win))
+
+    def target(self, obj):
+        win = self.win
+        return None if (win.isMaximized() or win.isFullScreen()) else win
+
+    def cursor_for(self, edges):
+        if edges in ((Qt.LeftEdge | Qt.TopEdge), (Qt.RightEdge | Qt.BottomEdge)):
+            return Qt.SizeFDiagCursor
+        if edges in ((Qt.RightEdge | Qt.TopEdge), (Qt.LeftEdge | Qt.BottomEdge)):
+            return Qt.SizeBDiagCursor
+        if edges & (Qt.LeftEdge | Qt.RightEdge):
+            return Qt.SizeHorCursor
+        return Qt.SizeVerCursor
+
+    def show_cursor(self, shape):
+        if shape == self.shown:
+            return
+        if self.shown is not None:
+            self.app.restoreOverrideCursor()
+        if shape is not None:
+            self.app.setOverrideCursor(shape)
+        self.shown = shape
+
+    def eventFilter(self, obj, event):
+        kind = event.type()
+        if kind not in (QEvent.MouseMove, QEvent.MouseButtonPress):
+            return False
+        from .titlebar import resize_edges
+
+        win = self.target(obj)
+        if win is None:
+            if kind == QEvent.MouseMove:
+                self.show_cursor(None)
+            return False
+        edges = resize_edges(win.mapFromGlobal(event.globalPosition().toPoint()), win.size())
+        if kind == QEvent.MouseMove:
+            self.show_cursor(self.cursor_for(edges) if edges else None)
+            return False
+        if edges and event.button() == Qt.LeftButton and win.windowHandle() is not None:
+            self.show_cursor(None)
+            win.windowHandle().startSystemResize(edges)
+            return True
+        return False
+
+
+def round_corners(win):
+    """Windows 11: rounded corners and the system's thin border colour for a window without the classic frame."""
+    if sys.platform != 'win32':
+        return
+    try:
+        import ctypes
+
+        pref = ctypes.c_int(2)  # DWMWCP_ROUND
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(int(win.winId()), 33, ctypes.byref(pref), ctypes.sizeof(pref))
+    except Exception:
+        pass  # Windows 10: square corners
+
+
+def note_graphics(page):
+    """Writes which graphics the window draws with (the card's name, or SwiftShader = no card) for help."""
+    def save(renderer):
+        try:
+            (Path.home() / '.trading-platform' / 'desktop-graphics.txt').write_text(f'{renderer}\n', encoding='utf-8')
+        except OSError:
+            pass
+    from PySide6.QtWebEngineCore import QWebEngineScript
+
+    page.runJavaScript(GPU_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld, save)
 
 
 def splash_pixmap():
@@ -410,6 +564,10 @@ def main(argv=None):
     parser.add_argument('--choose', action='store_true', help='ask Terminal or Web even when a choice is remembered')
     args = parser.parse_args(argv)
 
+    import os
+
+    os.environ['QTWEBENGINE_CHROMIUM_FLAGS'] = policy.chromium_flags(os.environ.get('QTWEBENGINE_CHROMIUM_FLAGS', ''))
+    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)  # Qt WebEngine draws fastest with shared graphics contexts
     QApplication.setApplicationName(APP_NAME)
     QApplication.setOrganizationName('TradingPlatform')
     if sys.platform == 'win32':  # the taskbar shows the Trading Terminal logo, not Python's
@@ -438,6 +596,8 @@ def main(argv=None):
     size = tuple(int(x) for x in args.size.lower().split('x')) if args.size else None
     console = [] if args.screenshot else None
     win = Window(app, profile, args.url, url=args.url, main=True, console_log=console, size=size)
+    EdgeResizer.attach(win)
+    win.page.loadFinished.connect(lambda ok: ok and note_graphics(win.page))
     connect_downloads(profile, lambda: win)
     tray = connect_notifications(profile, app, lambda: win)
     def reveal(*_):
@@ -445,6 +605,7 @@ def main(argv=None):
             splash.finish(win)
         if not win.isVisible():
             win.show()
+            round_corners(win)
     if not args.screenshot:
         ensure_helper(args.url)
     if splash:
@@ -452,6 +613,7 @@ def main(argv=None):
         QTimer.singleShot(12000, reveal)  # never wait longer than this for a slow connection
     else:
         win.show()
+        round_corners(win)
     if args.screenshot:
         def snap():
             win.view.grab().save(args.screenshot)

@@ -114,3 +114,38 @@ def helper_start_command(helper_dir, platform):
         return ['open', '-a', 'Terminal', str(helper_dir / 'start-mac.command')]
     return None
 
+
+#: Speed: use the graphics card for drawing even where Chromium's cautious list would switch it off, draw straight into
+#: graphics memory, and never slow the page's timers down. Added to anything already in QTWEBENGINE_CHROMIUM_FLAGS.
+FAST_FLAGS = ('--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--enable-zero-copy',
+              '--disable-renderer-backgrounding', '--disable-background-timer-throttling')
+
+
+def chromium_flags(existing):
+    """The Chromium switches the app starts with: what was set already plus FAST_FLAGS (none twice); a set
+    --disable-gpu (the checks on machines without a screen) keeps the graphics-card ones out."""
+    have = existing.split()
+    add = [f for f in FAST_FLAGS if f not in have]
+    if '--disable-gpu' in have:
+        add = [f for f in add if 'gpu' not in f and 'zero-copy' not in f]
+    return ' '.join(have + add)
+
+
+def page_name(page_title):
+    """"Research" from the website's "Research · Trading Platform" ('' for the home page or a bare address)."""
+    t = (page_title or '').replace('Trading Platform', '').strip(' ·-—|')
+    return t if t and t != 'about:blank' and not t.startswith('http') else ''
+
+
+def resize_edges(x, y, width, height, edge=6):
+    """The window edges ('left', 'right', 'top', 'bottom') a point is on, for resizing a window with its own title bar."""
+    out = set()
+    if x < edge:
+        out.add('left')
+    elif x >= width - edge:
+        out.add('right')
+    if y < edge:
+        out.add('top')
+    elif y >= height - edge:
+        out.add('bottom')
+    return out

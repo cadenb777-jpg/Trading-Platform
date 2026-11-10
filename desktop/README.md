@@ -34,6 +34,13 @@ alerts, your accounts and the Trade page (preview, then confirm; Test first) wor
 
 ## In the app
 
+- **Its own title bar** (Windows): the logo, the page you're on and slim minimise / maximise / close buttons in the
+  website's colours (light or dark). Drag it to move the window (drag to the top of the screen to maximise, to a side
+  to snap), double-click it to maximise, drag any edge to resize. F11 hides it for full screen.
+- **Speed:** the app draws with your graphics card even where Chromium would play safe, and never slows the page down
+  in the background. Which graphics it uses is written to `~/.trading-platform/desktop-graphics.txt` (a card's name
+  is good; "SwiftShader" or "llvmpipe" means no graphics card, which is slower: send me that file).
+
 Everything on the website works the same (menu, command bar `/`, function keys, Bull, alerts, Trade). The window adds:
 
 | Keys | What it does |

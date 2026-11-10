@@ -321,6 +321,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   desktop_update.py self-updates desktop/ when APP_VERSION on main is newer and removes .py files a version dropped;
   Start screen (tp_desktop/chooser.py, choice.py tested): Terminal or Web, remembered in ~/.trading-platform/
   desktop-choice.json; Shift or --choose asks again; Web opens the site in the browser and exits (helper keeps running).
+  Own title bar on Windows/Linux (tp_desktop/titlebar.py: frameless window, startSystemMove/Resize, EdgeResizer on the
+  window's QWindow only, colours from the site's CSS variables every 1.5 s). Speed: policy.FAST_FLAGS (GPU even when
+  blocklisted, no background throttling); GPU renderer written to ~/.trading-platform/desktop-graphics.txt.
   Windows download: installer/TradingTerminal.iss (Inno Setup, no wizard pages, per-user, bundles signature-checked
   Python) built, silently installed/uninstalled and checked by .github/workflows/installer.yml, published to release
   tag `trading-terminal` as TradingTerminal.exe (same URL every time).
