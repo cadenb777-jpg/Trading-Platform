@@ -27,7 +27,8 @@ jobs:
           python-version: '3.13'
       - run: pip install detect-secrets==1.5.0
       # .secrets.baseline lists the known fake keys in tests; anything new that looks like a key fails here
-      - run: git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline
+      # (compared by fingerprint, not line number, so editing a file never trips it)
+      - run: python scripts/check-secrets.py
 
   dependencies:
     name: No known-vulnerable packages

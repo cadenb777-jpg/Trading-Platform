@@ -480,7 +480,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   escapes first; markdownSafety.test.ts). main.ts runs src/frameGuard.ts (stopIfFramed) and only then imports app.ts (no running in frames). Keep
   the CSP in index.html strict (script-src 'self').
 - CI: deploy.yml least privilege (only `deploy` has pages:write) and actions pinned to commit SHAs (Dependabot updates
-  them); security.yml (detect-secrets against .secrets.baseline, npm audit, pip-audit, bandit -lll); codeql.yml.
+  them); security.yml (scripts/check-secrets.py: detect-secrets, new values vs .secrets.baseline by hash, npm audit, pip-audit, bandit -lll); codeql.yml.
   After adding a fake key to a test, refresh the baseline: `detect-secrets scan ... > .secrets.baseline` (see the
   exclude list in that file's `filters_used`).
 
