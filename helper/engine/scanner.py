@@ -580,7 +580,11 @@ async def thirty_minute_bars(ctx, symbol):
         if not merged or merged[0]['time'] > start + 7 * 86400:
             try:
                 end = merged[0]['time'] + alpaca.SEAM_OVERLAP_DAYS * 86400 if merged else None  # overlap for the seam check
-                older = alpaca.regular_session(await alpaca.bars(ctx, symbol, '30m', start, end))
+                quiet = alpaca.BACKGROUND.set(True)  # leaves the charts a free Alpaca slot
+                try:
+                    older = alpaca.regular_session(await alpaca.bars(ctx, symbol, '30m', start, end))
+                finally:
+                    alpaca.BACKGROUND.reset(quiet)
                 older = alpaca.align_to_schwab(symbol, merged, older)  # Schwab's basis wins
                 merged = alpaca.merge_with_schwab(merged, older)
             except Exception as err:

@@ -14,6 +14,7 @@ Only the market-data host below is ever contacted. Alpaca's trading/account/orde
 must not contain those hosts or paths (a test checks that).
 """
 import asyncio
+import contextvars
 import datetime as dt
 import logging
 import time
@@ -52,6 +53,13 @@ MIN_CALL_GAP = 60 / 180
 RECHECK = {'1m': 60, '5m': 120, '10m': 300, '15m': 300, '30m': 600, '1h': 900}
 #: How far back Schwab keeps intraday bars (days, approximate). Older parts can come from Alpaca.
 SCHWAB_INTRADAY_DAYS = {'1m': 48, '5m': 270, '10m': 270, '15m': 270, '30m': 270}
+
+#: Set by background work (the scanner): its calls take only one of the Alpaca slots, so a chart always has one free.
+BACKGROUND = contextvars.ContextVar('alpaca_background', default=False)
+#: How long a chart waits for older bars from Alpaca before it is shown with Schwab's bars (the download carries on and
+#: is saved, so the next time they are there at once).
+FILL_WAIT = 3.0
+_unfinished = set()
 
 NO_KEYS = 'Add your Alpaca keys in Settings (free account at alpaca.markets) to use long price history.'
 BAD_KEYS = 'Alpaca rejected the keys. Check the key ID and secret in Settings (copy them again from alpaca.markets).'
@@ -190,7 +198,7 @@ async def _get(ctx, params):
     for attempt in range(2):
         # Through the data hub's 'alpaca' gate (pacing, network errors, health); 429 handling stays below.
         response = await datahub.call('alpaca', lambda: ctx.http.get(DATA_URL, params=params, headers=headers),
-                                      gap=MIN_CALL_GAP, retries=0, passthrough=True)
+                                      gap=MIN_CALL_GAP, retries=0, passthrough=True, background=BACKGROUND.get())
         if response.status_code == 200:
             return response.json()
         if response.status_code in (401, 403):
@@ -369,8 +377,15 @@ async def fill_older(ctx, symbol, resolution, days, schwab_bars):
     first = schwab_bars[0]['time']
     if first - start < 4 * 86400:  # Schwab already covers (nearly) the whole range: weekends/holidays aside
         return schwab_bars
+    task = asyncio.ensure_future(bars(ctx, symbol, resolution, start, first + SEAM_OVERLAP_DAYS * 86400))  # overlap
     try:
-        older = await bars(ctx, symbol, resolution, start, first + SEAM_OVERLAP_DAYS * 86400)  # overlap for the check
+        older = await asyncio.wait_for(asyncio.shield(task), FILL_WAIT)
+    except asyncio.TimeoutError:
+        # Don't keep the chart waiting: show Schwab's bars now; the download finishes and is saved for next time.
+        _unfinished.add(task)
+        task.add_done_callback(lambda t: (_unfinished.discard(t), t.cancelled() or t.exception()))
+        log.info('Alpaca history for %s %s still downloading; chart sent with Schwab bars', symbol, resolution)
+        return schwab_bars
     except Exception as err:
         log.info('Alpaca history for %s %s not added: %s', symbol, resolution, err)
         return schwab_bars

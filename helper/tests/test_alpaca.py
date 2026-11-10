@@ -210,6 +210,32 @@ class FillOlder(AlpacaBase):
         fake = FakeAlpaca([], status=403)
         self.assertIs(asyncio.run(alpaca.fill_older(self.ctx(fake), 'NVDA', '5m', 365, sch)), sch)
 
+    def test_a_slow_alpaca_never_keeps_the_chart_waiting(self):
+        sch = [{'time': self.now - 10 * 86400, 'open': 1, 'high': 1, 'low': 1, 'close': 1, 'volume': 1}]
+        started = []
+
+        async def slow(*a, **k):
+            started.append(1)
+            await asyncio.sleep(5)
+            return []
+
+        async def run():
+            with mock.patch.object(alpaca, 'bars', slow), mock.patch.object(alpaca, 'FILL_WAIT', 0.05):
+                t0 = time.monotonic()
+                out = await alpaca.fill_older(self.ctx(FakeAlpaca([])), 'NVDA', '30m', 365, sch)
+                waited = time.monotonic() - t0
+                for t in list(alpaca._unfinished):
+                    t.cancel()
+                return out, waited
+        out, waited = asyncio.run(run())
+        self.assertIs(out, sch)
+        self.assertLess(waited, 1)
+        self.assertEqual(started, [1])
+
+    def test_background_calls_leave_a_slot_for_charts(self):
+        src = alpaca.datahub.SOURCES['alpaca']
+        self.assertGreater(src.concurrency, src.background_concurrency)
+
 
 class KeysAndErrors(AlpacaBase):
     def test_missing_keys(self):

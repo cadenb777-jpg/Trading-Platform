@@ -91,7 +91,7 @@ SOURCES = {s.name: s for s in (
     Source('sec', 'SEC EDGAR', gap=0.125, concurrency=5, about='Filings, XBRL facts, Form 4/D/13F. At most 8 a second (the SEC allows 10).'),
     Source('yahoo', 'Yahoo Finance', gap=0.25, concurrency=2, about='Dividends and splits (total return); cross-check prices.'),
     Source('nasdaq', 'Nasdaq.com', gap=1.0, gap_from='end', concurrency=1, about='Cross-check quotes.'),
-    Source('alpaca', 'Alpaca', gap=60 / 180, concurrency=2, retries=1, about='Older intraday history (optional free keys).'),
+    Source('alpaca', 'Alpaca', gap=60 / 180, concurrency=3, background_concurrency=1, retries=1, about='Older intraday history (optional free keys).'),
     Source('fred', 'FRED', concurrency=8, about='Economic series and Treasury yields.'),
     Source('treasury', 'US Treasury', concurrency=3, about='Yield curve backup, auctions (Fiscal Data).'),
     Source('cftc', 'CFTC', concurrency=3, about='Commitments of Traders (weekly).'),

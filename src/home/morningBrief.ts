@@ -10,7 +10,8 @@ import type { MarketRef } from '../data/quotes';
 import { engineRequest, helper } from '../data/schwab';
 import { listDocs } from '../data/store';
 import { combineHoldings, myPortfolios } from '../portfolio/account';
-import { fetchPrices } from '../portfolio/prices';
+import { fetchPrices, type PriceInfo } from '../portfolio/prices';
+import { guessMarket, subscribeQuote } from '../data/quotes';
 import { readPrefs, showChange } from '../portfolio/returns';
 import type { Portfolio } from '../portfolio/types';
 import { getCalendar } from '../pages/calendarPage';
@@ -156,8 +157,41 @@ export function createMorningBrief(d: BriefDeps) {
     const symbols = rows.filter((r) => r.shares > 0).map((r) => r.symbol);
     // Draw straight away (last known total) and again when live prices arrive, so the card never waits on Schwab.
     drawAccounts(mine.length, rows, {}, true);
-    const prices = symbols.length ? await fetchPrices(symbols) : {};
+    const prices: Record<string, PriceInfo> = symbols.length ? await fetchPrices(symbols) : {};
     drawAccounts(mine.length, rows, prices, false);
+    liveAccounts(symbols, prices, () => drawAccounts(mine.length, rows, prices, false));
+  }
+
+  /** The card follows live prices: each change the helper streams is shown at most every 3 seconds (only while the
+   * card is on screen; a reload starts afresh). */
+  let stopLive = () => {};
+  function liveAccounts(symbols: string[], prices: Record<string, PriceInfo>, redraw: () => void) {
+    stopLive();
+    let moved = false;
+    const stops = symbols.map((sym) => {
+      const ref = guessMarket(sym);
+      return ref
+        ? subscribeQuote(ref, (q) => {
+            if (q.last == null || !Number.isFinite(q.last)) return;
+            const was = prices[sym];
+            const change = q.prevClose ? q.last / q.prevClose - 1 : was?.change ?? null;
+            if (was?.price === q.last && was?.change === change) return;
+            prices[sym] = { ...(was ?? { yield: null, name: '' }), price: q.last, change };
+            moved = true;
+          })
+        : () => undefined;
+    });
+    const tick = setInterval(() => {
+      if (!accountsBody.isConnected) return; // Home is closed: wait (the next load replaces this)
+      if (moved && document.visibilityState === 'visible') {
+        moved = false;
+        redraw();
+      }
+    }, 3000);
+    stopLive = () => {
+      clearInterval(tick);
+      for (const stop of stops) stop();
+    };
   }
 
   /** Sum of Webull's own stock-account values (null when Webull isn't set up or nothing could be read). */

@@ -226,7 +226,8 @@ class Window(QMainWindow):
                 self.update_border()
             else:
                 self.caps.set_colors(fg, amber, line)
-            self.page.setBackgroundColor(QColor(bg))
+            if self.page.backgroundColor() != QColor(bg):  # only on a theme change: setting it redraws the page
+                self.page.setBackgroundColor(QColor(bg))
             pal = self.holder.palette()
             if pal.color(pal.ColorRole.Window) != QColor(bg):
                 pal.setColor(pal.ColorRole.Window, QColor(bg))
@@ -682,6 +683,8 @@ def main(argv=None):
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setWindowIcon(app_icon())
     app.styleHints().setColorScheme(Qt.ColorScheme.Dark)  # a dark window frame, matching the terminal
+    if not args.screenshot and console.managed() and hand_over_to_running_app(args.choose):
+        return 0  # already open in the tray: it brought its window back, and its helper is already warm
     if args.screenshot:
         how = 'terminal'
     else:
@@ -697,7 +700,9 @@ def main(argv=None):
         open_in_browser(args.url)
         if not stays:
             return 0
-        app.setQuitOnLastWindowClosed(False)  # Web: the app lives on in the tray (closing an app window doesn't quit)
+    if stays:
+        # The app lives on in the tray with the helper warm: closing the window doesn't quit (Quit in the tray menu does)
+        app.setQuitOnLastWindowClosed(False)
     from PySide6.QtWidgets import QSplashScreen
 
     profile = build_profile(app, Path(args.storage) if args.storage else DATA)
@@ -722,7 +727,9 @@ def main(argv=None):
             splash.show()
             app.processEvents()
         win = Window(app, profile, args.url, url=args.url, main=True, console_log=log, size=size)
-        win.setAttribute(Qt.WA_DeleteOnClose, how == 'web')  # Web: closing it frees it, the tray stays
+        win.setAttribute(Qt.WA_DeleteOnClose, stays)  # closed to the tray: frees it, the next one is made fresh
+        if stays:
+            win.destroyed.connect(lambda *_: told_tray(tray))
         held['win'] = win
         EdgeResizer.attach(win)
         win.page.loadFinished.connect(lambda ok: ok and note_graphics(win.page))
@@ -744,6 +751,7 @@ def main(argv=None):
     tray = connect_notifications(profile, app, current)
     if stays:
         tray_menu(app, tray, args.url, open_window, how)
+        listen_for_second_start(app, lambda: open_window() if how == 'terminal' else QDesktopServices.openUrl(QUrl(args.url)))
     if how == 'terminal':
         win = open_window(first=True)
     if not args.screenshot:
@@ -802,6 +810,51 @@ def tray_menu(app, tray, url, open_window, how):
     tray._watch = timer
     if how == 'web':
         tray.showMessage(APP_NAME, 'Opened in your browser. The helper runs here: right-click this icon to quit.', app_icon(), 6000)
+
+
+INSTANCE = 'TradingTerminal-' + ''.join(ch for ch in (__import__('getpass').getuser() or 'me') if ch.isalnum())[:40]
+
+
+def hand_over_to_running_app(choose=False):
+    """True when Trading Terminal is already running (in the tray): it is asked to open its window, so this start ends."""
+    from PySide6.QtNetwork import QLocalSocket
+
+    sock = QLocalSocket()
+    sock.connectToServer(INSTANCE)
+    if not sock.waitForConnected(400):
+        return False
+    sock.write(b'choose\n' if choose else b'open\n')
+    sock.flush()
+    sock.waitForBytesWritten(400)
+    sock.disconnectFromServer()
+    return True
+
+
+def listen_for_second_start(app, open_it):
+    """Double-clicking the icon again while the app is in the tray opens its window (no second copy, no second start)."""
+    from PySide6.QtNetwork import QLocalServer
+
+    server = QLocalServer(app)
+    QLocalServer.removeServer(INSTANCE)  # a leftover from a copy that crashed
+    if not server.listen(INSTANCE):
+        return None
+
+    def incoming():
+        conn = server.nextPendingConnection()
+        if conn is not None:
+            conn.readyRead.connect(lambda: (conn.readAll(), open_it()))
+            conn.disconnected.connect(conn.deleteLater)
+    server.newConnection.connect(incoming)
+    app._tp_server = server
+    return server
+
+
+def told_tray(tray, shown={'done': False}):
+    """Once per run: where the app went when its window closed."""
+    if not shown['done'] and tray.isVisible():
+        shown['done'] = True
+        tray.showMessage(APP_NAME, 'Still running here by the clock, so it opens instantly next time. '
+                         'Right-click this icon and choose Quit to close it completely.', app_icon(), 7000)
 
 
 def quit_all(app):

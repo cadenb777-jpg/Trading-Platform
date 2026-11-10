@@ -10983,3 +10983,12 @@ td.warn, .data-table td.warn { color: var(--warn-text); }
 .yb-zero { stroke: var(--border-strong, var(--border)); stroke-width: 1; }
 .yb-year { fill: var(--muted); font-size: 10px; text-anchor: middle; font-variant-numeric: tabular-nums; }
 .yb-readout { font-variant-numeric: tabular-nums; min-height: 1.4em; }
+
+/* Account page live prices (accountPage flashChanges): a changed value flashes up or down for a moment */
+@keyframes tick-up { from { background-color: color-mix(in srgb, var(--up-text) 22%, transparent); } to { background-color: transparent; } }
+@keyframes tick-down { from { background-color: color-mix(in srgb, var(--down-text) 22%, transparent); } to { background-color: transparent; } }
+tr.tick-up > td.num, .stat-card.tick-up .stat-value { animation: tick-up 1.4s ease-out; border-radius: 4px; }
+tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1.4s ease-out; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) {
+  tr.tick-up > td.num, tr.tick-down > td.num, .stat-card.tick-up .stat-value, .stat-card.tick-down .stat-value { animation: none; }
+}

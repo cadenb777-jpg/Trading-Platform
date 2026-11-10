@@ -177,14 +177,20 @@ class CaptionButtons(QWidget):
         p.end()
 
     def place(self, height=None):
+        """Keeps the buttons in the top-right corner at the top bar's height. Does nothing when nothing changed (moving
+        or raising a widget over the page makes the whole window redraw, which showed as a flicker)."""
         if height:
             self.bar_height = max(28, min(80, int(round(height))))
         h = self.bar_height - 1  # the top bar's bottom line stays visible
+        parent = self.parentWidget()
+        spot = (parent.width() - 3 * BUTTON_W, h)
+        if getattr(self, '_spot', None) == spot:
+            return
+        self._spot = spot
         for b in self.buttons.values():
             b.setFixedSize(BUTTON_W, h)
         self.setFixedSize(3 * BUTTON_W, h)
-        parent = self.parentWidget()
-        self.move(parent.width() - self.width(), 0)
-        self.raise_()
-        for b in self.buttons.values():
-            b.update()
+        self.move(spot[0], 0)
+        if not getattr(self, '_raised', False):
+            self.raise_()
+            self._raised = True

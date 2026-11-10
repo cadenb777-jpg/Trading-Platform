@@ -8,6 +8,7 @@
  * are placed on the Trade page (one account at a time, preview → confirm). Import statement and Sync live here; model
  * portfolios and what-ifs are on Portfolios ("Analyse in Portfolios" opens an account there).
  */
+import { guessMarket, subscribeQuote } from '../data/quotes';
 import { listDocs, saveDoc } from '../data/store';
 import { clearEngineCache, loadNews, type NewsItem } from '../data/schwab';
 import { ALL_ACCOUNTS, allocation, combineHoldings, holdingNewsSymbols, dividendPayload, myPortfolios, partKey, pickAccounts, receivedPayload, todayChange, type AccountPart, type CombinedHolding } from '../portfolio/account';
@@ -126,11 +127,26 @@ function readColumns(): Set<string> {
 
 const METHOD_SHORT: Record<string, string> = { entered: 'entered', statement: 'statement', purchase: 'est.', tracked: 'est.', mixed: 'mixed', none: '' };
 
+/** How often the Account page shows new live prices (ms). */
+const LIVE_MS = 3000;
+
+/** After a live redraw: rows whose value went up flash green, down red (and the total), so you can see it moving. */
+function flashChanges(holdings: HTMLElement, overview: HTMLElement, before: Map<string, number | null>, now: { r: { symbol: string }; value: number | null }[], totalBefore: number, totalNow: number) {
+  for (const x of now) {
+    const was = before.get(x.r.symbol);
+    if (was == null || x.value == null || Math.abs(x.value - was) < 0.005) continue;
+    holdings.querySelector(`tr[data-symbol="${CSS.escape(x.r.symbol)}"]`)?.classList.add(x.value > was ? 'tick-up' : 'tick-down');
+  }
+  if (Math.abs(totalNow - totalBefore) >= 0.005) overview.querySelector('.stat-card')?.classList.add(totalNow > totalBefore ? 'tick-up' : 'tick-down');
+}
+
 export function createAccountPage(openPortfolio: (id: string) => void, openTrade: (accountId: string, kind?: 'stocks' | 'futures') => void) {
   let prefs: DisplayPrefs = readPrefs(storage());
   let columns = readColumns();
   /** Redraws the parts that follow the display choices (set by each load). */
   let paint: () => void = () => {};
+  /** Stops the live prices of the page's last load (a reload or leaving the page). */
+  let stopLive: () => void = () => {};
   // One-click switch for how changes and gains read everywhere on the page (remembered on this device).
   const showOpts: [ShowAs, string, string][] = [['pct', '%', 'Show changes and gains in percent'], ['usd', '$', 'Show changes and gains in dollars'], ['both', 'Both', 'Show dollars and percent']];
   const showSwitch = h('div', { class: 'segmented acct-show', role: 'group', 'aria-label': 'Show changes as' });
@@ -172,6 +188,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
 
   async function load() {
     const run = ++loading;
+    stopLive();
     live = null;
     paint = () => {};
     frame.loading('Adding up your accounts…');
@@ -205,7 +222,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     const infoOf = (s: string) => report?.holdings.find((x) => x.symbol === s) ?? null;
     // Prices: the live quote, or the price the dividends request just read.
     const priceOf = (s: string) => prices[s]?.price ?? infoOf(s)?.price ?? null;
-    const valued: RowView[] = rows.map((r) => {
+    const valueRows = (): RowView[] => rows.map((r) => {
       const price = r.shares ? priceOf(r.symbol) : null;
       const change = r.shares ? prices[r.symbol]?.change : null;
       const parts = r.parts.map((part): PartView => {
@@ -231,7 +248,8 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
         check: info ? yieldCheck(info.yield, info) : null,
       };
     });
-    const total = valued.reduce((s, x) => s + (x.value ?? 0), 0);
+    let valued = valueRows();
+    let total = valued.reduce((s, x) => s + (x.value ?? 0), 0);
     const unpriced = valued.filter((x) => x.value == null).map((x) => x.r.symbol);
     const receivedKnown = !!report?.received;
 
@@ -301,6 +319,15 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
       drawAccounts();
     };
     paint();
+    stopLive = streamPrices(run, symbols, prices, () => {
+      // new live prices: every value, today's change and gain moves with them; changed rows flash up or down
+      const before = new Map(valued.map((x) => [x.r.symbol, x.value]));
+      const beforeTotal = total;
+      valued = valueRows();
+      total = valued.reduce((s, x) => s + (x.value ?? 0), 0);
+      paint();
+      flashChanges(holdingsBox, overviewBox, before, valued, beforeTotal, total);
+    });
 
     frame.body.replaceChildren(
       mine.length > 1 ? switcher(mine, picked.choice) : '',
@@ -500,7 +527,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
         h(
           'tbody',
           {},
-          ...sorted.map((x) => h('tr', {}, symbolCell(x), ...shown.map((c) => cell(x, c.key)))),
+          ...sorted.map((x) => h('tr', { 'data-symbol': x.r.symbol }, symbolCell(x), ...shown.map((c) => cell(x, c.key)))),
           list.length > 1 ? h('tr', { class: 'total' }, h('td', { class: 'label' }, h('b', {}, 'Total')), ...shown.map((c) => totalCell(c.key))) : '',
         ),
       );
@@ -773,6 +800,40 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
   }
 
   /** The tear sheet for the priced holdings (cash earns nothing; alternatives have no daily prices, so they're left out). */
+  /** Live prices for the page's holdings (the helper streams each change): every LIVE_MS the page is redrawn with them,
+   * unless nothing moved, the page is hidden or you're in the middle of something (typing, a menu or window open). */
+  function streamPrices(run: number, symbols: string[], prices: Record<string, PriceInfo>, redraw: () => void): () => void {
+    let moved = false;
+    const stops = symbols.map((sym) => {
+      const ref = guessMarket(sym);
+      if (!ref) return () => undefined;
+      return subscribeQuote(ref, (q) => {
+        if (q.last == null || !Number.isFinite(q.last)) return;
+        const was = prices[sym];
+        const change = q.prevClose ? q.last / q.prevClose - 1 : was?.change ?? null;
+        if (was?.price === q.last && was?.change === change) return;
+        prices[sym] = { ...(was ?? { yield: null, name: '' }), price: q.last, change };
+        moved = true;
+      });
+    });
+    const busy = () => {
+      const active = document.activeElement;
+      return (
+        (active instanceof HTMLElement && frame.body.contains(active) && /^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName)) ||
+        !!document.querySelector('.popover, dialog[open], .acct-cols, .modal-backdrop')
+      );
+    };
+    const tick = setInterval(() => {
+      if (run !== loading || !moved || document.visibilityState !== 'visible' || busy()) return;
+      moved = false;
+      redraw();
+    }, LIVE_MS);
+    return () => {
+      clearInterval(tick);
+      for (const stop of stops) stop();
+    };
+  }
+
   function tearSheetFor(rows: RiskInput[]) {
     const kept = rows.filter((r) => r.kind !== 'alt');
     if (!kept.some((r) => r.kind === 'security')) return '';
@@ -911,6 +972,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     },
     stop() {
       started = false;
+      stopLive();
       clearInterval(timer);
     },
   };

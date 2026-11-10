@@ -325,6 +325,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   over the right end of the site's .shell-top, which DESKTOP_JS pads and makes a drag area (console messages
   __tp_window_drag__/__tp_window_max__ -> startSystemMove); EdgeResizer on the window's QWindow only; colours/height from
   CSS variables every 1.5 s. Qt's datalist popup swallows Enter: EnterThrough forwards it (SUGGEST_JS, every window).
+  Charts never wait on Alpaca: fill_older returns Schwab's bars after FILL_WAIT (3 s) and lets the download finish for
+  next time; scanner Alpaca calls are background (alpaca.BACKGROUND) so a chart always has a free slot. Windows app:
+  closing the window keeps it in the tray with the helper warm (Quit stops both); a second start hands over through a
+  QLocalServer (app.INSTANCE). Account page and Home's My accounts follow live quotes (subscribeQuote), redrawn every
+  3 s when something moved, changed rows flash (tick-up/tick-down).
   Speed: policy.FAST_FLAGS; helper workers run at low priority (engine/lowpriority.py); GPU renderer written to
   ~/.trading-platform/desktop-graphics.txt. Windows launcher hides its console (TP_HIDE_CONSOLE, tp_desktop/console.py);
   the helper's splash shows it while it needs you (helper-needs-you marker); the app's tray menu shows it or quits,
