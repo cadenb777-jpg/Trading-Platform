@@ -91,13 +91,15 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  Marker: String;
+  Marker, AppDir: String;
 begin
   if CurStep = ssPostInstall then
   begin
     { This file made the icons, so the app's first start doesn't make its own. }
+    AppDir := ExpandConstant('{app}\desktop');
+    StringChangeEx(AppDir, '\', '\\', True);  { JSON needs each backslash doubled }
     Marker := ExpandConstant('{%USERPROFILE}\.trading-platform');
     ForceDirectories(Marker);
-    SaveStringToFile(Marker + '\desktop-shortcut.json', '{"made": true, "where": "installer", "app": "' + ExpandConstant('{app}\desktop') + '"}', False);
+    SaveStringToFile(Marker + '\desktop-shortcut.json', '{"made": true, "where": "installer", "app": "' + AppDir + '"}', False);
   end;
 end;
