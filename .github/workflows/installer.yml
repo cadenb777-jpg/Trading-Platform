@@ -1,0 +1,149 @@
+name: Windows download (TradingTerminal.exe)
+
+# Builds the one-file TradingTerminal.exe on a real Windows machine, runs it silently, checks every piece (files, icons,
+# Apps entry), uninstalls it again and checks your data folder is kept. Only a run on main that passes all of that
+# replaces the download at:
+#   https://github.com/cadenb777-jpg/Trading-Platform/releases/download/trading-terminal/TradingTerminal.exe
+# The Python inside the installer comes from python.org and is used only if its Windows signature is valid and was
+# made by the Python Software Foundation.
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**', 'helper/**', 'installer/**', '.github/workflows/installer.yml']
+  pull_request:
+    paths: ['desktop/**', 'helper/**', 'installer/**', '.github/workflows/installer.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download Python from python.org and check its signature
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $base = 'https://www.python.org/ftp/python/'
+          $listing = (Invoke-WebRequest $base -UseBasicParsing).Content
+          $versions = [regex]::Matches($listing, 'href="(3\.13\.\d+)/"') | ForEach-Object { [version]$_.Groups[1].Value } |
+            Sort-Object -Descending -Unique
+          $out = 'installer\python-installer.exe'
+          foreach ($v in $versions) {
+            $url = "$base$v/python-$v-amd64.exe"
+            try { Invoke-WebRequest $url -OutFile $out -UseBasicParsing; Write-Output "Python $v from $url"; break } catch { }
+          }
+          if (-not (Test-Path $out)) { throw 'no Python 3.13 installer found on python.org' }
+          $sig = Get-AuthenticodeSignature $out
+          Write-Output "Signature: $($sig.Status), signer: $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { throw "Python installer signature is $($sig.Status)" }
+          if ($sig.SignerCertificate.Subject -notmatch 'O=Python Software Foundation') { throw 'not signed by the Python Software Foundation' }
+
+      - name: Build the installer (Inno Setup)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; if ($LASTEXITCODE) { throw 'Inno Setup install failed' } }
+          $app = (Select-String -Path desktop\tp_desktop\__init__.py -Pattern "APP_VERSION = '([^']+)'").Matches[0].Groups[1].Value
+          $helper = (Select-String -Path helper\schwab_helper.py -Pattern '^HELPER_VERSION = (\d+)').Matches[0].Groups[1].Value
+          Write-Output "App $app, helper $helper"
+          & $iscc "/DAppVersion=$app.$helper" installer\TradingTerminal.iss
+          if ($LASTEXITCODE) { throw "ISCC failed ($LASTEXITCODE)" }
+          Get-Item installer\output\TradingTerminal.exe | Format-List Name, Length
+
+      - name: Install it silently and check everything is there
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $data = Join-Path $env:USERPROFILE '.trading-platform'
+          New-Item -ItemType Directory -Force $data | Out-Null
+          Set-Content (Join-Path $data 'keep-me.txt') 'your data'
+          $p = Start-Process installer\output\TradingTerminal.exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/LOG=install.log' -Wait -PassThru
+          Get-Content install.log -Tail 25
+          if ($p.ExitCode) { throw "installer exit code $($p.ExitCode)" }
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\Trading Terminal'
+          foreach ($f in 'desktop\start-desktop-windows.bat', 'desktop\launch.py', 'desktop\tp_desktop\app.py', 'desktop\tp_desktop\assets\logo.ico',
+                         'helper\schwab_helper.py', 'helper\start-windows.bat', 'helper\requirements.txt', 'unins000.exe') {
+            if (-not (Test-Path (Join-Path $app $f))) { throw "missing $f" }
+          }
+          if (Test-Path (Join-Path $app 'desktop\tests')) { throw 'tests were copied' }
+          if (Test-Path (Join-Path $app 'helper\tests')) { throw 'tests were copied' }
+          $shell = New-Object -ComObject WScript.Shell
+          foreach ($lnk in (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Trading Terminal.lnk'),
+                           (Join-Path ([Environment]::GetFolderPath('Programs')) 'Trading Terminal.lnk'),
+                           (Join-Path ([Environment]::GetFolderPath('Programs')) 'Trading Terminal - choose Terminal or Web.lnk')) {
+            if (-not (Test-Path $lnk)) { throw "no shortcut $lnk" }
+            $s = $shell.CreateShortcut($lnk)
+            Write-Output "$lnk -> $($s.TargetPath) (icon $($s.IconLocation))"
+            if (-not (Test-Path $s.TargetPath)) { throw 'shortcut target missing' }
+            if (-not (Test-Path ($s.IconLocation -replace ',\d+$', ''))) { throw 'shortcut icon missing' }
+          }
+          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F2B8C1E-4D7A-4E59-9B3C-7A1D2E5F8C40}_is1'
+          $entry = Get-ItemProperty $key
+          Write-Output "Apps entry: $($entry.DisplayName) $($entry.DisplayVersion)"
+          if ($entry.DisplayName -ne 'Trading Terminal') { throw 'no Apps entry' }
+          $marker = Get-Content (Join-Path $data 'desktop-shortcut.json') -Raw | ConvertFrom-Json
+          if (-not $marker.made) { throw 'shortcut marker not written' }
+
+      - name: The installed app's Python code runs (its own tests, from the installed copy's sources)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\Trading Terminal'
+          python -c "import ast,pathlib,sys; root=pathlib.Path(sys.argv[1]); [ast.parse(p.read_text(encoding='utf-8'), str(p)) for p in root.rglob('*.py')]; print('all Python files parse')" $app
+          if ($LASTEXITCODE) { throw 'installed Python files do not parse' }
+
+      - name: Uninstall it silently and check your data is kept
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\Trading Terminal'
+          $p = Start-Process (Join-Path $app 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
+          if ($p.ExitCode) { throw "uninstaller exit code $($p.ExitCode)" }
+          for ($i = 0; $i -lt 30 -and (Test-Path $app); $i++) { Start-Sleep 1 }  # the uninstaller finishes in a copy of itself
+          if (Test-Path $app) { throw 'program folder still there' }
+          if (Test-Path (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Trading Terminal.lnk')) { throw 'desktop icon still there' }
+          if (Test-Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'Trading Terminal.lnk')) { throw 'Start menu entry still there' }
+          if (-not (Test-Path (Join-Path $env:USERPROFILE '.trading-platform\keep-me.txt'))) { throw 'your data folder was removed' }
+          Write-Output 'Uninstall removed the program and kept your data.'
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: TradingTerminal
+          path: installer/output/TradingTerminal.exe
+          if-no-files-found: error
+
+  publish:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # to put the installer on the release page
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: TradingTerminal
+      - name: Put it on the release page (same link every time)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          sha256sum TradingTerminal.exe | tee TradingTerminal.exe.sha256
+          notes="Download TradingTerminal.exe and double-click it. Windows may say it protected your PC: click More info, then Run anyway.
+          One progress bar sets everything up (for you only, no administrator password; Python is added if needed), then it opens and asks: Terminal or Web.
+          The helper runs for both. After that use the Trading Terminal icon on your desktop: it updates itself. Built from ${GITHUB_SHA::7}."
+          if ! gh release view trading-terminal >/dev/null 2>&1; then
+            gh release create trading-terminal --title "Trading Terminal for Windows" --notes "$notes" --target "$GITHUB_SHA" --latest
+          else
+            gh release edit trading-terminal --notes "$notes"
+          fi
+          gh release upload trading-terminal TradingTerminal.exe TradingTerminal.exe.sha256 --clobber

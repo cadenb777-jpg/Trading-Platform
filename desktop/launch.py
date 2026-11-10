@@ -81,15 +81,16 @@ def run_app(updated):
     update stops within a minute; when the app closes, the helper keeps running in this window for the website."""
     started = time.time()
     # the flag tells the app this launcher looks after the helper (the app opens it itself only without the flag)
-    app = subprocess.Popen([str(splash.venv_python()), '-m', 'tp_desktop'], cwd=HERE, env={**os.environ, 'TP_HELPER_BY_LAUNCHER': '1'})
+    extra = ['--choose'] if '--choose' in sys.argv else []
+    app = subprocess.Popen([str(splash.venv_python()), '-m', 'tp_desktop', *extra], cwd=HERE,
+                           env={**os.environ, 'TP_HELPER_BY_LAUNCHER': '1'})
     helper = None
     if helper_running():
-        splash.ok('Trading Terminal is open, using the helper that is already running.')
-        splash.ok('Keep this window open while you use it (closing it closes the app).')
+        splash.ok('Opening Trading Terminal, using the helper that is already running.')
     else:
         # the website's own helper, beside the app in this window: its start screen, the Schwab login when it asks,
-        # its updates; no Chrome tab (the app is your window)
-        splash.ok('Trading Terminal is open. Starting the helper in this window (keep it open while you use the app).')
+        # its updates; no Chrome tab of its own (the app opens the window or the browser you choose)
+        splash.ok('Opening Trading Terminal. The helper runs in this window: keep it open while you use the platform.')
         helper = subprocess.Popen([sys.executable, str(HELPER / 'splash.py'), 'run', '--no-browser'], cwd=HELPER)
     code = app.wait()
     crashed = code not in splash.STOPPED_CODES
@@ -101,7 +102,7 @@ def run_app(updated):
         splash.fail(f'The app stopped with an error (code {code}). Take a screenshot of this window and send it.')
     if helper is not None and helper.poll() is None:
         print()
-        splash.ok('The app is closed. The helper keeps running here for the website; close this window to stop it.')
+        splash.ok('The helper keeps running here for the website; close this window to stop it.')
         helper.wait()
         return 0
     if crashed:

@@ -7,7 +7,18 @@ alerts, your accounts and the Trade page (preview, then confirm; Test first) wor
 
 ## Start it
 
-- **First time:** Windows: double-click `start-desktop-windows.bat`. Mac: double-click `start-desktop-mac.command`.
+- **Windows, easiest:** download **TradingTerminal.exe** from
+  https://github.com/cadenb777-jpg/Trading-Platform/releases/download/trading-terminal/TradingTerminal.exe and
+  double-click it. Windows may say it "protected your PC": click **More info**, then **Run anyway** (the file isn't
+  signed by a paid certificate). One progress bar sets everything up for you only (no administrator password; Python
+  is added if this computer has none), then it opens. Downloading and running the newest one again is always safe.
+- **Terminal or Web:** each start asks how to open the platform, in this app's window (**Terminal**) or in your
+  usual browser (**Web**); the helper runs for both. Tick "Remember my choice" to skip the question; hold **Shift**
+  while opening (or use the Start-menu entry "Trading Terminal - choose Terminal or Web") to be asked again.
+- **Updates are automatic:** the app checks GitHub at every start and installs a newer version itself (the old one is
+  kept and put back if the new one won't start); the helper checks every 2 minutes and updates at a quiet moment; the
+  website pages are always the newest. There is no button to press.
+- **From the folder instead:** Windows: double-click `start-desktop-windows.bat`. Mac: double-click `start-desktop-mac.command`.
   The start window shows a loading bar while it checks for a newer version and installs what it needs (the first
   time it downloads the Qt parts, about 150–250 MB, a few minutes; after that it opens straight away).
 - It then puts a **Trading Terminal** icon (the logo) on your desktop (and in the Start menu on Windows).

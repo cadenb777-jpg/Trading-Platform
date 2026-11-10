@@ -18,7 +18,7 @@ from PySide6.QtGui import QColor, QDesktopServices, QIcon, QKeySequence, QPainte
 from PySide6.QtCore import QPointF
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QSystemTrayIcon
 
-from . import APP_VERSION, policy
+from . import APP_VERSION, choice, policy
 
 DATA = Path.home() / '.trading-platform' / 'desktop-browser'
 #: Every app window (the main one and pop-ups, also pop-ups of pop-ups): closing the main window closes them all.
@@ -352,6 +352,54 @@ def ensure_helper(url):
     QTimer.singleShot(4000, lambda: missing() and QTimer.singleShot(11000, second_check))
 
 
+def ask_how_to_open(app, force_ask):
+    """'terminal' or 'web': the remembered choice, or the start screen's answer (None when it was closed)."""
+    from PySide6.QtCore import QEventLoop
+    from PySide6.QtGui import QGuiApplication
+
+    shift = bool(QGuiApplication.queryKeyboardModifiers() & Qt.ShiftModifier)
+    saved = choice.remembered()
+    how = choice.decide(saved, force_ask, shift)
+    if how:
+        return how
+    from .chooser import Chooser
+
+    answer = []
+    screen = Chooser(preselect=saved or 'terminal')
+    loop = QEventLoop()
+    screen.chosen.connect(lambda c, keep: answer.append((c, keep)))
+    screen.destroyed.connect(loop.quit)
+    screen.setAttribute(Qt.WA_DeleteOnClose)
+    screen.show()
+    screen.raise_()
+    screen.activateWindow()
+    loop.exec()
+    if not answer:
+        return None
+    how, keep = answer[0]
+    try:
+        choice.remember(how if keep else None)
+    except OSError as err:
+        print(f'Could not remember the choice: {err}', file=sys.stderr)
+    return how
+
+
+def open_in_browser(url):
+    """Web: the platform in your usual browser; when nothing looks after the helper yet, its start file opens too (the
+    page connects to it as soon as it is up)."""
+    import os
+    import subprocess
+
+    if policy.should_start_helper(os.environ, url, helper_answers()):
+        cmd = policy.helper_start_command(Path(__file__).resolve().parents[2] / 'helper', sys.platform)
+        if cmd:
+            try:
+                subprocess.Popen(cmd)
+            except OSError as err:
+                print(f'Could not open the helper: {err}', file=sys.stderr)
+    QDesktopServices.openUrl(QUrl(url))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='tp_desktop', description='Trading Platform desktop app')
     parser.add_argument('--url', default=policy.PLATFORM_URL, help='the website to show (default: the published platform)')
@@ -359,6 +407,7 @@ def main(argv=None):
     parser.add_argument('--screenshot', help='save a picture of the window after --wait seconds, then close (checks)')
     parser.add_argument('--wait', type=float, default=8.0)
     parser.add_argument('--storage', help='browser storage folder (checks)')
+    parser.add_argument('--choose', action='store_true', help='ask Terminal or Web even when a choice is remembered')
     args = parser.parse_args(argv)
 
     QApplication.setApplicationName(APP_NAME)
@@ -372,6 +421,13 @@ def main(argv=None):
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setWindowIcon(app_icon())
     app.styleHints().setColorScheme(Qt.ColorScheme.Dark)  # a dark window frame, matching the terminal
+    if not args.screenshot:
+        how = ask_how_to_open(app, args.choose)
+        if how is None:
+            return 0  # the start screen was closed without a choice
+        if how == 'web':
+            open_in_browser(args.url)
+            return 0
     from PySide6.QtWidgets import QSplashScreen
 
     splash = None if args.screenshot else QSplashScreen(splash_pixmap())

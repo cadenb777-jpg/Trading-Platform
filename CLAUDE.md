@@ -319,6 +319,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   splash, dark frame, logo (assets/logo.svg -> make_icons.py -> .ico/.icns/.png, committed). shortcut.py makes the
   "Trading Terminal" desktop/Start-menu icon once (marker desktop-shortcut.json; `launch.py --shortcut` again).
   desktop_update.py self-updates desktop/ when APP_VERSION on main is newer and removes .py files a version dropped;
+  Start screen (tp_desktop/chooser.py, choice.py tested): Terminal or Web, remembered in ~/.trading-platform/
+  desktop-choice.json; Shift or --choose asks again; Web opens the site in the browser and exits (helper keeps running).
+  Windows download: installer/TradingTerminal.iss (Inno Setup, no wizard pages, per-user, bundles signature-checked
+  Python) built, silently installed/uninstalled and checked by .github/workflows/installer.yml, published to release
+  tag `trading-terminal` as TradingTerminal.exe (same URL every time).
   bump APP_VERSION on every desktop change. Tests: desktop/tests (pure, no Qt). The helper's --desktop mode (8766) is
   no longer used by the app.
   Home hero: ticker tape (src/home/tickerTape.ts, live quotes, CSS loop) replaced the bridge. Market buddy "Bull"

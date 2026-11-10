@@ -5,6 +5,9 @@ cd /d "%~dp0"
 title Trading Terminal
 set "PY=python"
 py -3 -c "import sys" >nul 2>nul && set "PY=py -3"
+rem Right after the installer adds Python, this window may not see it on PATH yet: look where it was installed.
+%PY% -c "import sys" >nul 2>nul || if exist "%LOCALAPPDATA%\Programs\Python\Launcher\py.exe" set "PY="%LOCALAPPDATA%\Programs\Python\Launcher\py.exe" -3"
+%PY% -c "import sys" >nul 2>nul || for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do if exist "%%D\python.exe" set "PY="%%D\python.exe""
 %PY% -c "import sys" >nul 2>nul || goto nopython
 %PY% launch.py %*
 if errorlevel 2 exit /b
