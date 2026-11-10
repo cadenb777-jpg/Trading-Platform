@@ -13,7 +13,7 @@ import desktop_update as du  # noqa: E402
 def make_zip(version='1.2', extra=None, top='Trading-Platform-main'):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w') as z:
-        files = {'launch.py': 'x', 'desktop_update.py': 'x', 'requirements.txt': 'x', 'tp_desktop/app.py': 'new app',
+        files = {'launch.py': 'x', 'desktop_update.py': 'x', 'shortcut.py': 'x', 'requirements.txt': 'x', 'tp_desktop/app.py': 'new app',
                  'tp_desktop/__init__.py': f"APP_VERSION = '{version}'\n"}
         files.update(extra or {})
         for rel, body in files.items():
@@ -62,6 +62,27 @@ class Update(unittest.TestCase):
             self.assertFalse((here / '.venv' / 'evil').exists())
             du.restore(backup, here)
             self.assertEqual((here / 'tp_desktop' / 'app.py').read_text(), 'old app')
+
+
+class Stale(unittest.TestCase):
+    def test_old_app_files_are_removed_and_kept_in_the_backup(self):
+        with tempfile.TemporaryDirectory() as d:
+            here = Path(d) / 'desktop'
+            (here / 'tp_desktop').mkdir(parents=True)
+            (here / 'tests').mkdir()
+            (here / '.venv').mkdir()
+            (here / 'tp_desktop' / '__init__.py').write_text("APP_VERSION = '1.1'\n")
+            (here / 'tp_desktop' / 'chart.py').write_text('old chart code')
+            (here / 'tests' / 'test_chartmath.py').write_text('old test')
+            (here / '.venv' / 'keep.py').write_text('never touched')
+            (here / 'notes.py').write_text('outside the code folders: kept')
+            backup = du.install(make_zip('1.2'), (1, 2), (1, 1), here)
+            self.assertFalse((here / 'tp_desktop' / 'chart.py').exists())
+            self.assertFalse((here / 'tests' / 'test_chartmath.py').exists())
+            self.assertTrue((here / '.venv' / 'keep.py').exists())
+            self.assertTrue((here / 'notes.py').exists())
+            self.assertEqual((here / 'tp_desktop' / 'app.py').read_text(), 'new app')
+            self.assertTrue((backup / 'tp_desktop' / 'chart.py').exists())  # restore() can put it back
 
 
 if __name__ == '__main__':

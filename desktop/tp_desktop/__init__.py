@@ -1,2 +1,2 @@
-"""Trading Platform desktop app (PySide6 + pyqtgraph). Same helper engine as the website, its own helper process."""
-APP_VERSION = '1.2'  # bump on every desktop change: the launcher updates when GitHub has a newer one
+"""Trading Platform desktop app: the website itself in its own window (Qt WebEngine), using the website's helper."""
+APP_VERSION = '2.0'  # bump on every desktop change: the launcher updates when GitHub has a newer one

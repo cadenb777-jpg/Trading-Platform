@@ -24,7 +24,7 @@ ALLOWED_HOSTS = {'raw.githubusercontent.com', 'codeload.github.com'}
 HERE = Path(__file__).resolve().parent
 MIN_ZIP_BYTES, MAX_ZIP_BYTES = 20_000, 150_000_000
 MAX_DESKTOP_BYTES = 20_000_000
-REQUIRED = ('launch.py', 'desktop_update.py', 'requirements.txt', 'tp_desktop/__init__.py', 'tp_desktop/app.py')
+REQUIRED = ('launch.py', 'desktop_update.py', 'shortcut.py', 'requirements.txt', 'tp_desktop/__init__.py', 'tp_desktop/app.py')
 
 
 class UpdateError(Exception):
@@ -142,10 +142,24 @@ def install(data, expected, current, here=HERE):
             part.replace(target)  # swapped in whole, so a running start file is never rewritten in place
             if rel.endswith('.command'):
                 target.chmod(0o755)
+        remove_stale(members, here)
     except Exception:
         restore(backup, here)
         raise
     return backup
+
+
+#: Folders whose old files are removed when a new version no longer has them (the app's code and its tests).
+CODE_DIRS = ('tp_desktop', 'tests')
+
+
+def remove_stale(members, here=HERE):
+    """Deletes app files the new version dropped (e.g. 2.0 replaced the 1.x chart code), so nothing old lingers.
+    Only .py files inside tp_desktop/ and tests/; never hidden folders, caches or anything else. The backup keeps them."""
+    for path in sorted(here.rglob('*.py')):
+        rel = path.relative_to(here).as_posix()
+        if rel.split('/', 1)[0] in CODE_DIRS and rel not in members and not protected(rel):
+            path.unlink()
 
 
 def restore(backup, here=HERE):

@@ -1,0 +1,92 @@
+"""Which addresses stay inside the app and which open in your normal browser (plain functions, tested without Qt).
+
+The app shows the website itself, so the website's own pages (and the windows it opens for itself: the AI pop-out, a
+journal screenshot) stay in the app; everything else (news articles, SEC filings, fund websites, the helper guide)
+opens in your default browser, like a link from any desktop program.
+"""
+import posixpath
+from urllib.parse import unquote, urlsplit
+
+#: The website the app shows (the same address the helper opens in Chrome: helper/schwab_helper.py PLATFORM_URL).
+PLATFORM_URL = 'https://cadenb777-jpg.github.io/Trading-Platform/'
+
+#: Addresses the page itself makes (blank pop-ups, downloads, pictures written into a new window).
+INTERNAL_SCHEMES = {'about', 'blob', 'data'}
+
+
+def _norm(url):
+    """scheme://host/path with the path's case kept, without query or #route; '' for anything unreadable."""
+    try:
+        p = urlsplit(url)
+    except ValueError:
+        return ''
+    if not p.scheme:
+        return ''
+    path = unquote(p.path)
+    if path:  # "/Trading-Platform/../Other" or "%2e%2e" can't pass for the website
+        clean = posixpath.normpath(path)
+        path = clean + ('/' if path.endswith('/') and clean != '/' else '')
+    return f'{p.scheme.lower()}://{p.netloc.lower()}{path}'
+
+
+def is_platform(url, base=PLATFORM_URL):
+    """True for the website's own pages (any #route), e.g. .../Trading-Platform/#research/AAPL."""
+    here, home = _norm(url), _norm(base)
+    if not here or not home:
+        return False
+    home_dir = home if home.endswith('/') else home + '/'
+    return here == home.rstrip('/') or here.startswith(home_dir) or here == home
+
+
+def scheme(url):
+    try:
+        return urlsplit(url).scheme.lower()
+    except ValueError:
+        return ''
+
+
+def stays_in_app(url, base=PLATFORM_URL):
+    """The main window may go here (the website, or a blank/data page or a blob the website made); anything else
+    opens outside."""
+    if url in ('', 'about:blank') or is_platform(url, base):
+        return True
+    kind = scheme(url)
+    if kind == 'blob':  # blob:https://host/uuid: only the website's own
+        return origin_allowed(url[len('blob:'):], base)
+    return kind in ('about', 'data')
+
+
+#: The only kinds of address handed to your computer: web pages and e-mail. Never file:, network shares or programs.
+EXTERNAL_SCHEMES = {'http', 'https', 'mailto'}
+
+
+def opens_externally(url):
+    """True when a link that leaves the app may go to your normal browser (or e-mail program). Anything else (file:,
+    smb:, ms-*: and other program links, which a hostile news feed could plant) is ignored."""
+    p = urlsplit(url or '')
+    return p.scheme.lower() in EXTERNAL_SCHEMES and (p.scheme.lower() == 'mailto' or bool(p.netloc))
+
+
+def new_window_kind(url, base=PLATFORM_URL):
+    """'app' for a window the website opens for itself (AI pop-out, a blank window it writes into), else 'external'."""
+    return 'app' if stays_in_app(url, base) else 'external'
+
+
+def origin_allowed(origin, base=PLATFORM_URL):
+    """Notifications and the clipboard are allowed for the website only (never for a page from elsewhere)."""
+    o, b = urlsplit(origin or ''), urlsplit(base)
+    return bool(o.scheme) and (o.scheme, o.netloc.lower()) == (b.scheme, b.netloc.lower())
+
+
+#: Chromium's "aborted": a navigation that was stopped on purpose (a link the app sent to your browser, or a page that
+#: moved on before it finished). That is not "offline".
+ABORTED = -3
+
+
+def shows_offline_page(failed_url, error_code, is_error_page, base=PLATFORM_URL):
+    """True when a failed load should show "Can't reach the platform": the website itself didn't load because of a
+    network or server problem. Never for a navigation the app stopped (a link opened in your browser)."""
+    if error_code == ABORTED:
+        return False
+    return is_platform(failed_url, base) or (is_error_page and failed_url in ('', 'about:blank'))
+

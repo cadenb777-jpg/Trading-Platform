@@ -1,7 +1,7 @@
 # The desktop app (on top of the helper's own requirements in ../helper/requirements.txt).
-# Vetted: PySide6 = Qt for Python (The Qt Company, LGPL, used unmodified as a library); pyqtgraph (MIT).
-# Ranges, not exact pins, so the newest Python (3.14) gets a matching build.
-PySide6-Essentials>=6.10,<7
-pyqtgraph>=0.13.7
-numpy
-websockets
+# Vetted: PySide6 = Qt for Python by The Qt Company (pyside@qt-project.org; LGPL, used unmodified as a library).
+# Qt WebEngine (the Chromium engine that draws the website) is its own package since Qt 6.12.
+# Windows 64-bit and macOS 14 or newer; first download about 150-250 MB.
+PySide6-Essentials>=6.12,<7
+PySide6-Addons>=6.12,<7
+PySide6-WebEngine>=6.12,<7

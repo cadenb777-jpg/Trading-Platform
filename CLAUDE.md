@@ -309,11 +309,18 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   our axis labels and year row, last-price tag and session lines (axis.ts, axisChrome.ts ChartChrome primitive),
   volume in its own slim pane, no library logo (attribution in Settings > About). Grid and time labels: our square
   dotted grid primitive (src/chart/grid.ts) on every chart via followTheme; the library grid and time labels stay off.
-  Desktop app (desktop/, PySide6 + pyqtgraph, `python -m tp_desktop`): its own helper = `schwab_helper.py --desktop`
-  (port 8766, origin tp-desktop://app only, no scanner/updater/prospecting/browser, order requests refused via
-  desktop_blocked()). Start files run desktop/launch.py (splash.py screen + bar, helper/.venv shared, desktop parts
-  marker installed-desktop.txt); desktop_update.py self-updates desktop/ only when APP_VERSION (tp_desktop/__init__.py)
-  on GitHub main is newer: bump APP_VERSION on every desktop change. Read-only; pure parts in desktop/tp_desktop/nav.py and chartmath.py, tests in desktop/tests.
+  Desktop app "Trading Terminal" (desktop/, v2.0, `python -m tp_desktop`): the published website itself in a Qt WebEngine
+  window (PySide6-WebEngine, its own package since Qt 6.12), so it is identical to the site by construction; never
+  re-implement pages in Python. It uses the website's helper (8765; launch.py starts `splash.py run --no-browser` when
+  none answers), so trading works exactly as on the site. tp_desktop/policy.py (tested): the site stays in the app,
+  other sites open in the system browser, notifications/clipboard only for the site, offline page only for real network
+  failures (never ERR_ABORTED: a link the app sent to the browser). app.py: persistent profile in
+  ~/.trading-platform/desktop-browser, downloads ask where to save, notifications via tray, print dialog, zoom keys,
+  splash, dark frame, logo (assets/logo.svg -> make_icons.py -> .ico/.icns/.png, committed). shortcut.py makes the
+  "Trading Terminal" desktop/Start-menu icon once (marker desktop-shortcut.json; `launch.py --shortcut` again).
+  desktop_update.py self-updates desktop/ when APP_VERSION on main is newer and removes .py files a version dropped;
+  bump APP_VERSION on every desktop change. Tests: desktop/tests (pure, no Qt). The helper's --desktop mode (8766) is
+  no longer used by the app.
   Home hero: ticker tape (src/home/tickerTape.ts, live quotes, CSS loop) replaced the bridge. Market buddy "Bull"
   (src/ui/buddy.ts, owner's request): SPY mood happy/calm/sad, click to pet, drag (localStorage tp-buddy-pos), code PUP
   hides/shows; hidden on the Chart page and still for reduced motion.

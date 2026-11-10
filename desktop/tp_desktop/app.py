@@ -1,708 +1,375 @@
 """
-The desktop app's main window. Layout (ideas from Bloomberg and Fincept, our own code and style):
-- top: brand, the sections as tabs, the current section's pages as tabs, and the command line (AAPL GP, WEI, ACCT);
-- left: the watchlist (click a symbol to chart it); a ticker tape of its quotes under the top bar;
-- centre: the page; bottom: function keys (F2 Chart, F3 Overview, F4 Account, F5 Refresh) and the status bar.
-Read-only: it shows data and never places orders (orders stay on the website's Trade page, preview + confirm).
+The desktop app: your website in its own window, drawn by Qt WebEngine (Chromium, the engine inside Chrome), so every
+page, chart, colour, the ticker tape and Bull are exactly the website's (the same code, live from GitHub Pages, updated
+the moment the website is). It talks to the same helper as the website (ws://127.0.0.1:8765), so data, alerts and the
+Trade page (preview, then confirm; Test first) work exactly as in Chrome.
+
+What the window adds: it remembers its size, place and zoom; Ctrl + / Ctrl - / Ctrl 0 zoom; F5 or Ctrl+R reloads;
+F11 full screen; Alt+Left / Alt+Right go back and forward. Links to other sites (news, SEC, fund pages) open in your
+normal browser; downloads ask where to save; alerts show as desktop notifications; printing opens the print dialog.
+Your settings in this window (watchlist, layouts, Bull) are kept in ~/.trading-platform/desktop-browser.
 """
-import json
-import time
-from datetime import datetime
+import argparse
+import sys
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
-import threading
+from PySide6.QtCore import QSettings, QStandardPaths, QTimer, QUrl, Qt
+from PySide6.QtGui import QColor, QDesktopServices, QIcon, QKeySequence, QPainter, QPixmap, QPolygonF, QShortcut
+from PySide6.QtCore import QPointF
+from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QSystemTrayIcon
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QDockWidget, QFrame, QListWidget, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                               QPlainTextEdit, QProgressBar, QPushButton, QStackedWidget, QTabBar, QTableWidget, QTableWidgetItem,
-                               QVBoxLayout, QWidget, QHeaderView)
+from . import APP_VERSION, policy
 
-from . import APP_VERSION
-from .buddy import COATS, Buddy
-from .chart import PriceChart
-from .effects import FlowBackground, TickerTape
-from .chartmath import clock_text
-from .client import HelperClient
-from .helper_proc import DesktopHelper
-from .nav import PAGES, SECTIONS, pages_in, parse_command
-from .theme import C, QSS
+DATA = Path.home() / '.trading-platform' / 'desktop-browser'
+#: Every app window (the main one and pop-ups, also pop-ups of pop-ups): closing the main window closes them all.
+WINDOWS = []
+ZOOMS = [0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0]
 
-PREFS = Path.home() / '.trading-platform' / 'desktop.json'
-TAPE_CORE = ['SPY', 'QQQ', 'DIA', 'IWM', 'TLT', 'GLD', 'USO', 'AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'META', 'TSLA']
-DEFAULT_WATCH = ['SPY', 'QQQ', 'DIA', 'IWM', 'AAPL', 'MSFT', 'NVDA', 'AMZN', 'META', 'TSLA']
-OVERVIEW = [('S&P 500', 'SPY'), ('Nasdaq 100', 'QQQ'), ('Dow', 'DIA'), ('Russell 2000', 'IWM'), ('Long Treasuries', 'TLT'),
-            ('Gold', 'GLD'), ('Oil', 'USO'), ('Dollar', 'UUP'), ('Volatility', 'VIXY')]
-TIMEFRAMES = [('5m', '5m', 5), ('15m', '15m', 15), ('30m', '30m', 30), ('1D', '1D', 365 * 2), ('1W', '1W', 365 * 10)]
-NY = ZoneInfo('America/New_York')
+OFFLINE_PAGE = """<!doctype html><html><head><meta charset="utf-8"><style>
+body{margin:0;height:100vh;display:grid;place-items:center;background:#0a1a2e;color:#e8eef6;font:16px/1.5 system-ui,Segoe UI,Arial}
+.box{max-width:520px;padding:32px;border:1px solid #23395a;border-radius:14px;background:#0f2238}
+h1{margin:0 0 8px;font-size:22px;color:#f2a93b;font-weight:600}a{display:inline-block;margin-top:16px;padding:10px 18px;border-radius:8px;
+background:#7ac3ee;color:#0a1a2e;text-decoration:none;font-weight:600}p{margin:6px 0;color:#b9c6d6}</style></head><body><div class="box">
+<h1>Can't reach the platform</h1><p>The app shows your website, so it needs the internet. Check your connection.</p>
+<p>It tries again by itself every 15 seconds.</p><a href="%s">Try again now</a></div></body></html>"""
 
 
-def load_prefs():
-    try:
-        return json.loads(PREFS.read_text())
-    except (OSError, ValueError):
-        return {}
+ASSETS = Path(__file__).resolve().parent / 'assets'
+APP_NAME = 'Trading Terminal'
 
 
-def save_prefs(p):
-    try:
-        PREFS.parent.mkdir(exist_ok=True)
-        PREFS.write_text(json.dumps(p))
-    except OSError:
-        pass
+def app_icon():
+    """The Trading Terminal logo (assets/logo.ico on Windows has every size; logo.png elsewhere); a drawn diamond if
+    the files are missing."""
+    for name in (('logo.ico', 'logo.png') if sys.platform == 'win32' else ('logo.png',)):
+        if (ASSETS / name).exists():
+            return QIcon(str(ASSETS / name))
+    pm = QPixmap(64, 64)
+    pm.fill(Qt.transparent)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    p.setBrush(QColor('#7ac3ee'))
+    p.setPen(Qt.NoPen)
+    p.drawPolygon(QPolygonF([QPointF(32, 4), QPointF(60, 32), QPointF(32, 60), QPointF(4, 32)]))
+    p.end()
+    return QIcon(pm)
 
 
-def change(q):
-    last, prev = q.get('last'), q.get('prevClose')
-    if not last or not prev:
-        return None
-    return (last - prev) / prev * 100
+def open_outside(url):
+    """A link leaving the app goes to your browser (or e-mail) only if it is a web page or e-mail address; file:, network
+    shares and program links (which a hostile news feed could plant) are ignored."""
+    text = url.toString()
+    if policy.opens_externally(text):
+        QDesktopServices.openUrl(url)
+    else:
+        print(f'Ignored a link the app does not open: {text[:120]}', file=sys.stderr)
 
 
-def item(text, colour=None, align=Qt.AlignRight | Qt.AlignVCenter):
-    it = QTableWidgetItem(text)
-    it.setTextAlignment(align)
-    if colour:
-        it.setForeground(QColor(colour))
-    return it
+def build_profile(app, storage=DATA):
+    """One persistent browser profile (local storage, cookies and cache kept between starts)."""
+    from PySide6.QtWebEngineCore import QWebEngineProfile, QWebEngineSettings
+
+    storage = Path(storage).expanduser().resolve()  # Chromium needs absolute folders for its storage and cache
+    storage.mkdir(parents=True, exist_ok=True)
+    profile = QWebEngineProfile('TradingPlatform', app)
+    profile.setPersistentStoragePath(str(storage / 'storage'))
+    profile.setCachePath(str(storage / 'cache'))
+    profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.DiskHttpCache)
+    profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
+    s = profile.settings()
+    for attr, on in ((QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture, False),  # alert sounds play
+                     (QWebEngineSettings.WebAttribute.JavascriptCanAccessClipboard, True),
+                     (QWebEngineSettings.WebAttribute.JavascriptCanPaste, True),
+                     (QWebEngineSettings.WebAttribute.JavascriptCanOpenWindows, True),
+                     (QWebEngineSettings.WebAttribute.LocalStorageEnabled, True),
+                     (QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True),
+                     (QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True)):
+        s.setAttribute(attr, on)
+    s.setUnknownUrlSchemePolicy(QWebEngineSettings.UnknownUrlSchemePolicy.DisallowUnknownUrlSchemes)  # no program links
+    return profile
 
 
-def table(headers):
-    t = QTableWidget(0, len(headers))
-    t.setHorizontalHeaderLabels([h.upper() for h in headers])
-    t.verticalHeader().hide()
-    t.setEditTriggers(QTableWidget.NoEditTriggers)
-    t.setSelectionBehavior(QTableWidget.SelectRows)
-    t.setShowGrid(False)
-    t.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-    return t
+class Page:
+    """Factory for a QWebEnginePage that keeps the website inside the app and sends other sites to the browser."""
+
+    @staticmethod
+    def make(profile, owner, base):
+        from PySide6.QtWebEngineCore import QWebEnginePage, QWebEnginePermission
+
+        class _Page(QWebEnginePage):
+            def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+                if not is_main_frame or policy.stays_in_app(url.toString(), base):
+                    return True
+                open_outside(url)  # news, SEC, fund sites, the helper guide: your normal browser
+                return False
+
+            def javaScriptConsoleMessage(self, level, message, line, source):
+                if owner.console_log is not None and level == QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel:
+                    owner.console_log.append(f'{message} ({source}:{line})')
+
+        page = _Page(profile, owner)
+
+        def on_permission(perm):
+            kinds = (QWebEnginePermission.PermissionType.Notifications, QWebEnginePermission.PermissionType.ClipboardReadWrite)
+            if perm.permissionType() in kinds and policy.origin_allowed(perm.origin().toString(), base):
+                perm.grant()
+            else:
+                perm.deny()
+
+        page.permissionRequested.connect(on_permission)
+        page.newWindowRequested.connect(owner.on_new_window)
+        page.printRequested.connect(lambda: owner.print_page(page))
+        page.fullScreenRequested.connect(lambda req: (req.accept(), owner.showFullScreen() if req.toggleOn() else owner.showNormal()))
+        # if the page's process ever crashes, it reloads a second later instead of staying blank
+        page.renderProcessTerminated.connect(lambda *_: QTimer.singleShot(1000, lambda: page.triggerAction(QWebEnginePage.WebAction.Reload)))
+        return page
 
 
-class ChartPage(QWidget):
-    def __init__(self, app):
+class Window(QMainWindow):
+    """A window showing the website (the main window, or one the website opened for itself, like the AI pop-out)."""
+
+    def __init__(self, app, profile, base, url=None, main=False, console_log=None, size=None):
+        from PySide6.QtWebEngineWidgets import QWebEngineView
+
         super().__init__()
-        self.app, self.symbol, self.tf = app, 'SPY', '1D'
-        self.title = QLabel()
-        self.title.setObjectName('figure')
-        self.sub = QLabel()
-        self.tf_buttons = {}
-        bar = QHBoxLayout()
-        bar.addWidget(self.title)
-        bar.addWidget(self.sub)
-        bar.addStretch(1)
-        for label, res, _ in TIMEFRAMES:
-            b = QPushButton(label)
-            b.setCheckable(True)
-            b.clicked.connect(lambda _=False, r=label: self.load(self.symbol, r))
-            self.tf_buttons[label] = b
-            bar.addWidget(b)
-        self.clock_btn = QPushButton(app.prefs.get('clock', '12h'))
-        self.clock_btn.setToolTip('Switch chart times between 12-hour and 24-hour')
-        self.clock_btn.clicked.connect(self.toggle_clock)
-        bar.addWidget(self.clock_btn)
-        self.chart = PriceChart()
-        self.chart.clock = app.prefs.get('clock', '12h')
-        lay = QVBoxLayout(self)
-        lay.addLayout(bar)
-        lay.addWidget(self.chart, 1)
+        self.app, self.profile, self.base, self.main = app, profile, base, main
+        self.console_log = console_log
+        self.children_windows = []
+        WINDOWS.append(self)
+        self.view = QWebEngineView(self)
+        self.page = Page.make(profile, self, base)
+        self.view.setPage(self.page)
+        self.setCentralWidget(self.view)
+        self.setWindowIcon(app_icon())
+        self.setWindowTitle(APP_NAME)
+        self.view.titleChanged.connect(lambda t: self.setWindowTitle(window_title(t)))
+        self.settings = QSettings('TradingPlatform', 'Desktop')
+        self.retry = QTimer(self, interval=15000, singleShot=True, timeout=self.go_home)
+        self.page.loadingChanged.connect(self.on_loading)
+        self.view.printFinished.connect(lambda ok: setattr(self, 'printer', None))
+        self.shortcuts()
+        if main:
+            geo = self.settings.value('geometry')
+            if size:
+                self.resize(*size)
+            elif geo is None or not self.restoreGeometry(geo):
+                self.resize(1440, 900)
+            if not size and self.settings.value('maximized', False, type=bool):
+                self.setWindowState(Qt.WindowMaximized)
+            self.view.setZoomFactor(float(self.settings.value('zoom', 1.0)))
+        if url is not None:
+            self.view.setUrl(QUrl(url))
 
-    def toggle_clock(self):
-        c = '24h' if self.chart.clock == '12h' else '12h'
-        self.app.prefs['clock'] = c
-        save_prefs(self.app.prefs)
-        self.clock_btn.setText(c)
-        self.chart.set_clock(c)
+    # ----- keys (none the website itself uses) -----
+    def shortcuts(self):
+        def key(seq, fn):
+            QShortcut(QKeySequence(seq), self, activated=fn, context=Qt.WindowShortcut)
+        from PySide6.QtWebEngineCore import QWebEnginePage
 
-    def load(self, symbol, tf=None):
-        self.symbol, self.tf = symbol, tf or self.tf
-        for k, b in self.tf_buttons.items():
-            b.setChecked(k == self.tf)
-        res, days = next((r, d) for label, r, d in TIMEFRAMES if label == self.tf)
-        self.title.setText(symbol)
-        self.sub.setText(f'  {self.tf} · loading…')
-        self.app.client.request('history', {'symbol': symbol, 'resolution': res, 'days': days}, self._got)
+        key('F5', self.view.reload)
+        key('Ctrl+R', self.view.reload)
+        key('Ctrl+Shift+R', lambda: self.view.triggerPageAction(QWebEnginePage.WebAction.ReloadAndBypassCache))
+        key('F11', lambda: self.showNormal() if self.isFullScreen() else self.showFullScreen())
+        key('Ctrl+=', lambda: self.zoom(+1))
+        key('Ctrl++', lambda: self.zoom(+1))
+        key('Ctrl+-', lambda: self.zoom(-1))
+        key('Ctrl+0', lambda: self.zoom(0))
+        key('Alt+Left', self.view.back)
+        key('Alt+Right', self.view.forward)
 
-    def _got(self, msg):
-        if msg.get('type') == 'error':
-            self.sub.setText(f"  {msg.get('message')}")
-            return
-        bars = msg.get('bars') or []
-        self.chart.set_bars(bars, intraday_stock=self.tf not in ('1D', '1W'))
-        self.sub.setText(f'  {self.tf} · {len(bars)} bars · Schwab')
-        self.app.quote_line(self.symbol)
-
-
-class QuotePage(QWidget):
-    """DES: one security's figures (label in amber, figure in white, change in green/red)."""
-
-    def __init__(self, app):
-        super().__init__()
-        self.app, self.symbol = app, 'SPY'
-        self.grid = QGridLayout(self)
-        self.grid.setAlignment(Qt.AlignTop)
-
-    def show_symbol(self, symbol):
-        self.symbol = symbol
-        self.app.client.subscribe(symbol)
-        self.render()
-
-    def render(self):
-        while self.grid.count():
-            self.grid.takeAt(0).widget().deleteLater()
-        q = self.app.quotes.get(self.symbol, {})
-        pct = change(q)
-        title = QLabel(self.symbol)
-        title.setObjectName('figure')
-        self.grid.addWidget(title, 0, 0, 1, 4)
-        cells = [('LAST', f"{q['last']:.2f}" if q.get('last') else '—', None),
-                 ('CHANGE', f'{pct:+.2f}%' if pct is not None else '—', None if pct is None else (C['up'] if pct >= 0 else C['down'])),
-                 ('PREV CLOSE', f"{q['prevClose']:.2f}" if q.get('prevClose') else '—', None)]
-        for i, (k, v, col) in enumerate(cells):
-            card = QFrame()
-            card.setObjectName('card')
-            lay = QVBoxLayout(card)
-            lab = QLabel(k)
-            lab.setObjectName('label')
-            val = QLabel(v)
-            val.setObjectName('figure')
-            if col:
-                val.setStyleSheet(f'color: {col}')
-            lay.addWidget(lab)
-            lay.addWidget(val)
-            self.grid.addWidget(card, 1, i)
-        note = QLabel('Source: Schwab quotes via the desktop helper (refreshed every 30 s).')
-        note.setStyleSheet(f"color: {C['faint']}")
-        self.grid.addWidget(note, 2, 0, 1, 4)
-
-
-class OverviewPage(QWidget):
-    """WEI-style board: the main markets through their ETFs."""
-
-    def __init__(self, app):
-        super().__init__()
-        self.app = app
-        self.t = table(['Market', 'Symbol', 'Last', 'Change'])
-        self.t.cellDoubleClicked.connect(lambda r, _c: app.go('chart', OVERVIEW[r][1]))
-        lay = QVBoxLayout(self)
-        head = QLabel('WORLD MARKETS')
-        head.setObjectName('section')
-        lay.addWidget(head)
-        lay.addWidget(self.t)
-        lay.addStretch(1)  # the table is as tall as its rows; the flowing background shows below it
-        for _, s in OVERVIEW:
-            app.client.subscribe(s)
-        self.render()
-
-    def render(self):
-        self.t.setRowCount(len(OVERVIEW))
-        self.t.setFixedHeight(self.t.horizontalHeader().height() + sum(self.t.rowHeight(r) for r in range(len(OVERVIEW))) + 6)
-        for r, (name, s) in enumerate(OVERVIEW):
-            q = self.app.quotes.get(s, {})
-            pct = change(q)
-            self.t.setItem(r, 0, item(name, C['text'], Qt.AlignLeft | Qt.AlignVCenter))
-            self.t.setItem(r, 1, item(s, C['accent'], Qt.AlignLeft | Qt.AlignVCenter))
-            self.t.setItem(r, 2, item(f"{q['last']:.2f}" if q.get('last') else '—', C['strong']))
-            self.t.setItem(r, 3, item(f'{pct:+.2f}%' if pct is not None else '—', None if pct is None else (C['up'] if pct >= 0 else C['down'])))
-
-
-class AccountPage(QWidget):
-    """Webull account, read-only (webull.snapshot): balances as cards, positions as a table."""
-
-    def __init__(self, app):
-        super().__init__()
-        self.app = app
-        self.lay = QVBoxLayout(self)
-        self.lay.setAlignment(Qt.AlignTop)
-        self.msg = QLabel('Open this page to load your Webull account.')
-        self.lay.addWidget(self.msg)
-        self.cards = QHBoxLayout()
-        self.lay.addLayout(self.cards)
-        self.t = table(['Symbol', 'Quantity', 'Last', 'Value', 'Day gain'])
-        self.lay.addWidget(self.t)
-
-    def refresh(self):
-        self.msg.setText('Loading your Webull account…')
-        self.app.client.engine('webull.snapshot', {}, self._got)
-
-    def _got(self, msg):
-        if msg.get('type') == 'error':
-            self.msg.setText(msg.get('message', 'Webull is not set up in Settings (website).'))
-            return
-        data = msg.get('data') or {}
-        self.msg.setText(f"{data.get('account') or 'Webull'} · read-only · {'Test' if data.get('env') == 'test' else 'Live'} account")
-        while self.cards.count():
-            self.cards.takeAt(0).widget().deleteLater()
-        bal = data.get('balances') or {}
-        for k in ('totalValue', 'netLiquidation', 'cash', 'buyingPower', 'dayGain'):
-            if isinstance(bal.get(k), (int, float)):
-                card = QFrame()
-                card.setObjectName('card')
-                cl = QVBoxLayout(card)
-                lab = QLabel(''.join(' ' + ch if ch.isupper() else ch for ch in k).upper())
-                lab.setObjectName('label')
-                val = QLabel(f'${bal[k]:,.2f}')
-                val.setObjectName('figure')
-                cl.addWidget(lab)
-                cl.addWidget(val)
-                self.cards.addWidget(card)
-        pos = data.get('positions') or []
-        self.t.setRowCount(len(pos))
-        for r, p in enumerate(pos):
-            gain = p.get('dayGain')
-            vals = [p.get('symbol', '—'), p.get('quantity', p.get('qty', '—')), p.get('last', p.get('price')), p.get('marketValue', p.get('value')), gain]
-            for c, v in enumerate(vals):
-                text = f'{v:,.2f}' if isinstance(v, float) else str(v if v is not None else '—')
-                colour = (C['up'] if (gain or 0) >= 0 else C['down']) if c == 4 and gain is not None else (C['accent'] if c == 0 else C['strong'])
-                self.t.setItem(r, c, item(text, colour, Qt.AlignLeft | Qt.AlignVCenter if c == 0 else Qt.AlignRight | Qt.AlignVCenter))
-
-
-class LoadingScreen(QWidget):
-    """Shown while the desktop helper starts and logs in to Schwab; closes when it connects (or after 40 s, when the
-    window opens anyway and its status bar says what's wrong). The bar follows the helper's own messages."""
-
-    STEPS = (('Logging in to Schwab', 35, 'Logging in to Schwab...'), ('Schwab helper (version', 80, 'Helper ready, connecting...'),
-             ('Port', 90, 'Another helper is using the port...'))
-
-    def __init__(self):
-        super().__init__(None, Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        self.setObjectName('root')
-        self.setFixedSize(520, 240)
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(32, 28, 32, 28)
-        brand = QLabel('◆ TERMINAL')
-        brand.setStyleSheet(f"color: {C['accent']}; font-size: 20px; font-weight: 700; letter-spacing: 6px")
-        sub = QLabel(f'TRADING PLATFORM · DESKTOP {APP_VERSION}')
-        sub.setObjectName('label')
-        self.bar = QProgressBar()
-        self.bar.setRange(0, 100)
-        self.bar.setTextVisible(True)
-        self.bar.setStyleSheet(f"QProgressBar {{ background: {C['raised']}; border: 1px solid {C['line']}; border-radius: 6px; height: 18px; text-align: center; }}"
-                               f"QProgressBar::chunk {{ background: {C['accent']}; border-radius: 5px; }}")
-        self.status = QLabel('Starting the desktop helper...')
-        self.status.setStyleSheet(f"color: {C['muted']}")
-        lay.addWidget(brand)
-        lay.addWidget(sub)
-        lay.addStretch(1)
-        lay.addWidget(self.bar)
-        lay.addWidget(self.status)
-        self.target = 25
-        self.value = 0.0
-        t = QTimer(self)
-        t.timeout.connect(self._creep)
-        t.start(80)
-
-    def _creep(self):
-        # always moving, slowing as it nears the current step's target
-        self.value += max(0.05, (self.target - self.value) * 0.04)
-        self.bar.setValue(int(min(self.value, self.target, 99)))
-
-    def helper_said(self, text):
-        for key, pct, label in self.STEPS:
-            if key in text:
-                self.target = max(self.target, pct)
-                self.status.setText(label)
-
-    def done(self):
-        self.bar.setValue(100)
-        self.status.setText('Connected.')
-        QTimer.singleShot(250, self.close)
-
-
-class UpdateCheck(QObject):
-    """Asks GitHub for the newest desktop version in the background (desktop_update.py)."""
-    found = Signal(str)
-
-    def check(self):
-        def work():
-            try:
-                import desktop_update
-                latest = desktop_update.latest_version()
-                if desktop_update.is_newer(latest, desktop_update.local_version()):
-                    self.found.emit('.'.join(map(str, latest)))
-            except Exception:  # noqa: BLE001 - offline or not started by the launcher: no update offer
-                pass
-        threading.Thread(target=work, daemon=True).start()
-
-
-RESTART_CODE = 75  # launch.py installs the update and opens the app again
-
-
-class MainWindow(QMainWindow):
-    def __init__(self, port=8766, start_helper=True):
-        super().__init__()
-        self.prefs = load_prefs()
-        self.watch = self.prefs.get('watchlist') or list(DEFAULT_WATCH)
-        self.quotes = {}
-        self.client = HelperClient(port)
-        self.helper = DesktopHelper()
-        self.setWindowTitle(f'Trading Platform — Desktop {APP_VERSION}')
-        self.resize(1440, 900)
-        root = FlowBackground()
-        self.root = root
-        self.setCentralWidget(root)
-        outer = QVBoxLayout(root)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-
-        # top: brand, sections, pages, command line
-        top = QHBoxLayout()
-        top.setContentsMargins(12, 6, 12, 0)
-        brand = QLabel('◆ TERMINAL')
-        brand.setStyleSheet(f"color: {C['accent']}; font-weight: 700; letter-spacing: 3px; padding-right: 16px")
-        top.addWidget(brand)
-        self.sections = QTabBar()
-        for s in SECTIONS:
-            self.sections.addTab(s)
-        self.sections.currentChanged.connect(lambda i: self.go(pages_in(SECTIONS[i])[0].key))
-        top.addWidget(self.sections)
-        self.section_label = QLabel()
-        self.section_label.setObjectName('section')
-        top.addWidget(self.section_label)
-        self.page_tabs = QTabBar()
-        self.page_tabs.tabBarClicked.connect(lambda i: self.go(self.page_tabs.tabData(i)))
-        top.addWidget(self.page_tabs, 1)
-        self.command = QLineEdit()
-        self.command.setPlaceholderText('Ticker or code: AAPL GP, MSFT DES, WEI, ACCT  ( / )')
-        self.command.setMinimumWidth(320)
-        self.command.returnPressed.connect(self.run_command)
-        top.addWidget(self.command)
-        outer.addLayout(top)
-
-        self.tape = TickerTape()
-        self.tape.clicked.connect(lambda sym: self.go('chart', sym))
-        outer.addWidget(self.tape)
-
-        self.stack = QStackedWidget()
-        self.pages = {'home': OverviewPage(self), 'chart': ChartPage(self), 'quote': QuotePage(self), 'account': AccountPage(self)}
-        for p in self.pages.values():
-            self.stack.addWidget(p)
-        outer.addWidget(self.stack, 1)
-
-        # function keys
-        fk = QFrame()
-        fk.setObjectName('fkeys')
-        fl = QHBoxLayout(fk)
-        fl.setContentsMargins(8, 2, 8, 2)
-        for key, label, fn in (('F1', 'Help', self.show_help), ('F2', 'Chart', lambda: self.go('chart')), ('F3', 'Overview', lambda: self.go('home')),
-                               ('F4', 'Account', lambda: self.go('account')), ('F5', 'Refresh', self.refresh),
-                               ('F6', 'Settings', lambda: self.open_settings()), ('F7', 'Buddy', lambda: self.open_settings('Market buddy'))):
-            b = QPushButton(f'{key}  {label}')
-            b.setObjectName('fkey')
-            b.setStyleSheet(f"QPushButton#fkey {{ color: {C['text']}; }}")
-            b.clicked.connect(fn)
-            fl.addWidget(b)
-            QShortcut(QKeySequence(key), self, activated=fn)
-        fl.addStretch(1)
-        outer.addWidget(fk)
-        QShortcut(QKeySequence('/'), self, activated=self.command.setFocus)
-        QShortcut(QKeySequence('Ctrl+K'), self, activated=self.command.setFocus)
-
-        # watchlist dock
-        dock = QDockWidget('WATCHLIST', self)
-        dock.setFeatures(QDockWidget.DockWidgetMovable)
-        self.wl = table(['Symbol', 'Last', 'Chg%'])
-        self.wl.cellClicked.connect(lambda r, _c: self.go('chart', self.watch[r]))
-        w = QWidget()
-        wl = QVBoxLayout(w)
-        add = QLineEdit()
-        add.setPlaceholderText('Add symbol')
-        add.returnPressed.connect(lambda: self.add_symbol(add))
-        wl.addWidget(add)
-        wl.addWidget(self.wl)
-        dock.setWidget(w)
-        dock.setMinimumWidth(260)
-        self.addDockWidget(Qt.LeftDockWidgetArea, dock)
-
-        # log dock (the desktop helper's output), hidden until asked for
-        self.log = QPlainTextEdit()
-        self.log.setReadOnly(True)
-        self.log_dock = QDockWidget('HELPER LOG', self)
-        self.log_dock.setWidget(self.log)
-        self.addDockWidget(Qt.BottomDockWidgetArea, self.log_dock)
-        self.log_dock.hide()
-        self.helper.output.connect(lambda t: self.log.appendPlainText(t.rstrip()))
-
-        # menus
-        m = self.menuBar()
-        f = m.addMenu('&File')
-        f.addAction('Settings…', lambda: self.open_settings())
-        f.addAction('Start desktop helper', self.helper.start)
-        f.addAction('Show helper log', self.log_dock.show)
-        f.addSeparator()
-        f.addAction('Quit', self.close)
-        go = m.addMenu('&Go')
-        for p in PAGES:
-            go.addAction(f'{p.label}    {p.code}', lambda k=p.key: self.go(k))
-        view = m.addMenu('&View')
-        view.addAction('Switch 12/24-hour clock', self.pages['chart'].toggle_clock)
-        hm = m.addMenu('&Help')
-        hm.addAction('Keys and codes', self.show_help)
-        hm.addAction('Check for updates', lambda: (self.statusBar().showMessage('Checking GitHub for a newer desktop app...', 4000), self.updates.check()))
-        self.updates = UpdateCheck()
-        self.update_btn = QPushButton()
-        self.update_btn.hide()
-        self.update_btn.clicked.connect(lambda: QApplication.exit(RESTART_CODE))
-        self.updates.found.connect(self.offer_update)
-        QTimer.singleShot(15_000, self.updates.check)
-        hourly = QTimer(self)
-        hourly.timeout.connect(self.updates.check)
-        hourly.start(60 * 60 * 1000)
-
-        # status bar
-        self.st_helper = QLabel('Helper: connecting…')
-        self.st_session = QLabel()
-        self.statusBar().addWidget(self.st_helper)
-        self.statusBar().addPermanentWidget(self.update_btn)
-        self.statusBar().addPermanentWidget(self.st_session)
-        self.client.connected.connect(self.on_connected)
-        self.client.quote.connect(self.on_quote)
-        for s in self.watch:
-            self.client.subscribe(s)
-        self.buddy = Buddy(root, self.prefs)
-        self.buddy.raise_()
-        for s in TAPE_CORE:
-            self.client.subscribe(s)
-        self.client.start()
-        t = QTimer(self)
-        t.timeout.connect(self.tick)
-        t.start(1000)
-        self.render_watch()
-        self.go(self.prefs.get('page', 'home'), self.prefs.get('symbol'))
-        if start_helper:
-            self.helper.start()
-
-    def offer_update(self, version):
-        self.update_btn.setText(f'Update to {version} (restarts the app)')
-        self.update_btn.setStyleSheet(f"color: {C['label']}; border-color: {C['label']}")
-        self.update_btn.show()
-
-    # ----- navigation -----
-
-    def go(self, key, symbol=None):
-        page = next((p for p in PAGES if p.key == key), PAGES[0])
-        si = SECTIONS.index(page.section)
-        if self.sections.currentIndex() != si:
-            self.sections.blockSignals(True)
-            self.sections.setCurrentIndex(si)
-            self.sections.blockSignals(False)
-        while self.page_tabs.count():
-            self.page_tabs.removeTab(0)
-        for p in pages_in(page.section):
-            i = self.page_tabs.addTab(f'{p.label}  {p.code}')
-            self.page_tabs.setTabData(i, p.key)
-            if p.key == page.key:
-                self.page_tabs.setCurrentIndex(i)
-        self.stack.setCurrentWidget(self.pages[page.key])
-        if page.key == 'chart':
-            self.pages['chart'].load(symbol or self.pages['chart'].symbol)
-        elif page.key == 'quote':
-            self.pages['quote'].show_symbol(symbol or self.pages['quote'].symbol)
-        elif page.key == 'account':
-            self.pages['account'].refresh()
-        self.prefs.update(page=page.key, symbol=symbol or self.prefs.get('symbol'))
-        save_prefs(self.prefs)
-        if hasattr(self, 'buddy'):
-            self.buddy.on_chart = page.key == 'chart'
-            QTimer.singleShot(600, self.buddy.settle)
-
-    def run_command(self):
-        cmd = parse_command(self.command.text())
-        if cmd:
-            self.go(cmd[1], cmd[2])
-            self.command.clear()
+    def zoom(self, step):
+        now = self.view.zoomFactor()
+        if step == 0:
+            z = 1.0
         else:
-            self.statusBar().showMessage('Not a ticker or code. Try AAPL GP, MSFT DES, WEI or ACCT.', 4000)
+            idx = min(range(len(ZOOMS)), key=lambda i: abs(ZOOMS[i] - now))
+            z = ZOOMS[max(0, min(len(ZOOMS) - 1, idx + step))]
+        self.view.setZoomFactor(z)
+        if self.main:
+            self.settings.setValue('zoom', z)
 
-    def add_symbol(self, box):
-        s = box.text().strip().upper()
-        box.clear()
-        if s and s not in self.watch and parse_command(s):
-            self.watch.append(s)
-            self.prefs['watchlist'] = self.watch
-            save_prefs(self.prefs)
-            self.client.subscribe(s)
-            self.render_watch()
+    # ----- loading -----
+    def go_home(self):
+        self.view.setUrl(QUrl(self.base))
 
-    def refresh(self):
-        self.go(self.stack.currentWidget() is self.pages['account'] and 'account' or next(k for k, v in self.pages.items() if v is self.stack.currentWidget()))
+    def on_loading(self, info):
+        """A real failure to load the website (no internet, server down) shows the "Can't reach" page, which retries.
+        A navigation the app itself stopped (a link it opened in your browser) changes nothing."""
+        from PySide6.QtWebEngineCore import QWebEngineLoadingInfo
 
-    def show_help(self):
-        self.statusBar().showMessage('Codes: AAPL (chart) · AAPL GP · AAPL DES · WEI · ACCT.  Keys: / or Ctrl+K command line, F2-F5.', 8000)
+        if not self.main or info.status() != QWebEngineLoadingInfo.LoadStatus.LoadFailedStatus:
+            return
+        if policy.shows_offline_page(info.url().toString(), info.errorCode(), info.isErrorPage(), self.base):
+            self.view.setHtml(OFFLINE_PAGE % self.base, QUrl('about:blank'))
+            self.retry.start()
 
-    # ----- data -----
+    # ----- windows the website opens -----
+    def on_new_window(self, request):
+        url = request.requestedUrl().toString()
+        if policy.new_window_kind(url, self.base) == 'external':
+            open_outside(request.requestedUrl())
+            return
+        geo = request.requestedGeometry()
+        win = Window(self.app, self.profile, self.base, console_log=self.console_log)
+        win.resize(geo.width() if geo.width() > 100 else 900, geo.height() if geo.height() > 100 else 700)
+        request.openIn(win.page)
+        self.children_windows.append(win)
+        win.destroyed.connect(lambda *_: self.children_windows.remove(win) if win in self.children_windows else None)
+        win.setAttribute(Qt.WA_DeleteOnClose)
+        win.show()
 
-    def on_connected(self, ok):
-        self.st_helper.setText('● Desktop helper connected' if ok else '● Desktop helper offline (File > Start desktop helper)')
-        self.st_helper.setStyleSheet(f"color: {C['up'] if ok else C['down']}")
-        if ok and self.stack.currentWidget() is self.pages['chart']:
-            self.pages['chart'].load(self.pages['chart'].symbol)
+    # ----- printing (client reports, the prospects comparison) -----
+    def print_page(self, page):
+        from PySide6.QtPrintSupport import QPrintDialog, QPrinter
 
-    def on_quote(self, msg):
-        self.quotes[msg['symbol']] = msg
-        if msg['symbol'] == 'SPY' and hasattr(self, 'buddy'):
-            self.buddy.set_percent(change(msg))
-        self.render_watch()
-        self.pages['home'].render()
-        if self.stack.currentWidget() is self.pages['quote'] and msg['symbol'] == self.pages['quote'].symbol:
-            self.pages['quote'].render()
+        self.printer = QPrinter(QPrinter.HighResolution)
+        if QPrintDialog(self.printer, self).exec():
+            self.view.print(self.printer)
+        else:
+            self.printer = None
 
-    def quote_line(self, symbol):
-        pass
+    def closeEvent(self, event):
+        if self.main:
+            self.settings.setValue('maximized', self.isMaximized())
+            if not self.isMaximized() and not self.isFullScreen():
+                self.settings.setValue('geometry', self.saveGeometry())
+            for w in list(WINDOWS):  # every pop-up, also ones opened from a pop-up
+                if w is not self:
+                    w.close()
+        if self in WINDOWS:
+            WINDOWS.remove(self)
+        super().closeEvent(event)
 
-    def render_watch(self):
-        self.wl.setRowCount(len(self.watch))
-        for r, s in enumerate(self.watch):
-            q = self.quotes.get(s, {})
-            pct = change(q)
-            col = None if pct is None else (C['up'] if pct >= 0 else C['down'])
-            self.wl.setItem(r, 0, item(s, C['accent'], Qt.AlignLeft | Qt.AlignVCenter))
-            self.wl.setItem(r, 1, item(f"{q['last']:.2f}" if q.get('last') else '—', C['strong']))
-            self.wl.setItem(r, 2, item(f'{pct:+.2f}%' if pct is not None else '—', col))
-        tape = []
-        for s in TAPE_CORE + [w for w in self.watch if w not in TAPE_CORE]:
-            q = self.quotes.get(s, {})
-            if not q.get('last'):
-                continue
-            pct = change(q)
-            text = '—' if pct is None else f"{'▲ +' if pct >= 0 else '▼ −'}{abs(pct):.2f}%"
-            tape.append((s, f"{q['last']:,.2f}", text, C['muted'] if pct is None else (C['up'] if pct >= 0 else C['down'])))
-        self.tape.set_items(tape)
 
-    # ----- settings -----
+def window_title(page_title):
+    """"Research · Trading Terminal" from the website's "Research · Trading Platform" (or just the app's name)."""
+    t = (page_title or '').replace('Trading Platform', '').strip(' ·-—|')
+    return f'{t} · {APP_NAME}' if t and t != 'about:blank' and not t.startswith('http') else APP_NAME
 
-    def open_settings(self, tab=None):
-        """Settings as tabs down the left (General, Market buddy, Helper, About), like the website."""
-        dlg = QDialog(self)
-        dlg.setWindowTitle('Settings')
-        dlg.resize(640, 440)
-        dlg.setStyleSheet(f"QDialog {{ background: {C['surface']}; }} QListWidget {{ background: transparent; border: 0; border-right: 1px solid {C['line']}; }}"
-                          f"QListWidget::item {{ padding: 8px 12px; border-radius: 6px; color: {C['muted']}; }} QListWidget::item:selected {{ background: {C['raised']}; color: {C['strong']}; }}")
-        nav = QListWidget()
-        nav.setFixedWidth(170)
-        pages = QStackedWidget()
 
-        def section(title, *widgets):
-            w = QWidget()
-            lay = QVBoxLayout(w)
-            lay.setAlignment(Qt.AlignTop)
-            head = QLabel(title.upper())
-            head.setObjectName('section')
-            lay.addWidget(head)
-            for x in widgets:
-                lay.addWidget(x)
-            nav.addItem(title)
-            pages.addWidget(w)
-            return lay
+def splash_pixmap():
+    """The start-up card: the logo, the name and a calm "loading" line on the website's navy."""
+    from PySide6.QtGui import QFont, QLinearGradient
 
-        clock = QComboBox()
-        clock.addItems(['12-hour (2:30 PM)', '24-hour (14:30)'])
-        clock.setCurrentIndex(0 if self.prefs.get('clock', '12h') == '12h' else 1)
+    w, h = 560, 300
+    pm = QPixmap(w, h)
+    pm.fill(QColor('#071222'))
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing)
+    g = QLinearGradient(0, 0, w, h)
+    g.setColorAt(0, QColor('#14365e'))
+    g.setColorAt(1, QColor('#071222'))
+    p.setBrush(g)
+    p.setPen(QColor('#2c4f7a'))
+    p.drawRoundedRect(1, 1, w - 2, h - 2, 18, 18)
+    logo = QPixmap(str(ASSETS / 'logo.png')) if (ASSETS / 'logo.png').exists() else app_icon().pixmap(128, 128)
+    p.drawPixmap(44, (h - 128) // 2 - 10, logo.scaled(128, 128, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+    title = QFont('Segoe UI' if sys.platform == 'win32' else 'Helvetica', 26)
+    title.setWeight(QFont.DemiBold)
+    p.setFont(title)
+    p.setPen(QColor('#f2f6fb'))
+    p.drawText(200, 128, 'Trading Terminal')
+    small = QFont(title.family(), 11)
+    small.setLetterSpacing(QFont.PercentageSpacing, 112)
+    p.setFont(small)
+    p.setPen(QColor('#f2a93b'))
+    p.drawText(202, 156, 'MARKETS · RESEARCH · TRADING')
+    p.setPen(QColor('#9fb3c8'))
+    p.drawText(202, 214, f'Loading your markets…   v{APP_VERSION}')
+    p.end()
+    return pm
 
-        def set_clock(i):
-            if (i == 0) != (self.pages['chart'].chart.clock == '12h'):
-                self.pages['chart'].toggle_clock()
-        clock.currentIndexChanged.connect(set_clock)
-        lab = QLabel('Chart times')
-        lab.setObjectName('label')
-        section('General', lab, clock)
 
-        show = QCheckBox('Show my market buddy')
-        show.setChecked(not self.prefs.get('buddy_hidden'))
-        name = QLineEdit(self.buddy.name)
-        name.setMaxLength(16)
-        coats = QWidget()
-        cl = QHBoxLayout(coats)
-        cl.setContentsMargins(0, 0, 0, 0)
-        swatches = []
-        for k, (fur, ear, _) in COATS.items():
-            b = QPushButton()
-            b.setFixedSize(28, 28)
-            b.setToolTip(k)
-            b.setCheckable(True)
-            b.setChecked(k == self.prefs.get('buddy_coat', 'Beagle'))
-            b.setStyleSheet(f"QPushButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0.55 {fur}, stop:0.56 {ear}); border: 2px solid {C['line']}; border-radius: 6px; }}"
-                            f"QPushButton:checked {{ border-color: {C['strong']}; }}")
-            b.clicked.connect(lambda _=False, k=k: (self.prefs.update(buddy_coat=k), [x.setChecked(x.toolTip() == k) for x in swatches], self.buddy.update(), save_prefs(self.prefs)))
-            swatches.append(b)
-            cl.addWidget(b)
-        cl.addStretch(1)
-        show.toggled.connect(lambda on: (self.prefs.update(buddy_hidden=not on), save_prefs(self.prefs), self.buddy.settle()))
-        name.textChanged.connect(lambda t: (self.prefs.update(buddy_name=t.strip() or 'Bull'), save_prefs(self.prefs)))
-        l1, l2 = QLabel('Name'), QLabel('Colours')
-        l1.setObjectName('label')
-        l2.setObjectName('label')
-        hint = QLabel('Click to pet, drag to move, double-click to send him off. He walks to empty spots, skips busy pages and never shows on the Chart page.')
-        hint.setWordWrap(True)
-        hint.setStyleSheet(f"color: {C['muted']}")
-        section('Market buddy', show, l1, name, l2, coats, hint)
+def connect_downloads(profile, window_for):
+    """Downloads (CSV exports, the diagnostics file, reports) ask where to save, starting in your Downloads folder."""
+    def on_download(req):
+        folder = Path(QStandardPaths.writableLocation(QStandardPaths.DownloadLocation) or Path.home())
+        path, _ = QFileDialog.getSaveFileName(window_for(), 'Save file', str(folder / req.downloadFileName()))
+        if not path:
+            req.cancel()
+            return
+        req.setDownloadDirectory(str(Path(path).parent))
+        req.setDownloadFileName(Path(path).name)
+        req.accept()
+    profile.downloadRequested.connect(on_download)
 
-        start = QPushButton('Start desktop helper')
-        start.clicked.connect(self.helper.start)
-        logb = QPushButton('Show helper log')
-        logb.clicked.connect(self.log_dock.show)
-        info = QLabel('The desktop app runs its own copy of the helper (port 8766). Keys and logins are shared with the website’s helper '
-                      'and set up there (Settings → Data connections on the website).')
-        info.setWordWrap(True)
-        info.setStyleSheet(f"color: {C['muted']}")
-        section('Helper', info, start, logb)
 
-        about = QLabel(f'Trading Platform desktop {APP_VERSION}. Updates install by themselves at start (Help → Check for updates). '
-                       'Read-only: orders stay on the website’s Trade page (preview, then confirm). Not investment advice.')
-        about.setWordWrap(True)
-        section('About', about)
+def connect_notifications(profile, app, window_for):
+    """The website's alerts (price alerts, setups) as desktop notifications; clicking one brings the window up."""
+    tray = QSystemTrayIcon(app_icon(), app)
+    tray.setToolTip(APP_NAME)
+    if QSystemTrayIcon.isSystemTrayAvailable():
+        tray.show()
 
-        nav.currentRowChanged.connect(pages.setCurrentIndex)
-        titles = [nav.item(i).text() for i in range(nav.count())]
-        nav.setCurrentRow(titles.index(tab) if tab in titles else 0)
-        lay = QHBoxLayout(dlg)
-        lay.addWidget(nav)
-        lay.addWidget(pages, 1)
-        dlg.exec()
+    def bring_up():
+        w = window_for()
+        w.showNormal() if w.isMinimized() else None
+        w.raise_()
+        w.activateWindow()
 
-    def tick(self):
-        now = datetime.now(NY)
-        m = now.hour * 60 + now.minute
-        weekday = now.weekday() < 5
-        phase = 'Pre-market' if weekday and 240 <= m < 570 else 'Regular session' if weekday and 570 <= m < 960 else 'After hours' if weekday and 960 <= m < 1200 else 'Closed'
-        self.st_session.setText(f"{phase} · New York {clock_text(now.hour, now.minute, self.prefs.get('clock', '12h'))}")
+    tray.messageClicked.connect(bring_up)
 
-    def closeEvent(self, e):
-        save_prefs(self.prefs)
-        self.helper.stop()
-        super().closeEvent(e)
+    def present(note):
+        note.show()
+        if tray.isVisible():
+            tray.showMessage(note.title() or APP_NAME, note.message(), app_icon(), 10000)
+        else:
+            QApplication.alert(window_for(), 0)  # flashes the taskbar button where there is no tray
+
+    profile.setNotificationPresenter(present)
+    return tray
 
 
 def main(argv=None):
-    import argparse
-    import sys
-    ap = argparse.ArgumentParser(description='Trading Platform desktop app')
-    ap.add_argument('--port', type=int, default=8766, help='helper port (default: the desktop helper, 8766)')
-    ap.add_argument('--no-helper', action='store_true', help="don't start the desktop helper (one is already running)")
-    ap.add_argument('--screenshot', help='save a screenshot to this file after a few seconds and quit (for checks)')
-    args = ap.parse_args(argv)
-    app = QApplication(sys.argv[:1])
-    app.setStyleSheet(QSS)
-    win = MainWindow(args.port, not args.no_helper)
-    if args.screenshot or args.no_helper:
-        win.show()
-    else:
-        loading = LoadingScreen()
-        loading.show()
-        win.helper.output.connect(loading.helper_said)
-        opened = []
+    parser = argparse.ArgumentParser(prog='tp_desktop', description='Trading Platform desktop app')
+    parser.add_argument('--url', default=policy.PLATFORM_URL, help='the website to show (default: the published platform)')
+    parser.add_argument('--size', help='window size WxH (checks)')
+    parser.add_argument('--screenshot', help='save a picture of the window after --wait seconds, then close (checks)')
+    parser.add_argument('--wait', type=float, default=8.0)
+    parser.add_argument('--storage', help='browser storage folder (checks)')
+    args = parser.parse_args(argv)
 
-        def open_main(_ok=True):
-            if opened or not _ok:
-                return
-            opened.append(1)
-            loading.done()
+    QApplication.setApplicationName(APP_NAME)
+    QApplication.setOrganizationName('TradingPlatform')
+    if sys.platform == 'win32':  # the taskbar shows the Trading Terminal logo, not Python's
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('TradingPlatform.TradingTerminal')
+        except Exception:
+            pass
+    app = QApplication.instance() or QApplication(sys.argv[:1])
+    app.setWindowIcon(app_icon())
+    app.styleHints().setColorScheme(Qt.ColorScheme.Dark)  # a dark window frame, matching the terminal
+    from PySide6.QtWidgets import QSplashScreen
+
+    splash = None if args.screenshot else QSplashScreen(splash_pixmap())
+    if splash:
+        splash.show()
+        app.processEvents()
+    profile = build_profile(app, Path(args.storage) if args.storage else DATA)
+    size = tuple(int(x) for x in args.size.lower().split('x')) if args.size else None
+    console = [] if args.screenshot else None
+    win = Window(app, profile, args.url, url=args.url, main=True, console_log=console, size=size)
+    connect_downloads(profile, lambda: win)
+    tray = connect_notifications(profile, app, lambda: win)
+    def reveal(*_):
+        if splash and splash.isVisible():
+            splash.finish(win)
+        if not win.isVisible():
             win.show()
-        win.client.connected.connect(open_main)
-        QTimer.singleShot(40_000, lambda: (loading.close(), opened or (opened.append(1), win.show())))
+    if splash:
+        win.page.loadFinished.connect(reveal)
+        QTimer.singleShot(12000, reveal)  # never wait longer than this for a slow connection
+    else:
+        win.show()
     if args.screenshot:
-        def shot():
-            win.grab().save(args.screenshot)
+        def snap():
+            win.view.grab().save(args.screenshot)
+            for line in console:
+                print('console error:', line)
+            print(f'version {APP_VERSION}: saved {args.screenshot} ({win.view.url().toString()})')
             app.quit()
-        QTimer.singleShot(int(float(__import__('os').environ.get('TP_SHOT_DELAY', '6')) * 1000), shot)
-    return app.exec()
+        QTimer.singleShot(int(args.wait * 1000), snap)
+    code = app.exec()
+    tray.hide()
+    return code

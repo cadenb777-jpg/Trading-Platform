@@ -1,12 +1,12 @@
 @echo off
-rem Double-click to open the Trading Platform desktop app: a start screen with a loading bar sets everything up,
+rem Double-click to open Trading Terminal (the desktop app): a start screen with a loading bar sets everything up,
 rem checks for a newer version, then opens the app.
 cd /d "%~dp0"
-title Trading Platform desktop app
+title Trading Terminal
 set "PY=python"
 py -3 -c "import sys" >nul 2>nul && set "PY=py -3"
 %PY% -c "import sys" >nul 2>nul || goto nopython
-%PY% launch.py
+%PY% launch.py %*
 if errorlevel 2 exit /b
 if errorlevel 1 pause
 exit /b
