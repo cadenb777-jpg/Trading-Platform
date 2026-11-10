@@ -22,7 +22,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   auto_update off, only when no request is in flight and no Webull preview waits for Confirm; the page hides the Update
   button then, toasts the new version, and src/ui/autoReload.ts reloads a stale page (new build or newer helper) when idle.
   Engine modules load independently (`engine.LOAD_ERRORS`); optional packages are in requirements-extra.txt and the
-  helper logs to ~/.trading-platform/helper.log. Pages are created on first visit (dynamic import) in main.ts.
+  helper logs to ~/.trading-platform/helper.log. Pages are created on first visit (dynamic import) in app.ts (main.ts is only the entry: style + frame guard, then it imports app.ts).
   Replies carry the request id; failures come back as error. Keys/token live in `~/.trading-platform/`.
   News comes from Google News RSS and CNBC RSS (Google Finance has no feed); `rank_news` groups
   duplicate stories, assigns a section and scores market impact with keyword weights (free, no AI).
@@ -286,7 +286,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   AI summary buttons (`insightButton`) are on Home, Flow, Research, Macro, Bonds, Investments boards, fund detail
   and Backtest; not on the Chart page or Portfolios (owner's choice).
   Shell (docs/design.md "Navigation and the shell"): pages register once in src/ui/nav.ts (section, label, unique
-  code, keywords) and load via main.ts LOADERS; rail = sections, top row = sub-tabs + command field, launchpad
+  code, keywords) and load via app.ts LOADERS; rail = sections, top row = sub-tabs + command field, launchpad
   (src/ui/launchpad.ts, Ctrl+Shift+L / g l; Ctrl+L outside text fields), numbered function bar (src/ui/functionBar.ts, `pageFrame().functions`), status bar
   (src/ui/statusBar.ts), panelHeader (src/ui/panel.ts). Home is a widget grid (src/home/widgets.ts, saved per device).
   Market sessions: src/market/sessions.ts is the single source for New York sessions, NYSE holidays and early closes
@@ -335,7 +335,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   clearEngineCache. Investments prefetches sections on hover and in the background; fund cards prefetch alts.fund.
   Ticker card (v32, src/ui/tickerCard.ts): any element with `data-ticker` (spread `tickerAttr(symbol)` into h()) shows a
   card on hover (300 ms), tap or keyboard focus: invest.board quote + 3-month line, your position across your own
-  portfolios, Open chart / Trade (pre-fills #trade only) / Research / Ask AI. One delegated listener set (main.ts);
+  portfolios, Open chart / Trade (pre-fills #trade only) / Research / Ask AI. One delegated listener set (app.ts);
   a click pins it unless the ticker sits in a button, link, focusable row or anything given an onclick by h()
   (`clickTargets`); touch: long press. Esc closes; Tab steps into it; Ask AI only pre-fills the assistant.
   As-of stamps: `asOfStamp(feed, {reply})` (src/ui/dataHealth.ts; that reply's own fetch time) in panel heads, amber after 2x the feed's
@@ -470,6 +470,19 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   prospect.EXPORT_FILTERS. No LinkedIn, bought lists or people-search sites. UI: src/prospect/contacts.ts in the profile.
   Crawler UA = project URL only (never the owner's email). Browser gate PROSPECT_CONTACTS_HELPER_VERSION 41 hides the
   contacts section, Review tab and SMTP setting on older helpers.
+
+## Security (SECURITY.md)
+
+- XML from outside (SEC, feeds, xlsx) only via helper/engine/safexml.py (fromstring/iterparse; refuses DOCTYPE/entities;
+  a test fails if a module parses XML any other way). SQL: values as `?`; column names only from fixed lists.
+- Helper data folder is private (schwab_helper.make_private at start: umask 077, folders 700, files 600; Mac/Linux).
+- Website: never put outside text into innerHTML (use h()/textContent; AI Markdown goes through renderMarkdown, which
+  escapes first; markdownSafety.test.ts). main.ts runs src/frameGuard.ts (stopIfFramed) and only then imports app.ts (no running in frames). Keep
+  the CSP in index.html strict (script-src 'self').
+- CI: deploy.yml least privilege (only `deploy` has pages:write) and actions pinned to commit SHAs (Dependabot updates
+  them); security.yml (detect-secrets against .secrets.baseline, npm audit, pip-audit, bandit -lll); codeql.yml.
+  After adding a fake key to a test, refresh the baseline: `detect-secrets scan ... > .secrets.baseline` (see the
+  exclude list in that file's `filters_used`).
 
 ## Conventions
 

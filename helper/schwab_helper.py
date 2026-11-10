@@ -30,7 +30,6 @@ import time
 import urllib.parse
 import warnings
 import webbrowser
-import xml.etree.ElementTree as ET
 from zoneinfo import ZoneInfo
 from pathlib import Path
 
@@ -48,10 +47,11 @@ import updater  # noqa: E402  (standard library only)
 import engine  # noqa: E402  (light: its big modules load in the background, see engine.start_loading)
 from engine import diagnostics  # noqa: E402  (standard library only: records requests for the diagnostics file)
 from engine.core import is_safe_url  # noqa: E402
+from engine.safexml import fromstring as safe_fromstring  # noqa: E402  (refuses XML entity bombs)
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 48
+HELPER_VERSION = 49
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -296,7 +296,7 @@ def _clean(text, limit):
 def parse_feed(xml_text, source):
     """Reads headlines from an RSS or Atom feed."""
     items = []
-    root = ET.fromstring(xml_text)
+    root = safe_fromstring(xml_text)  # refuses entity bombs (engine/safexml.py)
     for node in root.iter():
         if _local(node.tag) not in ('item', 'entry'):
             continue
@@ -1396,12 +1396,36 @@ def start_screen():
         SCREEN = None
 
 
+def make_private(data_dir=None):
+    """Your keys, login tokens, client database, order log and caches are readable by you alone (Mac/Linux; Windows
+    keeps your user folder private already): files the helper creates from now on are owner-only, and existing files
+    and folders in ~/.trading-platform are tightened (folders 700, files 600). Never fails the start."""
+    if os.name == 'nt':
+        return 0
+    data_dir = Path(data_dir or DATA_DIR)
+    os.umask(0o077)
+    fixed = 0
+    try:
+        data_dir.mkdir(exist_ok=True)
+        for path in [data_dir, *data_dir.rglob('*')]:
+            if path.is_symlink():
+                continue  # never follow a link out of the folder
+            mode = path.stat().st_mode & 0o777
+            if mode & 0o077:
+                path.chmod(mode & ~0o077)  # take away group and other access; your own access stays as it was
+                fixed += 1
+    except OSError as err:
+        log.warning('Could not tighten file permissions in %s: %s', data_dir, err)
+    return fixed
+
+
 def main():
     parser = argparse.ArgumentParser(description='Serve Schwab market data to the Trading Platform charts.')
     parser.add_argument('--reset', action='store_true', help='enter new Schwab keys and log in again')
     parser.add_argument('--no-browser', action='store_true', help="don't open the platform in the browser when ready")
     parser.add_argument('--desktop', action='store_true', help="run as the desktop app's own helper (port 8766, app only)")
     args = parser.parse_args()
+    make_private()
     if not args.desktop:  # a pending update belongs to the website's helper
         updater.confirm_started()
     if args.desktop:

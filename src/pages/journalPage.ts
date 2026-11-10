@@ -51,6 +51,18 @@ import { activatableRows, h, openModal, toast } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { THEME, chartThemeOptions, followTheme } from '../ui/theme';
 
+/** A screenshot full size in its own window, built from page elements (never written in as HTML). */
+function openPicture(src: string, alt: string) {
+  const w = window.open();
+  if (!w) return;
+  const pic = w.document.createElement('img');
+  pic.src = src;
+  pic.alt = alt;
+  pic.style.maxWidth = '100%';
+  w.document.title = alt;
+  w.document.body.append(pic);
+}
+
 type View = 'dashboard' | 'trades' | 'daily' | 'playbooks' | 'reports' | 'import';
 const VIEWS: [View, string][] = [['dashboard', 'Dashboard'], ['trades', 'Trades'], ['daily', 'Daily'], ['playbooks', 'Playbooks'], ['reports', 'Reports'], ['import', 'Import']];
 const FILTER_KEY = 'tp-journal-filters';
@@ -582,7 +594,7 @@ export function createJournalPage(openChart: (ref: MarketRef) => void) {
       shots.replaceChildren(...names.map((name) => {
         const img = h('img', { alt: `Screenshot for ${t.symbol}`, loading: 'lazy' }) as HTMLImageElement;
         engineRequest<{ data: string; mediaType: string }>('journal.screenshot', { name }).then((d) => (img.src = `data:${d.mediaType};base64,${d.data}`), () => (img.alt = 'Missing file'));
-        return h('figure', {}, h('a', { href: '#', onclick: (e: Event) => (e.preventDefault(), img.src && window.open()?.document.write(`<img src="${img.src}" style="max-width:100%">`)) }, img),
+        return h('figure', {}, h('a', { href: '#', onclick: (e: Event) => (e.preventDefault(), img.src && openPicture(img.src, img.alt)) }, img),
           h('button', { class: 'icon-btn', 'aria-label': 'Delete screenshot', onclick: async () => {
             if (!confirm('Delete this screenshot from the trade? The image file is removed too.')) return;
             const d = await engineRequest<{ trade: Trade }>('journal.screenshot_delete', { tradeId: t.id, name });

@@ -55,6 +55,7 @@ class RunApp(unittest.TestCase):
         code, popen, _ = self.run_with(Proc(0), None, running=True)
         self.assertEqual(code, 0)
         self.assertEqual(popen.call_count, 1)  # only the app
+        self.assertEqual(popen.call_args.kwargs['env'].get('TP_HELPER_BY_LAUNCHER'), '1')  # so the app won't start a second
 
     def test_starts_the_helper_beside_the_app_and_keeps_it_after_the_app_closes(self):
         helper = Proc(0, alive=True)

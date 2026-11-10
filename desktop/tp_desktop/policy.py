@@ -90,3 +90,27 @@ def shows_offline_page(failed_url, error_code, is_error_page, base=PLATFORM_URL)
         return False
     return is_platform(failed_url, base) or (is_error_page and failed_url in ('', 'about:blank'))
 
+
+#: Set by the 2.0 launcher (launch.py) when it runs the app: it looks after the helper itself.
+LAUNCHER_FLAG = 'TP_HELPER_BY_LAUNCHER'
+
+
+def should_start_helper(env, url, helper_answers, base=PLATFORM_URL):
+    """True when the app itself should open the helper's start file: nothing answers on the helper's port, the app
+    shows the real website, and no 2.0 launcher looks after the helper (the old 1.x launcher that installed this
+    version doesn't start it)."""
+    return not helper_answers and not env.get(LAUNCHER_FLAG) and is_platform(url, base)
+
+
+def helper_start_command(helper_dir, platform):
+    """How to open the website helper's own start file in its own window (its start screen and the Schwab login).
+    Chrome doesn't open: the helper skips that when a window (this app) is already connected."""
+    from pathlib import Path
+
+    helper_dir = Path(helper_dir)
+    if platform == 'win32':
+        return ['cmd', '/c', 'start', 'Trading Platform helper', str(helper_dir / 'start-windows.bat'), '--no-browser']
+    if platform == 'darwin':
+        return ['open', '-a', 'Terminal', str(helper_dir / 'start-mac.command')]
+    return None
+

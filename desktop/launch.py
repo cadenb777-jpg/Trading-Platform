@@ -80,7 +80,8 @@ def run_app(updated):
     """Opens the app beside the helper (started here when none is running); puts the previous version back if a fresh
     update stops within a minute; when the app closes, the helper keeps running in this window for the website."""
     started = time.time()
-    app = subprocess.Popen([str(splash.venv_python()), '-m', 'tp_desktop'], cwd=HERE)
+    # the flag tells the app this launcher looks after the helper (the app opens it itself only without the flag)
+    app = subprocess.Popen([str(splash.venv_python()), '-m', 'tp_desktop'], cwd=HERE, env={**os.environ, 'TP_HELPER_BY_LAUNCHER': '1'})
     helper = None
     if helper_running():
         splash.ok('Trading Terminal is open, using the helper that is already running.')

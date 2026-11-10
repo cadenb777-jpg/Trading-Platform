@@ -455,7 +455,7 @@ async def _attempts(source, fn, background, gap, retries, retry, timeout, passth
 def request_key(method, url, params=None, headers=None):
     """A stable in-flight key for one HTTP request (headers hashed so keys never sit in it as text)."""
     items = sorted((params or {}).items()) if isinstance(params, dict) else params
-    head = hashlib.sha1(repr(sorted((headers or {}).items())).encode()).hexdigest()[:12] if headers else ''
+    head = hashlib.sha1(repr(sorted((headers or {}).items())).encode(), usedforsecurity=False).hexdigest()[:12] if headers else ''
     return (method, str(url), repr(items), head)
 
 

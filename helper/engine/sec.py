@@ -5,8 +5,8 @@ statements (XBRL company facts). The SEC asks for a contact email in the User-Ag
 """
 import asyncio
 import re
-import xml.etree.ElementTree as ET
 
+from . import safexml
 from . import datahub, symbols
 from .core import EngineError, handler
 
@@ -116,7 +116,7 @@ def _num(node, path):
 
 def parse_form4(xml_text):
     """Reads the stock transactions out of a Form 4 filing."""
-    root = ET.fromstring(xml_text)
+    root = safexml.fromstring(xml_text)
     owners = root.findall('reportingOwner')
     name = _text(owners[0], 'reportingOwnerId/rptOwnerName') if owners else ''
     rel = owners[0].find('reportingOwnerRelationship') if owners else None

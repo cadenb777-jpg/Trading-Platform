@@ -320,6 +320,38 @@ def connect_notifications(profile, app, window_for):
     return tray
 
 
+def helper_answers(port=8765):
+    import socket
+    try:
+        with socket.create_connection(('127.0.0.1', port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def ensure_helper(url):
+    """Opened by the old 1.x launcher (it installs this version but doesn't start the helper): open the helper's start
+    file once, in its own window, when nothing answers at two checks 4 and 15 seconds after start (so a helper you
+    started yourself and that is still installing or logging in gets time to come up; two at once would clash)."""
+    import os
+    import subprocess
+
+    def missing():
+        return policy.should_start_helper(os.environ, url, helper_answers())
+
+    def second_check():
+        if not missing():
+            return
+        cmd = policy.helper_start_command(Path(__file__).resolve().parents[2] / 'helper', sys.platform)
+        if cmd:
+            try:
+                subprocess.Popen(cmd)
+            except OSError as err:
+                print(f'Could not open the helper: {err}', file=sys.stderr)
+
+    QTimer.singleShot(4000, lambda: missing() and QTimer.singleShot(11000, second_check))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='tp_desktop', description='Trading Platform desktop app')
     parser.add_argument('--url', default=policy.PLATFORM_URL, help='the website to show (default: the published platform)')
@@ -357,6 +389,8 @@ def main(argv=None):
             splash.finish(win)
         if not win.isVisible():
             win.show()
+    if not args.screenshot:
+        ensure_helper(args.url)
     if splash:
         win.page.loadFinished.connect(reveal)
         QTimer.singleShot(12000, reveal)  # never wait longer than this for a slow connection

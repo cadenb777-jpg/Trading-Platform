@@ -221,7 +221,14 @@ def pr_own(code):
     return OWNERSHIP.get(code, code)
 
 
+#: The only columns _note may write (its column names go into the SQL text, so they must never come from data).
+NOTE_COLUMNS = {'pdf_status', 'pdf_note', 'pdf_date', 'tries', 'tried_for', 'at'}
+
+
 def _note(con, crd, **fields):
+    unknown = set(fields) - NOTE_COLUMNS
+    if unknown:
+        raise ValueError(f'Unknown adviser-note column(s): {sorted(unknown)}')
     cols = ', '.join(fields)
     con.execute(f'INSERT INTO adv_filings (crd, {cols}) VALUES (?, {", ".join("?" * len(fields))}) '
                 f'ON CONFLICT(crd) DO UPDATE SET {", ".join(f"{k} = excluded.{k}" for k in fields)}', (crd, *fields.values()))

@@ -9,8 +9,8 @@ import datetime as dt
 import html
 import re
 import urllib.parse
-import xml.etree.ElementTree as ET
 
+from . import safexml
 from . import sec
 from .core import EngineError, handler
 
@@ -155,7 +155,7 @@ async def fund_facts(ctx, cik):
 
 def parse_nport(xml_text):
     """Monthly portfolio report (Form N-PORT): size, monthly returns, biggest holdings and asset mix."""
-    root = ET.fromstring(xml_text)
+    root = safexml.fromstring(xml_text)
     holdings = []
     for inv in root.iter():
         if _local(inv.tag) != 'invstOrSec':
@@ -188,7 +188,7 @@ def parse_nport(xml_text):
 
 def parse_form_d(xml_text):
     """A Form D (private fund or company raising money): what it is, how much it raised, from how many investors."""
-    root = ET.fromstring(xml_text)
+    root = safexml.fromstring(xml_text)
     people = []
     for person in root.iter():
         if _local(person.tag) != 'relatedPersonInfo':
@@ -462,7 +462,7 @@ async def search_private(ctx, msg):
 
 def parse_atom(xml_text):
     """Latest-filings feed: [(cik, accession, filed, title)]."""
-    root = ET.fromstring(xml_text)
+    root = safexml.fromstring(xml_text)
     out = []
     for entry in root.iter():
         if _local(entry.tag) != 'entry':

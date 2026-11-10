@@ -152,7 +152,7 @@ def keyed(fills, source):
             fid = f"{base_src}:{f['orderId']}:{f['side']}:{f['qty']:g}:{f['price']:.4f}:{int(f['time'])}#{seen[base]}"
         else:
             row = f"{dup}|{int(f['time'])}"
-            fid = f"{source}:{hashlib.sha1(row.encode()).hexdigest()[:16]}"
+            fid = f"{source}:{hashlib.sha1(row.encode(), usedforsecurity=False).hexdigest()[:16]}"
         out.append((fid, None if source == 'manual' else dup, f))
     return out
 
@@ -186,7 +186,7 @@ def _portion(f, qty):
 
 
 def _tid(fill_id, n=0):
-    return 't' + hashlib.sha1(f'{fill_id}|{n}'.encode()).hexdigest()[:14]
+    return 't' + hashlib.sha1(f'{fill_id}|{n}'.encode(), usedforsecurity=False).hexdigest()[:14]
 
 
 def group_fills(fills):

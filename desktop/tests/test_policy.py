@@ -60,6 +60,22 @@ class Links(unittest.TestCase):
         self.assertTrue(policy.stays_in_app('blob:https://cadenb777-jpg.github.io/1234-abcd'))
         self.assertFalse(policy.stays_in_app('blob:https://evil.example/1234-abcd'))
 
+    def test_the_app_opens_the_helper_only_when_nobody_else_does(self):
+        flag = {policy.LAUNCHER_FLAG: '1'}
+        self.assertTrue(policy.should_start_helper({}, BASE, False))  # old launcher, nothing running: open it
+        self.assertFalse(policy.should_start_helper({}, BASE, True))  # already running
+        self.assertFalse(policy.should_start_helper(flag, BASE, False))  # the 2.0 launcher starts it
+        self.assertFalse(policy.should_start_helper({}, 'http://localhost:5321/', False))  # a test copy: never
+
+    def test_helper_start_commands_use_the_helpers_own_start_files(self):
+        win = policy.helper_start_command('C:/TP/helper', 'win32')
+        self.assertEqual(win[:4], ['cmd', '/c', 'start', 'Trading Platform helper'])
+        self.assertTrue(win[4].endswith('start-windows.bat'))
+        mac = policy.helper_start_command('/Users/me/TP/helper', 'darwin')
+        self.assertEqual(mac[:3], ['open', '-a', 'Terminal'])
+        self.assertTrue(mac[3].endswith('start-mac.command'))
+        self.assertIsNone(policy.helper_start_command('/x', 'linux'))
+
     def test_a_local_test_copy_works_the_same(self):
         local = 'http://localhost:5321/'
         self.assertTrue(policy.stays_in_app(local + '#chart', local))

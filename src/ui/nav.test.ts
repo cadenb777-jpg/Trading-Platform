@@ -3,10 +3,10 @@ import { PAGE_SUGGESTIONS } from '../ai/screen';
 import { REDIRECTS, resolveHash } from '../routes';
 import { CODES, findCode } from './command';
 import { FUNCTIONS, PAGES, ROUTES, SECTIONS, pageOf, sectionPages, sectionTarget } from './nav';
-import mainSrc from '../main.ts?raw';
+import mainSrc from '../app.ts?raw'; // the page loaders live in app.ts (main.ts is only the frame guard)
 
 describe('nav registry', () => {
-  it('registers every page the app builds (each LOADERS entry in main.ts) and nothing else', () => {
+  it('registers every page the app builds (each LOADERS entry in app.ts) and nothing else', () => {
     const block = mainSrc.slice(mainSrc.indexOf('const LOADERS'), mainSrc.indexOf('const pages: PageEntry[]'));
     const loaders = [...block.matchAll(/^ {2}([a-z]+): /gm)].map((m) => m[1]);
     expect([...loaders].sort()).toEqual([...ROUTES].sort());

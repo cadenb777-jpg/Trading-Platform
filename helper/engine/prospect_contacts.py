@@ -876,7 +876,7 @@ def upsert_fact(con, firm_id, kind, fkey, data, source_url, origin, now=None):
 
 
 def _hash(text):
-    return hashlib.sha1((text or '').encode()).hexdigest()[:16]
+    return hashlib.sha1((text or '').encode(), usedforsecurity=False).hexdigest()[:16]
 
 
 def change_fact(con, firm_id, change, summary, before=None, after=None, source_url='', origin='watch', now=None):

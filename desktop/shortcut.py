@@ -54,7 +54,7 @@ def mac_bundle(desktop, here=HERE):
     with open(app / 'Contents' / 'Info.plist', 'wb') as f:
         plistlib.dump({'CFBundleName': NAME, 'CFBundleDisplayName': NAME, 'CFBundleIdentifier': 'com.tradingplatform.terminal',
                        'CFBundleExecutable': 'start', 'CFBundleIconFile': 'logo.icns', 'CFBundlePackageType': 'APPL',
-                       'CFBundleShortVersionString': '2.0', 'LSMinimumSystemVersion': '14.0'}, f)
+                       'CFBundleShortVersionString': '2.1', 'LSMinimumSystemVersion': '14.0'}, f)
     start = app / 'Contents' / 'MacOS' / 'start'
     command = here / 'start-desktop-mac.command'
     start.write_text('#!/bin/bash\n# Opens the Trading Terminal start window (its loading bar, then the app).\n'

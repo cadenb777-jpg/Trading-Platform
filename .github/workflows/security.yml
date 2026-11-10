@@ -1,0 +1,60 @@
+name: Security checks
+
+# Runs on every push and pull request and every Monday (new advisories appear without code changes). A red X here
+# means: a secret was committed, a package has a known high-severity vulnerability, or the Python code has a
+# high-severity issue. It never blocks the website from deploying (that workflow is separate); fix it promptly.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 6 * * 1'  # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: No secrets committed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      - run: pip install detect-secrets==1.5.0
+      # .secrets.baseline lists the known fake keys in tests; anything new that looks like a key fails here
+      - run: git ls-files -z | xargs -0 detect-secrets-hook --baseline .secrets.baseline
+
+  dependencies:
+    name: No known-vulnerable packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - run: npm audit --audit-level=high --omit=dev
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      - run: pip install pip-audit==2.10.1
+      - run: pip-audit -r helper/requirements.txt -r helper/requirements-extra.txt -r desktop/requirements.txt
+
+  python-code:
+    name: No high-severity issues in the Python code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      - run: pip install bandit==1.9.4
+      - run: bandit -r helper desktop -x helper/tests,desktop/tests,helper/.venv -lll

@@ -1,0 +1,26 @@
+# Dependabot (free): proposes updates when a package the platform uses gets a security fix or a new version, and
+# keeps the pinned GitHub Actions current. Each proposal is a pull request that runs all the tests first.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      website-minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: pip
+    directory: /helper
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /desktop
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']

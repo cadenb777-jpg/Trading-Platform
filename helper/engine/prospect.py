@@ -33,10 +33,10 @@ import re
 import sqlite3
 import time
 import urllib.parse
-import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
+from . import safexml
 from . import datahub
 from .core import EngineError, background, handler
 
@@ -313,14 +313,14 @@ def xlsx_rows(data):
         shared = []
         if 'xl/sharedStrings.xml' in zf.namelist():
             with zf.open('xl/sharedStrings.xml') as fh:
-                for _, el in ET.iterparse(fh):
+                for _, el in safexml.iterparse(fh):
                     if el.tag == f'{ns}si':
                         shared.append(''.join(t.text or '' for t in el.iter(f'{ns}t')))
                         el.clear()
         sheet = sorted(n for n in zf.namelist() if re.match(r'xl/worksheets/sheet\d+\.xml$', n))[0]
         keys = None
         with zf.open(sheet) as fh:
-            for _, row in ET.iterparse(fh):
+            for _, row in safexml.iterparse(fh):
                 if row.tag != f'{ns}row':
                     continue
                 cells = {}

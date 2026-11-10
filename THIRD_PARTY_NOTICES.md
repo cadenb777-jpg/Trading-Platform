@@ -65,3 +65,8 @@ Inter and Source Serif 4 are loaded from Google Fonts and are licensed under the
   data). Folders renamed with a prefix; the `name:` line follows the folder.
 - `eng-*` (architecture, code review, testing, secure code, TypeScript, Python, debugging, WebSocket, Playwright):
   from github.com/Jeffallan/claude-skills, MIT (`.claude/skills/_licenses`). Renamed with a prefix.
+- `sec-*` (semgrep, codeql, sarif-parsing, supply-chain-risk-auditor, agentic-actions-auditor, differential-review,
+  sharp-edges): by Trail of Bits, from github.com/trailofbits/skills, licensed CC BY-SA 4.0
+  (`.claude/skills/_licenses/sec-LICENSE-trailofbits-CC-BY-SA-4.0.txt`); these folders stay under that licence.
+  Unmodified except: folders renamed with a `sec-` prefix (the `name:` line follows) and the `agents/openai.yaml`
+  files left out.
