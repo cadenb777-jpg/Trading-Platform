@@ -54,7 +54,7 @@ jobs:
           assert len(colours) > 60, 'the window looks blank'
           EOF
       - name: Make the desktop icon (Windows shortcut / Mac app)
-        run: python -c "import shortcut; print(shortcut.make(force=True))"
+        run: python -c "import shortcut; print(shortcut.make(force=True, log=print))"
       - name: Check the Windows shortcut
         if: runner.os == 'Windows'
         shell: pwsh

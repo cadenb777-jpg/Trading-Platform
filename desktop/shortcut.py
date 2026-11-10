@@ -35,7 +35,9 @@ def windows_script():
     lines = ["$sh = New-Object -ComObject WScript.Shell"]
     for folder in ("[Environment]::GetFolderPath('Desktop')", "[Environment]::GetFolderPath('Programs')"):
         lines += [
-            f"$lnk = $sh.CreateShortcut((Join-Path {folder} $env:TP_LNK_NAME))",
+            f"$dir = {folder}",
+            "if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }",
+            "$lnk = $sh.CreateShortcut((Join-Path $dir $env:TP_LNK_NAME))",
             "$lnk.TargetPath = $env:TP_LNK_TARGET",
             "$lnk.WorkingDirectory = $env:TP_LNK_DIR",
             "$lnk.IconLocation = $env:TP_LNK_ICON",
@@ -81,7 +83,8 @@ def make(force=False, log=lambda s: None):
         else:
             return 'not made (Windows and Mac only)'
     except Exception as err:  # an icon is a nicety: never stop the app starting over it
-        log(f'Desktop icon not made: {err}')
+        detail = (getattr(err, 'stderr', b'') or b'').decode('utf-8', 'replace').strip()[-400:]
+        log(f'Desktop icon not made: {err}' + (f' | {detail}' if detail else ''))
         return 'not made'
     MARKER.parent.mkdir(parents=True, exist_ok=True)
     MARKER.write_text(json.dumps({'made': True, 'where': where, 'app': str(HERE)}))
