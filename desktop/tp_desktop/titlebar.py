@@ -23,7 +23,16 @@ DESKTOP_JS = r"""
   const room = %d;
   const css = `
     html.tp-desktop .shell-top { padding-right: ${room + 8}px !important; }
-    html.tp-desktop .shell-top, html.tp-desktop .brand { -webkit-user-select: none; user-select: none; }`;
+    html.tp-desktop .shell-top, html.tp-desktop .brand { -webkit-user-select: none; user-select: none; }
+    /* the AI panel opens beside the top bar: it starts below a strip that carries the bar on, so the window buttons
+       sit on that strip instead of over the panel's own header */
+    html.tp-desktop .ai-drawer:not([hidden]) {
+      padding-top: 44px;
+      background: linear-gradient(var(--line), var(--line)) 0 43px / 100%% 1px no-repeat,
+        linear-gradient(color-mix(in srgb, var(--bg-deep) 70%%, var(--bg)), color-mix(in srgb, var(--bg-deep) 70%%, var(--bg))) 0 0 / 100%% 43px no-repeat,
+        var(--bg);
+    }
+    html.tp-desktop body:has(.ai-drawer:not([hidden])) .shell-top { padding-right: 16px !important; }`;
   const put = () => {
     if (!document.documentElement) return;  // too early: DOMContentLoaded puts it in
     document.documentElement.classList.add('tp-desktop');
@@ -39,6 +48,7 @@ DESKTOP_JS = r"""
   const ACTIVE = 'button, a, input, select, textarea, label, kbd, [role="tab"], [role="button"], [tabindex], .sub-tab, .cmd-field';
   const dragArea = (el) => {
     if (!(el instanceof Element)) return false;
+    if (el.classList.contains('ai-drawer')) return true;  // the strip above the AI panel
     const area = el.closest('.shell-top, .brand');
     const active = el.closest(ACTIVE);
     return !!area && !(active && area.contains(active));  // a button inside the top bar still clicks

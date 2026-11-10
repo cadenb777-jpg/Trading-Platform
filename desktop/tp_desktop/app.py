@@ -221,7 +221,11 @@ class Window(QMainWindow):
             if len(values) < 5 or not all(QColor(v).isValid() for v in values[:4]):
                 return
             fg, amber, bg, line, top = values[:5]
-            self.caps.set_colors(fg, amber, line)
+            if line != self.caps.line:
+                self.caps.set_colors(fg, amber, line)
+                self.update_border()
+            else:
+                self.caps.set_colors(fg, amber, line)
             self.page.setBackgroundColor(QColor(bg))
             pal = self.holder.palette()
             if pal.color(pal.ColorRole.Window) != QColor(bg):
@@ -250,7 +254,12 @@ class Window(QMainWindow):
         if self.caps and event.type() == QEvent.WindowStateChange:
             self.caps.setVisible(not self.isFullScreen())
             self.caps.place()
+            self.update_border()
         super().changeEvent(event)
+
+    def update_border(self):
+        fills = self.isMaximized() or self.isFullScreen()
+        window_border(self, None if fills else self.caps.line)
 
     # ----- keys (none the website itself uses) -----
     def shortcuts(self):
@@ -458,6 +467,27 @@ def round_corners(win):
         ctypes.windll.dwmapi.DwmSetWindowAttribute(int(win.winId()), 33, ctypes.byref(pref), ctypes.sizeof(pref))
     except Exception:
         pass  # Windows 10: square corners
+    if getattr(win, 'caps', None):
+        win.update_border()
+
+
+def window_border(win, color):
+    """Windows 11 draws a thin light border around every window: none when it fills the screen, else the site's line
+    colour (`color` '#rrggbb', or None for no border). Windows 10 has no such border."""
+    if sys.platform != 'win32':
+        return
+    try:
+        import ctypes
+
+        if color is None:
+            value = 0xFFFFFFFE  # DWMWA_COLOR_NONE
+        else:
+            c = QColor(color)
+            value = c.red() | (c.green() << 8) | (c.blue() << 16)  # COLORREF 0x00BBGGRR
+        ref = ctypes.c_uint(value)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(int(win.winId()), 34, ctypes.byref(ref), ctypes.sizeof(ref))  # BORDER_COLOR
+    except Exception:
+        pass
 
 
 def note_graphics(page):
