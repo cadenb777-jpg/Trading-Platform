@@ -28,6 +28,7 @@ class Icon(unittest.TestCase):
             self.assertNotIn(value, ps)
         self.assertNotIn('Caden', ps)
 
+    @unittest.skipIf(os.name == 'nt', 'Mac app bundles are made on a Mac (Windows writes these paths with backslashes)')
     def test_mac_app_bundle(self):
         with tempfile.TemporaryDirectory() as d:
             app = shortcut.mac_bundle(d, Path('/Users/me/Trading Platform/desktop'))
