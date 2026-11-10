@@ -324,7 +324,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Main window on Windows/Linux is frameless: amber minimise/maximise/close (tp_desktop/titlebar.py CaptionButtons) sit
   over the right end of the site's .shell-top, which DESKTOP_JS pads and makes a drag area (console messages
   __tp_window_drag__/__tp_window_max__ -> startSystemMove); EdgeResizer on the window's QWindow only; colours/height from
-  CSS variables every 1.5 s. Qt's datalist popup swallows Enter: EnterThrough forwards it (SUGGEST_JS, every window).
+  CSS variables every 1.5 s. KEEP_CLEAR_JS moves anything the page opens under the buttons' corner (ticker
+  drawer .sv-drawer, Bull, menus) down below the top bar (margin-top, given back when it moves away). Qt's datalist popup swallows Enter: EnterThrough forwards it (SUGGEST_JS, every window).
   Charts never wait on Alpaca: fill_older returns Schwab's bars after FILL_WAIT (3 s) and lets the download finish for
   next time; scanner Alpaca calls are background (alpaca.BACKGROUND) so a chart always has a free slot. Windows app:
   closing the window keeps it in the tray with the helper warm (Quit stops both); a second start hands over through a

@@ -194,3 +194,80 @@ class CaptionButtons(QWidget):
         if not getattr(self, '_raised', False):
             self.raise_()
             self._raised = True
+
+#: Main window: keeps the window buttons' corner clear. Whenever something the page opens (a ticker card, menu, pop-up,
+#: panel, notice) would sit under the buttons, it is moved down just below the top bar; when it moves away or closes,
+#: it gets its own place back. Checked after every change to the page (at most every 100 ms) and on resizing.
+KEEP_CLEAR_JS = r"""
+(() => {
+  if (window.__tpKeepClear) return;
+  window.__tpKeepClear = true;
+  const W = %d, H = 44;
+  const pushed = new Set();
+  const shellTop = () => document.querySelector('.shell-top');
+  // the page's own top bar, the strip above the AI panel and the layout around them may sit there
+  const allowed = (el) => {
+    if (!el || el === document.documentElement || el === document.body) return true;
+    const top = shellTop();
+    if (top && (el === top || top.contains(el) || el.contains(top))) return true;
+    return el.classList.contains('ai-drawer') || !!el.closest('.brand');
+  };
+  // the outermost positioned box of what is in the way (not the app's own frame)
+  const overlayRoot = (el) => {
+    let root = null;
+    const top = shellTop();
+    for (let n = el; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      if (top && n.contains(top)) break;
+      const p = getComputedStyle(n).position;
+      if (p === 'fixed' || p === 'absolute') root = n;
+    }
+    return root;
+  };
+  const applied = (el) => parseFloat(el.dataset.tpPush || '0') || 0;
+  const setPush = (el, px) => {
+    const was = applied(el);
+    if (Math.abs(was - px) < 0.5) return;
+    if (!('tpBase' in el.dataset)) el.dataset.tpBase = el.style.marginTop || '';
+    el.dataset.tpPush = String(px);
+    if (px > 0) {
+      el.style.setProperty('margin-top', `calc(${el.dataset.tpBase || '0px'} + ${px}px)`, 'important');
+      pushed.add(el);
+    } else {
+      el.style.removeProperty('margin-top');
+      if (el.dataset.tpBase) el.style.marginTop = el.dataset.tpBase;
+      delete el.dataset.tpPush;
+      delete el.dataset.tpBase;
+      pushed.delete(el);
+    }
+  };
+  // how far down the box has to go (0 = it doesn't reach the buttons' corner)
+  const needed = (el) => {
+    if (!el.isConnected) return 0;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height || r.right <= innerWidth - W || r.left >= innerWidth) return 0;
+    const top = r.top - applied(el);
+    return top < H ? H - top : 0;
+  };
+  const clear = () => {
+    if (!document.documentElement.classList.contains('tp-desktop')) return;
+    for (const el of [...pushed]) setPush(el, el.isConnected ? needed(el) : 0);
+    const vw = innerWidth;
+    for (const x of [vw - W + 3, vw - W / 2, vw - 3]) {
+      for (const y of [3, H / 2, H - 4]) {
+        const el = document.elementFromPoint(x, y);
+        if (allowed(el)) continue;
+        const root = overlayRoot(el);
+        if (root && !pushed.has(root)) setPush(root, needed(root));
+      }
+    }
+  };
+  let timer = 0;
+  const soon = () => { if (!timer) timer = setTimeout(() => { timer = 0; clear(); }, 100); };
+  const watch = () => {
+    new MutationObserver(soon).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden', 'open'] });
+    addEventListener('resize', soon);
+    soon();
+  };
+  if (document.body) watch(); else document.addEventListener('DOMContentLoaded', watch);
+})();
+""" % (3 * BUTTON_W)

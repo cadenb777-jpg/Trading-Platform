@@ -19,7 +19,7 @@ from PySide6.QtCore import QPointF
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QSystemTrayIcon, QVBoxLayout, QWidget
 
 from . import APP_VERSION, choice, console, policy
-from .titlebar import DESKTOP_JS, DRAG, MAXIMISE, SUGGEST_JS, SUGGESTIONS, CaptionButtons
+from .titlebar import DESKTOP_JS, DRAG, KEEP_CLEAR_JS, MAXIMISE, SUGGEST_JS, SUGGESTIONS, CaptionButtons
 
 DATA = Path.home() / '.trading-platform' / 'desktop-browser'
 #: Every app window (the main one and pop-ups, also pop-ups of pop-ups): closing the main window closes them all.
@@ -43,7 +43,8 @@ OWN_TITLE_BAR = sys.platform != 'darwin'
 #: The website's colours for those buttons and the page background (no white anywhere, also between pages), plus the top
 #: bar's height; read again every 1.5 s so they follow light and dark mode.
 #: (Joined with | because PySide gives JavaScript arrays back as empty text.)
-THEME_JS = ("(() => { const s = getComputedStyle(document.documentElement); "
+THEME_JS = ("(() => { if (!(document.documentElement instanceof Element)) return ''; "
+            "const s = getComputedStyle(document.documentElement); "
             "const top = document.querySelector('.shell-top'); "
             "return ['--text', '--label', '--bg', '--line'].map((k) => s.getPropertyValue(k).trim())"
             ".concat([top ? String(top.getBoundingClientRect().height) : '']).join('|'); })()")
@@ -180,6 +181,7 @@ class Window(QMainWindow):
             self.setCentralWidget(self.holder)
             self.caps = CaptionButtons(self, self.holder)
             add_page_script(self.page, 'tp-desktop-window', DESKTOP_JS)
+            add_page_script(self.page, 'tp-keep-clear', KEEP_CLEAR_JS)
             self.theme_timer = QTimer(self, interval=1500, timeout=self.follow_theme)
             self.theme_timer.start()
             self.page.loadFinished.connect(lambda *_: self.follow_theme())
