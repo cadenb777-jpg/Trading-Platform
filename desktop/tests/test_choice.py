@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tp_desktop import choice  # noqa: E402
+from tp_desktop import choice, console  # noqa: E402
 
 
 class Choice(unittest.TestCase):
@@ -39,6 +39,26 @@ class Choice(unittest.TestCase):
         self.assertEqual(choice.decide('terminal', False, False), 'terminal')
         self.assertIsNone(choice.decide('terminal', True, False))
         self.assertIsNone(choice.decide('web', False, True))
+
+
+class HiddenHelperWindow(unittest.TestCase):
+    def test_only_on_windows_when_the_launcher_asks(self):
+        self.assertTrue(console.managed({console.FLAG: '1'}, 'win32'))
+        self.assertFalse(console.managed({}, 'win32'))
+        self.assertFalse(console.managed({console.FLAG: '1'}, 'darwin'))
+
+    def test_needs_you_marker(self):
+        with tempfile.TemporaryDirectory() as d:
+            marker = Path(d) / 'helper-needs-you'
+            self.assertFalse(console.helper_needs_you(marker))
+            marker.write_text('1')
+            self.assertTrue(console.helper_needs_you(marker))
+
+    def test_does_nothing_off_windows(self):
+        if sys.platform != 'win32':
+            self.assertFalse(console.visible())
+            console.show()
+            console.hide()
 
 
 if __name__ == '__main__':

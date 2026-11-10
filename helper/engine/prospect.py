@@ -1573,6 +1573,8 @@ _pool = None
 def _worker_init():
     import signal
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+    from engine.lowpriority import lower_priority
+    lower_priority()  # your clicks and charts come first
 
 
 async def _offload(fn_name, *args):

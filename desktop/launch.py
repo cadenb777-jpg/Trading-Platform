@@ -20,6 +20,7 @@ sys.path.insert(0, str(HELPER))
 import splash  # noqa: E402  (the helper's launcher: screen, bar, venv and pip steps)
 import desktop_update  # noqa: E402
 import shortcut  # noqa: E402  (the Trading Terminal icon on your desktop)
+from tp_desktop import console  # noqa: E402  (hiding this window once loading is done, Windows)
 
 
 def desktop_parts(bar, log):
@@ -78,22 +79,36 @@ def main():
 
 def run_app(updated):
     """Opens the app beside the helper (started here when none is running); puts the previous version back if a fresh
-    update stops within a minute; when the app closes, the helper keeps running in this window for the website."""
+    update stops within a minute.
+    Windows: this window hides once the app's start screen shows (the app brings it back when the helper needs you, and
+    from its tray icon); quitting the app stops the helper this window started. Elsewhere the helper keeps running in
+    this window for the website when the app closes."""
     started = time.time()
-    # the flag tells the app this launcher looks after the helper (the app opens it itself only without the flag)
+    hidden = sys.platform == 'win32'
+    env = {**os.environ, 'TP_HELPER_BY_LAUNCHER': '1'}  # the app opens the helper itself only without this flag
+    if hidden:
+        env[console.FLAG] = '1'
+        console.NEEDS_YOU.unlink(missing_ok=True)  # left over from a helper that stopped while waiting for you
     extra = ['--choose'] if '--choose' in sys.argv else []
-    app = subprocess.Popen([str(splash.venv_python()), '-m', 'tp_desktop', *extra], cwd=HERE,
-                           env={**os.environ, 'TP_HELPER_BY_LAUNCHER': '1'})
+    app = subprocess.Popen([str(splash.venv_python()), '-m', 'tp_desktop', *extra], cwd=HERE, env=env)
     helper = None
     if helper_running():
         splash.ok('Opening Trading Terminal, using the helper that is already running.')
     else:
         # the website's own helper, beside the app in this window: its start screen, the Schwab login when it asks,
         # its updates; no Chrome tab of its own (the app opens the window or the browser you choose)
-        splash.ok('Opening Trading Terminal. The helper runs in this window: keep it open while you use the platform.')
-        helper = subprocess.Popen([sys.executable, str(HELPER / 'splash.py'), 'run', '--no-browser'], cwd=HELPER)
+        splash.ok('Opening Trading Terminal. The helper runs here in the background' + (
+            ' (this window hides; quit from the Trading Terminal icon by the clock).' if hidden else
+            ': keep this window open while you use the platform.'))
+        helper = subprocess.Popen([sys.executable, str(HELPER / 'splash.py'), 'run', '--no-browser'], cwd=HELPER, env=env)
     code = app.wait()
     crashed = code not in splash.STOPPED_CODES
+    if hidden:
+        if helper is not None and helper.poll() is None:
+            stop_tree(helper)  # you quit Trading Terminal: its helper stops too (nothing left running unseen)
+        if crashed:
+            console.show()
+        console.NEEDS_YOU.unlink(missing_ok=True)
     if crashed and updated and time.time() - started < 60:
         desktop_update.restore(updated[2])
         splash.warn('The new version of the app stopped right after starting, so the previous version was put back. '
@@ -109,6 +124,18 @@ def run_app(updated):
         splash.wait_for_enter()
         return 2
     return 0
+
+
+def stop_tree(proc):
+    """Stops the helper and the process it runs (its start screen starts the helper itself)."""
+    try:
+        subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], capture_output=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        proc.kill()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
 
 
 def helper_running(port=8765):

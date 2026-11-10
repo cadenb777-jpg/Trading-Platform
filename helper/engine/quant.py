@@ -1339,6 +1339,8 @@ _executor = []
 def _worker_init():
     import signal
     signal.signal(signal.SIGINT, signal.SIG_IGN)  # the helper stops the workers itself (shutdown) when it exits
+    from engine.lowpriority import lower_priority
+    lower_priority()  # your clicks and charts come first
 
 
 def _workers():

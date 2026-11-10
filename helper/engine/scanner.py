@@ -149,6 +149,8 @@ def _worker_init():
     """Workers ignore Ctrl+C: the helper stops them itself (scanner.shutdown) when it exits."""
     import signal
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+    from engine.lowpriority import lower_priority
+    lower_priority()  # your clicks and charts come first
 
 
 def _pool(name):

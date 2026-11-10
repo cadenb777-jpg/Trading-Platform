@@ -18,7 +18,8 @@ from PySide6.QtGui import QColor, QDesktopServices, QIcon, QKeySequence, QPainte
 from PySide6.QtCore import QPointF
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QSystemTrayIcon, QVBoxLayout, QWidget
 
-from . import APP_VERSION, choice, policy
+from . import APP_VERSION, choice, console, policy
+from .titlebar import DESKTOP_JS, DRAG, MAXIMISE, SUGGEST_JS, SUGGESTIONS, CaptionButtons
 
 DATA = Path.home() / '.trading-platform' / 'desktop-browser'
 #: Every app window (the main one and pop-ups, also pop-ups of pop-ups): closing the main window closes them all.
@@ -36,13 +37,16 @@ background:#7ac3ee;color:#0a1a2e;text-decoration:none;font-weight:600}p{margin:6
 
 ASSETS = Path(__file__).resolve().parent / 'assets'
 APP_NAME = 'Trading Terminal'
-#: The app draws its own title bar (logo, page name, slim buttons) instead of the classic Windows frame; a Mac keeps its own.
+#: The main window has no classic Windows frame: its minimise / maximise / close sit inside the platform's own top bar
+#: (titlebar.py), like a game client. A Mac keeps its own buttons.
 OWN_TITLE_BAR = sys.platform != 'darwin'
-#: The website's colours for the title bar and the page background behind it (no white flash between pages); read again
-#: every 1.5 s so the bar follows light and dark mode.
+#: The website's colours for those buttons and the page background (no white anywhere, also between pages), plus the top
+#: bar's height; read again every 1.5 s so they follow light and dark mode.
 #: (Joined with | because PySide gives JavaScript arrays back as empty text.)
 THEME_JS = ("(() => { const s = getComputedStyle(document.documentElement); "
-            "return ['--bg-deep', '--text', '--muted', '--line', '--bg'].map((k) => s.getPropertyValue(k).trim()).join('|'); })()")
+            "const top = document.querySelector('.shell-top'); "
+            "return ['--text', '--label', '--bg', '--line'].map((k) => s.getPropertyValue(k).trim())"
+            ".concat([top ? String(top.getBoundingClientRect().height) : '']).join('|'); })()")
 #: What the window's graphics card does (written to ~/.trading-platform/desktop-graphics.txt on each start, for help).
 GPU_JS = ("(() => { try { const g = document.createElement('canvas').getContext('webgl'); "
           "const d = g.getExtension('WEBGL_debug_renderer_info'); "
@@ -115,6 +119,12 @@ class Page:
                 return False
 
             def javaScriptConsoleMessage(self, level, message, line, source):
+                if message in (DRAG, MAXIMISE, SUGGESTIONS) and policy.is_platform(self.url().toString(), base):
+                    if message == SUGGESTIONS:
+                        QTimer.singleShot(150, lambda: watch_suggestion_popups(owner))
+                    elif getattr(owner, 'caps', None):
+                        owner.window_gesture(message)
+                    return
                 if owner.console_log is not None and level == QWebEnginePage.JavaScriptConsoleMessageLevel.ErrorMessageLevel:
                     owner.console_log.append(f'{message} ({source}:{line})')
 
@@ -151,27 +161,34 @@ class Window(QMainWindow):
         self.page = Page.make(profile, self, base)
         self.page.setBackgroundColor(QColor('#050d19'))  # the website's navy, never white, while a page draws
         self.view.setPage(self.page)
-        self.bar = None
-        if OWN_TITLE_BAR:
-            from .titlebar import TitleBar
+        self.caps = None
+        bg = QColor('#050d19')
+        if OWN_TITLE_BAR and main:
+            from PySide6.QtGui import QPalette
+            from PySide6.QtWebEngineCore import QWebEngineScript
 
             self.setWindowFlags(self.windowFlags() | Qt.FramelessWindowHint)
-            self.bar = TitleBar(self, ASSETS / 'logo.png' if (ASSETS / 'logo.png').exists() else None)
-            self.frame = QWidget(self)
-            self.frame.setObjectName('tpFrame')
-            self.frame.setAttribute(Qt.WA_StyledBackground, True)
-            box = QVBoxLayout(self.frame)
-            box.setContentsMargins(1, 0, 1, 1)  # a 1 px edge in the site's line colour around the window
+            self.holder = QWidget(self)
+            pal = self.holder.palette()
+            pal.setColor(QPalette.Window, bg)
+            self.holder.setPalette(pal)
+            self.holder.setAutoFillBackground(True)  # nothing white, ever, around or behind the page
+            box = QVBoxLayout(self.holder)
+            box.setContentsMargins(0, 0, 0, 0)
             box.setSpacing(0)
-            box.addWidget(self.bar)
-            box.addWidget(self.view, 1)
-            self.setCentralWidget(self.frame)
-            self.paint_frame()
+            box.addWidget(self.view)
+            self.setCentralWidget(self.holder)
+            self.caps = CaptionButtons(self, self.holder)
+            add_page_script(self.page, 'tp-desktop-window', DESKTOP_JS)
             self.theme_timer = QTimer(self, interval=1500, timeout=self.follow_theme)
             self.theme_timer.start()
             self.page.loadFinished.connect(lambda *_: self.follow_theme())
         else:
             self.setCentralWidget(self.view)
+        pal = self.palette()
+        pal.setColor(pal.ColorRole.Window, bg)
+        self.setPalette(pal)
+        add_page_script(self.page, 'tp-suggestions', SUGGEST_JS)
         self.setWindowIcon(app_icon())
         self.setWindowTitle(APP_NAME)
         self.view.titleChanged.connect(self.on_title)
@@ -192,38 +209,47 @@ class Window(QMainWindow):
         if url is not None:
             self.view.setUrl(QUrl(url))
 
-    # ----- the app's own title bar -----
+    # ----- the built-in window buttons -----
     def on_title(self, t):
         self.setWindowTitle(window_title(t))
-        if self.bar:
-            self.bar.set_title(policy.page_name(t))
 
     def follow_theme(self):
         from PySide6.QtWebEngineCore import QWebEngineScript
 
         def got(text):
             values = str(text or '').split('|')
-            if not values or len(values) < 5 or not all(QColor(v).isValid() for v in values):
+            if len(values) < 5 or not all(QColor(v).isValid() for v in values[:4]):
                 return
-            deep, text, muted, line, bg = values
-            self.bar.set_colors(deep, text, muted, line)
+            fg, amber, bg, line, top = values[:5]
+            self.caps.set_colors(fg, amber, line)
             self.page.setBackgroundColor(QColor(bg))
-            self.paint_frame(line)
+            pal = self.holder.palette()
+            if pal.color(pal.ColorRole.Window) != QColor(bg):
+                pal.setColor(pal.ColorRole.Window, QColor(bg))
+                self.holder.setPalette(pal)
+            try:
+                height = float(top) * self.view.zoomFactor()
+            except ValueError:
+                height = None  # a page without the top bar: keep the last height
+            self.caps.place(height)
         self.page.runJavaScript(THEME_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld, got)
 
-    def paint_frame(self, line=None):
-        line = line or (self.bar.line if self.bar else '#16283d')
-        if getattr(self, '_frame_line', None) != line:
-            self._frame_line = line
-            self.frame.setStyleSheet(f'QWidget#tpFrame {{ background: {line}; }}')
+    def window_gesture(self, what):
+        """The page's top bar was pressed (move the window) or double-clicked (maximise / restore)."""
+        if what == MAXIMISE:
+            self.caps.toggle_max()
+        elif self.windowHandle() is not None and not self.isFullScreen():
+            self.windowHandle().startSystemMove()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.caps:
+            self.caps.place()
 
     def changeEvent(self, event):
-        if self.bar and event.type() == QEvent.WindowStateChange:
-            full = self.isFullScreen()
-            self.bar.setVisible(not full)
-            edge = 0 if (full or self.isMaximized()) else 1  # no edge when it fills the screen
-            self.frame.layout().setContentsMargins(edge, 0, edge, edge)
-            self.bar.buttons['max'].update()
+        if self.caps and event.type() == QEvent.WindowStateChange:
+            self.caps.setVisible(not self.isFullScreen())
+            self.caps.place()
         super().changeEvent(event)
 
     # ----- keys (none the website itself uses) -----
@@ -315,6 +341,51 @@ def window_title(page_title):
     return f'{t} · {APP_NAME}' if t and t != 'about:blank' and not t.startswith('http') else APP_NAME
 
 
+def add_page_script(page, name, source):
+    """Runs a small script of the app's in every page load of this window (before the website's own code)."""
+    from PySide6.QtWebEngineCore import QWebEngineScript
+
+    script = QWebEngineScript()
+    script.setName(name)
+    script.setSourceCode(source)
+    script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
+    script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
+    script.setRunsOnSubFrames(False)
+    page.scripts().insert(script)
+
+
+class EnterThrough(QObject):
+    """Qt's suggestion list under a text box (the ticker box) takes the Enter key, so the page never saw it and the chart
+    didn't change (Chrome lets it through). After the list has handled Enter (filling in a suggestion you arrowed to),
+    the same Enter goes on to the page."""
+
+    def __init__(self, popup, owner):
+        super().__init__(popup)
+        self.owner = owner
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            QTimer.singleShot(60, self.forward)
+        return False
+
+    def forward(self):
+        from PySide6.QtGui import QKeyEvent
+
+        view = getattr(self.owner, 'view', None)
+        target = view.focusProxy() if view is not None else None
+        if target is None:
+            return
+        for kind in (QEvent.KeyPress, QEvent.KeyRelease):
+            QApplication.postEvent(target, QKeyEvent(kind, Qt.Key_Return, Qt.NoModifier, '\r'))
+
+
+def watch_suggestion_popups(owner):
+    for w in QApplication.topLevelWidgets():
+        if 'Autofill' in w.metaObject().className() and not getattr(w, '_tp_enter', None):
+            w._tp_enter = EnterThrough(w, owner)
+            w.installEventFilter(w._tp_enter)
+
+
 class EdgeResizer(QObject):
     """Resizing a window that draws its own title bar: near an edge the pointer becomes a resize arrow and dragging there
     resizes with the system's own resize (the page under it doesn't get that click). It watches only that window's
@@ -328,7 +399,7 @@ class EdgeResizer(QObject):
 
     @classmethod
     def attach(cls, win):
-        if win.bar is not None:
+        if win.caps is not None:
             win.winId()  # makes the system window now
             win.windowHandle().installEventFilter(cls(win))
 
@@ -457,6 +528,8 @@ def connect_notifications(profile, app, window_for):
 
     def bring_up():
         w = window_for()
+        if w is None:  # Web: no app window, the browser shows the alert
+            return
         w.showNormal() if w.isMinimized() else None
         w.raise_()
         w.activateWindow()
@@ -467,7 +540,7 @@ def connect_notifications(profile, app, window_for):
         note.show()
         if tray.isVisible():
             tray.showMessage(note.title() or APP_NAME, note.message(), app_icon(), 10000)
-        else:
+        elif window_for() is not None:
             QApplication.alert(window_for(), 0)  # flashes the taskbar button where there is no tray
 
     profile.setNotificationPresenter(present)
@@ -579,45 +652,76 @@ def main(argv=None):
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setWindowIcon(app_icon())
     app.styleHints().setColorScheme(Qt.ColorScheme.Dark)  # a dark window frame, matching the terminal
-    if not args.screenshot:
+    if args.screenshot:
+        how = 'terminal'
+    else:
+        if console.managed():
+            console.hide()  # loading is done: only the start screen shows (the helper keeps running, hidden)
+        app.setQuitOnLastWindowClosed(False)  # the start screen closing isn't the app closing
         how = ask_how_to_open(app, args.choose)
+        app.setQuitOnLastWindowClosed(True)
         if how is None:
             return 0  # the start screen was closed without a choice
-        if how == 'web':
-            open_in_browser(args.url)
+    stays = console.managed()  # this app looks after the hidden helper: a tray icon, and Quit stops it
+    if how == 'web':
+        open_in_browser(args.url)
+        if not stays:
             return 0
+        app.setQuitOnLastWindowClosed(False)  # Web: the app lives on in the tray (closing an app window doesn't quit)
     from PySide6.QtWidgets import QSplashScreen
 
-    splash = None if args.screenshot else QSplashScreen(splash_pixmap())
-    if splash:
-        splash.show()
-        app.processEvents()
     profile = build_profile(app, Path(args.storage) if args.storage else DATA)
     size = tuple(int(x) for x in args.size.lower().split('x')) if args.size else None
-    console = [] if args.screenshot else None
-    win = Window(app, profile, args.url, url=args.url, main=True, console_log=console, size=size)
-    EdgeResizer.attach(win)
-    win.page.loadFinished.connect(lambda ok: ok and note_graphics(win.page))
-    connect_downloads(profile, lambda: win)
-    tray = connect_notifications(profile, app, lambda: win)
-    def reveal(*_):
-        if splash and splash.isVisible():
-            splash.finish(win)
-        if not win.isVisible():
-            win.show()
-            round_corners(win)
+    log = [] if args.screenshot else None
+    held = {}
+
+    def current():
+        win = held.get('win')
+        return win if win is not None and win in WINDOWS else None
+
+    def open_window(first=False):
+        """The Terminal window (made once; brought to the front if it's open)."""
+        win = current()
+        if win is not None:
+            win.showNormal() if win.isMinimized() else None
+            win.raise_()
+            win.activateWindow()
+            return win
+        splash = QSplashScreen(splash_pixmap()) if (first and not args.screenshot) else None
+        if splash:
+            splash.show()
+            app.processEvents()
+        win = Window(app, profile, args.url, url=args.url, main=True, console_log=log, size=size)
+        win.setAttribute(Qt.WA_DeleteOnClose, how == 'web')  # Web: closing it frees it, the tray stays
+        held['win'] = win
+        EdgeResizer.attach(win)
+        win.page.loadFinished.connect(lambda ok: ok and note_graphics(win.page))
+
+        def reveal(*_):
+            if splash and splash.isVisible():
+                splash.finish(win)
+            if not win.isVisible():
+                win.show()
+                round_corners(win)
+        if splash:
+            win.page.loadFinished.connect(reveal)
+            QTimer.singleShot(12000, reveal)  # never wait longer than this for a slow connection
+        else:
+            reveal()
+        return win
+
+    connect_downloads(profile, current)
+    tray = connect_notifications(profile, app, current)
+    if stays:
+        tray_menu(app, tray, args.url, open_window, how)
+    if how == 'terminal':
+        win = open_window(first=True)
     if not args.screenshot:
         ensure_helper(args.url)
-    if splash:
-        win.page.loadFinished.connect(reveal)
-        QTimer.singleShot(12000, reveal)  # never wait longer than this for a slow connection
-    else:
-        win.show()
-        round_corners(win)
     if args.screenshot:
         def snap():
             win.view.grab().save(args.screenshot)
-            for line in console:
+            for line in log:
                 print('console error:', line)
             print(f'version {APP_VERSION}: saved {args.screenshot} ({win.view.url().toString()})')
             app.quit()
@@ -625,3 +729,52 @@ def main(argv=None):
     code = app.exec()
     tray.hide()
     return code
+
+
+def tray_menu(app, tray, url, open_window, how):
+    """The tray icon's menu when the helper runs hidden: open the platform either way, see the helper's window, quit
+    (which stops the helper). A click on the icon opens the way you chose. Every second it brings the helper's window
+    back if the helper is waiting for you (first-time keys, an error)."""
+    from PySide6.QtGui import QAction
+    from PySide6.QtWidgets import QMenu
+
+    menu = QMenu()
+    menu.addAction(QAction('Open Trading Terminal', menu, triggered=lambda: open_window()))
+    menu.addAction(QAction('Open in your browser', menu, triggered=lambda: QDesktopServices.openUrl(QUrl(url))))
+    menu.addSeparator()
+    helper = QAction('Show helper window', menu)
+    helper.triggered.connect(lambda: console.hide() if console.visible() else console.show())
+    menu.addAction(helper)
+    menu.addSeparator()
+    menu.addAction(QAction('Quit Trading Terminal (stops the helper)', menu, triggered=lambda: quit_all(app)))
+    menu.aboutToShow.connect(lambda: helper.setText('Hide helper window' if console.visible() else 'Show helper window'))
+    tray.setContextMenu(menu)
+    tray.setToolTip(f'{APP_NAME}: the helper is running')
+    tray._menu = menu  # keep it alive
+
+    def clicked(reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            open_window() if how == 'terminal' else QDesktopServices.openUrl(QUrl(url))
+    tray.activated.connect(clicked)
+    if not tray.isVisible():
+        tray.show()
+
+    shown = {'needs': False}
+
+    def watch():
+        needs = console.helper_needs_you()
+        if needs and not shown['needs']:
+            console.show()
+            tray.showMessage(APP_NAME, 'The helper needs you: its window is open.', app_icon(), 8000)
+        shown['needs'] = needs
+    timer = QTimer(app, interval=1000, timeout=watch)
+    timer.start()
+    tray._watch = timer
+    if how == 'web':
+        tray.showMessage(APP_NAME, 'Opened in your browser. The helper runs here: right-click this icon to quit.', app_icon(), 6000)
+
+
+def quit_all(app):
+    for w in list(WINDOWS):
+        w.close()
+    app.quit()

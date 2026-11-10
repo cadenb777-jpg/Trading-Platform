@@ -13,7 +13,7 @@ import desktop_update as du  # noqa: E402
 def make_zip(version='1.2', extra=None, top='Trading-Platform-main'):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w') as z:
-        files = {'launch.py': 'x', 'desktop_update.py': 'x', 'shortcut.py': 'x', 'requirements.txt': 'x', 'tp_desktop/app.py': 'new app', 'tp_desktop/choice.py': 'x', 'tp_desktop/chooser.py': 'x', 'tp_desktop/titlebar.py': 'x',
+        files = {'launch.py': 'x', 'desktop_update.py': 'x', 'shortcut.py': 'x', 'requirements.txt': 'x', 'tp_desktop/app.py': 'new app', 'tp_desktop/choice.py': 'x', 'tp_desktop/chooser.py': 'x', 'tp_desktop/titlebar.py': 'x', 'tp_desktop/console.py': 'x',
                  'tp_desktop/__init__.py': f"APP_VERSION = '{version}'\n"}
         files.update(extra or {})
         for rel, body in files.items():

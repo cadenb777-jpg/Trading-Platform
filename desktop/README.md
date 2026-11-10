@@ -34,9 +34,13 @@ alerts, your accounts and the Trade page (preview, then confirm; Test first) wor
 
 ## In the app
 
-- **Its own title bar** (Windows): the logo, the page you're on and slim minimise / maximise / close buttons in the
-  website's colours (light or dark). Drag it to move the window (drag to the top of the screen to maximise, to a side
-  to snap), double-click it to maximise, drag any edge to resize. F11 hides it for full screen.
+- **Built-in window buttons** (Windows): no classic frame. Amber minimise / maximise / close sit in the platform's own
+  top bar. Drag the empty part of that bar (or the TERMINAL logo) to move the window (to the top of the screen to
+  maximise, to a side to snap), double-click it to maximise, drag any edge to resize. F11: full screen.
+- **No black window:** the loading window hides once the start screen shows. The helper keeps running in the
+  background; the Trading Terminal icon by the clock (bottom right; maybe under the ^ arrow) can show the helper
+  window, open the platform either way, or quit. Quitting (or closing the Terminal window) stops the helper too. If
+  the helper needs you (first-time Schwab keys, an error) its window comes back by itself.
 - **Speed:** the app draws with your graphics card even where Chromium would play safe, and never slows the page down
   in the background. Which graphics it uses is written to `~/.trading-platform/desktop-graphics.txt` (a card's name
   is good; "SwiftShader" or "llvmpipe" means no graphics card, which is slower: send me that file).

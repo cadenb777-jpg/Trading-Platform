@@ -632,7 +632,57 @@ def prepare(bar, log):
     return warning
 
 
+#: Set by the desktop app's launcher on Windows: its black window is hidden once loading is done and comes back only
+#: when you're needed (first-time Schwab keys, an error). NEEDS_YOU marks "the helper is waiting for you" for the app.
+HIDE_CONSOLE = 'TP_HIDE_CONSOLE'
+NEEDS_YOU = DATA_DIR / 'helper-needs-you'
+
+
+def _console():
+    if os.name != 'nt':
+        return None
+    try:
+        import ctypes
+        return ctypes.windll.kernel32.GetConsoleWindow() or None
+    except Exception:
+        return None
+
+
+def show_console():
+    """Brings this black window back (Windows; nothing elsewhere)."""
+    hwnd = _console()
+    if hwnd:
+        import ctypes
+        ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        ctypes.windll.user32.SetForegroundWindow(hwnd)
+
+
+def hide_console():
+    hwnd = _console()
+    if hwnd:
+        import ctypes
+        ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE
+
+
+def needs_you(on):
+    """While the window is handed to you (a question, the login steps, an error), the desktop app shows it."""
+    if not os.environ.get(HIDE_CONSOLE):
+        return
+    try:
+        if on:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            NEEDS_YOU.write_text('1')
+            show_console()
+        else:
+            NEEDS_YOU.unlink(missing_ok=True)
+            hide_console()
+    except OSError:
+        pass
+
+
 def wait_for_enter():
+    needs_you(True)
+    show_console()
     try:
         input(rgb((150, 160, 190), '  Press Enter to close this window.'))
     except (EOFError, KeyboardInterrupt):
@@ -903,6 +953,7 @@ class HelperScreen:
         if self.paused:
             return
         self.paused = True
+        needs_you(True)
         if not self.ready_shown:
             self.bar.stop()
         else:
@@ -915,6 +966,7 @@ class HelperScreen:
         if not self.paused:
             return
         self.paused = False
+        needs_you(False)
         clear_screen()
         banner(self.look, intro=False)
         if self.ready_shown:
