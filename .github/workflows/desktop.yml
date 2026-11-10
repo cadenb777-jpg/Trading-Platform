@@ -1,0 +1,84 @@
+name: Desktop app on Windows and Mac
+
+# Runs the Trading Terminal desktop app on real Windows and Mac machines (GitHub's free runners): installs its actual
+# requirements, runs its tests, opens the real app on the published website and takes a picture of the window, and makes
+# the desktop icon (Windows shortcut / Mac app bundle). The pictures are kept as a download on the run's page.
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+  pull_request:
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      - name: Install the app's requirements (as the launcher does)
+        run: python -m pip install -r requirements.txt
+      - name: Tests
+        run: python -m unittest discover tests -v
+      - name: Open the real app on the published website and take a picture
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu
+        run: python -m tp_desktop --size 1440x900 --wait 25 --screenshot "../window-${{ runner.os }}.png" --storage "$RUNNER_TEMP/tp-browser"
+      - name: The picture shows the platform (not blank or the "Can't reach" page)
+        run: |
+          python - "../window-${{ runner.os }}.png" <<'EOF'
+          import sys
+          from PySide6.QtGui import QGuiApplication, QImage
+          app = QGuiApplication([])
+          img = QImage(sys.argv[1])
+          assert not img.isNull() and img.width() >= 1400, 'no picture'
+          colours = {img.pixel(x, y) for x in range(0, img.width(), 37) for y in range(0, img.height(), 37)}
+          print(f'{img.width()}x{img.height()}, {len(colours)} distinct sampled colours')
+          assert len(colours) > 60, 'the window looks blank'
+          EOF
+      - name: Make the desktop icon (Windows shortcut / Mac app)
+        run: python -c "import shortcut; print(shortcut.make(force=True))"
+      - name: Check the Windows shortcut
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $desk = [Environment]::GetFolderPath('Desktop')
+          $lnk = Join-Path $desk 'Trading Terminal.lnk'
+          if (-not (Test-Path $lnk)) { throw "no shortcut at $lnk" }
+          $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
+          Write-Output "Target: $($s.TargetPath)"; Write-Output "Icon: $($s.IconLocation)"
+          if (-not $s.TargetPath.EndsWith('start-desktop-windows.bat')) { throw 'wrong target' }
+          if (-not (Test-Path ($s.IconLocation -replace ',0$', ''))) { throw 'icon file missing' }
+          $start = Join-Path ([Environment]::GetFolderPath('Programs')) 'Trading Terminal.lnk'
+          if (-not (Test-Path $start)) { throw 'no Start menu entry' }
+      - name: Check the Mac app
+        if: runner.os == 'macOS'
+        run: |
+          app="$HOME/Desktop/Trading Terminal.app"
+          plutil -lint "$app/Contents/Info.plist"
+          test -x "$app/Contents/MacOS/start"
+          test -s "$app/Contents/Resources/logo.icns"
+          cat "$app/Contents/MacOS/start"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: desktop-window-${{ runner.os }}
+          path: window-*.png
+          if-no-files-found: warn
