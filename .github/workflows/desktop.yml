@@ -19,7 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        # Mac minutes count 10x on a private repository's free allowance: Windows only while private
+        os: ${{ github.event.repository.private && fromJSON('["windows-latest"]') || fromJSON('["windows-latest", "macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
