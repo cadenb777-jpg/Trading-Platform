@@ -37,11 +37,13 @@ jobs:
       - name: Tests
         run: python -m unittest discover tests -v
       - name: Open the real app on the published website and take a picture
+        if: ${{ !github.event.repository.private }}  # the published website is offline while the repository is private
         env:
           QT_QPA_PLATFORM: offscreen
           QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu
         run: python -m tp_desktop --size 1440x900 --wait 25 --screenshot "../window-${{ runner.os }}.png" --storage "$RUNNER_TEMP/tp-browser"
       - name: The picture shows the platform (not blank or the "Can't reach" page)
+        if: ${{ !github.event.repository.private }}  # the published website is offline while the repository is private
         run: |
           python - "../window-${{ runner.os }}.png" <<'EOF'
           import sys

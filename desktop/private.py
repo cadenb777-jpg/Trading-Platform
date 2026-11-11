@@ -125,12 +125,23 @@ class _Quiet(http.server.SimpleHTTPRequestHandler):
         pass
 
 
+class _Server(http.server.ThreadingHTTPServer):
+    """Refuses a port already in use (Python's default lets a second server share it on Windows)."""
+    allow_reuse_address = False
+
+    def server_bind(self):
+        import socket
+        if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):  # Windows: nobody else may bind this port while we serve
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def serve(dist=DIST, host=HOST, port=PORT):
     """Serves the build on this computer only, in a background thread. Returns the server, or None when the port is
     taken (another private start is already serving it: that one is used)."""
     handler = functools.partial(_Quiet, directory=str(dist))
     try:
-        server = http.server.ThreadingHTTPServer((host, port), handler)
+        server = _Server((host, port), handler)
     except OSError:
         return None
     threading.Thread(target=server.serve_forever, name='private-site', daemon=True).start()
