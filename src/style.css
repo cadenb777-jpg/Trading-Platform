@@ -9238,32 +9238,12 @@ tr.pr-key td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
   pointer-events: none;
   contain: strict;
 }
-.atmos i {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 90vmax;
-  height: 70vmax;
-  margin: -35vmax 0 0 -45vmax;
-  border-radius: 50%;
-  will-change: transform, opacity;
-  animation: var(--path) var(--move) ease-in-out infinite alternate, atmos-breathe var(--pulse) ease-in-out infinite alternate;
-}
-/* Five soft shapes of colour, each on its own slow loop (50-95 s to move, 17-29 s to brighten and dim), so they flow
-   past each other like the owner's reference picture, but dark and calm. */
-.atmos .a-deep { background: radial-gradient(closest-side, var(--spot-deep), transparent 72%); --path: atmos-a; --move: 70s; --pulse: 23s; }
-.atmos .a-blue { background: radial-gradient(closest-side, var(--spot-blue), transparent 70%); --path: atmos-b; --move: 85s; --pulse: 19s; }
-.atmos .a-sky { background: radial-gradient(closest-side, var(--spot-sky), transparent 70%); --path: atmos-c; --move: 60s; --pulse: 29s; }
-.atmos .a-copper { background: radial-gradient(closest-side, var(--spot-copper), transparent 70%); --path: atmos-d; --move: 95s; --pulse: 17s; }
-.atmos .a-amber { background: radial-gradient(closest-side, var(--spot-amber), transparent 68%); --path: atmos-e; --move: 52s; --pulse: 26s; }
-@keyframes atmos-a { from { transform: translate(55vw, 55vh) scale(1.1) rotate(0deg); } to { transform: translate(35vw, 40vh) scale(1.25) rotate(25deg); } }
-@keyframes atmos-b { from { transform: translate(15vw, 20vh) scale(0.95); } to { transform: translate(45vw, 75vh) scale(1.15); } }
-@keyframes atmos-c { from { transform: translate(90vw, 10vh) scale(0.8); } to { transform: translate(65vw, 35vh) scale(1.05); } }
-@keyframes atmos-d { from { transform: translate(8vw, 95vh) scale(0.9) rotate(-10deg); } to { transform: translate(40vw, 60vh) scale(1.1) rotate(15deg); } }
-@keyframes atmos-e { from { transform: translate(95vw, 80vh) scale(0.7); } to { transform: translate(70vw, 50vh) scale(0.95); } }
-@keyframes atmos-breathe { from { opacity: 0.55; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) {
-  .atmos i { animation-play-state: paused; }
+.atmos canvas {
+  /* one small canvas (src/ui/atmosphere.ts) stretched to the window: the soft shapes look the same at low resolution,
+     and the window blends one light layer while scrolling (five window-sized animated layers dropped it to ~10 fps) */
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* The Chart page is a pure working surface: no grid, no glows behind it. */

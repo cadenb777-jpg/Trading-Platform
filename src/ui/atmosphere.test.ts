@@ -1,19 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import styleCss from '../style.css?raw';
-import { SPOTS } from './atmosphere';
+import { SPOTS, spotAt, wave } from './atmosphere';
 
 describe('flowing background', () => {
-  it('every shape has a colour, a path and slow timings', () => {
-    for (const cls of SPOTS) {
-      const rule = styleCss.match(new RegExp(`\\.atmos \\.${cls} \\{([^}]*)\\}`))?.[1] ?? '';
-      expect(rule, cls).toMatch(/--spot-/);
-      const move = Number(rule.match(/--move: (\d+)s/)?.[1]);
-      const pulse = Number(rule.match(/--pulse: (\d+)s/)?.[1]);
-      expect(move, cls).toBeGreaterThanOrEqual(45); // calm: nothing faster than 45 s to cross
-      expect(pulse, cls).toBeGreaterThanOrEqual(15);
+  it('every shape has a theme colour and slow timings', () => {
+    for (const s of SPOTS) {
+      expect(styleCss, s.color).toContain(`${s.color}:`);
+      expect(s.move, s.color).toBeGreaterThanOrEqual(45); // calm: nothing faster than 45 s to cross
+      expect(s.pulse, s.color).toBeGreaterThanOrEqual(15);
     }
   });
-  it('stands still for reduced motion', () => {
-    expect(styleCss).toMatch(/prefers-reduced-motion: reduce\)\s*\{\s*\.atmos i \{ animation-play-state: paused; \}/);
+  it('travels there and back smoothly', () => {
+    expect(wave(0, 60)).toBeCloseTo(0);
+    expect(wave(60, 60)).toBeCloseTo(1);
+    expect(wave(120, 60)).toBeCloseTo(0);
+    expect(wave(30, 60)).toBeCloseTo(0.5);
+    const a = spotAt(SPOTS[0], 0, 1000, 800);
+    const b = spotAt(SPOTS[0], SPOTS[0].move, 1000, 800);
+    expect(a.x).toBeCloseTo(550);
+    expect(b.x).toBeCloseTo(350);
+    expect(a.alpha).toBeGreaterThanOrEqual(0.55);
+  });
+  it('is one canvas, not window-sized animated layers', () => {
+    expect(styleCss).not.toMatch(/\.atmos i\s*\{/);
+    expect(styleCss).toMatch(/\.atmos canvas \{/);
   });
 });

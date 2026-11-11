@@ -331,7 +331,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   closing the window keeps it in the tray with the helper warm (Quit stops both); a second start hands over through a
   QLocalServer (app.INSTANCE). Account page and Home's My accounts follow live quotes (subscribeQuote), redrawn every
   3 s when something moved, changed rows flash (tick-up/tick-down).
-  Smoothness: ScrollAnimator off, FAST_FLAGS = gpu rasterization + no background throttling only (zero-copy and
+  Flowing background (src/ui/atmosphere.ts): one canvas at 1/8 size, 15 updates a second (five window-sized CSS-animated
+  layers dropped scrolling to ~10 fps in the app). Smoothness: ScrollAnimator off, FAST_FLAGS = gpu rasterization + no background throttling only (zero-copy and
   ignore-gpu-blocklist flickered on Intel); KEEP_CLEAR_JS runs on idle after relevant mutations; theme poll 3 s.
   app.ts warmPages(): ~5 s after start, the main pages (WARM_PAGES) are built hidden and started one at a time on idle,
   stopped after WARM_RUN_MS, focus kept; Account keeps its last figures while reloading.
