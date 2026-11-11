@@ -9,14 +9,16 @@ import datetime as dt
 import math
 import re
 import time
+from zoneinfo import ZoneInfo
 
 from . import datahub
 from . import dividends, macro
-from .core import EngineError, handler, market_session, one_candle_per_day
+from .core import NYSE_EARLY_CLOSES, NYSE_HOLIDAYS, EngineError, handler, market_session, one_candle_per_day
 
 FISCAL = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/'
 SYMBOL = re.compile(r'^[A-Z0-9.\-/$^]{1,15}$')
 _history_slots = asyncio.Semaphore(6)
+NY = ZoneInfo('America/New_York')
 
 
 def _num(value):
@@ -87,9 +89,40 @@ async def quotes(ctx, symbols):
     return out
 
 
+def last_close_cutoff(now):
+    """UTC seconds of the most recent regular-session close plus 15 minutes (Schwab's daily candle is final by then),
+    on or before `now` (an aware datetime). Weekends, NYSE holidays and early closes (13:00) are counted."""
+    ny = now.astimezone(NY)
+    d = ny.date()
+    for _ in range(10):
+        if d.weekday() < 5 and d not in NYSE_HOLIDAYS:
+            close = dt.datetime.combine(d, dt.time(13 if d in NYSE_EARLY_CLOSES else 16, 15), NY)
+            if close <= ny:
+                return close.timestamp()
+        d -= dt.timedelta(days=1)
+    return (ny - dt.timedelta(days=1)).timestamp()
+
+
+def completed_sessions(rows, now):
+    """Daily closes up to the last finished session (today's candle isn't a close until 4:15 pm; pages use the live
+    quote for today)."""
+    last = dt.datetime.fromtimestamp(last_close_cutoff(now), NY).date()
+    return [r for r in rows if datahub.ny_date(r[0]) <= last]
+
+
+def closes_max_age(symbol, now=None):
+    """A stock's or fund's daily closes only change after a session closes, so a copy saved after the last close
+    stays right until the next one (a morning start downloads nothing). Futures trade nearly round the clock on their
+    own calendar: 3 hours, as before."""
+    if symbol.startswith('/'):
+        return 3 * 3600
+    now = now or dt.datetime.now(dt.timezone.utc)
+    return max(60.0, now.timestamp() - last_close_cutoff(now))
+
+
 async def closes(ctx, symbol):
-    """About 13 months of daily closes: [[unix seconds, close], ...], one per New York day in date order. Kept on disk
-    for 3 hours ('board-closes2': copies saved before days were de-duplicated are simply not read again)."""
+    """About 13 months of daily closes: [[unix seconds, close], ...], one per New York day in date order, finished
+    sessions only for stocks and funds. Kept on disk until the next session close (closes_max_age)."""
     async def load():
         now = dt.datetime.now(dt.timezone.utc)
         async with _history_slots:
@@ -97,8 +130,9 @@ async def closes(ctx, symbol):
         _login_check(response)
         if response.status_code != 200:
             raise EngineError(f'Schwab returned {response.status_code} for {symbol}')
-        return [[c['datetime'] // 1000, c['close']] for c in one_candle_per_day(response.json().get('candles', []), symbol) if _num(c.get('close'))]
-    return await ctx.cached(('board-closes2', symbol), 3 * 3600, load, persist=True, stale_ok=True)
+        rows = [[c['datetime'] // 1000, c['close']] for c in one_candle_per_day(response.json().get('candles', []), symbol) if _num(c.get('close'))]
+        return rows if symbol.startswith('/') else completed_sessions(rows, now)
+    return await ctx.cached(('board-closes2', symbol), closes_max_age(symbol), load, persist=True, stale_ok=True)
 
 
 def performance(rows, price=None):

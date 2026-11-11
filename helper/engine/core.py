@@ -292,11 +292,14 @@ class EngineContext:
             return value
 
     async def _refresh(self, key, load, persist):
+        from . import datahub
+        token = datahub.BACKGROUND_WORK.set(True)  # a page already has the saved copy, so nobody waits on this
         try:
             await self._load(key, load, persist)
         except Exception as err:
             log.info('Background refresh of %s failed: %s', key, err)
         finally:
+            datahub.BACKGROUND_WORK.reset(token)
             self._refreshing.discard(key)
 
     async def yahoo_events(self, symbol):

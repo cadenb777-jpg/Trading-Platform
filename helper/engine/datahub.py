@@ -167,6 +167,8 @@ class Health:
     cache_misses: int = 0
     stale_served: int = 0
     notes: collections.deque = field(default_factory=lambda: collections.deque(maxlen=5))
+    #: how long the last 200 calls a person was waiting on queued at the gate (ms), for the diagnostics file
+    waits: collections.deque = field(default_factory=lambda: collections.deque(maxlen=200))
 
 
 HEALTH = collections.defaultdict(Health)
@@ -241,6 +243,9 @@ def snapshot():
             'cacheHits': h.cache_hits, 'cacheMisses': h.cache_misses, 'staleServed': h.stale_served,
             'cacheHitRate': round(h.cache_hits / looked, 3) if looked else None,
             'notes': list(h.notes),
+            # time your requests waited for their turn (not counting the site's own answer time)
+            'waitP95Ms': round(sorted(h.waits)[max(0, int(len(h.waits) * 0.95) - 1)]) if h.waits else None,
+            'waitMaxMs': round(max(h.waits)) if h.waits else None,
         })
     return {'at': round(wall), 'sources': rows}
 
@@ -375,6 +380,11 @@ def _retry_after(response, attempt, base):
     return min(MAX_RETRY_WAIT, asked)
 
 
+#: True inside work the helper starts by itself (a saved copy refreshing in the background): its calls use the
+#: background budget, so a page the owner is waiting on is never queued behind them (core.EngineContext._refresh).
+BACKGROUND_WORK = contextvars.ContextVar('tp_background_work', default=False)
+
+
 async def call(source, fn, *, key=None, background=False, gap=None, gap_from=None, retries=None, retry=True, timeout=None,
                passthrough=False):
     """Runs `fn()` (returning a response-like object with `status_code`, or any value) through the source's gate.
@@ -382,6 +392,7 @@ async def call(source, fn, *, key=None, background=False, gap=None, gap_from=Non
     Retries 429/5xx/network errors (when `retry`), raises DataError after the last try, returns every other reply
     (404, 403...) to the caller, whose own messages stay. `key` joins identical calls already in flight.
     `passthrough` returns the last 429/5xx reply instead of raising (for callers with their own handling)."""
+    background = background or BACKGROUND_WORK.get()
     if key is not None:
         k = (source, key)
         task = _INFLIGHT.get(k)
@@ -404,7 +415,10 @@ async def _attempts(source, fn, background, gap, retries, retry, timeout, passth
     g, h = gate(source), HEALTH[source]
     network = _network_errors()
     for attempt in range(retries + 1):
+        queued = CLOCK.now()
         await g.acquire(background, *gap)
+        if not background:
+            h.waits.append((CLOCK.now() - queued) * 1000)
         released = False
         h.calls += 1
         started = CLOCK.now()
