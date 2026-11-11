@@ -189,5 +189,33 @@ class StartUpWindowFlow(unittest.TestCase):
         self.assertIsNone(run_app.call_args.kwargs['app'])  # a fresh app with the new code
 
 
+class HelperFirst(unittest.TestCase):
+    """The platform opens only once the helper answers (no "start the helper" message on screen)."""
+
+    class Proc:
+        def __init__(self, code=None):
+            self.code = code
+
+        def poll(self):
+            return self.code
+
+    def test_waits_until_the_helper_answers(self):
+        answers = iter([False, False, True])
+        bar = mock.Mock()
+        with mock.patch.object(launch.console, 'helper_needs_you', return_value=False):
+            self.assertTrue(launch.wait_for_helper(self.Proc(), bar, check=lambda: next(answers), sleep=lambda s: None))
+
+    def test_a_stopped_helper_doesnt_hold_the_window(self):
+        with mock.patch.object(launch.console, 'helper_needs_you', return_value=False):
+            self.assertFalse(launch.wait_for_helper(self.Proc(code=1), mock.Mock(), check=lambda: False, sleep=lambda s: None))
+
+    def test_a_schwab_login_is_explained_on_the_bar(self):
+        answers = iter([False, True])
+        bar = mock.Mock()
+        with mock.patch.object(launch.console, 'helper_needs_you', return_value=True):
+            launch.wait_for_helper(self.Proc(), bar, check=lambda: next(answers), sleep=lambda s: None)
+        self.assertIn('needs you', bar.stage.call_args.args[0])
+
+
 if __name__ == '__main__':
     unittest.main()

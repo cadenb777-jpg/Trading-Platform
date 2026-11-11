@@ -159,6 +159,12 @@ def gui_main():
         if mine and private.serve() is None:
             log.write('The platform is already served on this computer: using it.\n')
         (shortcut.make_private if mine else shortcut.make)(log=lambda s: log.write(s + '\n'))
+        # the helper first, so the platform opens connected (never "start the helper" on screen)
+        console.NEEDS_YOU.unlink(missing_ok=True)
+        helper = start_helper(app_env(url))
+        bar.stage('Starting the helper (Schwab, quotes, news)...', 99, expect_seconds=15)
+        if not wait_for_helper(helper, bar):
+            log.write('The helper did not answer before the platform opened.\n')
         bar.stage('Opening...', 100, expect_seconds=0.3)
         bar.finish('Ready')
         bar.wait(100, timeout=1)
@@ -179,7 +185,7 @@ def gui_main():
         app = None
     else:
         progress.write(PROGRESS, pct=100, label='Ready', state='ready')
-    return run_app(updated, url=url, app=app)
+    return run_app(updated, url=url, app=app, helper=helper, helper_started=True)
 
 
 def app_args(url):
@@ -275,7 +281,40 @@ def main():
     return run_app(updated)
 
 
-def run_app(updated, url=None, app=None):
+def start_helper(env):
+    """The website's helper, started here (None when one is already running). Without a console: in a console of its
+    own, hidden (it shows itself only when it needs you, or from the tray menu)."""
+    if helper_running():
+        return None
+    if GUI:
+        info = subprocess.STARTUPINFO()
+        info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        info.wShowWindow = 0  # SW_HIDE
+        return subprocess.Popen([console_python(), str(HELPER / 'splash.py'), 'run', '--no-browser'], cwd=HELPER, env=env,
+                                creationflags=subprocess.CREATE_NEW_CONSOLE, startupinfo=info)
+    return subprocess.Popen([sys.executable, str(HELPER / 'splash.py'), 'run', '--no-browser'], cwd=HELPER, env=env)
+
+
+def wait_for_helper(helper, bar, limit=600, check=None, sleep=time.sleep):
+    """Before the platform opens: wait until the helper answers (so the page never says it's missing), while the bar says
+    what is happening. A Schwab login the helper asks for counts as waiting (its window shows itself); gives up after
+    `limit` seconds or when the helper stopped. Returns True when it answers."""
+    check = check or helper_running
+    start = time.time()
+    told = False
+    while time.time() - start < limit:
+        if check():
+            return True
+        if helper is not None and helper.poll() is not None:
+            return False  # it stopped: the platform opens anyway and says the helper is offline
+        if console.helper_needs_you() and not told:
+            bar.stage('The helper needs you: see its window (Schwab login)...', 99, expect_seconds=120)
+            told = True
+        sleep(0.5)
+    return False
+
+
+def run_app(updated, url=None, app=None, helper=None, helper_started=False):
     """Opens the app beside the helper (started here when none is running); puts the previous version back if a fresh
     update stops within a minute.
     Windows: this window hides once the app's start screen shows (the app brings it back when the helper needs you, and
@@ -288,23 +327,16 @@ def run_app(updated, url=None, app=None):
         console.NEEDS_YOU.unlink(missing_ok=True)  # left over from a helper that stopped while waiting for you
     if app is None:  # (the start-up window's app is already running when it showed this start's progress)
         app = subprocess.Popen([str(splash.venv_python()), '-m', 'tp_desktop', *app_args(url)], cwd=HERE, env=env)
-    helper = None
-    if helper_running():
-        splash.ok('Opening Trading Terminal, using the helper that is already running.')
-    else:
-        # the website's own helper, beside the app in this window: its start screen, the Schwab login when it asks,
-        # its updates; no Chrome tab of its own (the app opens the window or the browser you choose)
-        splash.ok('Opening Trading Terminal. The helper runs here in the background' + (
-            ' (this window hides; quit from the Trading Terminal icon by the clock).' if hidden else
-            ': keep this window open while you use the platform.'))
-        if GUI:  # in a console of its own, hidden: it shows itself only when it needs you (or from the tray menu)
-            info = subprocess.STARTUPINFO()
-            info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            info.wShowWindow = 0  # SW_HIDE
-            helper = subprocess.Popen([console_python(), str(HELPER / 'splash.py'), 'run', '--no-browser'], cwd=HELPER, env=env,
-                                      creationflags=subprocess.CREATE_NEW_CONSOLE, startupinfo=info)
+    if not helper_started:
+        if helper_running():
+            splash.ok('Opening Trading Terminal, using the helper that is already running.')
         else:
-            helper = subprocess.Popen([sys.executable, str(HELPER / 'splash.py'), 'run', '--no-browser'], cwd=HELPER, env=env)
+            # the website's own helper, beside the app: its start screen, the Schwab login when it asks, its updates;
+            # no Chrome tab of its own (the app opens the window or the browser you choose)
+            splash.ok('Opening Trading Terminal. The helper runs here in the background' + (
+                ' (this window hides; quit from the Trading Terminal icon by the clock).' if hidden else
+                ': keep this window open while you use the platform.'))
+        helper = start_helper(env)
     code = app.wait()
     crashed = code not in splash.STOPPED_CODES
     if hidden:
