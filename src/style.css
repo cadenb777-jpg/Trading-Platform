@@ -10972,3 +10972,11 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 @media (prefers-reduced-motion: reduce) {
   tr.tick-up > td.num, tr.tick-down > td.num, .stat-card.tick-up .stat-value, .stat-card.tick-down .stat-value { animation: none; }
 }
+
+/* Self-check results (src/ui/selfCheck.ts) */
+.sc-pop { width: min(420px, 90vw); padding: var(--sp-3); }
+.sc-pop h3 { margin: 0 0 var(--sp-2); font-size: var(--fs-md); }
+.sc-area h4 { margin: var(--sp-3) 0 var(--sp-1); color: var(--label); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; }
+.sc-row { display: flex; gap: var(--sp-2); align-items: baseline; font-size: var(--fs-sm); line-height: 1.4; margin: 4px 0; }
+.sc-row .sb-dot { flex: none; transform: translateY(-1px); }
+.sc-pop .btn { margin-top: var(--sp-3); }

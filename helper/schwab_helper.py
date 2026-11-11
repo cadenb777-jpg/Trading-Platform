@@ -51,7 +51,7 @@ from engine.safexml import fromstring as safe_fromstring  # noqa: E402  (refuses
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 52
+HELPER_VERSION = 53
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -1274,6 +1274,17 @@ async def market_scanner(market):
     await scanner.background_loop(market.engine, market.news)
 
 
+async def selfcheck_schedule(market):
+    """The self-check (engine/selfcheck.py) every 30 minutes: security, data, accuracy and speed."""
+    await engine.wait_loaded()
+    if 'selfcheck' in engine.LOAD_ERRORS:
+        return
+    from engine import selfcheck
+    selfcheck.HELPER.update(host=HOST, origins=list(ALLOWED_ORIGINS),
+                            files=[p for p in (CONFIG_PATH, TOKEN_PATH, DATA_DIR / 'settings.json', DATA_DIR / 'platform.db') if p.exists()])
+    await selfcheck.loop(market.engine)
+
+
 async def prospect_schedule(market):
     """Keeps the prospecting data (engine/prospect.py) fresh, only for sources the owner has downloaded once."""
     await engine.wait_loaded()
@@ -1346,7 +1357,8 @@ async def run(client, sec_contact='', open_browser=True, config=None):
         sys.exit(f'Port {PORT} is already in use. Is the helper already running in another window?')
     async with server:
         jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market), warm_up(market),
-                open_when_ready(market, open_browser), market_scanner(market), prospect_schedule(market), market.update_loop()]
+                open_when_ready(market, open_browser), market_scanner(market), prospect_schedule(market), market.update_loop(),
+                selfcheck_schedule(market)]
         if DESKTOP:  # the website's helper runs the scanner, prospecting and updates; this one only answers the app
             jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market)]
         if SCREEN:

@@ -7,6 +7,7 @@ import { FEEDS, getActivity, health, onActivity, onHealthChange, type FeedId, ty
 import { helper } from '../data/schwab';
 import { sessionAt, type Session } from '../market/sessions';
 import { h } from './dom';
+import { selfCheckItem } from './selfCheck';
 
 /** The status bar's session: the shared NYSE rules with a short label ("Closed: Thanksgiving"). */
 export function marketSession(now: Date): { session: Session; label: string; nyTime: string } {
@@ -80,5 +81,5 @@ export function createStatusBar(d: StatusDeps): HTMLElement {
   helper.onUpdateChange(draw);
   setInterval(draw, 15_000);
   draw();
-  return h('footer', { class: 'status-bar', 'aria-label': 'Status' }, helperBtn, feeds, h('span', { class: 'spacer' }), latency, updated, session, ready);
+  return h('footer', { class: 'status-bar', 'aria-label': 'Status' }, helperBtn, feeds, selfCheckItem(), h('span', { class: 'spacer' }), latency, updated, session, ready);
 }

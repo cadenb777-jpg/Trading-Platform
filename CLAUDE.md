@@ -536,6 +536,14 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 - `python -m unittest discover helper/tests` tests the helper's trading maths (standard library only; run it with
   the helper's Python environment so its packages import).
 
+## Self-check and improvement
+
+- helper/engine/selfcheck.py runs every 30 minutes (security, data, accuracy, speed), keeps ~/.trading-platform/
+  selfcheck.json, shows in the status bar (src/ui/selfCheck.ts, helper v53+) and goes into Send diagnostics.
+- Scheduled improvement sessions follow docs/improvement/PLAYBOOK.md: propose only (branch + pull request with a
+  plain-language report), never merge, never trade, never weaken security; the owner approves every change. Lessons
+  (approved / turned down / rejected by experiment) go in docs/improvement/LESSONS.md.
+
 ## Planned
 
 The full plan (a personal Bloomberg, including client reporting) is in ROADMAP.md. Follow its stage
