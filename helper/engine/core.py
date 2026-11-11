@@ -49,6 +49,25 @@ NYSE_EARLY_CLOSES = {
 }
 
 
+#: Repeated or out-of-order days Schwab sent in its last daily list per symbol (the self-check reports SPY's)
+DAILY_FIXES = {}
+
+
+def one_candle_per_day(candles, symbol=''):
+    """Schwab daily candles in date order with one per New York day (the latest stamp of a day wins). Schwab's daily
+    list has repeated a day (the owner's self-check, 2026-11-11); every return, z-score, ATR and test assumes one bar a
+    day. The number fixed is kept in DAILY_FIXES[symbol]."""
+    days = {}
+    ordered = sorted((c for c in candles or [] if isinstance(c, dict) and c.get('datetime') is not None), key=lambda c: c['datetime'])
+    for c in ordered:
+        days[dt.datetime.fromtimestamp(c['datetime'] / 1000, ZoneInfo('America/New_York')).date()] = c
+    fixed = len(candles or []) - len(days) + sum(1 for a, b in zip(candles or [], (candles or [])[1:])
+                                               if isinstance(a, dict) and isinstance(b, dict) and (b.get('datetime') or 0) < (a.get('datetime') or 0))
+    if symbol:
+        DAILY_FIXES[symbol] = fixed
+    return list(days.values())
+
+
 def market_session(now=None):
     """US stock market session in New York time: 'open' (9:30-16:00, 13:00 on early-close days),
     'extended' (4:00-20:00) or 'closed' (weekends and NYSE holidays)."""
@@ -326,5 +345,5 @@ class EngineContext:
             if not candles:
                 raise EngineError(f'No price history for "{symbol}". Check the ticker.')
             return [{'time': c['datetime'] // 1000, 'open': c['open'], 'high': c['high'], 'low': c['low'],
-                     'close': c['close'], 'volume': c.get('volume', 0)} for c in candles]
+                     'close': c['close'], 'volume': c.get('volume', 0)} for c in one_candle_per_day(candles, symbol)]
         return await self.cached(('daily', symbol, years), 6 * 3600, load)

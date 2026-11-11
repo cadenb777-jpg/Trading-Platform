@@ -328,8 +328,15 @@ export function createFuturesPage() {
   let fair: Carry | null = null;
   async function loadFair() {
     await helper.connect().catch(() => undefined); // the page can start before the helper has said its version
-    if (!carryReady()) {
+    const clear = () => {
+      // never leave an earlier load's figures on screen next to a failure
+      fair = null;
       fairNote.textContent = '';
+      fairStamp.set(null);
+      fairWork.replaceChildren();
+    };
+    if (!carryReady()) {
+      clear();
       fairTiles.replaceChildren(h('p', { class: 'muted small' }, helper.isConnected ? 'Update the helper to see fair value: Settings > About > Update now.' : 'Fair value appears when the helper is running.'));
       return;
     }
@@ -337,7 +344,8 @@ export function createFuturesPage() {
       fair = await engineRequest<Carry>('futures.carry', {}, 30_000);
       renderFair();
     } catch (err) {
-      fairTiles.replaceChildren(h('p', { class: 'muted small' }, (err as Error).message));
+      clear();
+      fairTiles.replaceChildren(h('p', { class: 'muted small' }, `Fair value couldn’t be worked out: ${(err as Error).message}`));
     }
   }
 
@@ -394,8 +402,11 @@ export function createFuturesPage() {
         { class: 'muted small' },
         `Fair value = index × (1 + SOFR × days ÷ 360) − dividends to expiry (cost of carry; Hull, Options, Futures, and Other Derivatives, ch. 5). `,
         `SOFR ${rate}${c.rate?.asOf ? ` (FRED, ${c.rate.asOf})` : ''}. `,
-        `Dividends are estimated from each index's tracking fund over the last 12 months (${yields}; Yahoo Finance), so a dividend paid at a different time than last year moves fair value a little. `,
-        c.sofrFutures.rate != null ? `Cross-check: 3-month SOFR futures (${c.sofrFutures.contract}) price ${(c.sofrFutures.rate * 100).toFixed(2)}% for that later quarter. ` : '',
+        `Dividends are estimated from each index’s tracking fund: its latest regular payment times payments a year, plus the fund’s fee, which it keeps from the index’s dividends (${yields}; Yahoo Finance and the funds’ prospectuses). A dividend that changes before expiry moves fair value a little. `,
+        c.cashOpen ? '' : 'While the stock market is shut, interest and dividends are counted from its next open. ',
+        c.sofrFutures.rate != null && c.sofrFutures.from
+          ? `Cross-check: 3-month SOFR futures (${c.sofrFutures.contract}) price ${(c.sofrFutures.rate * 100).toFixed(2)}% for the 3 months from ${new Date(`${c.sofrFutures.from}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })}. `
+          : '',
         'Futures and index prices are Schwab’s. A read, not a trade signal; nothing here places orders.',
       ),
     );

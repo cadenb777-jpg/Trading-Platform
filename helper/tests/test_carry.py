@@ -45,17 +45,34 @@ class FairValue(unittest.TestCase):
         self.assertIsNone(carry.implied_rate(6020, 6000, 0.012, 0))
 
 
-class TrailingYield(unittest.TestCase):
-    TODAY = dt.date(2026, 11, 11)
+class IndexYield(unittest.TestCase):
+    TODAY = dt.date(2026, 12, 18)
+    # quarterly payments on third Fridays: on 2026-12-18 a 365-day window would hold 5 of them
+    DIVS = {dt.date(2025, 12, 19): 1.9, dt.date(2026, 3, 20): 1.7, dt.date(2026, 6, 19): 1.8,
+            dt.date(2026, 9, 18): 1.8, dt.date(2026, 12, 18): 2.0}
 
-    def test_last_twelve_months_only(self):
-        divs = {dt.date(2025, 11, 1): 9.9, dt.date(2025, 12, 19): 1.9, dt.date(2026, 3, 20): 1.7,
-                dt.date(2026, 6, 19): 1.8, dt.date(2026, 9, 18): 1.8}
-        self.assertAlmostEqual(carry.trailing_yield(divs, 600, self.TODAY), 7.2 / 600)
+    def test_last_regular_payment_times_four_plus_the_fee(self):
+        # 2.00 x 4 / 600 + 0.0945% = 1.3333% + 0.0945%
+        self.assertAlmostEqual(carry.index_yield(self.DIVS, 600, self.TODAY, 0.000945), 8.0 / 600 + 0.000945)
 
-    def test_one_payment_is_not_enough(self):
-        self.assertIsNone(carry.trailing_yield({dt.date(2026, 6, 1): 2.0}, 600, self.TODAY))
-        self.assertIsNone(carry.trailing_yield(None, 600, self.TODAY))
+    def test_needs_a_regular_record(self):
+        self.assertIsNone(carry.index_yield({dt.date(2026, 6, 1): 2.0}, 600, self.TODAY, 0))
+        self.assertIsNone(carry.index_yield(None, 600, self.TODAY, 0))
+        self.assertIsNone(carry.index_yield(self.DIVS, None, self.TODAY, 0))
+
+
+class Dates(unittest.TestCase):
+    def test_next_session(self):
+        ny = carry.NY
+        self.assertEqual(carry.next_session(dt.datetime(2026, 11, 13, 8, 0, tzinfo=ny)), dt.date(2026, 11, 13))  # Fri pre-open
+        self.assertEqual(carry.next_session(dt.datetime(2026, 11, 13, 18, 0, tzinfo=ny)), dt.date(2026, 11, 16))  # Fri night
+        self.assertEqual(carry.next_session(dt.datetime(2026, 11, 14, 12, 0, tzinfo=ny)), dt.date(2026, 11, 16))  # Saturday
+        self.assertEqual(carry.next_session(dt.datetime(2026, 11, 25, 20, 0, tzinfo=ny)), dt.date(2026, 11, 27))  # Thanksgiving
+
+    def test_sofr_quarter_has_not_started(self):
+        code, start = carry.sofr_quarter(dt.date(2026, 11, 11))
+        self.assertEqual(code, 'SR3Z26')
+        self.assertEqual(start, dt.date(2026, 12, 1))
 
 
 class Row(unittest.TestCase):
@@ -156,12 +173,13 @@ class Handler(unittest.TestCase):
         out = self.run_it()
         es, nq = out['rows'][0], out['rows'][1]
         self.assertEqual(es['root'], 'ES')
-        self.assertAlmostEqual(out['yields']['SPY']['value'], 7.2 / 600)
-        self.assertAlmostEqual(es['fairValue'], carry.fair_value(6000, 0.043, 0.012, es['contract']['days']))
+        q = 1.8 * 4 / 600 + 0.000945
+        self.assertAlmostEqual(out['yields']['SPY']['value'], q)
+        self.assertAlmostEqual(es['fairValue'], carry.fair_value(6000, 0.043, q, es['contract']['days']))
         self.assertIsNotNone(es['spreadBp'])
         self.assertIsNotNone(es['roll'])
         self.assertIsNone(nq['fairValue'])
-        self.assertIn('QQQ', nq['why'])
+        self.assertIn('Schwab didn’t price QQQ', nq['why'])
         self.assertEqual(out['rate']['value'], 0.043)
         self.assertEqual(out['rate']['source'], 'fred')
 

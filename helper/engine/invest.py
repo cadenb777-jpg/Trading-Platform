@@ -12,7 +12,7 @@ import time
 
 from . import datahub
 from . import dividends, macro
-from .core import EngineError, handler, market_session
+from .core import EngineError, handler, market_session, one_candle_per_day
 
 FISCAL = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/'
 SYMBOL = re.compile(r'^[A-Z0-9.\-/$^]{1,15}$')
@@ -88,7 +88,8 @@ async def quotes(ctx, symbols):
 
 
 async def closes(ctx, symbol):
-    """About 13 months of daily closes: [[unix seconds, close], ...]. Kept on disk for 3 hours."""
+    """About 13 months of daily closes: [[unix seconds, close], ...], one per New York day in date order. Kept on disk
+    for 3 hours ('board-closes2': copies saved before days were de-duplicated are simply not read again)."""
     async def load():
         now = dt.datetime.now(dt.timezone.utc)
         async with _history_slots:
@@ -96,18 +97,8 @@ async def closes(ctx, symbol):
         _login_check(response)
         if response.status_code != 200:
             raise EngineError(f'Schwab returned {response.status_code} for {symbol}')
-        return one_per_day([[c['datetime'] // 1000, c['close']] for c in response.json().get('candles', []) if _num(c.get('close'))])
-    # cleaned on the way out too, so a copy saved before this rule existed is right at once
-    return one_per_day(await ctx.cached(('board-closes', symbol), 3 * 3600, load, persist=True, stale_ok=True))
-
-
-def one_per_day(rows):
-    """Daily closes in date order with one row per New York day (the newest row of a day wins). Schwab's daily list
-    can repeat a day or stamp one twice; every return, risk and chart figure assumes one close per day."""
-    days = {}
-    for t, c in sorted(rows or [], key=lambda r: r[0]):
-        days[datahub.ny_date(t)] = [t, c]
-    return list(days.values())
+        return [[c['datetime'] // 1000, c['close']] for c in one_candle_per_day(response.json().get('candles', []), symbol) if _num(c.get('close'))]
+    return await ctx.cached(('board-closes2', symbol), 3 * 3600, load, persist=True, stale_ok=True)
 
 
 def performance(rows, price=None):

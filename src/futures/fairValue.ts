@@ -49,7 +49,7 @@ export interface Carry {
   session: 'open' | 'extended' | 'closed';
   asOf: number;
   rate: Envelope | null;
-  sofrFutures: { contract: string; rate: number | null };
+  sofrFutures: { contract: string | null; from: string | null; rate: number | null };
   yields: Record<string, Envelope | null>;
   errors: string[];
 }
@@ -125,10 +125,11 @@ export function rollText(r: CarryRow): string {
 }
 
 /** The morning brief's line: the S&P 500's implied open while the cash market is shut, else nothing. */
-export function briefLine(c: Carry | null): { text: string; tone: Tone } | null {
+export function briefLine(c: Carry | null): { text: string; value: string; tone: Tone } | null {
   const es = c?.rows.find((r) => r.root === 'ES');
   if (!es || es.cashOpen || !ok(es.impliedOpenChange)) return null;
-  return { text: `S&P 500 implied open ${signedPct(es.impliedOpenChange)}`, tone: toneOf(es.impliedOpenChange) };
+  const value = signedPct(es.impliedOpenChange);
+  return { text: `S&P 500 implied open ${value}`, value, tone: toneOf(es.impliedOpenChange) };
 }
 
 /** The roll for a table cell: "H27 +7.58 pts" (dear when +, cheap when -); rollText() is its tooltip. */

@@ -52,7 +52,7 @@ describe('fair value readings', () => {
 
   it('gives the brief its S&P line only while the cash market is shut', () => {
     const c = { rows: [base] } as Carry;
-    expect(briefLine(c)).toEqual({ text: 'S&P 500 implied open +0.02%', tone: 'up' });
+    expect(briefLine(c)).toEqual({ text: 'S&P 500 implied open +0.02%', value: '+0.02%', tone: 'up' });
     expect(briefLine({ rows: [open] } as Carry)).toBeNull();
     expect(briefLine(null)).toBeNull();
   });

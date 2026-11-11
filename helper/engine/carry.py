@@ -12,7 +12,8 @@ about the cash market:
 Maths (cost of carry; Hull, Options, Futures, and Other Derivatives, 11th ed., ch. 5, "Futures on stock indices",
 F0 = S0 e^((r - q)T)), written in the money-market form desks quote: F = S (1 + r d/360) - D, with r = SOFR (ACT/360,
 the convention of the SOFR rate itself, New York Fed) and D = the dividends paid to expiry, estimated as S q d/365 from
-the tracking ETF's trailing 12-month cash dividends (SPY, QQQ, DIA, IWM; Yahoo Finance). The test file checks both forms
+the tracking ETF's forward dividend (last regular payment x payments a year; Yahoo Finance) plus the ETF's fee (SPY,
+QQQ, DIA, IWM). Carry runs from the session the index price belongs to (the next open while the cash market is shut). The test file checks both forms
 against hand-worked values. Only figures from a source are shown, each with its time; anything missing is None.
 
 Nothing here trades. Schwab is market data only.
@@ -23,17 +24,20 @@ import math
 import time
 from zoneinfo import ZoneInfo
 
-from . import datahub, futures_market, macro
+from . import datahub, dividends, futures_market, macro
 from .core import EngineError, handler, market_session
 
 NY = ZoneInfo('America/New_York')
 
-#: futures root -> the cash index it settles on and the ETF whose dividends stand in for the index's
+#: futures root -> the cash index it settles on and the ETF whose dividends stand in for the index's. A fund pays its
+#: holders the index's dividends less its yearly fee, so the fee (`fee`, gross expense ratio from each issuer's
+#: prospectus: SPDR S&P 500 ETF Trust 0.0945%, Invesco QQQ Trust 0.20%, SPDR Dow Jones Industrial Average ETF Trust
+#: 0.16%, iShares Russell 2000 ETF 0.19%) is added back to get the index's own yield.
 MARKETS = [
-    {'root': 'ES', 'index': '$SPX', 'indexName': 'S&P 500', 'etf': 'SPY'},
-    {'root': 'NQ', 'index': '$NDX', 'indexName': 'Nasdaq-100', 'etf': 'QQQ'},
-    {'root': 'YM', 'index': '$DJI', 'indexName': 'Dow Jones', 'etf': 'DIA'},
-    {'root': 'RTY', 'index': '$RUT', 'indexName': 'Russell 2000', 'etf': 'IWM'},
+    {'root': 'ES', 'index': '$SPX', 'indexName': 'S&P 500', 'etf': 'SPY', 'fee': 0.000945},
+    {'root': 'NQ', 'index': '$NDX', 'indexName': 'Nasdaq-100', 'etf': 'QQQ', 'fee': 0.0020},
+    {'root': 'YM', 'index': '$DJI', 'indexName': 'Dow Jones', 'etf': 'DIA', 'fee': 0.0016},
+    {'root': 'RTY', 'index': '$RUT', 'indexName': 'Russell 2000', 'etf': 'IWM', 'fee': 0.0019},
 ]
 RATE_SERIES = 'SOFR'
 
@@ -70,14 +74,36 @@ def implied_open(future, fair_premium):
     return future - fair_premium
 
 
-def trailing_yield(divs, price, today):
-    """Cash dividends with an ex-date in the last 365 days over today's price; None with fewer than 2 payments
-    (a fund that pays once a year, or missing history, would understate or misstate the yield)."""
+def index_yield(divs, price, today, fee):
+    """The index's dividend yield from its tracking fund: the fund's forward dividend (last regular payment x payments a
+    year, specials left out: the platform's one rule, dividends.analyse) over its price, plus the fund's fee. A fixed
+    12-month window would catch 5 quarterly payments on some ex-dates and 3 on others. None without a regular record."""
     if not divs or not _ok(price) or price <= 0:
         return None
-    start = today - dt.timedelta(days=365)
-    paid = [v for d, v in divs.items() if start < d <= today and _ok(v)]
-    return sum(paid) / price if len(paid) >= 2 else None
+    a = dividends.analyse(divs, today, price=price)
+    if not a['forward'] or a['frequency'] < 2 or a['note']:
+        return None
+    return a['forward'] / price + (fee or 0)
+
+
+def next_session(now):
+    """The New York date the cash index next opens on (today before 9:30 am on a trading day, else the next one).
+    An implied open is the index level for that open, so carry is counted from that day, not from a Saturday."""
+    d = now.date()
+    if futures_market.is_bday(d) and (now.hour, now.minute) < (9, 30):
+        return d
+    return futures_market.add_bdays(d, 1)
+
+
+def sofr_quarter(today):
+    """The first 3-month SOFR contract whose quarter hasn't started (its IMM date, the 3rd Wednesday, is after today):
+    a clean forward rate. The front contract's quarter is partly fixed already."""
+    for c in futures_market.contracts('SR3', today, 4):
+        month = futures_market.MONTH_CODES.index(c['code'][-3]) + 1
+        year = 2000 + int(c['code'][-2:])
+        if futures_market.nth_weekday(year, month, 2, 3) > today:
+            return c['code'], dt.date(year, month, 1)
+    return None, None
 
 
 def days_to(expiry_iso, today):
@@ -158,11 +184,13 @@ def _contract(c, quotes, today):
 @handler('futures.carry')
 async def carry(ctx, msg):
     """Fair value, implied open / financing rate and the roll for the four equity index futures."""
-    today = dt.datetime.now(NY).date()
+    now = dt.datetime.now(NY)
+    today = now.date()
     cash_open = market_session() == 'open'
-    chains = {m['root']: [c for c in futures_market.contracts(m['root'], today, 3) if days_to(c['expiry'], today) >= 0][:2] for m in MARKETS}
-    sofr_front = futures_market.contracts('SR3', today, 2)[0]
-    fut_symbols = [f"/{c['code']}" for cs in chains.values() for c in cs] + [f"/{sofr_front['code']}"]
+    start = today if cash_open else next_session(now)  # carry runs from the session the index price belongs to
+    chains = {m['root']: [c for c in futures_market.contracts(m['root'], today, 3) if days_to(c['expiry'], start) >= 0][:2] for m in MARKETS}
+    sofr_code, sofr_month = sofr_quarter(today)
+    fut_symbols = [f"/{c['code']}" for cs in chains.values() for c in cs] + ([f"/{sofr_code}"] if sofr_code else [])
     cash_symbols = [m['index'] for m in MARKETS] + [m['etf'] for m in MARKETS]
     fut, cash, rate, *divs = await asyncio.gather(
         futures_market._quotes(ctx, fut_symbols), _index_quotes(ctx, cash_symbols), _rate(ctx),
@@ -180,26 +208,30 @@ async def carry(ctx, msg):
     if isinstance(rate, Exception):
         errors.append(str(rate) if isinstance(rate, EngineError) else 'FRED (SOFR) couldn’t be reached.')
         rate = None
-    sr3 = futures_market._quote_fields(fut.get(f"/{sofr_front['code']}")).get('price') if fut else None
+    sr3 = futures_market._quote_fields(fut.get(f"/{sofr_code}")).get('price') if fut and sofr_code else None
     rows, yields = [], {}
     for m, d in zip(MARKETS, divs):
         etf = cash.get(m['etf'])
-        q = trailing_yield(None if isinstance(d, Exception) else d, etf and etf['price'], today)
+        d = None if isinstance(d, Exception) else d
+        q = index_yield(d, etf and etf['price'], today, m['fee'])
         yields[m['etf']] = q
         spot = cash.get(m['index'])
-        chain = [_contract(c, fut, today) for c in chains[m['root']]]
+        chain = [_contract(c, fut, start) for c in chains[m['root']]]
         mult = futures_market.SPEC[m['root']]['mult']
         row = carry_row(m, spot and spot['price'], rate and rate['value'], q, chain[0] if chain else None,
                         chain[1] if len(chain) > 1 else None, cash_open, mult)
         row['spotAt'] = spot and spot['at']
         row['divYield'] = q
-        if q is None:
-            row['why'] = f'No 12-month dividend record for {m["etf"]} from Yahoo, so no fair value.'
+        if not etf:
+            row['why'] = f'Schwab didn’t price {m["etf"]}, whose dividends stand in for the index’s, so no fair value.'
+        elif q is None:
+            row['why'] = f'No regular dividend record for {m["etf"]} from Yahoo, so no fair value.'
         elif not spot:
             row['why'] = f'Schwab didn’t price the {m["indexName"]} index.'
         rows.append(row)
     return {'rows': rows, 'cashOpen': cash_open, 'session': market_session(), 'asOf': time.time(),
             'rate': rate and datahub.envelope(rate['value'], 'fred', rate['date']),
-            'sofrFutures': {'contract': sofr_front['code'], 'rate': (100 - sr3) / 100 if _ok(sr3) else None},
+            'sofrFutures': {'contract': sofr_code, 'from': sofr_month and sofr_month.isoformat(), 'rate': (100 - sr3) / 100 if _ok(sr3) else None},
+            'fees': {m['etf']: m['fee'] for m in MARKETS},
             'yields': {k: v and datahub.envelope(v, 'yahoo', today.isoformat()) for k, v in yields.items()},
             'errors': errors}

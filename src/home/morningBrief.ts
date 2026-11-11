@@ -104,10 +104,11 @@ export function createMorningBrief(d: BriefDeps) {
   }
 
   async function loadStrip() {
-    const [board, curve, carry] = await Promise.allSettled([
+    // Fair value needs more sources (FRED, Yahoo): it joins the strip when it arrives, never holding the rest back
+    const carry = carryReady() ? engineRequest<Carry>('futures.carry', {}, 30_000).catch(() => null) : Promise.resolve(null);
+    const [board, curve] = await Promise.allSettled([
       engineRequest<{ rows: BoardRow[] }>('futures.board', {}, 90_000),
       engineRequest<{ curve: CurvePoint[] }>('macro.curve', {}, 45_000),
-      carryReady() ? engineRequest<Carry>('futures.carry', {}, 30_000) : Promise.resolve(null),
     ]);
     const rows = board.status === 'fulfilled' ? board.value.rows : [];
     const ten = curve.status === 'fulfilled' ? curve.value.curve.find((p) => p.label === '10Y') : undefined;
@@ -127,19 +128,21 @@ export function createMorningBrief(d: BriefDeps) {
           h('span', { class: 'muted tiny brief-chip-chg' }, ten.monthAgo != null ? `${ten.now - ten.monthAgo >= 0 ? '+' : '−'}${Math.abs((ten.now - ten.monthAgo) * 100).toFixed(0)} bp 1M` : ''),
         ),
       );
+    strip.replaceChildren(...items);
     // Before the open: where the S&P 500 is set to open once interest and dividends are taken out of the futures
-    const open = briefLine(carry.status === 'fulfilled' ? carry.value : null);
-    if (open)
-      items.unshift(
+    void carry.then((c) => {
+      const open = briefLine(c);
+      if (!open || !items[0]?.isConnected) return; // the strip was redrawn meanwhile
+      strip.prepend(
         h(
           'button',
           { type: 'button', class: 'brief-chip', role: 'listitem', title: 'S&P 500 futures less their fair premium (interest minus dividends to expiry). Open Futures for every index.', onclick: () => (location.hash = '#futures/fair') },
           h('span', { class: 'brief-chip-name' }, 'S&P open'),
-          h('span', { class: `num brief-chip-value ${open.tone}` }, open.text.replace('S&P 500 implied open ', '')),
+          h('span', { class: `num brief-chip-value ${open.tone}` }, open.value),
           h('span', { class: 'muted tiny brief-chip-chg' }, 'implied'),
         ),
       );
-    strip.replaceChildren(...items);
+    });
     if (board.status === 'rejected' && !ten) strip.replaceChildren(h('p', { class: 'muted small' }, helper.isConnected ? `Futures unavailable: ${(board.reason as Error).message}` : 'Futures, rates and currencies appear here when the helper is running.'));
   }
 
