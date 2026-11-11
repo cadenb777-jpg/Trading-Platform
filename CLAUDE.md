@@ -115,6 +115,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   a widget released later joins a saved layout once after its first card; removing it sticks.
   Pop-ups: no backdrop-filter on .modal-backdrop (a full-screen blur over animated content dropped scrolling to ~20 fps);
   .modal-body has overscroll-behavior: contain; the indicator window (.mgr) is a fixed 84vh with only its lists scrolling.
+  Live redraws keep your place: src/ui/keepScroll.ts keepScroll(root, draw) restores every scrolled box (matched by class
+  + index) and the page after a rebuild; Account's 3 s paint and Home's My accounts use it. Desktop 2.16: FAST_FLAGS adds
+  --disable-gpu-process-crash-limit, and Window.check_blank (every 20 s and on returning to the front) reloads a page that
+  samples solid black twice (policy.looks_blank, tested; the site's darkest colour is navy) after a GPU/driver reset.
   Backtest (src/pages/backtestPage.ts, src/backtest/research.ts): "My chart's indicators" builds rules (operand
   operator operand, ALL/ANY) from state.indicators via suggestRules(); the chart's Backtest button fires
   `tp:backtest-chart`. Research tabs: Monte Carlo (trade bootstrap), random-walk test (shuffled daily moves, p-value),

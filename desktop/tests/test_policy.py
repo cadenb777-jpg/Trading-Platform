@@ -113,3 +113,22 @@ class TitleBar(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BlankScreen(unittest.TestCase):
+    def test_pure_black_is_blank(self):
+        self.assertTrue(policy.looks_blank([(0, 0, 0)] * 25))
+        self.assertTrue(policy.looks_blank([(3, 2, 4)] * 25))
+
+    def test_the_sites_navy_and_light_theme_are_not(self):
+        self.assertFalse(policy.looks_blank([(5, 13, 25)] * 25))  # --bg dark #050d19
+        self.assertFalse(policy.looks_blank([(245, 242, 236)] * 25))  # --bg light #f5f2ec
+        self.assertFalse(policy.looks_blank([(0, 0, 0)] * 24 + [(200, 180, 60)]))  # one amber label = drawing
+
+    def test_too_few_samples_never_count(self):
+        self.assertFalse(policy.looks_blank([(0, 0, 0)] * 3))
+
+    def test_crash_limit_flag_is_on_unless_gpu_is_off(self):
+        self.assertIn('--disable-gpu-process-crash-limit', policy.chromium_flags('').split())
+        self.assertNotIn('--disable-gpu-process-crash-limit', policy.chromium_flags('--disable-gpu').split())
+

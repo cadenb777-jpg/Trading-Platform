@@ -27,6 +27,7 @@ import { pct, pctU, statCards, pageFrame, dataTable } from '../ui/charts';
 import { h, openModal, openPopover, timeAgo, toast } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
 import { openNewsSummary } from '../ui/newsSummary';
+import { keepScroll } from '../ui/keepScroll';
 import { tableTools } from '../ui/tableTools';
 import { tickerAttr } from '../ui/tickerCard';
 import { openSecurity } from '../security/open';
@@ -315,9 +316,12 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     const drawAccounts = () => accountsBox.replaceChildren(...chosen.map((p, i) => accountCard(p, valued, types[i], !single)));
     paint = () => {
       if (run !== loading) return;
-      drawOverview();
-      drawHoldings();
-      drawAccounts();
+      // live prices redraw every few seconds: keep every table and the page where you were looking
+      keepScroll(frame.body, () => {
+        drawOverview();
+        drawHoldings();
+        drawAccounts();
+      });
     };
     paint();
     stopLive = streamPrices(run, symbols, prices, () => {
