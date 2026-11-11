@@ -11042,3 +11042,24 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .sc-row { display: flex; gap: var(--sp-2); align-items: baseline; font-size: var(--fs-sm); line-height: 1.4; margin: 4px 0; }
 .sc-row .sb-dot { flex: none; transform: translateY(-1px); }
 .sc-pop .btn { margin-top: var(--sp-3); }
+
+/* Home: Edge today. One row per reading: label, the figure (big, white or green/red), the numbers behind it. */
+.edge-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: var(--sp-2); }
+.edge-line {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+  text-decoration: none;
+  min-height: 24px;
+}
+.edge-line:hover { border-color: var(--accent-border); }
+.edge-line:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.edge-label { color: var(--label); font-weight: 600; }
+.edge-value { font-size: 22px; line-height: 1.2; font-weight: 650; color: var(--text-strong); justify-self: start; text-align: left; }
+.edge-value.up { color: var(--up); }
+.edge-value.down { color: var(--down); }
+.edge-detail { overflow-wrap: anywhere; }

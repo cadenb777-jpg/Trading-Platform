@@ -65,3 +65,12 @@ whenever the owner repeats or adds one.
   owner: "the AI summary is placed weird".
 - 2026-11-11 · SPX box-spread rates vs T-bills and SOFR ("What money costs", helper 56) · proposed · arbitrage tool:
   box rates above Treasury yields (van Binsbergen, Diamond, Grotteria JFE 2022); after costs, asks-vs-mid shown.
+- 2026-11-11 · #11 fast start, box-spread rates, Home AI read, mantras · approved (merged by the owner).
+- 2026-11-11 · Jitter browsing indicators: no full-screen backdrop blur behind pop-ups; the indicator window scrolls
+  only its lists · proposed · owner saw jitter; measured scrolling the list at 20 fps with the 3 px blur, 60 fps
+  without (68 -> 0 slow frames); the window also had nested scroll areas that moved the whole column. Lesson: never put
+  backdrop-filter over animated content (flowing background, live charts); measure scroll fps on every pop-up change.
+- 2026-11-11 · Home "Edge today" card (implied open, futures vs fair value, box lending vs T-bill), and new Home cards
+  join saved layouts once (Layout.seen) · proposed · owner: "I notice no new changes": the edge tools sat low on Futures.
+  Lesson: every new capability gets a visible home on the first screen, not only a page section.
+
