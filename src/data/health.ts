@@ -25,7 +25,7 @@ export function feedOf(type: string): FeedId | null {
   if (/^flow\.cot/.test(type)) return 'cftc';
   if (/^(macro\.|bonds\.market)/.test(type)) return 'fred';
   if (/^(research\.company|alts\.|sec\.)/.test(type)) return 'sec';
-  if (/^(history|invest\.(board|history|movers|search)|futures\.board|bonds\.cusip|risk\.account)$/.test(type)) return 'quotes';
+  if (/^(history|invest\.(board|history|movers|search)|futures\.(board|carry)|bonds\.cusip|risk\.account)$/.test(type)) return 'quotes';
   return null;
 }
 

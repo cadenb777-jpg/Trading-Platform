@@ -4,7 +4,9 @@
  * Data: helper futures.board / futures.curve / futures.detail (Schwab quotes and history, CFTC COT).
  */
 import { insightButton } from '../ai/insight';
-import { clearEngineCache, engineRequest } from '../data/schwab';
+import { carryReady, clearEngineCache, engineRequest, helper } from '../data/schwab';
+import { headline, level, reading, rollShort, rollText, signedBp, signedPts, signedUsd, type Carry } from '../futures/fairValue';
+import { asOfStamp } from '../ui/dataHealth';
 import { createCotPanel } from '../futures/cot';
 import { curveReading, cotTone, daysUntil, futuresPrice, heatStrength, sigmaText } from '../futures/view';
 import { compact, createLineChart, dataTable, money, pageFrame, pct, statCards } from '../ui/charts';
@@ -153,6 +155,10 @@ export function createFuturesPage() {
   const note = h('p', { class: 'ap-note', hidden: true });
   const tiles = h('div', { class: 'fut-tiles' });
   const moving = h('div', { class: 'fut-moving' });
+  const fairTiles = h('div', { class: 'fv-tiles' });
+  const fairWork = h('div', {});
+  const fairNote = h('span', { class: 'muted small' });
+  const fairStamp = asOfStamp('quotes', { prefix: 'as of' });
   const boardHead = h('div', { class: 'panel-head' });
   const boardBox = h('div', {});
   const curveSelect = h('select', { class: 'input', 'aria-label': 'Market for the term structure' });
@@ -166,6 +172,13 @@ export function createFuturesPage() {
     note,
     h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Sectors today'), h('span', { class: 'muted small' }, 'Average day change. Click a sector to filter the board.')), tiles),
     h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'What’s moving'), termLabel('Biggest moves in % and in σ', 'sigma')), moving),
+    h(
+      'section',
+      { class: 'panel', id: 'fut-fair' },
+      h('div', { class: 'panel-head' }, h('h3', {}, termLabel('Fair value', 'fairvalue')), fairNote, fairStamp.el),
+      fairTiles,
+      h('details', { class: 'fv-work' }, h('summary', {}, 'How it’s worked out'), fairWork),
+    ),
     h('section', { class: 'panel' }, boardHead, boardBox),
     h(
       'div',
@@ -311,6 +324,94 @@ export function createFuturesPage() {
     );
   }
 
+  // ----- Fair value (helper futures.carry): implied open while the cash market is shut, rich/cheap while it trades -----
+  let fair: Carry | null = null;
+  async function loadFair() {
+    await helper.connect().catch(() => undefined); // the page can start before the helper has said its version
+    const clear = () => {
+      // never leave an earlier load's figures on screen next to a failure
+      fair = null;
+      fairNote.textContent = '';
+      fairStamp.set(null);
+      fairWork.replaceChildren();
+    };
+    if (!carryReady()) {
+      clear();
+      fairTiles.replaceChildren(h('p', { class: 'muted small' }, helper.isConnected ? 'Update the helper to see fair value: Settings > About > Update now.' : 'Fair value appears when the helper is running.'));
+      return;
+    }
+    try {
+      fair = await engineRequest<Carry>('futures.carry', {}, 30_000);
+      renderFair();
+    } catch (err) {
+      clear();
+      fairTiles.replaceChildren(h('p', { class: 'muted small' }, `Fair value couldn’t be worked out: ${(err as Error).message}`));
+    }
+  }
+
+  function renderFair() {
+    const c = fair;
+    if (!c) return;
+    fairNote.textContent = c.cashOpen
+      ? 'Stock market open: futures against what they should cost after interest and dividends.'
+      : 'Stock market closed: where the index futures say each index will open.';
+    fairStamp.set(c.asOf, { source: 'Schwab, FRED, Yahoo' });
+    fairTiles.replaceChildren(
+      ...c.rows.map((r) => {
+        const t = headline(r);
+        return h(
+          'button',
+          { type: 'button', class: 'fv-tile', 'data-root': r.root, title: `${reading(r)} Click for the ${r.root} market.`, 'aria-label': `${r.indexName}: ${t.label} ${t.value}. ${reading(r)}` },
+          h('span', { class: 'fv-name' }, r.indexName),
+          h('span', { class: 'muted small' }, t.label),
+          h('b', { class: `fv-value ${t.tone}` }, t.value),
+          h('span', { class: 'muted small fv-detail' }, t.detail),
+        );
+      }),
+    );
+    const rate = c.rate ? `${(c.rate.value * 100).toFixed(2)}%` : 'unavailable';
+    const yields = c.rows.map((r) => `${r.etf} ${c.yields[r.etf] ? `${(c.yields[r.etf]!.value * 100).toFixed(2)}%` : 'unavailable'}`).join(', ');
+    const table = dataTable(
+      ['Index', 'Contract', 'Futures', 'Index level', 'Fair value', 'Fair premium', 'Futures vs fair', c.cashOpen ? 'Implied rate vs SOFR' : 'Implied open', 'Roll'],
+      c.rows.map((r) => [
+        h('span', { class: 'fut-market', 'data-root': r.root }, h('b', {}, r.root), ' ', h('span', { class: 'muted fut-name' }, r.indexName)),
+        r.contract ? `${r.contract.code} (${r.contract.days}d)` : '—',
+        level(r.contract?.price),
+        level(r.spot),
+        level(r.fairValue),
+        level(r.fairPremium),
+        { v: r.mispricing == null ? '—' : `${signedPts(r.mispricing)} (${signedUsd(r.mispricingUsd)})`, title: 'Index points, and dollars a contract' },
+        c.cashOpen ? (r.impliedRate != null ? `${(r.impliedRate * 100).toFixed(2)}% (${signedBp(r.spreadBp)})` : '—') : level(r.impliedOpen),
+        { v: rollShort(r), title: rollText(r) },
+      ]),
+      undefined,
+      { id: 'futures:fair' },
+    );
+    table.classList.add('tr-clickable');
+    activatableRows(table);
+    const tips: Record<string, string> = { 'Fair premium': 'fairvalue', 'Implied rate vs SOFR': 'impliedfinancing', 'Implied open': 'impliedopen', Roll: 'roll' };
+    table.querySelectorAll('th').forEach((th) => {
+      const term = tips[th.textContent?.trim() ?? ''];
+      if (term) th.append(infoTip(term));
+    });
+    fairWork.replaceChildren(
+      ...(c.errors.length ? [h('p', { class: 'ap-note' }, c.errors.join(' '))] : []),
+      table,
+      h(
+        'p',
+        { class: 'muted small' },
+        `Fair value = index × (1 + SOFR × days ÷ 360) − dividends to expiry (cost of carry; Hull, Options, Futures, and Other Derivatives, ch. 5). `,
+        `SOFR ${rate}${c.rate?.asOf ? ` (FRED, ${c.rate.asOf})` : ''}. `,
+        `Dividends are estimated from each index’s tracking fund: its latest regular payment times payments a year, plus the fund’s fee, which it keeps from the index’s dividends (${yields}; Yahoo Finance and the funds’ prospectuses). A dividend that changes before expiry moves fair value a little. `,
+        c.cashOpen ? '' : 'While the stock market is shut, interest and dividends are counted from its next open. ',
+        c.sofrFutures.rate != null && c.sofrFutures.from
+          ? `Cross-check: 3-month SOFR futures (${c.sofrFutures.contract}) price ${(c.sofrFutures.rate * 100).toFixed(2)}% for the 3 months from ${new Date(`${c.sofrFutures.from}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })}. `
+          : '',
+        'Futures and index prices are Schwab’s. A read, not a trade signal; nothing here places orders.',
+      ),
+    );
+  }
+
   /** A section to bring into view (#futures/cot, "See all on Futures"): now, and once more when the board has drawn. */
   let scrollTarget: string | null = null;
   let boardDrawn = false;
@@ -325,6 +426,7 @@ export function createFuturesPage() {
     loading = true;
     if (force) clearEngineCache();
     try {
+      void loadFair();
       board = await engineRequest<Board>('futures.board', {}, 90_000);
       stamp.textContent = `Updated ${new Date(board.asOf * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
       render();
@@ -484,6 +586,7 @@ export function createFuturesPage() {
         cotAny.start();
       }
       if (sub === 'cot') scrollTo('#fut-cot');
+      if (sub === 'fair') scrollTo('#fut-fair');
       // Quotes refresh every minute while the page is open (Schwab is asked at most every 15 s by the helper).
       timer ??= setInterval(() => load(), 60_000);
     },

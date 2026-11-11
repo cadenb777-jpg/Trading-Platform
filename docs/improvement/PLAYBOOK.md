@@ -50,7 +50,8 @@ The rules every scheduled improvement session follows. The owner approves every 
    - Click around: open each page's tools, menus, ticker cards, pop-outs, the AI panel, the command bar; type a ticker
      and press Enter; switch time frames; watch for errors, flicker, "Loading..." that lingers, and anything that
      isn't instant once the platform has warmed up (the owner wants every screen there at once).
-3. **Hypothesis.** One focused change: what is wrong or could be better, for whom, and why it helps the owner trade or
+3. **Hypothesis.** One big, complete change per run (the owner's request, 2026-11-11: a whole feature, page or roadmap
+   stage, not a small tweak), plus any failing check fixed in the same pull request: what is wrong or could be better, for whom, and why it helps the owner trade or
    understand the market (clearer, more accurate, faster, safer, a better way to show data, Bloomberg-grade).
 4. **Research the maths and the evidence.** Primary sources first: academic papers (SSRN, arXiv, journals), official
    documentation (exchanges, FRED, SEC, data vendors), textbooks. Forums and trader lore are ideas to test, never proof.

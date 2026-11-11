@@ -7163,6 +7163,39 @@ summary:focus-visible {
 .fut-moving-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .fut-moving-label { min-width: 170px; }
 .fut-chip { color: var(--text); }
+
+/* Fair value: one tile per index (the implied open or futures vs fair is the figure), the working folded below. */
+.fv-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
+  gap: var(--sp-2);
+}
+.fv-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  min-height: 24px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-2) var(--ease);
+}
+.fv-tile:hover { border-color: var(--accent-border); }
+.fv-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fv-name { color: var(--label); font-weight: 600; }
+.fv-value { font-size: 26px; line-height: 1.15; font-weight: 650; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.fv-value.up { color: var(--up); }
+.fv-value.down { color: var(--down); }
+.fv-detail { max-width: 100%; overflow-wrap: anywhere; }
+.fv-work { margin-top: var(--sp-3); }
+.fv-work > summary { cursor: pointer; color: var(--label); min-height: 24px; display: inline-flex; align-items: center; }
+.fv-work[open] > summary { margin-bottom: var(--sp-2); }
 .fut-market { white-space: nowrap; }
 .fut-strong { font-weight: 700; }
 .fut-soon { color: var(--warn-text); }

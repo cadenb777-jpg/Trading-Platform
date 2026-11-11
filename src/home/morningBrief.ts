@@ -7,7 +7,8 @@
  * (futures.board, macro.curve, store.list, invest.board, alerts.list, scanner.results, the calendar).
  */
 import type { MarketRef } from '../data/quotes';
-import { engineRequest, helper } from '../data/schwab';
+import { carryReady, engineRequest, helper } from '../data/schwab';
+import { briefLine, type Carry } from '../futures/fairValue';
 import { listDocs } from '../data/store';
 import { combineHoldings, myPortfolios } from '../portfolio/account';
 import { fetchPrices, type PriceInfo } from '../portfolio/prices';
@@ -103,6 +104,8 @@ export function createMorningBrief(d: BriefDeps) {
   }
 
   async function loadStrip() {
+    // Fair value needs more sources (FRED, Yahoo): it joins the strip when it arrives, never holding the rest back
+    const carry = carryReady() ? engineRequest<Carry>('futures.carry', {}, 30_000).catch(() => null) : Promise.resolve(null);
     const [board, curve] = await Promise.allSettled([
       engineRequest<{ rows: BoardRow[] }>('futures.board', {}, 90_000),
       engineRequest<{ curve: CurvePoint[] }>('macro.curve', {}, 45_000),
@@ -126,6 +129,20 @@ export function createMorningBrief(d: BriefDeps) {
         ),
       );
     strip.replaceChildren(...items);
+    // Before the open: where the S&P 500 is set to open once interest and dividends are taken out of the futures
+    void carry.then((c) => {
+      const open = briefLine(c);
+      if (!open || !items[0]?.isConnected) return; // the strip was redrawn meanwhile
+      strip.prepend(
+        h(
+          'button',
+          { type: 'button', class: 'brief-chip', role: 'listitem', title: 'S&P 500 futures less their fair premium (interest minus dividends to expiry). Open Futures for every index.', onclick: () => (location.hash = '#futures/fair') },
+          h('span', { class: 'brief-chip-name' }, 'S&P open'),
+          h('span', { class: `num brief-chip-value ${open.tone}` }, open.value),
+          h('span', { class: 'muted tiny brief-chip-chg' }, 'implied'),
+        ),
+      );
+    });
     if (board.status === 'rejected' && !ten) strip.replaceChildren(h('p', { class: 'muted small' }, helper.isConnected ? `Futures unavailable: ${(board.reason as Error).message}` : 'Futures, rates and currencies appear here when the helper is running.'));
   }
 
