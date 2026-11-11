@@ -647,7 +647,7 @@ const WARM_RUN_MS = 10000;
 /** One page at a time when the computer is idle, starting a few seconds after the platform opens: builds the page
  * out of sight and starts it so its data arrives (the helper and the browser keep the replies), then stops its
  * timers. Never takes the keyboard from the page you're on; skips pages you've already opened. */
-function warmPages(firstDelay = 1500) {
+function warmPages(firstDelay = 5000) {
   // read when it runs, not when called: warmPages() is called while the app is still being set up
   let i = 0;
   const later = (fn: () => void, ms: number) => setTimeout(() => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 3000 }) : fn()), ms);
@@ -667,12 +667,13 @@ function warmPages(firstDelay = 1500) {
           /* a page that can't start out of sight just loads when opened */
         }
         setTimeout(() => currentPage() !== entry && page.stop?.(), WARM_RUN_MS);
+        return new Promise<void>((done) => setTimeout(done, WARM_RUN_MS)); // the next page waits until this one is done loading
       })
       .catch(() => undefined)
       .finally(() => {
         // the page you're on keeps the keyboard (a page starting out of sight may focus its own field)
         if (focused instanceof HTMLElement && document.activeElement !== focused && entry.page?.el.contains(document.activeElement)) focused.focus({ preventScroll: true });
-        later(next, 1200);
+        later(next, 1000);
       });
   };
   later(next, firstDelay);
