@@ -65,7 +65,9 @@ def main():
             bar.finish()
         splash.prepare(bar, log)  # the helper's Python and parts (quick when the website helper already did it)
         desktop_parts(bar, log)
-        bar.stage('Opening the desktop app...', 99, expect_seconds=2)
+        bar.stage('Opening the desktop app...', 100, expect_seconds=0.5)
+        bar.finish('Ready')  # all done: the bar ends at 100% (it froze part-way when the steps were quick)
+        bar.wait(100, timeout=2)
     except (splash.LaunchError, private.StepError) as err:
         bar.stop(failed=True)
         log.close()
