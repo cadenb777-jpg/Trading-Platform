@@ -82,7 +82,7 @@
   --banner-bg: #23170c;
   --banner-border: #6b4320;
   --banner-text: #ffd8b0;
-  --overlay: #020814b3;
+  --overlay: #020814c7;
   --logo-bg: #fff;
   --star: #f2b84b;
   --scrim: #050d19d9;
@@ -186,7 +186,7 @@
   --banner-bg: #fbefe2;
   --banner-border: #e3c3a3;
   --banner-text: #5c2e10;
-  --overlay: #0b1b2e66;
+  --overlay: #0b1b2e80;
   --star: #c27c00;
   --scrim: #f5f2ecd9;
   --tooltip-bg: #fffffff5;
@@ -1545,6 +1545,8 @@ input[type='radio'] {
 .modal-body {
   padding: 12px 16px 16px;
   overflow-y: auto;
+  /* scrolling to the end of a pop-up never carries on into the page (or an outer box) behind it */
+  overscroll-behavior: contain;
 }
 
 .modal-body .input[type='search'] {
@@ -5572,9 +5574,32 @@ a.btn {
   min-width: 0;
 }
 
+/* The indicator window has a fixed height and only its two lists scroll: the search, chips and footer stay put
+   (before, the list and the window body both scrolled, so reaching the end of the list moved the whole column). */
+.modal:has(.mgr) {
+  height: 84vh;
+}
+.modal:has(.mgr) .modal-body {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.mgr {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.mgr-col {
+  min-height: 0;
+}
+
 .mgr-col .picker-list {
-  max-height: 58vh;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .mgr-right {
@@ -5594,8 +5619,10 @@ a.btn {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 58vh;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .mgr-item {
@@ -5669,6 +5696,7 @@ a.btn {
 @media (max-width: 760px) {
   .mgr {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1.6fr) minmax(0, 1fr) auto;
   }
   .mgr-right {
     border-left: 0;
@@ -6590,9 +6618,10 @@ a.btn {
   animation: tp-rise var(--dur-2) var(--ease);
 }
 
+/* No backdrop blur: a full-screen blur is redrawn every time anything behind it moves (the flowing background, a
+   live chart), which made scrolling inside pop-ups stutter (measured 20 fps with it, 60 fps without). The darker
+   overlay does the same job of pushing the page back. */
 .modal-backdrop {
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
   animation: tp-fade var(--dur-2) var(--ease);
 }
 
@@ -11013,3 +11042,24 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .sc-row { display: flex; gap: var(--sp-2); align-items: baseline; font-size: var(--fs-sm); line-height: 1.4; margin: 4px 0; }
 .sc-row .sb-dot { flex: none; transform: translateY(-1px); }
 .sc-pop .btn { margin-top: var(--sp-3); }
+
+/* Home: Edge today. One row per reading: label, the figure (big, white or green/red), the numbers behind it. */
+.edge-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: var(--sp-2); }
+.edge-line {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+  text-decoration: none;
+  min-height: 24px;
+}
+.edge-line:hover { border-color: var(--accent-border); }
+.edge-line:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.edge-label { color: var(--label); font-weight: 600; }
+.edge-value { font-size: 22px; line-height: 1.2; font-weight: 650; color: var(--text-strong); justify-self: start; text-align: left; }
+.edge-value.up { color: var(--up); }
+.edge-value.down { color: var(--down); }
+.edge-detail { overflow-wrap: anywhere; }

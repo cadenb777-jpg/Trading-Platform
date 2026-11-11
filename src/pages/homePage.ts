@@ -6,6 +6,7 @@ import { CandlestickSeries, LineStyle, TickMarkType, createChart, type IPriceLin
 import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
 import { HELPER_OUTDATED, helper, loadNews, schwab, type NewsItem, type NewsSection } from '../data/schwab';
 import { insightButton } from '../ai/insight';
+import { asOfStamp } from '../ui/dataHealth';
 import { briefKeys, createMorningBrief } from '../home/morningBrief';
 import { briefNeedsLoad } from '../home/brief';
 import { createUpcomingPanel } from './calendarPage';
@@ -401,6 +402,44 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
 
   const watchlist = createWatchlist({ onSelect: onOpenChart });
 
+  // ---------- Edge today (src/home/edge.ts): fair value and box-spread readings, each linking to its tool ----------
+  const edgeBody = h('div', { class: 'edge-body' }, h('p', { class: 'muted small' }, 'Edge readings appear when the helper is running.'));
+  const edgeStamp = asOfStamp('quotes', { prefix: 'as of' });
+  const edgeNote = (text: string) => (edgeStamp.set(null), edgeBody.replaceChildren(h('p', { class: 'muted small' }, text)));
+  async function loadEdge() {
+    try {
+      await drawEdge();
+    } catch {
+      edgeNote('Edge readings couldn’t be loaded. Press refresh on this card, or open Futures.');
+    }
+  }
+  async function drawEdge() {
+    const { carryReady, boxReady, engineRequest: req } = await import('../data/schwab');
+    // never leave earlier readings on screen as if current
+    if (!helper.isConnected) return edgeNote('Edge readings appear when the helper is running.');
+    if (!carryReady()) return edgeNote('Update the helper to see edge readings: Settings > About > Update now.');
+    const [carry, box] = await Promise.all([
+      req<import('../futures/fairValue').Carry>('futures.carry', {}, 30_000).catch(() => null),
+      boxReady() ? req<import('../futures/boxRates').BoxReply>('rates.box', {}, 60_000).catch(() => null) : Promise.resolve(null),
+    ]);
+    const { edgeLines } = await import('../home/edge');
+    const lines = edgeLines(carry, box);
+    edgeStamp.set(carry ? carry.asOf : null, { source: 'Schwab, FRED, Yahoo' });
+    edgeBody.replaceChildren(
+      ...(lines.length
+        ? lines.map((l) =>
+            h(
+              'a',
+              { class: 'edge-line', href: l.href, title: `${l.detail}. Source: ${l.source}. Open the full tool.` },
+              h('span', { class: 'edge-label' }, l.label),
+              h('b', { class: `edge-value num ${l.tone}` }, l.value),
+              h('span', { class: 'muted small edge-detail' }, l.detail),
+            ),
+          )
+        : [h('p', { class: 'muted small' }, 'No edge readings yet: they need Schwab futures and option quotes, FRED and Yahoo. Open Futures to see each tool.')]),
+    );
+  }
+
   // ---------- widgets (src/home/widgets.ts: layout saved per device) ----------
 
   const setupsBody = h('div', { class: 'brief-body' }, h('p', { class: 'muted small' }, 'Setups appear here once the scanner has run.'));
@@ -463,6 +502,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
       open: { label: 'Open Investments', go: () => (location.hash = '#invest') },
       cls: 'wd-bare',
     },
+    edge: { icon: 'target', body: [edgeBody], asOf: edgeStamp.el, onRefresh: () => void loadEdge(), open: { label: 'Open Futures', go: () => (location.hash = '#futures/fair') } },
     accounts: { icon: 'account', body: [brief.accountsBody], asOf: brief.stamp, onRefresh: () => void brief.refresh(), open: { label: 'Open Account', go: () => (location.hash = '#account') } },
     brief: {
       icon: 'bell',
@@ -677,6 +717,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     void pickNewsTab();
     upcoming.refresh();
     void brief.refresh();
+    void loadEdge();
     for (const c of cards) c.loadSparkline();
   }
   function start() {
@@ -703,6 +744,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     setInterval(() => !el.hidden && helper.isConnected && refreshNews(true), NEWS_REFRESH_MS);
     setInterval(() => !el.hidden && helper.isConnected && upcoming.refresh(), 5 * 60 * 1000);
     setInterval(() => !el.hidden && helper.isConnected && document.visibilityState === 'visible' && void brief.refresh(), 2 * 60 * 1000);
+    setInterval(() => !el.hidden && helper.isConnected && document.visibilityState === 'visible' && void loadEdge(), 2 * 60 * 1000);
     briefKeys(el);
     setInterval(() => helper.isConnected && cards.forEach((c) => c.loadSparkline()), 5 * 60 * 1000);
     refreshNews();

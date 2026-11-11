@@ -110,6 +110,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   sends self-started refreshes through the background budget of budgeted sources (Schwab); invest.closes ('board-closes3') keeps finished sessions only and stays
   valid until the next close + 15 min (stocks; futures 3 h; missing_last_close looks again every 30 min); invest.history
   adds today's live price (with_live_point); Sources table waitP95Ms/waitMaxMs = queue wait of your requests.
+  Home "Edge today" widget (id 'edge', src/home/edge.ts edgeLines, tested): ES/NQ implied open or futures vs fair
+  value and the 3-month box vs T-bill, each linking to its Futures panel. Home layouts keep `seen` (every widget offered):
+  a widget released later joins a saved layout once after its first card; removing it sticks.
+  Pop-ups: no backdrop-filter on .modal-backdrop (a full-screen blur over animated content dropped scrolling to ~20 fps);
+  .modal-body has overscroll-behavior: contain; the indicator window (.mgr) is a fixed 84vh with only its lists scrolling.
   Backtest (src/pages/backtestPage.ts, src/backtest/research.ts): "My chart's indicators" builds rules (operand
   operator operand, ALL/ANY) from state.indicators via suggestRules(); the chart's Backtest button fires
   `tp:backtest-chart`. Research tabs: Monte Carlo (trade bootstrap), random-walk test (shuffled daily moves, p-value),
