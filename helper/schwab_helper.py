@@ -892,7 +892,12 @@ class Market:
     async def update_loop(self):
         """Checks GitHub for a newer helper at start and every 2 minutes and installs it by itself (on unless
         Settings turns it off), also with the platform open: only at a safe moment (checked every 30 s), then
-        restarts; open tabs reconnect and say which version is now running."""
+        restarts; open tabs reconnect and say which version is now running.
+        Not in private mode (the desktop launcher's --private, or a git clone): there `git pull` is the update, and an
+        online update would overwrite your copy of the code."""
+        if os.environ.get('TP_PRIVATE') or (Path(__file__).resolve().parent.parent / '.git').exists():
+            log.info('Private copy of the code: online helper updates are off (git pull updates it)')
+            return
         await asyncio.sleep(5)
         while True:
             await self.updater.check(self.news.http)

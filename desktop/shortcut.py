@@ -22,10 +22,11 @@ ICONS = HERE / 'tp_desktop' / 'assets'
 MARKER = Path.home() / '.trading-platform' / 'desktop-shortcut.json'
 
 
-def windows_env(here=HERE):
+def windows_env(here=HERE, name=NAME, target=None):
     """The folder names PowerShell needs, passed as environment values (never written into the script), so no folder
     name (quotes, curly apostrophes, $ signs) can break or change the command."""
-    return {'TP_LNK_NAME': NAME + '.lnk', 'TP_LNK_TARGET': str(here / 'start-desktop-windows.bat'), 'TP_LNK_DIR': str(here),
+    target = Path(target) if target else here / 'start-desktop-windows.bat'
+    return {'TP_LNK_NAME': name + '.lnk', 'TP_LNK_TARGET': str(target), 'TP_LNK_DIR': str(target.parent),
             'TP_LNK_ICON': str(ICONS / 'logo.ico') + ',0', 'TP_LNK_NOTE': 'Trading Terminal: markets, research and trading'}
 
 
@@ -89,6 +90,29 @@ def make(force=False, log=lambda s: None):
     MARKER.parent.mkdir(parents=True, exist_ok=True)
     MARKER.write_text(json.dumps({'made': True, 'where': where, 'app': str(HERE)}))
     return f'made on your {where}'
+
+
+PRIVATE_NAME = 'Trading Terminal (private)'
+PRIVATE_MARKER = Path.home() / '.trading-platform' / 'desktop-shortcut-private.json'
+
+
+def make_private(force=False, log=lambda s: None):
+    """Private mode (Windows): a "Trading Terminal (private)" icon on the desktop and in the Start menu that starts
+    start-private-windows.bat in your copy of the code. Made once (or again with force)."""
+    if PRIVATE_MARKER.exists() and not force:
+        return 'already made'
+    if sys.platform != 'win32':
+        return 'not made (Windows only)'
+    target = HERE.parent / 'start-private-windows.bat'
+    try:
+        subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', windows_script()],
+                       check=True, capture_output=True, timeout=30, env={**os.environ, **windows_env(name=PRIVATE_NAME, target=target)})
+    except Exception as err:
+        log(f'Private icon not made: {err}')
+        return 'not made'
+    PRIVATE_MARKER.parent.mkdir(parents=True, exist_ok=True)
+    PRIVATE_MARKER.write_text(json.dumps({'made': True, 'target': str(target)}))
+    return 'made on your desktop and Start menu'
 
 
 if __name__ == '__main__':
