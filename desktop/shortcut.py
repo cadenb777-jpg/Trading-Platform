@@ -96,17 +96,27 @@ def make(force=False, log=lambda s: None):
 #: The private copy's icon is THE Trading Terminal icon (the owner's choice): it replaces the installed app's icon of
 #: the same name, and the earlier separate "Trading Terminal (private)" icon is removed. Bump PRIVATE_ICON_VERSION when
 #: the icon changes, so every private start makes it once more.
-OLD_PRIVATE_NAME = 'Trading Terminal (private)'
 PRIVATE_MARKER = Path.home() / '.trading-platform' / 'desktop-shortcut-private.json'
-PRIVATE_ICON_VERSION = 3  # 3: starts without a console (pythonw), straight into the app's start-up window
+PRIVATE_ICON_VERSION = 4  # 3: no console (pythonw); 4: other Trading Terminal icons (old app, '(private)') removed
 
 
 def private_script():
-    """windows_script() plus removing the old "(private)" icons from the desktop and the Start menu."""
-    remove = []
-    for folder in ("[Environment]::GetFolderPath('Desktop')", "[Environment]::GetFolderPath('Programs')"):
-        remove.append(f"$old = Join-Path ({folder}) $env:TP_LNK_OLD; if (Test-Path -LiteralPath $old) {{ Remove-Item -LiteralPath $old -Force }}")
-    return windows_script() + '; ' + '; '.join(remove)
+    """windows_script() (the Trading Terminal icon for the private copy) plus a clean-up: every other "Trading Terminal..."
+    shortcut on the desktop (also a OneDrive or the shared Public desktop) and in the Start menu that does NOT open this
+    copy of the code is deleted (the old installed app's icons, the earlier "(private)" icon). Only shortcuts are
+    touched, never files; the copy's folder comes in through $env:TP_KEEP."""
+    folders = ("[Environment]::GetFolderPath('Desktop')", "(Join-Path $env:USERPROFILE 'Desktop')",
+               "$(if ($env:OneDrive) { Join-Path $env:OneDrive 'Desktop' })", "[Environment]::GetFolderPath('CommonDesktopDirectory')",
+               "[Environment]::GetFolderPath('Programs')", "[Environment]::GetFolderPath('CommonPrograms')")
+    clean = [
+        "$keep = $env:TP_KEEP.ToLower()",
+        f"$dirs = @({', '.join(folders)}) | Where-Object {{ $_ -and (Test-Path -LiteralPath $_) }} | Select-Object -Unique",
+        "foreach ($d in $dirs) { Get-ChildItem -LiteralPath $d -Filter 'Trading Terminal*.lnk' -File -ErrorAction SilentlyContinue | ForEach-Object {"
+        " $l = $sh.CreateShortcut($_.FullName); $what = ($l.TargetPath + ' ' + $l.Arguments + ' ' + $l.WorkingDirectory).ToLower();"
+        " if (-not $what.Contains($keep)) { try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop; Write-Output ('removed ' + $_.FullName) }"
+        " catch { Write-Output ('could not remove ' + $_.FullName) } } } }",
+    ]
+    return windows_script() + '; ' + '; '.join(clean)
 
 
 def private_marker_current(marker=PRIVATE_MARKER):
@@ -135,10 +145,12 @@ def make_private(force=False, log=lambda s: None):
     if sys.platform != 'win32':
         return 'not made (Windows only)'
     target, args = private_target()
-    env = {**os.environ, **windows_env(name=NAME, target=target, args=args, workdir=HERE), 'TP_LNK_OLD': OLD_PRIVATE_NAME + '.lnk'}
+    env = {**os.environ, **windows_env(name=NAME, target=target, args=args, workdir=HERE), 'TP_KEEP': str(HERE.parent)}
     try:
-        subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', private_script()],
-                       check=True, capture_output=True, timeout=30, env=env)
+        done = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', private_script()],
+                              check=True, capture_output=True, timeout=60, env=env)
+        for line in (done.stdout or b'').decode('utf-8', 'replace').splitlines():
+            log(f'Desktop icons: {line.strip()}')
     except Exception as err:
         log(f'Private icon not made: {err}')
         return 'not made'

@@ -75,8 +75,15 @@ jobs:
         shell: pwsh
         run: |
           $desk = [Environment]::GetFolderPath('Desktop')
+          $progs = [Environment]::GetFolderPath('Programs')
+          $sh = New-Object -ComObject WScript.Shell
           New-Item -ItemType File -Force (Join-Path $desk 'Trading Terminal (private).lnk') | Out-Null
+          foreach ($p in (Join-Path $progs 'Trading Terminal - choose Terminal or Web.lnk'), (Join-Path $desk 'Other app.lnk')) {
+            $l = $sh.CreateShortcut($p); $l.TargetPath = "$env:WINDIR\notepad.exe"; $l.Save()   # an old app's icon, and someone else's
+          }
           python -c "import shortcut; print(shortcut.make_private(force=True, log=print))"
+          if (Test-Path (Join-Path $progs 'Trading Terminal - choose Terminal or Web.lnk')) { throw 'old Start-menu icon still there' }
+          if (-not (Test-Path (Join-Path $desk 'Other app.lnk'))) { throw 'an unrelated icon was removed' }
           $s = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desk 'Trading Terminal.lnk'))
           Write-Output "Target: $($s.TargetPath) $($s.Arguments)"
           # no console window: pythonw.exe runs the launcher straight into the app's start-up window

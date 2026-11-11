@@ -56,8 +56,9 @@ class Icon(unittest.TestCase):
         self.assertEqual(env['TP_LNK_NAME'], 'Trading Terminal.lnk')
         self.assertTrue(env['TP_LNK_TARGET'].endswith('start-private-windows.bat'))
         script = shortcut.private_script()
-        self.assertIn('Remove-Item -LiteralPath $old', script)  # the old "(private)" icon goes
-        self.assertNotIn('Trading Terminal (private)', script)  # names only come through $env
+        self.assertIn("-Filter 'Trading Terminal*.lnk'", script)  # every other Trading Terminal shortcut is checked
+        self.assertIn('-not $what.Contains($keep)', script)  # and removed only if it doesn't open this copy
+        self.assertNotIn(str(private.ROOT), script)  # the copy's folder only comes through $env
 
     def test_made_again_once_for_a_new_icon_version(self):
         import shortcut
