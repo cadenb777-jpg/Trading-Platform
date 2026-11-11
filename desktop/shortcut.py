@@ -97,23 +97,22 @@ def make(force=False, log=lambda s: None):
 #: the same name, and the earlier separate "Trading Terminal (private)" icon is removed. Bump PRIVATE_ICON_VERSION when
 #: the icon changes, so every private start makes it once more.
 PRIVATE_MARKER = Path.home() / '.trading-platform' / 'desktop-shortcut-private.json'
-PRIVATE_ICON_VERSION = 4  # 3: no console (pythonw); 4: other Trading Terminal icons (old app, '(private)') removed
+PRIVATE_ICON_VERSION = 5  # 3: no console; 4: other icons removed; 5: exactly one icon, whatever the others open
 
 
 def private_script():
-    """windows_script() (the Trading Terminal icon for the private copy) plus a clean-up: every other "Trading Terminal..."
-    shortcut on the desktop (also a OneDrive or the shared Public desktop) and in the Start menu that does NOT open this
-    copy of the code is deleted (the old installed app's icons, the earlier "(private)" icon). Only shortcuts are
-    touched, never files; the copy's folder comes in through $env:TP_KEEP."""
+    """windows_script() (the one Trading Terminal icon, opening the private copy, on the desktop and in the Start menu)
+    plus a clean-up: every other "Trading Terminal..." shortcut on any desktop (yours, OneDrive's, the shared Public one)
+    and in the Start menu is deleted, whatever it opens (the old installed app's, the earlier "(private)" one, copies),
+    so exactly one icon is left. Only shortcuts are touched, never files."""
     folders = ("[Environment]::GetFolderPath('Desktop')", "(Join-Path $env:USERPROFILE 'Desktop')",
                "$(if ($env:OneDrive) { Join-Path $env:OneDrive 'Desktop' })", "[Environment]::GetFolderPath('CommonDesktopDirectory')",
                "[Environment]::GetFolderPath('Programs')", "[Environment]::GetFolderPath('CommonPrograms')")
     clean = [
-        "$keep = $env:TP_KEEP.ToLower()",
+        "$keep = @((Join-Path ([Environment]::GetFolderPath('Desktop')) $env:TP_LNK_NAME), (Join-Path ([Environment]::GetFolderPath('Programs')) $env:TP_LNK_NAME)) | ForEach-Object { $_.ToLower() }",
         f"$dirs = @({', '.join(folders)}) | Where-Object {{ $_ -and (Test-Path -LiteralPath $_) }} | Select-Object -Unique",
         "foreach ($d in $dirs) { Get-ChildItem -LiteralPath $d -Filter 'Trading Terminal*.lnk' -File -ErrorAction SilentlyContinue | ForEach-Object {"
-        " $l = $sh.CreateShortcut($_.FullName); $what = ($l.TargetPath + ' ' + $l.Arguments + ' ' + $l.WorkingDirectory).ToLower();"
-        " if (-not $what.Contains($keep)) { try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop; Write-Output ('removed ' + $_.FullName) }"
+        " if ($keep -notcontains $_.FullName.ToLower()) { try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop; Write-Output ('removed ' + $_.FullName) }"
         " catch { Write-Output ('could not remove ' + $_.FullName) } } } }",
     ]
     return windows_script() + '; ' + '; '.join(clean)

@@ -42,7 +42,14 @@ The rules every scheduled improvement session follows. The owner approves every 
    `python -m unittest discover helper/tests`, `python -m unittest discover desktop/tests`, the security scans in
    `.github/workflows/security.yml`, the self-check's pure checks (`helper/engine/selfcheck.py`), the window-button
    overlap sweep and the scroll-smoothness measurement (60 fps target), and read the latest CI runs. A failing check is
-   always the first priority.
+   always the first priority. Then **hunt for bugs like a person would**, before and after any change:
+   - `npm run build`, `npx vite preview` and `SHOTS=shots node scripts/release-audit.cjs`: every page in light and dark
+     at a wide and a phone width; overlapping controls, cut-off text, sideways overflow, console errors; then look at
+     the screenshots: is everything laid out beautifully, aligned, readable, in the owner's look?
+   - `node scripts/window-buttons-sweep.cjs`: the desktop app's window buttons never covered, at four window sizes.
+   - Click around: open each page's tools, menus, ticker cards, pop-outs, the AI panel, the command bar; type a ticker
+     and press Enter; switch time frames; watch for errors, flicker, "Loading..." that lingers, and anything that
+     isn't instant once the platform has warmed up (the owner wants every screen there at once).
 3. **Hypothesis.** One focused change: what is wrong or could be better, for whom, and why it helps the owner trade or
    understand the market (clearer, more accurate, faster, safer, a better way to show data, Bloomberg-grade).
 4. **Research the maths and the evidence.** Primary sources first: academic papers (SSRN, arXiv, journals), official

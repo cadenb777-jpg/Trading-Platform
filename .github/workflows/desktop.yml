@@ -78,7 +78,9 @@ jobs:
           $desk = [Environment]::GetFolderPath('Desktop')
           $progs = [Environment]::GetFolderPath('Programs')
           $sh = New-Object -ComObject WScript.Shell
-          New-Item -ItemType File -Force (Join-Path $desk 'Trading Terminal (private).lnk') | Out-Null
+          # the earlier "(private)" icon, pointing into this very copy (the case that once survived the clean-up)
+          $old = $sh.CreateShortcut((Join-Path $desk 'Trading Terminal (private).lnk'))
+          $old.TargetPath = Join-Path $env:GITHUB_WORKSPACE 'start-private-windows.bat'; $old.Save()
           foreach ($p in (Join-Path $progs 'Trading Terminal - choose Terminal or Web.lnk'), (Join-Path $desk 'Other app.lnk')) {
             $l = $sh.CreateShortcut($p); $l.TargetPath = "$env:WINDIR\notepad.exe"; $l.Save()   # an old app's icon, and someone else's
           }
@@ -91,6 +93,8 @@ jobs:
           if (-not ($s.TargetPath.EndsWith('pythonw.exe') -and $s.Arguments.Contains('launch.py" --private'))) { throw 'the icon does not open the private copy' }
           python -c "import subprocess, launch; i = subprocess.STARTUPINFO(); i.dwFlags |= subprocess.STARTF_USESHOWWINDOW; print('helper python:', launch.console_python(), 'already open:', launch.instance_running(None))"
           if (Test-Path (Join-Path $desk 'Trading Terminal (private).lnk')) { throw 'old private icon still there' }
+          $left = @(Get-ChildItem -LiteralPath $desk -Filter 'Trading Terminal*.lnk').Count
+          if ($left -ne 1) { throw "expected exactly one Trading Terminal icon on the desktop, found $left" }
       - name: Check the Mac app
         if: runner.os == 'macOS'
         run: |

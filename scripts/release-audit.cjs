@@ -1,6 +1,7 @@
 // Release audit (see CLAUDE.md, Design and QA skills): every route x theme x width -> console errors, overlapping
 // controls, clipped text, sideways overflow. Run against `npx vite preview` with a helper (or the fake one):
 //   BASE=http://localhost:4173 HELPER_PORT=8765 node scripts/release-audit.cjs   (writes audit.json)
+//   SHOTS=shots also saves a screenshot of every route x theme x width for a by-eye layout review
 const { chromium } = require('playwright'); const fs = require('fs');
 const scan = (process.env.SCAN_FIXTURE ? fs.readFileSync(process.env.SCAN_FIXTURE, 'utf8') : '{"horizons":{},"setups":[]}');
 const ROUTES = (process.env.ROUTES || 'home,invest,futures,macro,calendar,flow,chart,research/AAPL,setups,backtest,strategy,account,portfolio,trade,journal,clients,prospect,sec/AAPL,chart/multi').split(',');
@@ -42,6 +43,8 @@ const THEMES = (process.env.THEMES || 'dark,light').split(','); const WIDTHS = (
         if (view && view.scrollWidth > view.clientWidth + 2 && getComputedStyle(view).overflowX !== 'hidden') out.overflow.push('view scrolls sideways by ' + (view.scrollWidth - view.clientWidth));
         return out;
       });
+      // screenshots for a by-eye layout review (improvement sessions look at these before and after a change)
+      if (process.env.SHOTS) { fs.mkdirSync(process.env.SHOTS, { recursive: true }); await p.screenshot({ path: `${process.env.SHOTS}/${r.replace(/\//g, '_')}-${theme}-${width}.png` }); }
       const n = found.overlap.length + found.clipped.length + found.overflow.length + errs.length;
       if (n) report.push({ where: `${r} ${theme} ${width}`, ...found, errors: [...new Set(errs)] });
       process.stdout.write(n ? 'x' : '.');
