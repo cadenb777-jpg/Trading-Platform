@@ -198,7 +198,19 @@ def app_env(url):
 
 def main():
     if GUI:
-        return gui_main()
+        try:
+            return gui_main()
+        except Exception:  # no console to show it: into the log, and onto the start-up window
+            import traceback
+            text = traceback.format_exc()
+            try:
+                with open(splash.DATA_DIR / 'launcher.log', 'a', encoding='utf-8') as f:
+                    f.write('Start-up crashed:\n' + text)
+                progress.write(PROGRESS, pct=0, label='', state='failed', message='The start-up stopped with an error.',
+                               details=text.strip().splitlines()[-4:], hints=['Send me the launcher log (Open the log).'])
+            except OSError:
+                pass
+            return 2
     splash.enable_colors()
     look = splash.pick(None)
     splash.clear_screen()

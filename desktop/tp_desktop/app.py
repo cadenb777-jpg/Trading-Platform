@@ -657,6 +657,44 @@ def run_start_screen(app, progress_file):
     return frame, outcome['v'] or 'closed'
 
 
+def keep_local_site(url):
+    """Private mode: the platform's local copy (http://127.0.0.1:4173/) must answer as long as this app is open. The
+    launcher serves it, but if that stopped (or this app outlived it), the app serves the copy's build itself. Checked at
+    start and every 10 seconds; returns the timer (None when the address isn't this computer's)."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    if parts.hostname not in ('127.0.0.1', 'localhost') or not parts.port:
+        return None
+    dist = Path(__file__).resolve().parents[2] / 'dist'
+    held = {}
+
+    def check():
+        import socket
+        try:
+            with socket.create_connection(('127.0.0.1', parts.port), timeout=0.3):
+                return
+        except OSError:
+            pass
+        if not (dist / 'index.html').exists():
+            return
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+            import private
+            server = private.serve(dist, port=parts.port)
+            if server is not None:
+                held['server'] = server
+                print(f'Serving the local platform from {dist}', file=sys.stderr)
+        except Exception as err:
+            print(f'Could not serve the local platform: {err}', file=sys.stderr)
+
+    check()
+    timer = QTimer(interval=10000, timeout=check)
+    timer.start()
+    timer._held = held
+    return timer
+
+
 def ask_how_to_open(app, force_ask, frame=None):
     """'terminal' or 'web': the remembered choice, or the start screen's answer (None when it was closed). With the
     start-up window (`frame`) the question appears in it, in place of the loading screen."""
@@ -772,6 +810,7 @@ def main(argv=None):
         app.setQuitOnLastWindowClosed(False)
     from PySide6.QtWidgets import QSplashScreen
 
+    site = keep_local_site(args.url)  # private mode: the local copy answers while this app is open
     profile = build_profile(app, Path(args.storage) if args.storage else DATA)
     size = tuple(int(x) for x in args.size.lower().split('x')) if args.size else None
     log = [] if args.screenshot else None
