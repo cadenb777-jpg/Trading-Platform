@@ -97,6 +97,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (today / SD of 60 daily moves) from invest.closes, estimated expiry/first-notice/roll dates, sector averages, movers, and
   the latest COT for all markets in one CFTC request. futures.curve quotes the next 6 contracts ("/ESZ26"); no prices =
   no curve. futures.detail adds a year of closes and 156 weeks of COT indexes. Missing data shows "unavailable".
+  Fair value (v55, engine/carry.py `futures.carry`, CARRY_HELPER_VERSION; src/futures/fairValue.ts; Futures panel #futures/fair,
+  brief "S&P open" chip): ES/NQ/YM/RTY vs $SPX/$NDX/$DJI/$RUT, F = S(1 + SOFR d/360) - S q d/365 (SOFR from FRED, q =
+  SPY/QQQ/DIA/IWM trailing 12-month Yahoo dividends; Hull ch. 5). Cash shut: implied open = futures - fair premium;
+  cash open: implied financing rate and spread over SOFR. Roll = next contract vs the front carried on. invest.closes
+  returns one close per New York day in date order (one_per_day).
   Backtest (src/pages/backtestPage.ts, src/backtest/research.ts): "My chart's indicators" builds rules (operand
   operator operand, ALL/ANY) from state.indicators via suggestRules(); the chart's Backtest button fires
   `tp:backtest-chart`. Research tabs: Monte Carlo (trade bootstrap), random-walk test (shuffled daily moves, p-value),

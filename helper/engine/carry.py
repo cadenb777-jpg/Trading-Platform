@@ -32,7 +32,7 @@ NY = ZoneInfo('America/New_York')
 MARKETS = [
     {'root': 'ES', 'index': '$SPX', 'indexName': 'S&P 500', 'etf': 'SPY'},
     {'root': 'NQ', 'index': '$NDX', 'indexName': 'Nasdaq-100', 'etf': 'QQQ'},
-    {'root': 'YM', 'index': '$DJI', 'indexName': 'Dow Jones Industrial Average', 'etf': 'DIA'},
+    {'root': 'YM', 'index': '$DJI', 'indexName': 'Dow Jones', 'etf': 'DIA'},
     {'root': 'RTY', 'index': '$RUT', 'indexName': 'Russell 2000', 'etf': 'IWM'},
 ]
 RATE_SERIES = 'SOFR'

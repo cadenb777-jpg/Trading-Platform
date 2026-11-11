@@ -7167,7 +7167,7 @@ summary:focus-visible {
 /* Fair value: one tile per index (the implied open or futures vs fair is the figure), the working folded below. */
 .fv-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr));
   gap: var(--sp-2);
 }
 .fv-tile {

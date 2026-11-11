@@ -130,3 +130,9 @@ export function briefLine(c: Carry | null): { text: string; tone: Tone } | null 
   if (!es || es.cashOpen || !ok(es.impliedOpenChange)) return null;
   return { text: `S&P 500 implied open ${signedPct(es.impliedOpenChange)}`, tone: toneOf(es.impliedOpenChange) };
 }
+
+/** The roll for a table cell: "H27 +7.58 pts" (dear when +, cheap when -); rollText() is its tooltip. */
+export function rollShort(r: CarryRow): string {
+  if (!r.roll || !r.next) return '—';
+  return `${r.next.code.slice(-3)} ${signedPts(r.roll.rich)}`;
+}

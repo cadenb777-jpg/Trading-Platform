@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { briefLine, headline, reading, rollText, signedBp, signedPct, signedPts, signedUsd, type Carry, type CarryRow } from './fairValue';
+import { briefLine, headline, reading, rollShort, rollText, signedBp, signedPct, signedPts, signedUsd, type Carry, type CarryRow } from './fairValue';
 
 // The hand-worked case of helper/tests/test_carry.py (S&P 500 6,000, SOFR 4.30%, yield 1.20%, 36 days).
 const base: CarryRow = {
@@ -47,6 +47,7 @@ describe('fair value readings', () => {
   it('describes the roll', () => {
     expect(rollText(base)).toBe('ESH27: 7.58 pts dear (+$379 a contract)');
     expect(rollText({ ...base, roll: null })).toBe('—');
+    expect(rollShort(base)).toBe('H27 +7.58 pts');
   });
 
   it('gives the brief its S&P line only while the cash market is shut', () => {

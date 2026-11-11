@@ -5,7 +5,7 @@
  */
 import { insightButton } from '../ai/insight';
 import { carryReady, clearEngineCache, engineRequest, helper } from '../data/schwab';
-import { headline, level, reading, rollText, signedBp, signedPts, signedUsd, type Carry } from '../futures/fairValue';
+import { headline, level, reading, rollShort, rollText, signedBp, signedPts, signedUsd, type Carry } from '../futures/fairValue';
 import { asOfStamp } from '../ui/dataHealth';
 import { createCotPanel } from '../futures/cot';
 import { curveReading, cotTone, daysUntil, futuresPrice, heatStrength, sigmaText } from '../futures/view';
@@ -327,6 +327,7 @@ export function createFuturesPage() {
   // ----- Fair value (helper futures.carry): implied open while the cash market is shut, rich/cheap while it trades -----
   let fair: Carry | null = null;
   async function loadFair() {
+    await helper.connect().catch(() => undefined); // the page can start before the helper has said its version
     if (!carryReady()) {
       fairNote.textContent = '';
       fairTiles.replaceChildren(h('p', { class: 'muted small' }, helper.isConnected ? 'Update the helper to see fair value: Settings > About > Update now.' : 'Fair value appears when the helper is running.'));
@@ -363,7 +364,7 @@ export function createFuturesPage() {
     const rate = c.rate ? `${(c.rate.value * 100).toFixed(2)}%` : 'unavailable';
     const yields = c.rows.map((r) => `${r.etf} ${c.yields[r.etf] ? `${(c.yields[r.etf]!.value * 100).toFixed(2)}%` : 'unavailable'}`).join(', ');
     const table = dataTable(
-      ['Index', 'Contract', 'Futures', 'Index level', 'Fair value', 'Fair premium', 'Futures vs fair', '$ a contract', c.cashOpen ? 'Implied rate vs SOFR' : 'Implied open', 'Roll'],
+      ['Index', 'Contract', 'Futures', 'Index level', 'Fair value', 'Fair premium', 'Futures vs fair', c.cashOpen ? 'Implied rate vs SOFR' : 'Implied open', 'Roll'],
       c.rows.map((r) => [
         h('span', { class: 'fut-market', 'data-root': r.root }, h('b', {}, r.root), ' ', h('span', { class: 'muted fut-name' }, r.indexName)),
         r.contract ? `${r.contract.code} (${r.contract.days}d)` : '—',
@@ -371,10 +372,9 @@ export function createFuturesPage() {
         level(r.spot),
         level(r.fairValue),
         level(r.fairPremium),
-        signedPts(r.mispricing),
-        signedUsd(r.mispricingUsd),
+        { v: r.mispricing == null ? '—' : `${signedPts(r.mispricing)} (${signedUsd(r.mispricingUsd)})`, title: 'Index points, and dollars a contract' },
         c.cashOpen ? (r.impliedRate != null ? `${(r.impliedRate * 100).toFixed(2)}% (${signedBp(r.spreadBp)})` : '—') : level(r.impliedOpen),
-        rollText(r),
+        { v: rollShort(r), title: rollText(r) },
       ]),
       undefined,
       { id: 'futures:fair' },
