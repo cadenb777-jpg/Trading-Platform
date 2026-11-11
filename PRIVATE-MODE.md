@@ -33,18 +33,18 @@ from a copy of the code on your computer instead. Your keys, logins and data sta
    ```
 8. **Start it:** open the **Trading-Platform** folder in your user folder and double-click
    **start-private-windows.bat**. The first start takes a few minutes (it installs the website's parts, builds the
-   website and installs the app's parts). It then puts a **Trading Terminal (private)** icon on your desktop and in
-   the Start menu.
+   website and installs the app's parts). It then makes the **Trading Terminal** icon on your desktop and in the Start
+   menu open this private copy (replacing the installed app's icon of that name).
 
 ## Every day
 
-Double-click **Trading Terminal (private)**. Each start gets the latest changes (`git pull`), rebuilds the website if
+Double-click **Trading Terminal** on your desktop. Each start gets the latest changes (`git pull`), rebuilds the website if
 anything changed, and opens it: the same Terminal or Web choice, window buttons and tray icon as the normal app.
 
 ## Good to know
 
 - The installed Trading Terminal (from the `.exe`) and the online website don't work while the repository is
-  private: use the private icon.
+  private; the Trading Terminal icon now opens the private copy.
 - The website on your computer has its own browser storage, so chart layouts, the watchlist and display choices start
   fresh in private mode (your portfolios, accounts, alerts and settings are in the helper and stay).
 - Private mode switches the online updaters off: it never downloads over your copy of the code.

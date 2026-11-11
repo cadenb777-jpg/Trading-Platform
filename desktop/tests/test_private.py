@@ -49,6 +49,26 @@ class Build(unittest.TestCase):
                 private.pull(open(os.devnull, 'w'))
 
 
+class Icon(unittest.TestCase):
+    def test_the_private_copy_takes_the_trading_terminal_icon(self):
+        import shortcut
+        env = shortcut.windows_env(name=shortcut.NAME, target=private.ROOT / 'start-private-windows.bat')
+        self.assertEqual(env['TP_LNK_NAME'], 'Trading Terminal.lnk')
+        self.assertTrue(env['TP_LNK_TARGET'].endswith('start-private-windows.bat'))
+        script = shortcut.private_script()
+        self.assertIn('Remove-Item -LiteralPath $old', script)  # the old "(private)" icon goes
+        self.assertNotIn('Trading Terminal (private)', script)  # names only come through $env
+
+    def test_made_again_once_for_a_new_icon_version(self):
+        import shortcut
+        with tempfile.TemporaryDirectory() as d:
+            marker = Path(d) / 'm.json'
+            marker.write_text('{"made": true}')  # the first private icon (no version)
+            self.assertFalse(shortcut.private_marker_current(marker))
+            marker.write_text(f'{{"made": true, "v": {shortcut.PRIVATE_ICON_VERSION}}}')
+            self.assertTrue(shortcut.private_marker_current(marker))
+
+
 class Launch(unittest.TestCase):
     def test_private_start_opens_the_app_on_the_local_build_with_updates_off(self):
         class Proc:

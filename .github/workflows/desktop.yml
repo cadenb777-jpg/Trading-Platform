@@ -70,6 +70,17 @@ jobs:
           if (-not (Test-Path ($s.IconLocation -replace ',0$', ''))) { throw 'icon file missing' }
           $start = Join-Path ([Environment]::GetFolderPath('Programs')) 'Trading Terminal.lnk'
           if (-not (Test-Path $start)) { throw 'no Start menu entry' }
+      - name: Private copy takes the Trading Terminal icon (and removes the old "(private)" one)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $desk = [Environment]::GetFolderPath('Desktop')
+          New-Item -ItemType File -Force (Join-Path $desk 'Trading Terminal (private).lnk') | Out-Null
+          python -c "import shortcut; print(shortcut.make_private(force=True, log=print))"
+          $s = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desk 'Trading Terminal.lnk'))
+          Write-Output "Target: $($s.TargetPath)"
+          if (-not $s.TargetPath.EndsWith('start-private-windows.bat')) { throw 'the icon does not open the private copy' }
+          if (Test-Path (Join-Path $desk 'Trading Terminal (private).lnk')) { throw 'old private icon still there' }
       - name: Check the Mac app
         if: runner.os == 'macOS'
         run: |

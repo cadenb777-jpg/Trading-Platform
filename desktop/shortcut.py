@@ -92,26 +92,50 @@ def make(force=False, log=lambda s: None):
     return f'made on your {where}'
 
 
-PRIVATE_NAME = 'Trading Terminal (private)'
+#: The private copy's icon is THE Trading Terminal icon (the owner's choice): it replaces the installed app's icon of
+#: the same name, and the earlier separate "Trading Terminal (private)" icon is removed. Bump PRIVATE_ICON_VERSION when
+#: the icon changes, so every private start makes it once more.
+OLD_PRIVATE_NAME = 'Trading Terminal (private)'
 PRIVATE_MARKER = Path.home() / '.trading-platform' / 'desktop-shortcut-private.json'
+PRIVATE_ICON_VERSION = 2
+
+
+def private_script():
+    """windows_script() plus removing the old "(private)" icons from the desktop and the Start menu."""
+    remove = []
+    for folder in ("[Environment]::GetFolderPath('Desktop')", "[Environment]::GetFolderPath('Programs')"):
+        remove.append(f"$old = Join-Path ({folder}) $env:TP_LNK_OLD; if (Test-Path -LiteralPath $old) {{ Remove-Item -LiteralPath $old -Force }}")
+    return windows_script() + '; ' + '; '.join(remove)
+
+
+def private_marker_current(marker=PRIVATE_MARKER):
+    try:
+        return json.loads(Path(marker).read_text()).get('v') == PRIVATE_ICON_VERSION
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 def make_private(force=False, log=lambda s: None):
-    """Private mode (Windows): a "Trading Terminal (private)" icon on the desktop and in the Start menu that starts
-    start-private-windows.bat in your copy of the code. Made once (or again with force)."""
-    if PRIVATE_MARKER.exists() and not force:
+    """Private mode (Windows): the "Trading Terminal" icon on the desktop and in the Start menu starts
+    start-private-windows.bat in your copy of the code (replacing an icon of that name). Made once per icon version
+    (or again with force)."""
+    if private_marker_current() and not force:
         return 'already made'
     if sys.platform != 'win32':
         return 'not made (Windows only)'
     target = HERE.parent / 'start-private-windows.bat'
+    env = {**os.environ, **windows_env(name=NAME, target=target), 'TP_LNK_OLD': OLD_PRIVATE_NAME + '.lnk'}
     try:
-        subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', windows_script()],
-                       check=True, capture_output=True, timeout=30, env={**os.environ, **windows_env(name=PRIVATE_NAME, target=target)})
+        subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', private_script()],
+                       check=True, capture_output=True, timeout=30, env=env)
     except Exception as err:
         log(f'Private icon not made: {err}')
         return 'not made'
     PRIVATE_MARKER.parent.mkdir(parents=True, exist_ok=True)
-    PRIVATE_MARKER.write_text(json.dumps({'made': True, 'target': str(target)}))
+    PRIVATE_MARKER.write_text(json.dumps({'made': True, 'v': PRIVATE_ICON_VERSION, 'target': str(target)}))
+    # the installed app's launcher must not put its own icon back over this one
+    MARKER.parent.mkdir(parents=True, exist_ok=True)
+    MARKER.write_text(json.dumps({'made': True, 'where': 'private copy', 'app': str(HERE)}))
     return 'made on your desktop and Start menu'
 
 

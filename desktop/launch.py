@@ -93,7 +93,7 @@ def main():
             splash.ok('Your platform is already being served on this computer: using it.')
         made = shortcut.make_private(force='--shortcut' in sys.argv)
         if made.startswith('made'):
-            splash.ok(f'Trading Terminal (private) icon {made}: double-click it next time.')
+            splash.ok(f'Trading Terminal icon {made} (it opens this private copy): double-click it next time.')
         return run_app(None, url=private.URL)
     made = shortcut.make(force='--shortcut' in sys.argv)
     if made.startswith('made'):
