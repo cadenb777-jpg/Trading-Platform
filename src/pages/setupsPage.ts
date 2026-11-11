@@ -263,8 +263,9 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       syncWatches();
       syncHelperAlerts();
       // While a scan is running (or only a saved one is shown), check again soon: each time frame appears when done.
+      // Only while the page is on screen: out of sight the 60 s timer is enough (start() checks again when it's opened).
       clearTimeout(soon);
-      if (data.scanning || (data.loading && !data.error)) soon = setTimeout(() => refresh(), 5_000); // otherwise the 60 s timer
+      if (!frame.el.hidden && (data.scanning || (data.loading && !data.error))) soon = setTimeout(() => refresh(), 5_000);
     } catch (err) {
       status.replaceChildren(h('span', { class: 'down' }, (err as Error).message));
     }
