@@ -261,10 +261,22 @@ KEEP_CLEAR_JS = r"""
       }
     }
   };
-  let timer = 0;
-  const soon = () => { if (!timer) timer = setTimeout(() => { timer = 0; clear(); }, 100); };
+  // Checked when the computer is idle (never in the middle of scrolling or drawing), and only after a change that can
+  // open something: elements added or removed, or a pop-up, drawer, menu or dialog switching on or off.
+  let waiting = false;
+  const soon = () => {
+    if (waiting) return;
+    waiting = true;
+    const run = () => { waiting = false; clear(); };
+    if (window.requestIdleCallback) requestIdleCallback(run, { timeout: 400 }); else setTimeout(run, 150);
+  };
+  const OPENS = '[class*="drawer"], [class*="popover"], [class*="modal"], [class*="menu"], [class*="dialog"], [class*="toast"], [class*="card"], [role="dialog"], [role="menu"], dialog';
+  const matters = (records) => records.some((r) => r.type === 'childList'
+    ? (r.addedNodes.length || r.removedNodes.length) && !(r.target instanceof Element && r.target.closest('.shell-top'))
+    : r.target instanceof Element && r.target.matches(OPENS));
   const watch = () => {
-    new MutationObserver(soon).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden', 'open'] });
+    new MutationObserver((records) => { if (matters(records)) soon(); })
+      .observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden', 'open'] });
     addEventListener('resize', soon);
     soon();
   };

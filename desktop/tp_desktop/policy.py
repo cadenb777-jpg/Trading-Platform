@@ -115,10 +115,10 @@ def helper_start_command(helper_dir, platform):
     return None
 
 
-#: Speed: use the graphics card for drawing even where Chromium's cautious list would switch it off, draw straight into
-#: graphics memory, and never slow the page's timers down. Added to anything already in QTWEBENGINE_CHROMIUM_FLAGS.
-FAST_FLAGS = ('--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--enable-zero-copy',
-              '--disable-renderer-backgrounding', '--disable-background-timer-throttling')
+#: Speed and smoothness: draw with the graphics card and never slow the page's timers down. (Forcing the card past
+#: Chromium's cautious list and "zero-copy" drawing were tried and dropped: on Intel graphics they made scrolling
+#: flicker, and the owner's card is used without them.) Added to anything already in QTWEBENGINE_CHROMIUM_FLAGS.
+FAST_FLAGS = ('--enable-gpu-rasterization', '--disable-renderer-backgrounding', '--disable-background-timer-throttling')
 
 
 def chromium_flags(existing):

@@ -98,7 +98,7 @@ def build_profile(app, storage=DATA):
                      (QWebEngineSettings.WebAttribute.JavascriptCanPaste, True),
                      (QWebEngineSettings.WebAttribute.JavascriptCanOpenWindows, True),
                      (QWebEngineSettings.WebAttribute.LocalStorageEnabled, True),
-                     (QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, True),
+                     (QWebEngineSettings.WebAttribute.ScrollAnimatorEnabled, False),  # its animated scrolling stuttered
                      (QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True)):
         s.setAttribute(attr, on)
     s.setUnknownUrlSchemePolicy(QWebEngineSettings.UnknownUrlSchemePolicy.DisallowUnknownUrlSchemes)  # no program links
@@ -182,7 +182,7 @@ class Window(QMainWindow):
             self.caps = CaptionButtons(self, self.holder)
             add_page_script(self.page, 'tp-desktop-window', DESKTOP_JS)
             add_page_script(self.page, 'tp-keep-clear', KEEP_CLEAR_JS)
-            self.theme_timer = QTimer(self, interval=1500, timeout=self.follow_theme)
+            self.theme_timer = QTimer(self, interval=3000, timeout=self.follow_theme)
             self.theme_timer.start()
             self.page.loadFinished.connect(lambda *_: self.follow_theme())
         else:

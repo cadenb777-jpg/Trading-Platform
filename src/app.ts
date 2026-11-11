@@ -580,6 +580,7 @@ if (isAiWindow) {
   window.addEventListener('hashchange', route);
   window.addEventListener('hashchange', () => { if (!drawer.hidden) assistant.reload(); }); // page-specific example questions
   route();
+  warmPages();
   startAlertWatcher();
 }
 
@@ -636,6 +637,46 @@ async function route() {
 }
 
 let firstRoute = true;
+
+/** The main pages, prepared in the background after start (in this order), so clicking a tab shows a finished page
+ * instead of "Loading…". The rarely used, heavy ones (Prospects, Clients, Backtest, Strategy Lab) still load on use. */
+const WARM_PAGES: readonly string[] = ['account', 'invest', 'chart', 'research', 'setups', 'futures', 'macro', 'calendar', 'flow', 'portfolio', 'trade', 'journal'];
+/** How long a page prepared in the background keeps loading before its timers stop (until it's opened). */
+const WARM_RUN_MS = 10000;
+
+/** One page at a time when the computer is idle, starting a few seconds after the platform opens: builds the page
+ * out of sight and starts it so its data arrives (the helper and the browser keep the replies), then stops its
+ * timers. Never takes the keyboard from the page you're on; skips pages you've already opened. */
+function warmPages(firstDelay = 5000) {
+  // read when it runs, not when called: warmPages() is called while the app is still being set up
+  let i = 0;
+  const later = (fn: () => void, ms: number) => setTimeout(() => ('requestIdleCallback' in window ? requestIdleCallback(fn, { timeout: 3000 }) : fn()), ms);
+  const next = () => {
+    const list = WARM_PAGES;
+    const entry = pages.find((p) => p.route === list[i]);
+    i++;
+    if (i > list.length) return;
+    if (!entry || entry.page || entry.loading || document.visibilityState !== 'visible') return later(next, entry?.page ? 0 : 1500);
+    const focused = document.activeElement;
+    ensurePage(entry)
+      .then((page) => {
+        if (currentPage() === entry) return; // opened meanwhile: route() started it
+        try {
+          page.start();
+        } catch {
+          /* a page that can't start out of sight just loads when opened */
+        }
+        setTimeout(() => currentPage() !== entry && page.stop?.(), WARM_RUN_MS);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        // the page you're on keeps the keyboard (a page starting out of sight may focus its own field)
+        if (focused instanceof HTMLElement && document.activeElement !== focused && entry.page?.el.contains(document.activeElement)) focused.focus({ preventScroll: true });
+        later(next, 2500);
+      });
+  };
+  later(next, firstDelay);
+}
 
 /** Focuses the open page's heading (or the content area when it has none, like the chart). */
 function focusPageHeading() {

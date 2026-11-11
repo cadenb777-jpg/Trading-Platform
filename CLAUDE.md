@@ -331,6 +331,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   closing the window keeps it in the tray with the helper warm (Quit stops both); a second start hands over through a
   QLocalServer (app.INSTANCE). Account page and Home's My accounts follow live quotes (subscribeQuote), redrawn every
   3 s when something moved, changed rows flash (tick-up/tick-down).
+  Smoothness: ScrollAnimator off, FAST_FLAGS = gpu rasterization + no background throttling only (zero-copy and
+  ignore-gpu-blocklist flickered on Intel); KEEP_CLEAR_JS runs on idle after relevant mutations; theme poll 3 s.
+  app.ts warmPages(): ~5 s after start, the main pages (WARM_PAGES) are built hidden and started one at a time on idle,
+  stopped after WARM_RUN_MS, focus kept; Account keeps its last figures while reloading.
   Speed: policy.FAST_FLAGS; helper workers run at low priority (engine/lowpriority.py); GPU renderer written to
   ~/.trading-platform/desktop-graphics.txt. Windows launcher hides its console (TP_HIDE_CONSOLE, tp_desktop/console.py);
   the helper's splash shows it while it needs you (helper-needs-you marker); the app's tray menu shows it or quits,

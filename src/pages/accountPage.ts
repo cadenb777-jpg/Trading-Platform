@@ -191,7 +191,8 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     stopLive();
     live = null;
     paint = () => {};
-    frame.loading('Adding up your accounts…');
+    // coming back to the page: the last figures stay on screen while they're refreshed (no "Adding up…" flash)
+    if (!frame.body.querySelector('.acct-stats, .acct-cards')) frame.loading('Adding up your accounts…');
     let all: Saved[];
     try {
       all = await listDocs<Portfolio>('portfolios');
