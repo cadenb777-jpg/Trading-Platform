@@ -7,7 +7,8 @@
  * (futures.board, macro.curve, store.list, invest.board, alerts.list, scanner.results, the calendar).
  */
 import type { MarketRef } from '../data/quotes';
-import { engineRequest, helper } from '../data/schwab';
+import { carryReady, engineRequest, helper } from '../data/schwab';
+import { briefLine, type Carry } from '../futures/fairValue';
 import { listDocs } from '../data/store';
 import { combineHoldings, myPortfolios } from '../portfolio/account';
 import { fetchPrices, type PriceInfo } from '../portfolio/prices';
@@ -103,9 +104,10 @@ export function createMorningBrief(d: BriefDeps) {
   }
 
   async function loadStrip() {
-    const [board, curve] = await Promise.allSettled([
+    const [board, curve, carry] = await Promise.allSettled([
       engineRequest<{ rows: BoardRow[] }>('futures.board', {}, 90_000),
       engineRequest<{ curve: CurvePoint[] }>('macro.curve', {}, 45_000),
+      carryReady() ? engineRequest<Carry>('futures.carry', {}, 30_000) : Promise.resolve(null),
     ]);
     const rows = board.status === 'fulfilled' ? board.value.rows : [];
     const ten = curve.status === 'fulfilled' ? curve.value.curve.find((p) => p.label === '10Y') : undefined;
@@ -123,6 +125,18 @@ export function createMorningBrief(d: BriefDeps) {
           h('span', { class: 'brief-chip-name' }, '10Y yield'),
           h('span', { class: 'num brief-chip-value' }, `${ten.now.toFixed(2)}%`),
           h('span', { class: 'muted tiny brief-chip-chg' }, ten.monthAgo != null ? `${ten.now - ten.monthAgo >= 0 ? '+' : '−'}${Math.abs((ten.now - ten.monthAgo) * 100).toFixed(0)} bp 1M` : ''),
+        ),
+      );
+    // Before the open: where the S&P 500 is set to open once interest and dividends are taken out of the futures
+    const open = briefLine(carry.status === 'fulfilled' ? carry.value : null);
+    if (open)
+      items.unshift(
+        h(
+          'button',
+          { type: 'button', class: 'brief-chip', role: 'listitem', title: 'S&P 500 futures less their fair premium (interest minus dividends to expiry). Open Futures for every index.', onclick: () => (location.hash = '#futures/fair') },
+          h('span', { class: 'brief-chip-name' }, 'S&P open'),
+          h('span', { class: `num brief-chip-value ${open.tone}` }, open.text.replace('S&P 500 implied open ', '')),
+          h('span', { class: 'muted tiny brief-chip-chg' }, 'implied'),
         ),
       );
     strip.replaceChildren(...items);
