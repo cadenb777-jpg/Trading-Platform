@@ -4,7 +4,8 @@
  * Data: helper futures.board / futures.curve / futures.detail (Schwab quotes and history, CFTC COT).
  */
 import { insightButton } from '../ai/insight';
-import { carryReady, clearEngineCache, engineRequest, helper } from '../data/schwab';
+import { boxReady, carryReady, clearEngineCache, engineRequest, helper } from '../data/schwab';
+import { benchmarkRow, bp, months, rate, reading as boxReading, type BoxReply } from '../futures/boxRates';
 import { headline, level, reading, rollShort, rollText, signedBp, signedPts, signedUsd, type Carry } from '../futures/fairValue';
 import { asOfStamp } from '../ui/dataHealth';
 import { createCotPanel } from '../futures/cot';
@@ -159,6 +160,9 @@ export function createFuturesPage() {
   const fairWork = h('div', {});
   const fairNote = h('span', { class: 'muted small' });
   const fairStamp = asOfStamp('quotes', { prefix: 'as of' });
+  const boxHead = h('p', { class: 'box-reading' });
+  const boxBody = h('div', {});
+  const boxStamp = asOfStamp('quotes', { prefix: 'options as of' });
   const boardHead = h('div', { class: 'panel-head' });
   const boardBox = h('div', {});
   const curveSelect = h('select', { class: 'input', 'aria-label': 'Market for the term structure' });
@@ -178,6 +182,13 @@ export function createFuturesPage() {
       h('div', { class: 'panel-head' }, h('h3', {}, termLabel('Fair value', 'fairvalue')), fairNote, fairStamp.el),
       fairTiles,
       h('details', { class: 'fv-work' }, h('summary', {}, 'How it’s worked out'), fairWork),
+    ),
+    h(
+      'section',
+      { class: 'panel', id: 'fut-rates' },
+      h('div', { class: 'panel-head' }, h('h3', {}, termLabel('What money costs', 'boxspread')), h('span', { class: 'muted small' }, 'S&P 500 box spreads against Treasury bills and SOFR'), boxStamp.el),
+      boxHead,
+      boxBody,
     ),
     h('section', { class: 'panel' }, boardHead, boardBox),
     h(
@@ -412,6 +423,70 @@ export function createFuturesPage() {
     );
   }
 
+  // ----- What money costs (helper rates.box): the interest rate inside SPX options vs T-bills and SOFR -----
+  async function loadBoxes() {
+    await helper.connect().catch(() => undefined);
+    if (!boxReady()) {
+      boxHead.textContent = helper.isConnected ? 'Update the helper to see box-spread rates: Settings > About > Update now.' : 'Box-spread rates appear when the helper is running.';
+      boxBody.replaceChildren();
+      boxStamp.set(null);
+      return;
+    }
+    try {
+      renderBoxes(await engineRequest<BoxReply>('rates.box', {}, 60_000));
+    } catch (err) {
+      boxHead.textContent = `Box-spread rates couldn’t be worked out: ${(err as Error).message}`;
+      boxBody.replaceChildren();
+      boxStamp.set(null);
+    }
+  }
+
+  const usd = (v: number) => '$' + Math.abs(Math.round(v)).toLocaleString('en-US');
+
+  function renderBoxes(b: BoxReply) {
+    boxStamp.set(b.chainAt, { source: 'Schwab options, FRED' });
+    const bench = benchmarkRow(b.rows.filter((r) => r.midRate != null && r.bill != null));
+    boxHead.textContent = b.note ?? (bench ? boxReading(bench) : 'Not enough quotes for a reading yet.');
+    if (!b.rows.length) return boxBody.replaceChildren();
+    const pct = (v: number) => `${v.toFixed(2)}%`;
+    const series = [
+      { name: 'Treasury bills (FRED)', color: cssVar('--viz-1'), points: b.curve.map((c) => ({ x: c.days, y: c.rate * 100 })) },
+      { name: 'Box spread, mid', color: cssVar('--viz-2'), points: b.rows.filter((r) => r.midRate != null).map((r) => ({ x: r.days, y: r.midRate! * 100 })) },
+      { name: 'Box spread, paying every ask', color: cssVar('--viz-2'), dash: true, points: b.rows.filter((r) => r.lend != null).map((r) => ({ x: r.days, y: r.lend! * 100 })) },
+    ].filter((x) => x.points.length);
+    const chart = xySvg(series, { x: (d) => months(d), y: pct, xName: 'Length', height: 220 });
+    const table = dataTable(
+      ['Expiry', 'Length', 'Strikes', 'Lend (paying asks)', 'Mid', 'Borrow (hitting bids)', 'T-bill', 'Mid vs T-bill', 'Per $100,000'],
+      b.rows.map((r) => [
+        shortDate(r.expiration),
+        months(r.days),
+        { v: `${r.k1.toLocaleString('en-US')}–${r.k2.toLocaleString('en-US')}`, title: `Pays ${usd(r.notional)} at expiry, whatever the S&P 500 does` },
+        rate(r.lend),
+        { v: rate(r.midRate), cls: 'strong' },
+        rate(r.borrow),
+        rate(r.bill),
+        { v: bp(r.midVsBillBp), cls: tone(r.midVsBillBp) },
+        { v: r.extraPer100k == null ? '—' : `${r.extraPer100k >= 0 ? '+' : '-'}${usd(r.extraPer100k)}`, cls: tone(r.extraPer100k), title: 'More (or less) than a T-bill of the same length, per $100,000 lent at the mid, over the whole period' },
+      ]),
+      undefined,
+      { id: 'futures:boxes' },
+    );
+    boxBody.replaceChildren(
+      chart,
+      table,
+      h(
+        'p',
+        { class: 'muted small' },
+        'A box is four S&P 500 index options on two strikes (buy the lower call and the higher put, sell the higher call and the lower put). It pays the gap between the strikes × $100 at expiry whatever the market does, so its price is a loan: buying it lends, selling it borrows. ',
+        `Rates are simple and yearly on a 365-day basis, like the Treasury curve, after an estimated ${'$' + b.feePerContract.toFixed(2)} a contract in broker and exchange fees (4 contracts). `,
+        `T-bill = FRED constant-maturity yield for the same length${b.curveDate ? ` (${b.curveDate})` : ''}, straight-line between 1, 3, 6, 12 and 24 months. `,
+        b.sofr ? `SOFR ${rate(b.sofr.value)} on the same basis (FRED, ${b.sofr.asOf}). ` : '',
+        'Research: van Binsbergen, Diamond and Grotteria, "Risk-free interest rates" (Journal of Financial Economics, 2022) find box rates above Treasury yields. ',
+        'Taxes differ: SPX options are Section 1256 contracts (60% long-term, 40% short-term) and T-bill interest is free of state income tax; ask a tax adviser. A read, not an order: nothing here trades.',
+      ),
+    );
+  }
+
   /** A section to bring into view (#futures/cot, "See all on Futures"): now, and once more when the board has drawn. */
   let scrollTarget: string | null = null;
   let boardDrawn = false;
@@ -427,6 +502,7 @@ export function createFuturesPage() {
     if (force) clearEngineCache();
     try {
       void loadFair();
+      void loadBoxes();
       board = await engineRequest<Board>('futures.board', {}, 90_000);
       stamp.textContent = `Updated ${new Date(board.asOf * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
       render();
@@ -587,6 +663,7 @@ export function createFuturesPage() {
       }
       if (sub === 'cot') scrollTo('#fut-cot');
       if (sub === 'fair') scrollTo('#fut-fair');
+      if (sub === 'rates') scrollTo('#fut-rates');
       // Quotes refresh every minute while the page is open (Schwab is asked at most every 15 s by the helper).
       timer ??= setInterval(() => load(), 60_000);
     },

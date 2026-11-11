@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 55;
+export const LATEST_HELPER_VERSION = 56;
 /** The "Log in to Schwab" request (schwab_login) and the in-place re-login need this version. */
 export const SCHWAB_LOGIN_HELPER_VERSION = 47;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
@@ -79,6 +79,10 @@ export async function worldAvailable(): Promise<boolean> {
 export const CARRY_HELPER_VERSION = 55;
 /** True when the connected helper has the fair value engine (v55+). */
 export const carryReady = () => !helper.tooOld && (helper.version ?? 0) >= CARRY_HELPER_VERSION;
+/** Box-spread rates (rates.box) need at least this version. */
+export const BOX_HELPER_VERSION = 56;
+/** True when the connected helper has the box-spread rates (v56+). */
+export const boxReady = () => !helper.tooOld && (helper.version ?? 0) >= BOX_HELPER_VERSION;
 /** The Strategy Lab's game.* requests and the Equilibrium-Prime assistant mode (ai.chat with `mode`) need this version. */
 export const GAME_HELPER_VERSION = 44;
 /** True when the connected helper has the game-theory engine (v44+). */
@@ -369,6 +373,7 @@ class HelperConnection {
     if ((INVEST_REQUEST.test(type) || msg.collection === 'alt_holdings') && (this.version ?? 0) < INVEST_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if ((type.startsWith('futures.') || (type === 'ai.insight' && msg.topic === 'futures')) && (this.version ?? 0) < FUTURES_MARKET_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type === 'futures.carry' && (this.version ?? 0) < CARRY_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
+    if (type.startsWith('rates.') && (this.version ?? 0) < BOX_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('alerts.') && (this.version ?? 0) < ALERTS_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('crosscheck.') && (this.version ?? 0) < CROSSCHECK_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
     if (type.startsWith('data.') && (this.version ?? 0) < DATAHUB_HELPER_VERSION) throw new Error(HELPER_UPDATE_FOR_FEATURE);
@@ -592,6 +597,7 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'futures.board': 20_000,
   'futures.curve': 60_000,
   'futures.carry': 15_000,
+  'rates.box': 60_000,
   'futures.detail': 5 * 60_000,
   'webull.futures_contracts': 20_000,
   // Prospecting data changes only when a download finishes (prospect.ingest clears nothing itself: call clearEngineCache('prospect.')).
