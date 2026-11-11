@@ -6,12 +6,13 @@ The rules every scheduled improvement session follows. The owner approves every 
 
 1. **Simplicity scales.** Remove before adding; one clear way to see a thing; a feature earns its place with evidence.
 2. **Innovation.** Be creative: new, intuitive ways to use proven maths, new ways to show data so a person understands
-   it at a glance, always with a check that proves it is right. If another platform has a capability that is
-   fundamentally better, build that capability (better still, improve on it) in this platform's own design.
-3. **Edge.** Every change should give the owner better knowledge or information than other market participants have:
-   relative value and arbitrage opportunities found, verified across sources and shown with their real costs; the best
-   free data (and, when the owner decides, licensed data) at the most professional level; laid out beautifully and
-   always improving. The platform finds and verifies; the owner decides and trades.
+   it at a glance, always with a check that proves it is right. Cool, human, intuitive design.
+3. **Arbitrage and market edge.** (The owner's words, 2026-11-11: "fundamental market edge".) Every change should
+   make the owner's knowledge and information better than other market participants': financial arbitrage and
+   relative value found, verified across sources by self-checks and shown with their real costs; the best data
+   availability, tools and maths at the highest professional level, laid out beautifully and always improving. If
+   another platform has something fundamentally better that gives edge, build that capability here (and improve on
+   it). The platform finds and verifies; the owner decides and trades.
 
 ## Hard rules (never broken)
 
