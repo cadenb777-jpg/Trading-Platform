@@ -5304,10 +5304,9 @@ a.btn {
   flex-wrap: wrap;
 }
 
-/* Breathing room around the AI button row on Home. */
-.home > .home-ai-row {
+/* Home's AI market read opens full width under the function bar. */
+.home > .insight-panel {
   margin-top: var(--sp-3);
-  margin-bottom: var(--sp-3);
 }
 
 .setups-panel .panel-head {
@@ -7196,6 +7195,7 @@ summary:focus-visible {
 .fv-work { margin-top: var(--sp-3); }
 .fv-work > summary { cursor: pointer; color: var(--label); min-height: 24px; display: inline-flex; align-items: center; }
 .fv-work[open] > summary { margin-bottom: var(--sp-2); }
+.box-reading { margin: 0 0 var(--sp-3); max-width: 80ch; color: var(--text-strong); line-height: 1.5; }
 .fut-market { white-space: nowrap; }
 .fut-strong { font-weight: 700; }
 .fut-soon { color: var(--warn-text); }

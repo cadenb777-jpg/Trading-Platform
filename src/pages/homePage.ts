@@ -458,8 +458,6 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
       icon: 'chart',
       body: [
         h('div', { class: 'idx-row', role: 'group', 'aria-label': 'Market indexes' }, ...cards.map((c) => c.card)),
-        h('div', { class: 'home-ai-row' }, marketRead.button, h('span', { class: 'muted small' }, 'A quick read of the indexes and the biggest headlines.')),
-        marketRead.panel,
       ],
       onRefresh: () => cards.forEach((c) => c.loadSparkline()),
       open: { label: 'Open Investments', go: () => (location.hash = '#invest') },
@@ -612,7 +610,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     [
       { label: 'Refresh', icon: 'refresh', title: 'Reload the brief, news, events and index charts', run: () => (cards.forEach((c) => c.loadSparkline()), Promise.all([brief.refresh(), refreshNews(true), upcoming.refresh()])) },
       { label: 'Customise', icon: 'grid', title: 'Add, remove, reorder and resize widgets', run: () => setEditing(!editing) },
-      { label: 'AI market read', icon: 'spark', run: () => marketRead.button.click() },
+      { label: 'AI market read', icon: 'spark', title: 'A quick read of the indexes and the biggest headlines; it opens at the top of the page', run: () => marketRead.button.click() },
       { label: 'Calendar', icon: 'calendar', run: onOpenCalendar },
     ],
     { label: 'Home functions', related: ['invest', 'setups', 'account'] },
@@ -630,6 +628,8 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     ),
     fnBar,
     banner,
+    // the AI read opens full width above the widgets (function 3), as on every other page
+    marketRead.panel,
     editBar,
     grid,
   );

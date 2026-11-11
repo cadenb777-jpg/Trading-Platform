@@ -65,6 +65,7 @@ export async function runInsight(target: HTMLElement, req: InsightRequest) {
  * row is the button's nearest ancestor whose parent stacks its children (not a side-by-side flex row).
  */
 export function placeUnder(button: HTMLElement, panel: HTMLElement) {
+  if (!button.isConnected) return; // a button only clicked from a function bar: the panel stays where the page put it
   let row: HTMLElement = button;
   while (row.parentElement && row.parentElement !== document.body) {
     const parent = row.parentElement;
@@ -85,8 +86,13 @@ export function insightButton(getRequest: () => InsightRequest | null, label = '
       class: 'btn ai-btn',
       onclick: () => {
         const req = getRequest();
-        if (!req) return;
         placeUnder(button, panel);
+        if (!req) {
+          // never a dead button: say what it is waiting for
+          panel.hidden = false;
+          panel.replaceChildren(h('p', { class: 'muted small' }, 'Nothing to read yet: the AI summary needs this page’s prices or headlines, which haven’t loaded. Try again in a moment.'));
+          return;
+        }
         runInsight(panel, req);
       },
     },

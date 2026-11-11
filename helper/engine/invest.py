@@ -9,6 +9,7 @@ import datetime as dt
 import math
 import re
 import time
+from zoneinfo import ZoneInfo
 
 from . import datahub
 from . import dividends, macro
@@ -17,6 +18,7 @@ from .core import EngineError, handler, market_session, one_candle_per_day
 FISCAL = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/'
 SYMBOL = re.compile(r'^[A-Z0-9.\-/$^]{1,15}$')
 _history_slots = asyncio.Semaphore(6)
+NY = ZoneInfo('America/New_York')
 
 
 def _num(value):
@@ -87,9 +89,39 @@ async def quotes(ctx, symbols):
     return out
 
 
+def last_close_cutoff(now):
+    """UTC seconds of the most recent regular-session close plus 15 minutes (Schwab's daily candle is final by then),
+    on or before `now` (an aware datetime): datahub's one NYSE calendar (holidays, early closes)."""
+    d = now.astimezone(NY).date()
+    for _ in range(10):
+        if datahub.is_trading_day(d):
+            cutoff = datahub.ny_session_close(d) + 15 * 60
+            if cutoff <= now.timestamp():
+                return float(cutoff)
+        d -= dt.timedelta(days=1)
+    return now.timestamp() - 86400
+
+
+def completed_sessions(rows, now):
+    """Daily closes up to the last finished session (today's candle isn't a close until 4:15 pm; pages use the live
+    quote for today)."""
+    last = dt.datetime.fromtimestamp(last_close_cutoff(now), NY).date()
+    return [r for r in rows if datahub.ny_date(r[0]) <= last]
+
+
+def closes_max_age(symbol, now=None):
+    """A stock's or fund's daily closes only change after a session closes, so a copy saved after the last close
+    stays right until the next one (a morning start downloads nothing). Futures trade nearly round the clock on their
+    own calendar: 3 hours, as before."""
+    if symbol.startswith('/'):
+        return 3 * 3600
+    now = now or dt.datetime.now(dt.timezone.utc)
+    return max(60.0, now.timestamp() - last_close_cutoff(now))
+
+
 async def closes(ctx, symbol):
-    """About 13 months of daily closes: [[unix seconds, close], ...], one per New York day in date order. Kept on disk
-    for 3 hours ('board-closes2': copies saved before days were de-duplicated are simply not read again)."""
+    """About 13 months of daily closes: [[unix seconds, close], ...], one per New York day in date order, finished
+    sessions only for stocks and funds. Kept on disk until the next session close (closes_max_age)."""
     async def load():
         now = dt.datetime.now(dt.timezone.utc)
         async with _history_slots:
@@ -97,8 +129,21 @@ async def closes(ctx, symbol):
         _login_check(response)
         if response.status_code != 200:
             raise EngineError(f'Schwab returned {response.status_code} for {symbol}')
-        return [[c['datetime'] // 1000, c['close']] for c in one_candle_per_day(response.json().get('candles', []), symbol) if _num(c.get('close'))]
-    return await ctx.cached(('board-closes2', symbol), 3 * 3600, load, persist=True, stale_ok=True)
+        rows = [[c['datetime'] // 1000, c['close']] for c in one_candle_per_day(response.json().get('candles', []), symbol) if _num(c.get('close'))]
+        return rows if symbol.startswith('/') else completed_sessions(rows, now)
+    key = ('board-closes3', symbol)  # new name: copies saved by earlier rules (with an unfinished day) aren't read
+    rows = await ctx.cached(key, closes_max_age(symbol), load, persist=True, stale_ok=True)
+    if not symbol.startswith('/') and rows and missing_last_close(rows):
+        # Schwab hadn't posted the last close when this copy was saved: look again every 30 minutes
+        rows = await ctx.cached(key, 30 * 60, load, persist=True, stale_ok=True)
+    return rows
+
+
+def missing_last_close(rows, now=None):
+    """True when the newest row is older than the last finished session, 30+ minutes after its close."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    cutoff = last_close_cutoff(now)
+    return now.timestamp() - cutoff > 15 * 60 and datahub.ny_date(rows[-1][0]) < dt.datetime.fromtimestamp(cutoff, NY).date()
 
 
 def performance(rows, price=None):
@@ -183,7 +228,21 @@ async def history(ctx, msg):
     symbol = str(msg.get('symbol', '')).upper().strip()
     if not SYMBOL.match(symbol):
         raise EngineError(f'Invalid symbol "{symbol}"')
-    return {'symbol': symbol, 'closes': await closes(ctx, symbol)}
+    rows = await closes(ctx, symbol)
+    return {'symbol': symbol, 'closes': with_live_point(rows, (await quotes(ctx, [symbol])).get(symbol) if rows and not symbol.startswith('/') else None)}
+
+
+def with_live_point(rows, quote, now=None):
+    """The detail chart ends at today's live price during and after a session whose close isn't in the rows yet
+    (closes hold finished sessions only), so the line agrees with the price shown next to it."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    price = (quote or {}).get('price')
+    today = now.astimezone(NY).date()
+    if not rows or not price or not datahub.is_trading_day(today) or now.astimezone(NY).time() < dt.time(9, 30):
+        return rows
+    if datahub.ny_date(rows[-1][0]) >= today:
+        return rows
+    return [*rows, [int(now.timestamp()), price]]
 
 
 @handler('invest.movers')

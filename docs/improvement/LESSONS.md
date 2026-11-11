@@ -11,9 +11,14 @@ whenever the owner repeats or adds one.
 
 - **Big, finished changes each run**, not one small tweak (2026-11-11): a whole feature, page or roadmap stage, fully
   checked, as one pull request. Runs every 3 hours.
-- **The three mantras:** simplicity scales; innovation (proven maths shown in new, intuitive ways, each with a check);
-  edge (relative value and arbitrage found, verified across sources, shown with real costs). The platform finds and
-  verifies; the owner decides and trades.
+- **The three mantras (owner's words, 2026-11-11):** 1. simplicity scales; 2. innovation (new, intuitive ways to use
+  maths that works and checks itself, with cool design that is intuitive to people); 3. arbitrage and fundamental
+  market edge (financial arbitrage with self-checks; the resources, tools, data and maths at the highest professional
+  level, laid out beautifully and always improving). The platform finds and verifies; the owner decides and trades.
+- **Build it wide and deep, launch-ready** (2026-11-11): product-launch quality every run; install the plugins and
+  skills the work needs (and say which); weave in other languages where they make it better, easier or faster.
+- **Copy capabilities, not identities:** anything another platform does that is fundamentally better or gives edge is
+  built here and improved on; never its code, name, logo, help text or a look-alike screen (legal risk when selling).
 - **No corner cutting:** professional, Bloomberg-grade quality; easy for an older person, yet sleek. Every feature goes
   through the full CLAUDE.md process (options -> build -> design, accessibility and copy checks -> click-through QA and
   release audit -> independent review).
@@ -50,3 +55,13 @@ whenever the owner repeats or adds one.
 - 2026-11-11 · Index futures fair value: implied open, futures vs fair value, implied financing rate vs SOFR and the
   roll for ES/NQ/YM/RTY (Futures page panel + S&P open chip in the morning brief; helper 55) · proposed · the overnight
   read every professional desk uses; cost-of-carry maths (Hull ch. 5) tested on hand-worked values; free data only.
+- 2026-11-11 · #10 fair value, daily-history fix, standing requests · approved (merged by the owner).
+- 2026-11-11 · WebAssembly for the backtester · rejected by measurement · 15 years of daily bars: one backtest 13 ms,
+  200-run random-walk test 0.6 s, 49-cell sweep 0.08 s, Monte Carlo 2,000 runs < 1 ms: nothing a person waits on.
+  Revisit for the scanner or optimiser if they become the slow part.
+- 2026-11-11 · Fast start: self-started cache refreshes use the background budget; stock closes valid until the next
+  close · proposed · owner's diagnostics: clicks waited 45-54 s after start; simulation on the real gate: 45.2 s -> 0.24 s.
+- 2026-11-11 · Home AI market read opens full width under the function bar; empty AI summaries say why · proposed ·
+  owner: "the AI summary is placed weird".
+- 2026-11-11 · SPX box-spread rates vs T-bills and SOFR ("What money costs", helper 56) · proposed · arbitrage tool:
+  box rates above Treasury yields (van Binsbergen, Diamond, Grotteria JFE 2022); after costs, asks-vs-mid shown.
