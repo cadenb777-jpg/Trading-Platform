@@ -54,6 +54,6 @@ export function reading(r: Pick<BoxRow, 'days' | 'midRate' | 'lend' | 'bill' | '
   const diff = (r.midRate - r.bill) * 10000;
   const side = Math.abs(diff) < 1 ? 'the same as' : diff > 0 ? 'more than' : 'less than';
   const money = ok(r.extraPer100k) && Math.abs(diff) >= 1 ? ` (about ${dollars(r.extraPer100k)} ${diff > 0 ? 'more' : 'less'} per $100,000)` : '';
-  const asks = ok(r.lend) ? ` Paying every ask instead: ${rate(r.lend)}${r.lend < r.bill ? ', below the T-bill, so only a patient limit order near the mid captures the gap' : ''}.` : '';
+  const asks = ok(r.lend) ? ` Paying every ask instead: ${rate(r.lend)}${r.lend < r.bill && diff >= 1 ? ', below the T-bill, so only a patient limit order near the mid captures the gap' : ''}.` : '';
   return `Lending through S&P 500 box spreads for ${months(r.days)} pays ${rate(r.midRate)} at the mid, ${side} a Treasury bill of the same length (${rate(r.bill)})${money}.${asks}`;
 }

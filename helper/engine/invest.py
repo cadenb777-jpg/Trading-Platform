@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 from . import datahub
 from . import dividends, macro
-from .core import NYSE_EARLY_CLOSES, NYSE_HOLIDAYS, EngineError, handler, market_session, one_candle_per_day
+from .core import EngineError, handler, market_session, one_candle_per_day
 
 FISCAL = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/'
 SYMBOL = re.compile(r'^[A-Z0-9.\-/$^]{1,15}$')
@@ -91,16 +91,15 @@ async def quotes(ctx, symbols):
 
 def last_close_cutoff(now):
     """UTC seconds of the most recent regular-session close plus 15 minutes (Schwab's daily candle is final by then),
-    on or before `now` (an aware datetime). Weekends, NYSE holidays and early closes (13:00) are counted."""
-    ny = now.astimezone(NY)
-    d = ny.date()
+    on or before `now` (an aware datetime): datahub's one NYSE calendar (holidays, early closes)."""
+    d = now.astimezone(NY).date()
     for _ in range(10):
-        if d.weekday() < 5 and d not in NYSE_HOLIDAYS:
-            close = dt.datetime.combine(d, dt.time(13 if d in NYSE_EARLY_CLOSES else 16, 15), NY)
-            if close <= ny:
-                return close.timestamp()
+        if datahub.is_trading_day(d):
+            cutoff = datahub.ny_session_close(d) + 15 * 60
+            if cutoff <= now.timestamp():
+                return float(cutoff)
         d -= dt.timedelta(days=1)
-    return (ny - dt.timedelta(days=1)).timestamp()
+    return now.timestamp() - 86400
 
 
 def completed_sessions(rows, now):
@@ -132,7 +131,19 @@ async def closes(ctx, symbol):
             raise EngineError(f'Schwab returned {response.status_code} for {symbol}')
         rows = [[c['datetime'] // 1000, c['close']] for c in one_candle_per_day(response.json().get('candles', []), symbol) if _num(c.get('close'))]
         return rows if symbol.startswith('/') else completed_sessions(rows, now)
-    return await ctx.cached(('board-closes2', symbol), closes_max_age(symbol), load, persist=True, stale_ok=True)
+    key = ('board-closes3', symbol)  # new name: copies saved by earlier rules (with an unfinished day) aren't read
+    rows = await ctx.cached(key, closes_max_age(symbol), load, persist=True, stale_ok=True)
+    if not symbol.startswith('/') and rows and missing_last_close(rows):
+        # Schwab hadn't posted the last close when this copy was saved: look again every 30 minutes
+        rows = await ctx.cached(key, 30 * 60, load, persist=True, stale_ok=True)
+    return rows
+
+
+def missing_last_close(rows, now=None):
+    """True when the newest row is older than the last finished session, 30+ minutes after its close."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    cutoff = last_close_cutoff(now)
+    return now.timestamp() - cutoff > 15 * 60 and datahub.ny_date(rows[-1][0]) < dt.datetime.fromtimestamp(cutoff, NY).date()
 
 
 def performance(rows, price=None):
@@ -217,7 +228,21 @@ async def history(ctx, msg):
     symbol = str(msg.get('symbol', '')).upper().strip()
     if not SYMBOL.match(symbol):
         raise EngineError(f'Invalid symbol "{symbol}"')
-    return {'symbol': symbol, 'closes': await closes(ctx, symbol)}
+    rows = await closes(ctx, symbol)
+    return {'symbol': symbol, 'closes': with_live_point(rows, (await quotes(ctx, [symbol])).get(symbol) if rows and not symbol.startswith('/') else None)}
+
+
+def with_live_point(rows, quote, now=None):
+    """The detail chart ends at today's live price during and after a session whose close isn't in the rows yet
+    (closes hold finished sessions only), so the line agrees with the price shown next to it."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    price = (quote or {}).get('price')
+    today = now.astimezone(NY).date()
+    if not rows or not price or not datahub.is_trading_day(today) or now.astimezone(NY).time() < dt.time(9, 30):
+        return rows
+    if datahub.ny_date(rows[-1][0]) >= today:
+        return rows
+    return [*rows, [int(now.timestamp()), price]]
 
 
 @handler('invest.movers')

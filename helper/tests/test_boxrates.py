@@ -21,8 +21,9 @@ from engine import boxrates as bx  # noqa: E402
 Q = {'c1': {'bid': 589.5, 'ask': 590.5}, 'c2': {'bid': 39.8, 'ask': 40.2}, 'p1': {'bid': 40.65, 'ask': 41.05}, 'p2': {'bid': 479.5, 'ask': 480.5}}
 
 
-def leg(kind, strike, q, exp='2027-02-19'):
-    return {'type': kind, 'strike': strike, 'expiration': exp, 'bid': q['bid'], 'ask': q['ask']}
+def leg(kind, strike, q, exp='2027-02-19', root='SPX'):
+    return {'type': kind, 'strike': strike, 'expiration': exp, 'bid': q['bid'], 'ask': q['ask'],
+            'symbol': f"{root.ljust(6)}{exp[2:4]}{exp[5:7]}{exp[8:10]}{'C' if kind == 'call' else 'P'}{int(strike * 1000):08d}"}
 
 
 class Maths(unittest.TestCase):
@@ -61,13 +62,22 @@ class Maths(unittest.TestCase):
         self.assertTrue(bx.is_monthly('2026-06-18'))   # Juneteenth falls on the third Friday (2026-06-19)
 
 
+class Basis(unittest.TestCase):
+    def test_coupon_yields_restated_as_simple(self):
+        self.assertEqual(bx.simple_basis(0.043, 91), 0.043)  # bills: already simple
+        # 2-year 4.00% coupon yield over 730 days: ((1.02)^4 - 1) / 2 = 4.1216%
+        self.assertAlmostEqual(bx.simple_basis(0.04, 730), 0.0412160, places=6)
+        self.assertAlmostEqual(bx.simple_basis(0.04, 365), 0.0404, places=6)
+
+
 class Rows(unittest.TestCase):
     def test_widest_fully_quoted_box_and_the_bill_comparison(self):
         today = dt.date(2026, 11, 20)  # 91 days before 2027-02-19
         contracts = [leg('call', 5500, Q['c1']), leg('call', 6500, Q['c2']), leg('put', 5500, Q['p1']), leg('put', 6500, Q['p2']),
                      leg('call', 6000, {'bid': 200, 'ask': 201}), leg('put', 6000, {'bid': 190, 'ask': 191}),
                      leg('call', 7000, {'bid': 0, 'ask': 0.05}), leg('put', 7000, {'bid': 950, 'ask': 955}),  # no call bid: not used
-                     leg('call', 5500, Q['c1'], '2026-12-11')]  # weekly: left out
+                     leg('call', 5500, Q['c1'], '2026-12-11'),  # weekly: left out
+                     leg('call', 4000, {'bid': 1990, 'ask': 1995}, root='SPXW'), leg('put', 4000, {'bid': 1, 'ask': 1.1}, root='SPXW')]  # PM-settled: never mixed in
         rows = bx.expiry_rows(contracts, today, [(91, 0.043)])
         self.assertEqual(len(rows), 1)
         r = rows[0]

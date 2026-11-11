@@ -392,7 +392,9 @@ async def call(source, fn, *, key=None, background=False, gap=None, gap_from=Non
     Retries 429/5xx/network errors (when `retry`), raises DataError after the last try, returns every other reply
     (404, 403...) to the caller, whose own messages stay. `key` joins identical calls already in flight.
     `passthrough` returns the last 429/5xx reply instead of raising (for callers with their own handling)."""
-    background = background or BACKGROUND_WORK.get()
+    # Self-started refreshes only step back where it matters: a source with a per-minute budget (Schwab). Elsewhere
+    # 'background' would only cut them to one request at a time, which pages waiting on the same keys would feel.
+    background = background or (BACKGROUND_WORK.get() and bool((SOURCES.get(source) or SOURCES['other']).per_minute))
     if key is not None:
         k = (source, key)
         task = _INFLIGHT.get(k)

@@ -442,6 +442,9 @@ export function createFuturesPage() {
   }
 
   const usd = (v: number) => '$' + Math.abs(Math.round(v)).toLocaleString('en-US');
+  /** "Dec 18", or "Dec 17, 2027" when it isn't this year (boxes run up to two years out). */
+  const expiryDate = (iso: string) =>
+    iso.slice(0, 4) === String(new Date().getFullYear()) ? shortDate(iso) : new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
   function renderBoxes(b: BoxReply) {
     boxStamp.set(b.chainAt, { source: 'Schwab options, FRED' });
@@ -458,7 +461,7 @@ export function createFuturesPage() {
     const table = dataTable(
       ['Expiry', 'Length', 'Strikes', 'Lend (paying asks)', 'Mid', 'Borrow (hitting bids)', 'T-bill', 'Mid vs T-bill', 'Per $100,000'],
       b.rows.map((r) => [
-        shortDate(r.expiration),
+        expiryDate(r.expiration),
         months(r.days),
         { v: `${r.k1.toLocaleString('en-US')}–${r.k2.toLocaleString('en-US')}`, title: `Pays ${usd(r.notional)} at expiry, whatever the S&P 500 does` },
         rate(r.lend),

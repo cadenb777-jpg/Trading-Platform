@@ -46,6 +46,23 @@ class LastClose(unittest.TestCase):
         self.assertEqual(invest.completed_sessions(rows, ny(2026, 11, 11, 16, 30)), rows)
 
 
+class MissingCloseAndLivePoint(unittest.TestCase):
+    def test_a_copy_without_the_last_close_is_looked_at_again(self):
+        rows = [[ny(2026, 11, 10, 0, 0).timestamp(), 1.0]]
+        self.assertTrue(invest.missing_last_close(rows, ny(2026, 11, 11, 18, 0)))     # Nov 11 close not in yet
+        self.assertFalse(invest.missing_last_close(rows, ny(2026, 11, 11, 16, 20)))   # only 5 minutes after the cutoff
+        self.assertFalse(invest.missing_last_close(rows, ny(2026, 11, 11, 12, 0)))    # Nov 10 is the last finished one
+
+    def test_detail_chart_ends_at_the_live_price(self):
+        rows = [[ny(2026, 11, 10, 0, 0).timestamp(), 100.0]]
+        out = invest.with_live_point(rows, {'price': 103.0}, ny(2026, 11, 11, 14, 0))
+        self.assertEqual(out[-1][1], 103.0)
+        self.assertEqual(len(out), 2)
+        self.assertEqual(invest.with_live_point(rows, {'price': 103.0}, ny(2026, 11, 11, 8, 0)), rows)   # before the open
+        self.assertEqual(invest.with_live_point(rows, {'price': 103.0}, ny(2026, 11, 14, 12, 0)), rows)  # Saturday
+        self.assertEqual(invest.with_live_point(rows, None, ny(2026, 11, 11, 14, 0)), rows)
+
+
 class RefreshIsBackground(unittest.TestCase):
     def setUp(self):
         self.clock, self._old = FakeClock(), datahub.CLOCK

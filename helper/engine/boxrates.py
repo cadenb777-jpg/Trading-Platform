@@ -14,13 +14,14 @@ FRED), so they compare directly: lend = what buying the box pays if you pay the 
 mid = at the middle of every quote, borrow = what selling it costs at the other side. Costs per contract (broker +
 exchange) are an estimate the page states; nothing here places orders.
 """
+import asyncio
 import datetime as dt
 import math
 import time
 from zoneinfo import ZoneInfo
 
-from . import datahub, flow, macro
-from .core import NYSE_HOLIDAYS, EngineError, handler
+from . import datahub, flow, futures_market, macro
+from .core import EngineError, handler
 
 NY = ZoneInfo('America/New_York')
 SYMBOL = '$SPX'
@@ -70,6 +71,10 @@ def pick_box(contracts):
     spreads the four bid-ask spreads over more dollars. contracts = flow.flatten_chain rows of ONE expiry."""
     by = {}
     for c in contracts:
+        # SPX (AM-settled, the monthly) only: SPXW (PM-settled) shares dates and strikes, and a box mixing the two
+        # settles on two different prices, so it isn't risk-free
+        if (c.get('symbol') or '').split(' ')[0] != 'SPX':
+            continue
         if c['bid'] > 0 and c['ask'] >= c['bid']:
             by.setdefault(c['strike'], {})[c['type']] = c
     full = sorted(k for k, v in by.items() if 'call' in v and 'put' in v)
@@ -94,11 +99,18 @@ def bill_rate(curve, days):
 
 
 def is_monthly(expiration):
-    """The standard monthly SPX expiry (third Friday, or the Thursday before when Friday is a holiday): the deepest
-    quotes. Weeklies and dailies are left out."""
+    """The standard monthly SPX expiry (third Friday, or the Thursday before when that Friday is a market holiday): the
+    deepest quotes. Weeklies and dailies are left out."""
     d = dt.date.fromisoformat(expiration)
-    third_friday = dt.date(d.year, d.month, 15 + (4 - dt.date(d.year, d.month, 15).weekday()) % 7)
-    return d == third_friday or (third_friday in NYSE_HOLIDAYS and d == third_friday - dt.timedelta(days=1))
+    third_friday = futures_market.nth_weekday(d.year, d.month, 4, 3)
+    return d == third_friday or (not datahub.is_trading_day(third_friday) and d == third_friday - dt.timedelta(days=1))
+
+
+def simple_basis(cmt, days):
+    """A constant-maturity Treasury yield as a simple rate over `days` (days/365). Points past 6 months are coupon
+    yields compounded twice a year: (1 + y/2)^(2t) - 1 over t. A box's simple rate compares with this, not the quote."""
+    t = days / 365
+    return cmt if days <= 182 else ((1 + cmt / 2) ** (2 * t) - 1) / t
 
 
 def expiry_rows(contracts, today, curve, fee=FEE_PER_CONTRACT):
@@ -127,42 +139,43 @@ def expiry_rows(contracts, today, curve, fee=FEE_PER_CONTRACT):
 
 
 async def _curve(ctx):
-    async def one(series):
-        rows = await macro.fred(ctx, series)
-        return rows[-1] if rows else None
+    """FRED's Treasury curve points on the boxes' simple basis, fetched at once (FRED allows 8 at a time)."""
+    got = await asyncio.gather(*(macro.fred(ctx, series) for series, _ in BILLS), return_exceptions=True)
     out, dates = [], []
-    for series, days in BILLS:
-        try:
-            last = await one(series)
-        except Exception:
+    for (series, days), rows in zip(BILLS, got):
+        if isinstance(rows, Exception) or not rows:
             continue
-        if last:
-            out.append((days, last[1] / 100))
-            dates.append(last[0])
+        out.append((days, simple_basis(rows[-1][1] / 100, days)))
+        dates.append(rows[-1][0])
     return out, max(dates) if dates else None
 
 
 @handler('rates.box')
 async def box(ctx, msg):
-    """SPX box-spread lend / mid / borrow rates per monthly expiry, the Treasury yield of the same length and SOFR."""
-    today = dt.datetime.now(NY).date()
+    """SPX box-spread lend / mid / borrow rates per monthly expiry, the Treasury yield of the same length and SOFR.
+    Worked out at most every 10 minutes (box rates move slowly; the full SPX chain is large)."""
+    async def load():
+        today = dt.datetime.now(NY).date()
+        try:
+            chain, fetched = await flow.chain(ctx, SYMBOL)
+        except EngineError:
+            raise
+        except Exception as err:
+            raise EngineError(f'Schwab’s SPX option chain couldn’t be loaded ({type(err).__name__}).') from err
+        (curve, curve_date), sofr_rows = await asyncio.gather(_curve(ctx), _safe_fred(ctx, 'SOFR'))
+        sofr = datahub.envelope(sofr_rows[-1][1] / 100 * 365 / 360, 'fred', sofr_rows[-1][0]) if sofr_rows else None
+        contracts = flow.flatten_chain(chain)
+        spot = flow._num((chain.get('underlying') or {}).get('last')) or flow._num(chain.get('underlyingPrice'))
+        out = expiry_rows(contracts, today, curve)
+        return {'rows': out, 'spot': spot, 'chainAt': fetched, 'asOf': time.time(),
+                'curve': [{'days': d, 'rate': r} for d, r in curve], 'curveDate': curve_date, 'sofr': sofr,
+                'feePerContract': FEE_PER_CONTRACT,
+                'note': None if out else 'Schwab’s chain had no monthly SPX expiry with all four quotes at two strikes.'}
+    return await ctx.cached(('schwab', 'rates-box'), 600, load)
+
+
+async def _safe_fred(ctx, series):
     try:
-        chain, fetched = await flow.chain(ctx, SYMBOL)
-    except EngineError:
-        raise
-    except Exception as err:
-        raise EngineError(f'Schwab’s SPX option chain couldn’t be loaded ({type(err).__name__}).') from err
-    curve, curve_date = await _curve(ctx)
-    sofr = None
-    try:
-        rows = await macro.fred(ctx, 'SOFR')
-        sofr = datahub.envelope(rows[-1][1] / 100 * 365 / 360, 'fred', rows[-1][0])  # ACT/360 -> days/365
+        return await macro.fred(ctx, series)
     except Exception:
-        pass
-    contracts = flow.flatten_chain(chain)
-    spot = flow._num((chain.get('underlying') or {}).get('last')) or flow._num(chain.get('underlyingPrice'))
-    out = expiry_rows(contracts, today, curve)
-    return {'rows': out, 'spot': spot, 'chainAt': fetched, 'asOf': time.time(),
-            'curve': [{'days': d, 'rate': r} for d, r in curve], 'curveDate': curve_date, 'sofr': sofr,
-            'feePerContract': FEE_PER_CONTRACT,
-            'note': None if out else 'Schwab’s chain had no monthly SPX expiry with all four quotes at two strikes.'}
+        return None

@@ -597,7 +597,7 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'futures.board': 20_000,
   'futures.curve': 60_000,
   'futures.carry': 15_000,
-  'rates.box': 60_000,
+  'rates.box': 10 * 60_000,
   'futures.detail': 5 * 60_000,
   'webull.futures_contracts': 20_000,
   // Prospecting data changes only when a download finishes (prospect.ingest clears nothing itself: call clearEngineCache('prospect.')).

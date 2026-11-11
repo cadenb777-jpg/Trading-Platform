@@ -104,11 +104,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   and ctx.daily_bars keep one Schwab candle per New York day in date order (core.one_candle_per_day; fixes counted in
   core.DAILY_FIXES, reported by the self-check). Yield = ETF forward dividend (dividends.analyse) + its fee (MARKETS).
   Box-spread rates (v56, engine/boxrates.py `rates.box`, BOX_HELPER_VERSION; src/futures/boxRates.ts; Futures panel
-  #futures/rates "What money costs"): per monthly SPX expiry the widest box with all four quotes at two strikes (flow.chain
-  $SPX), lend (asks) / mid / borrow (bids) simple days/365 after FEE_PER_CONTRACT x 4, vs the FRED CMT yield of the same
-  length (BILLS, straight-line) and SOFR (x 365/360). Fast start (v56): datahub.BACKGROUND_WORK (set in core._refresh)
-  sends self-started refreshes through the background budget; invest.closes keeps finished sessions only and stays valid
-  until the next close + 15 min (stocks; futures 3 h); Sources table waitP95Ms/waitMaxMs = queue wait of your requests.
+  #futures/rates "What money costs"): per monthly SPX expiry (AM-settled SPX root only, never SPXW) the widest box with all four quotes at two
+  strikes (flow.chain $SPX, worked out at most every 10 min), lend (asks) / mid / borrow (bids) simple days/365 after FEE_PER_CONTRACT x 4, vs the FRED CMT yield of the same
+  length (BILLS on the simple basis: simple_basis restates 1y/2y coupon yields; straight-line) and SOFR (x 365/360). Fast start (v56): datahub.BACKGROUND_WORK (set in core._refresh)
+  sends self-started refreshes through the background budget of budgeted sources (Schwab); invest.closes ('board-closes3') keeps finished sessions only and stays
+  valid until the next close + 15 min (stocks; futures 3 h; missing_last_close looks again every 30 min); invest.history
+  adds today's live price (with_live_point); Sources table waitP95Ms/waitMaxMs = queue wait of your requests.
   Backtest (src/pages/backtestPage.ts, src/backtest/research.ts): "My chart's indicators" builds rules (operand
   operator operand, ALL/ANY) from state.indicators via suggestRules(); the chart's Backtest button fires
   `tp:backtest-chart`. Research tabs: Monte Carlo (trade bootstrap), random-walk test (shuffled daily moves, p-value),
