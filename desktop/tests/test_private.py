@@ -154,7 +154,8 @@ class StartUpWindowFlow(unittest.TestCase):
                 return 0
         trees = iter(['a', 'b' if desktop_changed else 'a'])
         steps = mock.patch.multiple(launch, PROGRESS=f, instance_running=mock.DEFAULT, desktop_ready=mock.DEFAULT,
-                                    quiet_children=mock.DEFAULT, run_app=mock.DEFAULT, desktop_parts=mock.DEFAULT, tree=mock.DEFAULT)
+                                    quiet_children=mock.DEFAULT, run_app=mock.DEFAULT, desktop_parts=mock.DEFAULT, tree=mock.DEFAULT,
+                                    helper_running=mock.DEFAULT)
         with steps as m, mock.patch.object(launch.subprocess, 'Popen', return_value=App()) as popen, \
                 mock.patch.object(launch.private, 'pull', return_value='Up to date.'), \
                 mock.patch.object(launch.private, 'build', side_effect=fail), \
@@ -166,13 +167,14 @@ class StartUpWindowFlow(unittest.TestCase):
             m['desktop_ready'].return_value = True
             m['tree'].side_effect = lambda path: next(trees)
             m['run_app'].return_value = 0
+            m['helper_running'].return_value = False  # (the same on every machine, whatever runs on port 8765)
             code = launch.gui_main()
         return code, progress.read(f), popen, m['run_app'], seen
 
     def test_ready_hands_the_running_app_on(self):
         code, last, popen, run_app, _ = self.run_flow()
         self.assertEqual(last['state'], 'ready')
-        self.assertIn('--starting', popen.call_args.args[0])  # the start-up window opened straight away
+        self.assertIn('--starting', popen.call_args_list[0].args[0])  # the start-up window opened straight away
         self.assertIsNotNone(run_app.call_args.kwargs['app'])  # the same app carries on (no second window)
         self.assertEqual(run_app.call_args.kwargs['url'], private.URL)
 
