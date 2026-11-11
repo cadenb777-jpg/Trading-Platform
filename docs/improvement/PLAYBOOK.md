@@ -2,6 +2,17 @@
 
 The rules every scheduled improvement session follows. The owner approves every change: sessions only *propose*.
 
+## The three mantras (the owner's)
+
+1. **Simplicity scales.** Remove before adding; one clear way to see a thing; a feature earns its place with evidence.
+2. **Innovation.** Be creative: new, intuitive ways to use proven maths, new ways to show data so a person understands
+   it at a glance, always with a check that proves it is right. If another platform has a capability that is
+   fundamentally better, build that capability (better still, improve on it) in this platform's own design.
+3. **Edge.** Every change should give the owner better knowledge or information than other market participants have:
+   relative value and arbitrage opportunities found, verified across sources and shown with their real costs; the best
+   free data (and, when the owner decides, licensed data) at the most professional level; laid out beautifully and
+   always improving. The platform finds and verifies; the owner decides and trades.
+
 ## Hard rules (never broken)
 
 1. **Never trade.** Never place, preview, change or cancel an order; never call Webull, Schwab or any broker with the
@@ -12,15 +23,16 @@ The rules every scheduled improvement session follows. The owner approves every 
 3. **Never weaken security.** Keys stay in `~/.trading-platform`; nothing secret in the repo, the browser or logs;
    the helper stays on 127.0.0.1 with its origin list; the CSP stays strict. Security fixes are welcome, loosening is not.
 4. **Never invent data.** A figure is shown only from a source, with its time; when sources disagree, say so.
-5. **Simplicity scales.** Remove before adding. A change that adds clutter, settings or indicators without a measured
-   gain is not proposed.
+5. **Simplicity scales** (mantra 1). A change that adds clutter, settings or indicators without a measured gain is not
+   proposed.
 6. **At most two open improvement pull requests.** If two are waiting, don't open a third: add findings to the
    newest one's report instead.
 7. **Keep the owner's look.** Amber labels, white figures, green/red only for good/bad, the navy flowing background,
    Bull the dog, the ticker tape, the 12-hour clock, light/dark themes through CSS variables. Improve within it; never
    restyle it.
-8. **Legal and ethical only.** No inside information, no market manipulation, no scraping that a site forbids, no
-   copying AGPL or proprietary code, no real firm's branding.
+8. **Legal and ethical only.** No inside information, no market manipulation, no scraping that a site forbids. Build
+   other platforms' better *capabilities* freely; never take their logos, product names, copied code, copied help text
+   or a look-alike screen (what would get the owner sued when selling); no AGPL code; no real firm's branding.
 
 ## The loop (human judgement + machine checking)
 
@@ -50,9 +62,14 @@ The rules every scheduled improvement session follows. The owner approves every 
 
 ## Research areas (where to look for edge and better tools)
 
-- **Professional terminals' design:** how Bloomberg, Refinitiv/LSEG Workspace, FactSet, TradingView, thinkorswim,
-  Koyfin and others solve a problem, from their public documentation, design write-ups and reviews. Adapt the idea in
-  this platform's own design; never copy their look, layout, names, logos, help text or code.
+- **Professional terminals' capabilities:** what Bloomberg, Refinitiv/LSEG Workspace, FactSet, TradingView, thinkorswim,
+  Koyfin and others can do that this platform can't, from their public documentation, design write-ups and reviews.
+  Build the better capability (and improve on it) in this platform's own design and words.
+- **Relative value and arbitrage monitors (mantra 3):** ETF and closed-end fund price vs NAV (premium/discount), futures
+  vs fair value (cost of carry), put-call parity, merger spreads, cointegrated pairs drifting apart, crypto prices across
+  exchanges. Each monitor: the maths from a primary source, prices cross-checked across sources with their times, the
+  spread after real costs (commissions, spread, borrow, financing), how often such gaps closed in the past, and a
+  self-check that proves the calculation on known cases. Shown as information; the owner decides; never auto-traded.
 - **Portfolio maths (linear algebra first):** covariance estimation and shrinkage (Ledoit-Wolf), principal components
   and eigen-portfolios, factor models (Fama-French, statistical factors), risk parity and hierarchical risk parity,
   risk decomposition (marginal and component contributions), tracking error, optimisation constraints.

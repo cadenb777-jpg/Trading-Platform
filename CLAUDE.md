@@ -1,7 +1,11 @@
 # Notes for Claude
 
-**Mantra: simplicity scales.** Fewer rules, indicators and settings; remove before adding; anything that doesn't earn
-its place in honest tests goes.
+**The three mantras (owner):** 1. **Simplicity scales:** fewer rules, indicators and settings; remove before adding;
+anything that doesn't earn its place in honest tests goes. 2. **Innovation:** creative, intuitive new uses of proven
+maths and new ways to show data, each with a check that proves it right; build other platforms' better capabilities in
+this platform's own design. 3. **Edge:** better knowledge and information than other market participants: relative
+value and arbitrage found, verified and shown with real costs; the platform finds and verifies, the owner decides and
+trades. Details: docs/improvement/PLAYBOOK.md.
 
 The owner is a beginner. Explain changes in plain language, keep steps small, and prefer free services.
 
