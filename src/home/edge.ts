@@ -5,7 +5,7 @@
  */
 import { benchmarkRow, months, rate } from '../futures/boxRates';
 import type { BoxReply } from '../futures/boxRates';
-import { signedPct, signedPts, signedUsd, type Carry } from '../futures/fairValue';
+import { level, signedPct, signedPts, signedUsd, type Carry } from '../futures/fairValue';
 
 export interface EdgeLine {
   /** What it is, in plain words. */
@@ -34,7 +34,7 @@ export function edgeLines(carry: Carry | null, box: BoxReply | null): EdgeLine[]
         label: `${r.indexName} set to open`,
         value: signedPct(r.impliedOpenChange),
         tone: tone(r.impliedOpenChange),
-        detail: `${r.contract?.code ?? root} less its fair premium points to ${r.impliedOpen.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
+        detail: `${r.contract?.code ?? root} less its fair premium points to ${level(r.impliedOpen)}`,
         href: '#futures/fair',
         source: 'Schwab futures and index, FRED SOFR, Yahoo dividends',
       });
@@ -55,7 +55,7 @@ export function edgeLines(carry: Carry | null, box: BoxReply | null): EdgeLine[]
       label: `Lend via S&P 500 box spreads, ${months(b.days)}`,
       value: rate(b.midRate),
       tone: Math.abs(bp) < 1 ? '' : bp > 0 ? 'up' : 'down',
-      detail: `T-bill ${rate(b.bill)} · ${bp >= 0 ? '+' : ''}${Math.round(bp)} bp${ok(b.extraPer100k) && Math.abs(bp) >= 1 ? ` · ${b.extraPer100k >= 0 ? '+' : '-'}$${Math.abs(Math.round(b.extraPer100k)).toLocaleString('en-US')} per $100,000` : ''} at the mid`,
+      detail: `T-bill ${rate(b.bill)} · ${bp >= 0 ? '+' : ''}${Math.round(bp)} bp${ok(b.extraPer100k) && Math.abs(bp) >= 1 ? ` · ${signedUsd(b.extraPer100k)} per $100,000` : ''} at the mid`,
       href: '#futures/rates',
       source: 'Schwab SPX options, FRED Treasury curve',
     });

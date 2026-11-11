@@ -66,7 +66,8 @@ export function parseLayout(raw: string | null | undefined): Layout {
     }
     // A widget released after this layout was saved joins it once, after the first card (removing it later sticks).
     const seenBefore = new Set<string>(Array.isArray(v.seen) ? v.seen : ORIGINAL);
-    for (const w of WIDGETS) if (!seenBefore.has(w.id) && !seen.has(w.id)) items.splice(Math.min(1, items.length), 0, { id: w.id, span: w.span });
+    let at = Math.min(1, items.length);
+    for (const w of WIDGETS) if (!seenBefore.has(w.id) && !seen.has(w.id)) items.splice(at++, 0, { id: w.id, span: w.span });
     return { v: 1, items, seen: WIDGETS.map((w) => w.id) };
   } catch {
     return defaultLayout();

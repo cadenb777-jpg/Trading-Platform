@@ -25,7 +25,7 @@ describe('Edge today', () => {
       ['S&P 500 set to open', '+0.02%', 'up', '#futures/fair'],
       ['Lend via S&P 500 box spreads, 3 months', '4.38%', 'up', '#futures/rates'],
     ]);
-    expect(lines[0].detail).toBe('ESZ26 less its fair premium points to 6,001.3');
+    expect(lines[0].detail).toBe('ESZ26 less its fair premium points to 6,001.30');
     expect(lines[1].detail).toBe('T-bill 4.30% · +8 bp · +$20 per $100,000 at the mid');
   });
 
