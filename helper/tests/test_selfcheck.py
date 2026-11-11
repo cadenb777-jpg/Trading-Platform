@@ -50,6 +50,24 @@ class Checks(unittest.TestCase):
         self.assertFalse(sc.check_speed(slow, now)['ok'])
         self.assertIsNone(sc.check_speed([], now)['ok'])
 
+    def test_clock(self):
+        self.assertTrue(sc.check_clock(1000, 1003)['ok'])
+        bad = sc.check_clock(1000, 1100)
+        self.assertFalse(bad['ok'])
+        self.assertIn('100 s fast', bad['detail'])
+        self.assertIsNone(sc.check_clock(None)['ok'])
+
+    def test_bars(self):
+        day = 86400
+        good = [[i * day, 400 + i] for i in range(1, 30)]
+        self.assertTrue(sc.check_bars(good, now_ts=30 * day)['ok'])
+        jump = good[:10] + [[11 * day, 800.0]] + [[i * day, 800 + i] for i in range(12, 30)]
+        self.assertIn('one-day move', sc.check_bars(jump, now_ts=30 * day)['detail'])
+        unordered = [good[1], good[0]] + good[2:]
+        self.assertFalse(sc.check_bars(unordered, now_ts=30 * day)['ok'])
+        self.assertIn('days old', sc.check_bars(good, now_ts=60 * day)['detail'])
+        self.assertIsNone(sc.check_bars([])['ok'])
+
     def test_history_keeps_a_day(self):
         with tempfile.TemporaryDirectory() as d:
             f = Path(d) / 'sc.json'

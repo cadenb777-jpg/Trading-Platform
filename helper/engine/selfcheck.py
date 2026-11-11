@@ -4,9 +4,13 @@ before they mislead you (and the improvement sessions have something real to wor
 
 Four areas, each check answering ok / problem / skipped with one plain sentence:
   security  the helper only listens on this computer and only lets your platform pages in; key files are private
-  data      every data source answers and isn't failing; quotes are fresh while the market is open
-  accuracy  the maths gives known answers (moving averages, RSI, returns, drawdown); SPY's price agrees across sources
+  data      every data source answers and isn't failing; quotes are fresh while the market is open; this computer's
+            clock is right (every chart time and "updated" stamp depends on it)
+  accuracy  the maths gives known answers (moving averages, RSI, returns, drawdown); SPY's price agrees across sources;
+            SPY's daily history is clean (in order, no impossible prices, no data-error jumps, up to date)
   speed     replies to the platform come back quickly
+The clock and bad-data checks follow what professional market-data systems monitor (feed time vs exchange time,
+out-of-sequence and outlier ticks, stale series), in this platform's own words.
 
 Results: ~/.trading-platform/selfcheck.json (the last 48 runs, so a day). Requests (read-only):
   selfcheck.latest   the newest run (runs one now if there is none yet)
@@ -137,6 +141,41 @@ def check_crosscheck(reply):
                   f'SPY: sources disagree or only one answered{tail}: {reply.get("message", "")}'.strip())
 
 
+def check_clock(server_time, local_time=None, limit=10):
+    """This computer's clock against a web server's (the HTTP Date header, accurate to a second)."""
+    if server_time is None:
+        return result('clock', 'data', None, 'Clock not checked (no internet answer).')
+    drift = (local_time if local_time is not None else time.time()) - server_time
+    ok = abs(drift) <= limit
+    word = 'fast' if drift > 0 else 'slow'
+    return result('clock', 'data', ok, f'This computer’s clock is right (within {max(1, round(abs(drift)))} s).' if ok else
+                  f'This computer’s clock is {round(abs(drift))} s {word}: chart times and "updated" stamps will be off. '
+                  'Windows: Settings → Time & language → Sync now.')
+
+
+def check_bars(rows, symbol='SPY', now_ts=None, max_jump=0.25, max_age_days=5):
+    """Daily closes [[unix seconds, close], ...]: in order, positive, no one-day jump bigger than a broad index can
+    make (a data error, e.g. an unadjusted split), and up to date."""
+    if not rows:
+        return result('history-clean', 'accuracy', None, f'{symbol} daily history not available to check.')
+    problems = []
+    times = [r[0] for r in rows]
+    if any(b <= a for a, b in zip(times, times[1:])):
+        problems.append('days out of order or repeated')
+    if any(not (isinstance(r[1], (int, float)) and r[1] > 0) for r in rows):
+        problems.append('a zero or negative price')
+    jumps = [(rows[i][0], rows[i][1] / rows[i - 1][1] - 1) for i in range(1, len(rows))
+             if rows[i - 1][1] and abs(rows[i][1] / rows[i - 1][1] - 1) > max_jump]
+    if jumps:
+        day = dt.datetime.fromtimestamp(jumps[0][0], dt.timezone.utc).date()
+        problems.append(f'a {jumps[0][1] * 100:+.0f}% one-day move on {day} (a data error)')
+    age = ((now_ts or time.time()) - times[-1]) / 86400
+    if age > max_age_days:
+        problems.append(f'the newest day is {int(age)} days old')
+    return result('history-clean', 'accuracy', not problems, f'{symbol} daily history is clean ({len(rows)} days, in order, no bad prices).'
+                  if not problems else f'{symbol} daily history: ' + '; '.join(problems) + '.')
+
+
 def check_speed(requests, now_ts=None, window=EVERY, limit_ms=3000):
     now_ts = now_ts or time.time()
     recent = [r['ms'] for r in requests or [] if r.get('ok') and now_ts - r.get('at', 0) <= window and r.get('type') != 'ai.chat']
@@ -177,10 +216,29 @@ async def run(ctx):
         checks.append(result('price-agrees', 'accuracy', None, f'Price cross-check couldn’t run: {err}'))
     if reply is not None:
         checks.append(check_crosscheck(reply))
+    checks.append(await _clock(ctx))
+    try:
+        from . import invest
+        rows = await asyncio.wait_for(invest.closes(ctx, 'SPY'), 60)
+        checks.append(check_bars(rows))
+    except Exception as err:
+        checks.append(result('history-clean', 'accuracy', None, f'SPY daily history couldn’t be read: {err}'))
     checks.append(check_speed(list(diagnostics.REQUESTS)))
     run_ = {'at': time.time(), **summary(checks), 'checks': checks}
     save(run_)
     return run_
+
+
+async def _clock(ctx):
+    from email.utils import parsedate_to_datetime
+    try:
+        sent = time.time()
+        response = await asyncio.wait_for(ctx.http.head('https://www.google.com/generate_204'), 15)
+        local = (sent + time.time()) / 2  # the middle of the round trip
+        server = parsedate_to_datetime(response.headers['date']).timestamp()
+    except Exception:
+        return check_clock(None)
+    return check_clock(server, local)
 
 
 def history(path=FILE):

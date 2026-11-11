@@ -16,7 +16,10 @@ The rules every scheduled improvement session follows. The owner approves every 
    gain is not proposed.
 6. **At most two open improvement pull requests.** If two are waiting, don't open a third: add findings to the
    newest one's report instead.
-7. **Legal and ethical only.** No inside information, no market manipulation, no scraping that a site forbids, no
+7. **Keep the owner's look.** Amber labels, white figures, green/red only for good/bad, the navy flowing background,
+   Bull the dog, the ticker tape, the 12-hour clock, light/dark themes through CSS variables. Improve within it; never
+   restyle it.
+8. **Legal and ethical only.** No inside information, no market manipulation, no scraping that a site forbids, no
    copying AGPL or proprietary code, no real firm's branding.
 
 ## The loop (human judgement + machine checking)
@@ -44,6 +47,19 @@ The rules every scheduled improvement session follows. The owner approves every 
    Propose only changes that are better in expectation and never meaningfully worse.
 7. **Report and wait.** Open the pull request with the report below, then stop.
 8. **Remember.** Add a line to `LESSONS.md` in the same pull request (proposed, date, one-line why).
+
+## Research areas (where to look for edge and better tools)
+
+- **Professional terminals' design:** how Bloomberg, Refinitiv/LSEG Workspace, FactSet, TradingView, thinkorswim,
+  Koyfin and others solve a problem, from their public documentation, design write-ups and reviews. Adapt the idea in
+  this platform's own design; never copy their look, layout, names, logos, help text or code.
+- **Portfolio maths (linear algebra first):** covariance estimation and shrinkage (Ledoit-Wolf), principal components
+  and eigen-portfolios, factor models (Fama-French, statistical factors), risk parity and hierarchical risk parity,
+  risk decomposition (marginal and component contributions), tracking error, optimisation constraints.
+- **Market maths:** time-series (stationarity, autocorrelation, regime changes), volatility models, options maths
+  (Greeks, implied volatility surfaces), market microstructure, positioning data (COT, short volume, options flow).
+- **Evidence standard:** a paper's result is a hypothesis for this platform until it passes the experiment in step 5
+  on the owner's data; show the source, the maths and the test result, never just the claim.
 
 ## The report (the pull request description), in plain language
 
