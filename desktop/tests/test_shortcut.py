@@ -25,7 +25,8 @@ class Icon(unittest.TestCase):
         self.assertTrue(env['TP_LNK_ICON'].endswith('logo.ico,0'))
         # the folder names never appear in the script itself, so quotes or $ in them can't change the command
         for value in env.values():
-            self.assertNotIn(value, ps)
+            if value:  # (an empty value, like no arguments, is in every text)
+                self.assertNotIn(value, ps)
         self.assertNotIn('Caden', ps)
 
     @unittest.skipIf(os.name == 'nt', 'Mac app bundles are made on a Mac (Windows writes these paths with backslashes)')

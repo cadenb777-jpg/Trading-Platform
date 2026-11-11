@@ -22,11 +22,11 @@ ICONS = HERE / 'tp_desktop' / 'assets'
 MARKER = Path.home() / '.trading-platform' / 'desktop-shortcut.json'
 
 
-def windows_env(here=HERE, name=NAME, target=None):
+def windows_env(here=HERE, name=NAME, target=None, args='', workdir=None):
     """The folder names PowerShell needs, passed as environment values (never written into the script), so no folder
     name (quotes, curly apostrophes, $ signs) can break or change the command."""
     target = Path(target) if target else here / 'start-desktop-windows.bat'
-    return {'TP_LNK_NAME': name + '.lnk', 'TP_LNK_TARGET': str(target), 'TP_LNK_DIR': str(target.parent),
+    return {'TP_LNK_NAME': name + '.lnk', 'TP_LNK_TARGET': str(target), 'TP_LNK_DIR': str(workdir or target.parent), 'TP_LNK_ARGS': args,
             'TP_LNK_ICON': str(ICONS / 'logo.ico') + ',0', 'TP_LNK_NOTE': 'Trading Terminal: markets, research and trading'}
 
 
@@ -41,6 +41,7 @@ def windows_script():
             "$lnk = $sh.CreateShortcut((Join-Path $dir $env:TP_LNK_NAME))",
             "$lnk.TargetPath = $env:TP_LNK_TARGET",
             "$lnk.WorkingDirectory = $env:TP_LNK_DIR",
+            "$lnk.Arguments = $env:TP_LNK_ARGS",
             "$lnk.IconLocation = $env:TP_LNK_ICON",
             "$lnk.Description = $env:TP_LNK_NOTE",
             "$lnk.WindowStyle = 1",
@@ -97,7 +98,7 @@ def make(force=False, log=lambda s: None):
 #: the icon changes, so every private start makes it once more.
 OLD_PRIVATE_NAME = 'Trading Terminal (private)'
 PRIVATE_MARKER = Path.home() / '.trading-platform' / 'desktop-shortcut-private.json'
-PRIVATE_ICON_VERSION = 2
+PRIVATE_ICON_VERSION = 3  # 3: starts without a console (pythonw), straight into the app's start-up window
 
 
 def private_script():
@@ -115,6 +116,16 @@ def private_marker_current(marker=PRIVATE_MARKER):
         return False
 
 
+def private_target(python=None):
+    """pythonw.exe running launch.py --private: no console window, straight into the app's start-up window. Falls back to
+    the .bat file (a text screen) when there is no pythonw.exe."""
+    exe = Path(python or sys.executable)
+    pythonw = exe if exe.name.lower() == 'pythonw.exe' else exe.with_name('pythonw.exe')
+    if pythonw.exists():
+        return pythonw, f'"{HERE / "launch.py"}" --private'
+    return HERE.parent / 'start-private-windows.bat', ''
+
+
 def make_private(force=False, log=lambda s: None):
     """Private mode (Windows): the "Trading Terminal" icon on the desktop and in the Start menu starts
     start-private-windows.bat in your copy of the code (replacing an icon of that name). Made once per icon version
@@ -123,8 +134,8 @@ def make_private(force=False, log=lambda s: None):
         return 'already made'
     if sys.platform != 'win32':
         return 'not made (Windows only)'
-    target = HERE.parent / 'start-private-windows.bat'
-    env = {**os.environ, **windows_env(name=NAME, target=target), 'TP_LNK_OLD': OLD_PRIVATE_NAME + '.lnk'}
+    target, args = private_target()
+    env = {**os.environ, **windows_env(name=NAME, target=target, args=args, workdir=HERE), 'TP_LNK_OLD': OLD_PRIVATE_NAME + '.lnk'}
     try:
         subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', private_script()],
                        check=True, capture_output=True, timeout=30, env=env)

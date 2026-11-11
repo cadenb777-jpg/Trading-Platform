@@ -69,6 +69,51 @@ class Icon(unittest.TestCase):
             self.assertTrue(shortcut.private_marker_current(marker))
 
 
+class NoConsole(unittest.TestCase):
+    def test_icon_starts_pythonw_with_the_private_launcher(self):
+        import shortcut
+        with tempfile.TemporaryDirectory() as d:
+            python = Path(d) / 'python.exe'
+            python.write_text('')
+            Path(d, 'pythonw.exe').write_text('')
+            target, args = shortcut.private_target(python)
+            self.assertEqual(target.name, 'pythonw.exe')
+            self.assertTrue(args.endswith('launch.py" --private'))
+            Path(d, 'pythonw.exe').unlink()
+            target, args = shortcut.private_target(python)  # no pythonw: the .bat (a text screen) instead
+            self.assertEqual(target.name, 'start-private-windows.bat')
+
+    def test_progress_file_round_trip(self):
+        from tp_desktop import progress
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / 'p.json'
+            self.assertEqual(progress.read(f)['state'], 'working')  # not there yet
+            progress.write(f, pct=140, label='Building', state='working')
+            self.assertEqual(progress.read(f)['pct'], 100)
+            progress.write(f, pct=40, label='', state='failed', message='No Node', hints=['Install it'])
+            self.assertEqual(progress.read(f)['message'], 'No Node')
+            f.write_text('{"state": "nonsense"}')
+            self.assertEqual(progress.read(f)['state'], 'working')
+
+    def test_file_bar_writes_the_progress(self):
+        from tp_desktop import progress
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / 'p.json'
+            bar = launch.FileBar(f)
+            bar.stage('Checking the platform...', 20)
+            bar.shown = 12.0
+            bar.draw()
+            got = progress.read(f)
+            self.assertEqual((got['pct'], got['label']), (12.0, 'Checking the platform...'))
+
+    def test_helper_window_requests(self):
+        from tp_desktop import console
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / 'helper-window'
+            console.request_helper_window('show', f)
+            self.assertEqual(f.read_text(), 'show')
+
+
 class Launch(unittest.TestCase):
     def test_private_start_opens_the_app_on_the_local_build_with_updates_off(self):
         class Proc:
@@ -88,6 +133,59 @@ class Launch(unittest.TestCase):
         self.assertEqual(app_env.get(private.FLAG), '1')
         self.assertEqual(calls[1][1]['env'].get(private.FLAG), '1')  # the helper too: no online updates
         self.assertEqual(calls[1][1]['env'].get('TP_PLATFORM_URL'), private.URL)  # its screen shows the local address
+
+
+class StartUpWindowFlow(unittest.TestCase):
+    """gui_main with the outside steps faked: what the start-up window is told."""
+
+    def run_flow(self, fail=None, desktop_changed=False):
+        from tp_desktop import progress
+        d = tempfile.mkdtemp()
+        f = Path(d) / 'p.json'
+        seen = []
+
+        class App:
+            def wait(self):
+                seen.append(progress.read(f)['state'])
+                return 0
+
+            def poll(self):
+                return 0
+        trees = iter(['a', 'b' if desktop_changed else 'a'])
+        steps = mock.patch.multiple(launch, PROGRESS=f, instance_running=mock.DEFAULT, desktop_ready=mock.DEFAULT,
+                                    quiet_children=mock.DEFAULT, run_app=mock.DEFAULT, desktop_parts=mock.DEFAULT, tree=mock.DEFAULT)
+        with steps as m, mock.patch.object(launch.subprocess, 'Popen', return_value=App()) as popen, \
+                mock.patch.object(launch.private, 'pull', return_value='Up to date.'), \
+                mock.patch.object(launch.private, 'build', side_effect=fail), \
+                mock.patch.object(launch.private, 'serve', return_value=object()), \
+                mock.patch.object(launch.shortcut, 'make_private', return_value='already made'), \
+                mock.patch.object(launch.splash, 'prepare'), mock.patch.object(launch.splash, 'open_log', return_value=open(os.devnull, 'w')), \
+                mock.patch.object(launch.sys, 'argv', ['launch.py', '--private']):
+            m['instance_running'].return_value = False
+            m['desktop_ready'].return_value = True
+            m['tree'].side_effect = lambda path: next(trees)
+            m['run_app'].return_value = 0
+            code = launch.gui_main()
+        return code, progress.read(f), popen, m['run_app'], seen
+
+    def test_ready_hands_the_running_app_on(self):
+        code, last, popen, run_app, _ = self.run_flow()
+        self.assertEqual(last['state'], 'ready')
+        self.assertIn('--starting', popen.call_args.args[0])  # the start-up window opened straight away
+        self.assertIsNotNone(run_app.call_args.kwargs['app'])  # the same app carries on (no second window)
+        self.assertEqual(run_app.call_args.kwargs['url'], private.URL)
+
+    def test_a_failure_is_shown_in_the_window(self):
+        code, last, _, run_app, seen = self.run_flow(fail=private.StepError('Could not build the website.', ['npm ERR!'], ['Try again']))
+        self.assertEqual(code, 2)
+        self.assertEqual(seen, ['failed'])
+        self.assertEqual(last['message'], 'Could not build the website.')
+        run_app.assert_not_called()
+
+    def test_an_update_to_the_app_restarts_it(self):
+        code, last, _, run_app, seen = self.run_flow(desktop_changed=True)
+        self.assertEqual(seen, ['restart'])
+        self.assertIsNone(run_app.call_args.kwargs['app'])  # a fresh app with the new code
 
 
 if __name__ == '__main__':

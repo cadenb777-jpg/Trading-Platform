@@ -340,6 +340,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   ~/.trading-platform/desktop-graphics.txt. Windows launcher hides its console (TP_HIDE_CONSOLE, tp_desktop/console.py);
   the helper's splash shows it while it needs you (helper-needs-you marker); the app's tray menu shows it or quits,
   and quitting stops the helper the launcher started.
+  No-console start (Windows): the desktop icon runs pythonw launch.py --private; launch.gui_main opens the app at once with
+  --starting <progress file> (tp_desktop/progress.py; FileBar writes it), the app's start-up window (chooser.Frame +
+  StartPanel) shows the progress, then turns into the ChoicePanel in place; failures show there; an update to desktop/
+  restarts the app (state restart, exit 76). The helper runs in its own hidden console (shows itself when it needs you;
+  tray Show/Hide helper window writes ~/.trading-platform/helper-window). First start ever (no Qt yet) uses the text screen.
   Windows download: installer/TradingTerminal.iss (Inno Setup, no wizard pages, per-user, bundles signature-checked
   Python) built, silently installed/uninstalled and checked by .github/workflows/installer.yml, published to release
   tag `trading-terminal` as TradingTerminal.exe (same URL every time).

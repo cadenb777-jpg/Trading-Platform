@@ -20,7 +20,7 @@ sys.path.insert(0, str(HELPER))
 import splash  # noqa: E402  (the helper's launcher: screen, bar, venv and pip steps)
 import desktop_update  # noqa: E402
 import shortcut  # noqa: E402  (the Trading Terminal icon on your desktop)
-from tp_desktop import console  # noqa: E402  (hiding this window once loading is done, Windows)
+from tp_desktop import console, progress  # noqa: E402  (hiding the helper's window; the start screen's progress)
 import private  # noqa: E402  (private mode: the platform from your own copy of the code)
 
 
@@ -36,7 +36,169 @@ def desktop_parts(bar, log):
     bar.finish()
 
 
+#: Started without a console (the desktop icon runs pythonw.exe): the progress shows in the app's own start-up window
+#: and the helper runs hidden. A start from the .bat files (a console) keeps the text screen.
+GUI = os.name == 'nt' and (sys.stdout is None or '--gui' in sys.argv)
+PROGRESS = splash.DATA_DIR / 'start-progress.json'
+
+
+class FileBar(splash.Bar):
+    """The same 0-100% bar logic as the text screen, written to the progress file the start-up window reads."""
+
+    def __init__(self, path):
+        super().__init__(splash.PALETTES[next(iter(splash.PALETTES))])
+        self.path = path
+        self._last = None
+
+    def start(self):
+        self._running = True
+        self._thread = __import__('threading').Thread(target=self._animate, daemon=True)
+        self._thread.start()
+        return self
+
+    def draw(self):
+        now = (round(self.shown, 1), self.label)
+        if now != self._last:
+            self._last = now
+            try:
+                progress.write(self.path, pct=self.shown, label=self.label, state='working')
+            except OSError:
+                pass
+
+    def stop(self, newline=True, failed=False):
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=1)
+
+
+def console_python():
+    """python.exe beside pythonw.exe (the helper has a console of its own, hidden until it needs you)."""
+    exe = Path(sys.executable)
+    twin = exe.with_name('python.exe')
+    return str(twin) if exe.name.lower() == 'pythonw.exe' and twin.exists() else sys.executable
+
+
+def quiet_children():
+    """No console window flashing up for git, npm, pip or PowerShell when started without one."""
+    flag = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+    base = subprocess.Popen
+
+    class Quiet(base):
+        def __init__(self, *args, **kwargs):
+            if not kwargs.get('creationflags'):
+                kwargs['creationflags'] = flag
+            super().__init__(*args, **kwargs)
+    subprocess.Popen = Quiet
+    splash.wait_for_enter = lambda: None  # no keyboard without a console
+
+
+def instance_running(url):
+    """Trading Terminal for this address is already open (in the tray): Qt's single-instance pipe exists."""
+    if os.name != 'nt':
+        return False
+    user = ''.join(ch for ch in (__import__('getpass').getuser() or 'me') if ch.isalnum())[:40]
+    name = 'TradingTerminal-' + user + ('-private' if url else '')
+    return os.path.exists('\\\\.\\pipe\\' + name)
+
+
+def desktop_ready():
+    """The app's parts (Qt) are installed, so the start-up window can show from the first moment."""
+    marker = HELPER / '.venv' / 'installed-desktop.txt'
+    return Path(splash.venv_python()).exists() and marker.exists()
+
+
+def tree(path):
+    """The committed version of a folder (changes when an update touched it)."""
+    git = private.tool('git')
+    if not git:
+        return None
+    try:
+        return subprocess.run([git, 'rev-parse', f'HEAD:{path}'], cwd=private.ROOT, capture_output=True, text=True, timeout=20).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def gui_main():
+    """The desktop icon: the app's start-up window opens at once and shows this start-up's progress, then becomes the
+    Terminal-or-Web choice; the helper runs hidden. One window from the click to the platform."""
+    quiet_children()
+    mine = '--private' in sys.argv
+    url = private.URL if mine else None
+    if instance_running(url):  # already open: the app brings its window back (no second start)
+        subprocess.Popen([str(splash.venv_python()), '-m', 'tp_desktop', *app_args(url)], cwd=HERE, env=app_env(url))
+        return 0
+    if not desktop_ready():  # the very first start: the parts aren't there yet, so the text screen does it once
+        args = [a for a in sys.argv[1:] if a != '--gui']
+        subprocess.Popen([console_python(), str(Path(__file__).resolve()), *args], cwd=HERE, creationflags=getattr(subprocess, 'CREATE_NEW_CONSOLE', 0))
+        return 0
+    PROGRESS.parent.mkdir(parents=True, exist_ok=True)
+    progress.write(PROGRESS, pct=0, label='Starting...', state='working')
+    app = subprocess.Popen([str(splash.venv_python()), '-m', 'tp_desktop', '--starting', str(PROGRESS), *app_args(url)],
+                           cwd=HERE, env=app_env(url))
+    bar = FileBar(PROGRESS).start()
+    log = splash.open_log()
+    updated = None
+    before = tree('desktop') if mine else None
+    try:
+        if mine:
+            bar.stage('Getting the latest changes...', 10, expect_seconds=4)
+            log.write(private.pull(log) + '\n')
+            bar.finish()
+            bar.stage('Checking the platform...', 20, expect_seconds=1)
+            private.build(log, step=lambda text: (bar.finish(), bar.stage(text, 45, expect_seconds=60)))
+            bar.finish()
+        else:
+            bar.stage('Checking for a newer version...', 10, expect_seconds=3)
+            try:
+                updated = None if private.is_clone() else desktop_update.update_if_newer(lambda s: log.write(s + '\n'))
+            except desktop_update.UpdateError as err:
+                log.write(f'Update failed, nothing changed: {err}\n')
+            bar.finish()
+        splash.prepare(bar, log)
+        desktop_parts(bar, log)
+        if mine and private.serve() is None:
+            log.write('The platform is already served on this computer: using it.\n')
+        (shortcut.make_private if mine else shortcut.make)(log=lambda s: log.write(s + '\n'))
+        bar.stage('Opening...', 100, expect_seconds=0.3)
+        bar.finish('Ready')
+        bar.wait(100, timeout=1)
+    except (splash.LaunchError, private.StepError) as err:
+        bar.stop()
+        log.write(f'Start-up failed: {err}\n' + '\n'.join(err.details) + '\n')
+        log.close()
+        progress.write(PROGRESS, pct=bar.shown, label='', state='failed', message=str(err), details=err.details[-6:], hints=err.hints)
+        app.wait()
+        return 2
+    finally:
+        log.close()
+    bar.stop()
+    if updated or (mine and before and tree('desktop') != before):
+        # the update changed the app itself: the start-up window closes and the new app opens
+        progress.write(PROGRESS, pct=100, label='Updated: opening the new version...', state='restart')
+        app.wait()
+        app = None
+    else:
+        progress.write(PROGRESS, pct=100, label='Ready', state='ready')
+    return run_app(updated, url=url, app=app)
+
+
+def app_args(url):
+    return (['--choose'] if '--choose' in sys.argv else []) + (['--url', url] if url else [])
+
+
+def app_env(url):
+    env = {**os.environ, 'TP_HELPER_BY_LAUNCHER': '1'}  # the app opens the helper itself only without this flag
+    if url:
+        env[private.FLAG] = '1'  # private mode: the helper's online updates stay off (git pull updates it)
+        env['TP_PLATFORM_URL'] = url  # and its start screen shows this computer's address
+    if sys.platform == 'win32':
+        env[console.FLAG] = '1'
+    return env
+
+
 def main():
+    if GUI:
+        return gui_main()
     splash.enable_colors()
     look = splash.pick(None)
     splash.clear_screen()
@@ -101,7 +263,7 @@ def main():
     return run_app(updated)
 
 
-def run_app(updated, url=None):
+def run_app(updated, url=None, app=None):
     """Opens the app beside the helper (started here when none is running); puts the previous version back if a fresh
     update stops within a minute.
     Windows: this window hides once the app's start screen shows (the app brings it back when the helper needs you, and
@@ -109,15 +271,11 @@ def run_app(updated, url=None):
     this window for the website when the app closes."""
     started = time.time()
     hidden = sys.platform == 'win32'
-    env = {**os.environ, 'TP_HELPER_BY_LAUNCHER': '1'}  # the app opens the helper itself only without this flag
-    if url:
-        env[private.FLAG] = '1'  # private mode: the helper's online updates stay off (git pull updates it)
-        env['TP_PLATFORM_URL'] = url  # and its start screen shows this computer's address
+    env = app_env(url)
     if hidden:
-        env[console.FLAG] = '1'
         console.NEEDS_YOU.unlink(missing_ok=True)  # left over from a helper that stopped while waiting for you
-    extra = (['--choose'] if '--choose' in sys.argv else []) + (['--url', url] if url else [])
-    app = subprocess.Popen([str(splash.venv_python()), '-m', 'tp_desktop', *extra], cwd=HERE, env=env)
+    if app is None:  # (the start-up window's app is already running when it showed this start's progress)
+        app = subprocess.Popen([str(splash.venv_python()), '-m', 'tp_desktop', *app_args(url)], cwd=HERE, env=env)
     helper = None
     if helper_running():
         splash.ok('Opening Trading Terminal, using the helper that is already running.')
@@ -127,7 +285,14 @@ def run_app(updated, url=None):
         splash.ok('Opening Trading Terminal. The helper runs here in the background' + (
             ' (this window hides; quit from the Trading Terminal icon by the clock).' if hidden else
             ': keep this window open while you use the platform.'))
-        helper = subprocess.Popen([sys.executable, str(HELPER / 'splash.py'), 'run', '--no-browser'], cwd=HELPER, env=env)
+        if GUI:  # in a console of its own, hidden: it shows itself only when it needs you (or from the tray menu)
+            info = subprocess.STARTUPINFO()
+            info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            info.wShowWindow = 0  # SW_HIDE
+            helper = subprocess.Popen([console_python(), str(HELPER / 'splash.py'), 'run', '--no-browser'], cwd=HELPER, env=env,
+                                      creationflags=subprocess.CREATE_NEW_CONSOLE, startupinfo=info)
+        else:
+            helper = subprocess.Popen([sys.executable, str(HELPER / 'splash.py'), 'run', '--no-browser'], cwd=HELPER, env=env)
     code = app.wait()
     crashed = code not in splash.STOPPED_CODES
     if hidden:

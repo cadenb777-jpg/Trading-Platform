@@ -39,7 +39,8 @@ from a copy of the code on your computer instead. Your keys, logins and data sta
 ## Every day
 
 Double-click **Trading Terminal** on your desktop. Each start gets the latest changes (`git pull`), rebuilds the website if
-anything changed, and opens it: the same Terminal or Web choice, window buttons and tray icon as the normal app.
+anything changed, and opens it: the start-up window shows the progress, then asks Terminal or Web. There is no black
+window: the helper runs hidden in the background (right-click the tray icon → Show helper window to see it).
 
 ## Good to know
 

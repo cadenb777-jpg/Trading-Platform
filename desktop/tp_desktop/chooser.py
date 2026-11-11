@@ -1,5 +1,6 @@
 """
-The start screen that asks how to open the platform: two big cards, "Terminal" (this app's own window) and "Web"
+The start-up window: first the loading screen (StartPanel, progress from the launcher), then in the same window the
+question how to open the platform (ChoicePanel): two big cards, "Terminal" (this app's own window) and "Web"
 (your normal browser), on the website's navy with amber labels. Click a card, or press T / W, the arrow keys and
 Enter; Esc closes. "Remember my choice" skips the question next time (hold Shift while opening to see it again).
 """
@@ -8,7 +9,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QPointF, QPropertyAnimation, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap
-from PySide6.QtWidgets import QAbstractButton, QCheckBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QAbstractButton, QCheckBox, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QPushButton,
+                               QVBoxLayout, QWidget)
 
 from . import APP_VERSION
 
@@ -128,23 +130,27 @@ class Card(QAbstractButton):
         p.end()
 
 
-class Chooser(QWidget):
-    """The start screen. Emits chosen('terminal' | 'web', remember) once; closing it without a choice emits nothing."""
+class Frame(QWidget):
+    """The start-up window itself: navy rounded card, the logo and name on top, a body below that can change (loading
+    screen -> choice) with a soft cross-fade, so start-up reads as one motion. Draggable; fades in."""
 
-    chosen = Signal(str, bool)
+    closed = Signal()
 
-    def __init__(self, preselect='terminal'):
+    def closeEvent(self, e):
+        super().closeEvent(e)
+        self.closed.emit()
+
+    def __init__(self):
         super().__init__(None, Qt.FramelessWindowHint | Qt.Window)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setWindowTitle('Trading Terminal')
         self.setFixedSize(760, 560)
         self.drag = None
-        self.done = False
+        self.closing_ok = True  # False while the choice must not be dismissed by Esc (it can't be: Esc closes)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(44, 34, 44, 26)
         outer.setSpacing(0)
-
         top = QHBoxLayout()
         logo = QLabel()
         if (ASSETS / 'logo.png').exists():
@@ -168,8 +174,231 @@ class Chooser(QWidget):
         close.linkActivated.connect(lambda *_: self.close())
         top.addWidget(close, 0, Qt.AlignTop)
         outer.addLayout(top)
-
         outer.addSpacing(26)
+        self.holder = QVBoxLayout()
+        self.holder.setContentsMargins(0, 0, 0, 0)
+        outer.addLayout(self.holder, 1)
+        self.body = None
+
+    def set_body(self, widget, fade=True):
+        """Shows `widget` below the header; the old body fades out and the new one fades in (about 0.3 s)."""
+        old = self.body
+        self.body = widget
+        if old is not None:
+            self.holder.removeWidget(old)
+            old.deleteLater()
+        self.holder.addWidget(widget)
+        if fade and self.isVisible():
+            effect = QGraphicsOpacityEffect(widget)
+            widget.setGraphicsEffect(effect)
+            anim = QPropertyAnimation(effect, b'opacity', widget)
+            anim.setDuration(300)
+            anim.setStartValue(0.0)
+            anim.setEndValue(1.0)
+            anim.setEasingCurve(QEasingCurve.OutCubic)
+            anim.finished.connect(lambda: widget.setGraphicsEffect(None))  # crisp text once it's in
+            anim.start()
+            widget._fade = anim
+        if hasattr(widget, 'focus_first'):
+            widget.focus_first()
+
+    def keyPressEvent(self, e):
+        if self.body is not None and hasattr(self.body, 'handle_key') and self.body.handle_key(e):
+            return
+        if e.key() == Qt.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(e)
+
+    # ----- the look: navy card with a soft edge, draggable, fades in -----
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        g = QLinearGradient(r.topLeft(), r.bottomRight())
+        g.setColorAt(0, QColor(NAVY_2))
+        g.setColorAt(0.55, QColor('#0b2240'))
+        g.setColorAt(1, QColor(NAVY))
+        path = QPainterPath()
+        path.addRoundedRect(r, 20, 20)
+        p.fillPath(path, g)
+        p.setPen(QPen(QColor(LINE), 1))
+        p.drawPath(path)
+        p.setClipPath(path)
+        p.setPen(QPen(QColor(122, 195, 238, 40), 2))  # a faint rising line across the back, like a chart
+        pts = [(0, 0.86), (0.12, 0.80), (0.22, 0.83), (0.35, 0.70), (0.48, 0.74), (0.6, 0.58), (0.72, 0.62), (0.85, 0.44), (1, 0.38)]
+        line = QPainterPath(QPointF(r.left() + pts[0][0] * r.width(), r.top() + pts[0][1] * r.height()))
+        for x, y in pts[1:]:
+            line.lineTo(QPointF(r.left() + x * r.width(), r.top() + y * r.height()))
+        p.drawPath(line)
+        p.end()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        if getattr(self, '_faded_in', False):
+            return
+        self._faded_in = True
+        self.setWindowOpacity(0.0)
+        self.fade = QPropertyAnimation(self, b'windowOpacity', self)
+        self.fade.setDuration(220)
+        self.fade.setStartValue(0.0)
+        self.fade.setEndValue(1.0)
+        self.fade.setEasingCurve(QEasingCurve.OutCubic)
+        self.fade.start()
+
+    def fade_out_and_close(self, ms=240):
+        """The window gently disappears (the platform's own window or the browser is taking over)."""
+        self.fade = QPropertyAnimation(self, b'windowOpacity', self)
+        self.fade.setDuration(ms)
+        self.fade.setStartValue(self.windowOpacity())
+        self.fade.setEndValue(0.0)
+        self.fade.finished.connect(self.close)
+        self.fade.start()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            self.drag = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+    def mouseMoveEvent(self, e):
+        if self.drag is not None and e.buttons() & Qt.LeftButton:
+            self.move(e.globalPosition().toPoint() - self.drag)
+
+    def mouseReleaseEvent(self, e):
+        self.drag = None
+
+
+class ProgressBar(QWidget):
+    """A slim amber bar with a soft glow at its tip; set_value() moves it smoothly."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(14)
+        self.value = 0.0
+
+    def set_value(self, pct):
+        self.value = max(0.0, min(100.0, pct))
+        self.update()
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        r = QRectF(self.rect()).adjusted(0, 4, 0, -4)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor('#0b1b31'))
+        p.drawRoundedRect(r, 3, 3)
+        w = r.width() * self.value / 100
+        if w > 0:
+            fill = QRectF(r.left(), r.top(), w, r.height())
+            g = QLinearGradient(fill.topLeft(), fill.topRight())
+            g.setColorAt(0, QColor('#b97a1f'))
+            g.setColorAt(1, QColor(AMBER))
+            p.setBrush(g)
+            p.drawRoundedRect(fill, 3, 3)
+            glow = QColor(AMBER)
+            glow.setAlpha(70)
+            p.setBrush(glow)
+            p.drawEllipse(QPointF(fill.right(), fill.center().y()), 7, 7)
+        p.end()
+
+
+class StartPanel(QWidget):
+    """The loading screen: what is happening, an amber bar and the version; or, if the start-up failed, what went
+    wrong in plain words with a button for the log."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        box = QVBoxLayout(self)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(0)
+        self.title = QLabel('Starting up')
+        self.title.setFont(font(22, QFont.DemiBold))
+        self.title.setStyleSheet(f'color:{WHITE}')
+        box.addWidget(self.title)
+        self.sub = QLabel('Getting your markets ready. The helper runs quietly in the background.')
+        self.sub.setFont(font(11))
+        self.sub.setStyleSheet(f'color:{MUTED}')
+        self.sub.setWordWrap(True)
+        box.addWidget(self.sub)
+        box.addStretch(2)
+        self.step = QLabel('Starting...')
+        self.step.setFont(font(10, QFont.DemiBold, 104))
+        self.step.setStyleSheet(f'color:{AMBER}')
+        box.addWidget(self.step)
+        box.addSpacing(10)
+        self.problem = QLabel('')  # filled in only if the start-up fails (in place of the bar)
+        self.problem.setWordWrap(True)
+        self.problem.setFont(font(10))
+        self.problem.setStyleSheet(f'color:{WHITE}')
+        self.problem.hide()
+        box.addWidget(self.problem)
+        self.buttons = QHBoxLayout()
+        box.addLayout(self.buttons)
+        self.bar = ProgressBar(self)
+        box.addWidget(self.bar)
+        box.addSpacing(8)
+        row = QHBoxLayout()
+        self.pct = QLabel('0%')
+        self.pct.setFont(font(9))
+        self.pct.setStyleSheet(f'color:{MUTED}')
+        row.addWidget(self.pct)
+        row.addStretch(1)
+        ver = QLabel(f'v{APP_VERSION}')
+        ver.setFont(font(9))
+        ver.setStyleSheet(f'color:{MUTED}')
+        row.addWidget(ver)
+        box.addLayout(row)
+        box.addStretch(3)
+        self.shown = 0.0
+
+    def show_progress(self, pct, label):
+        # the bar glides toward the launcher's figure instead of jumping
+        self.shown += (pct - self.shown) * 0.25 if pct > self.shown else 0
+        self.bar.set_value(self.shown)
+        self.pct.setText(f'{int(self.shown)}%')
+        if label:
+            self.step.setText(label.rstrip('.') + '...' if label.endswith('...') else label)
+
+    def show_failure(self, message, details, hints, log_path, on_close):
+        self.title.setText('Couldn’t start')
+        self.sub.setText(message)
+        self.step.setText('WHAT TO TRY')
+        self.step.setStyleSheet('color:#ff958c')
+        lines = list(hints or []) + [f'Details: {log_path}']
+        tail = [d for d in (details or []) if str(d).strip()][-3:]
+        self.problem.setText('\n'.join(['• ' + h for h in lines] + ([''] + [str(t)[:160] for t in tail] if tail else [])))
+        self.problem.show()
+        self.buttons.addSpacing(0)
+        self.bar.hide()
+        self.pct.hide()
+        self.buttons.setContentsMargins(0, 14, 0, 0)
+        for text, act in (('Open the log', lambda: _open_file(log_path)), ('Close', on_close)):
+            b = QPushButton(text)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setStyleSheet(f'QPushButton{{color:{WHITE};background:#11294a;border:1px solid {LINE};border-radius:8px;padding:8px 16px}}'
+                            f'QPushButton:hover{{border-color:{AMBER}}}')
+            b.clicked.connect(act)
+            self.buttons.addWidget(b)
+        self.buttons.addStretch(1)
+
+
+def _open_file(path):
+    from PySide6.QtCore import QUrl
+    from PySide6.QtGui import QDesktopServices
+    QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+
+class ChoicePanel(QWidget):
+    """The question: two big cards, Terminal and Web, and Remember my choice. Emits chosen('terminal'|'web', keep)."""
+
+    chosen = Signal(str, bool)
+
+    def __init__(self, preselect='terminal', parent=None):
+        super().__init__(parent)
+        self.done = False
+        self.preselect = preselect
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
         ask = QLabel('How would you like to open it?')
         ask.setFont(font(22, QFont.DemiBold))
         ask.setStyleSheet(f'color:{WHITE}')
@@ -179,7 +408,6 @@ class Chooser(QWidget):
         sub.setStyleSheet(f'color:{MUTED}')
         outer.addWidget(sub)
         outer.addSpacing(22)
-
         cards = QHBoxLayout()
         cards.setSpacing(24)
         self.terminal = Card('DESKTOP APP', 'Terminal', 'Its own window with the logo on your taskbar. Feels like a program.', 'T', draw_terminal)
@@ -191,7 +419,6 @@ class Chooser(QWidget):
         cards.addStretch(1)
         outer.addLayout(cards)
         outer.addStretch(1)
-
         bottom = QHBoxLayout()
         self.keep = QCheckBox('Remember my choice')
         self.keep.setFont(font(10))
@@ -212,20 +439,19 @@ class Chooser(QWidget):
         ver.setStyleSheet(f'color:{MUTED}')
         bottom.addWidget(ver)
         outer.addLayout(bottom)
-
         self.setTabOrder(self.terminal, self.web)
         self.setTabOrder(self.web, self.keep)
-        (self.web if preselect == 'web' else self.terminal).setFocus()
 
-    # ----- choosing -----
+    def focus_first(self):
+        (self.web if self.preselect == 'web' else self.terminal).setFocus()
+
     def pick(self, choice):
         if self.done:
             return
         self.done = True
         self.chosen.emit(choice, self.keep.isChecked())
-        self.close()
 
-    def keyPressEvent(self, e):
+    def handle_key(self, e):
         k = e.key()
         if k == Qt.Key_T:
             self.pick('terminal')
@@ -235,52 +461,32 @@ class Chooser(QWidget):
             (self.web if self.terminal.hasFocus() else self.terminal).setFocus()
         elif k in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space):
             self.pick('web' if self.web.hasFocus() else 'terminal')
-        elif k == Qt.Key_Escape:
-            self.close()
         else:
-            super().keyPressEvent(e)
+            return False
+        return True
 
-    # ----- the look: navy card with soft edge, draggable, fades in -----
-    def paintEvent(self, e):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
-        g = QLinearGradient(r.topLeft(), r.bottomRight())
-        g.setColorAt(0, QColor(NAVY_2))
-        g.setColorAt(0.55, QColor('#0b2240'))
-        g.setColorAt(1, QColor(NAVY))
-        path = QPainterPath()
-        path.addRoundedRect(r, 20, 20)
-        p.fillPath(path, g)
-        p.setPen(QPen(QColor(LINE), 1))
-        p.drawPath(path)
-        # a faint rising line across the back, like a chart
-        p.setClipPath(path)
-        p.setPen(QPen(QColor(122, 195, 238, 40), 2))
-        pts = [(0, 0.86), (0.12, 0.80), (0.22, 0.83), (0.35, 0.70), (0.48, 0.74), (0.6, 0.58), (0.72, 0.62), (0.85, 0.44), (1, 0.38)]
-        line = QPainterPath(QPointF(r.left() + pts[0][0] * r.width(), r.top() + pts[0][1] * r.height()))
-        for x, y in pts[1:]:
-            line.lineTo(QPointF(r.left() + x * r.width(), r.top() + y * r.height()))
-        p.drawPath(line)
-        p.end()
 
-    def showEvent(self, e):
-        super().showEvent(e)
-        self.setWindowOpacity(0.0)
-        self.fade = QPropertyAnimation(self, b'windowOpacity', self)
-        self.fade.setDuration(220)
-        self.fade.setStartValue(0.0)
-        self.fade.setEndValue(1.0)
-        self.fade.setEasingCurve(QEasingCurve.OutCubic)
-        self.fade.start()
+class Chooser(Frame):
+    """The question on its own (no loading screen before it). Emits chosen('terminal' | 'web', remember) once, then
+    closes; closing it without a choice emits nothing."""
 
-    def mousePressEvent(self, e):
-        if e.button() == Qt.LeftButton:
-            self.drag = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+    chosen = Signal(str, bool)
 
-    def mouseMoveEvent(self, e):
-        if self.drag is not None and e.buttons() & Qt.LeftButton:
-            self.move(e.globalPosition().toPoint() - self.drag)
+    def __init__(self, preselect='terminal'):
+        super().__init__()
+        self.panel = ChoicePanel(preselect, self)
+        self.terminal, self.web, self.keep = self.panel.terminal, self.panel.web, self.panel.keep
+        self.panel.chosen.connect(self._picked)
+        self.set_body(self.panel, fade=False)
+        self.panel.focus_first()
 
-    def mouseReleaseEvent(self, e):
-        self.drag = None
+    @property
+    def done(self):
+        return self.panel.done
+
+    def pick(self, choice):
+        self.panel.pick(choice)
+
+    def _picked(self, choice, keep):
+        self.chosen.emit(choice, keep)
+        self.close()

@@ -612,8 +612,54 @@ def ensure_helper(url):
     QTimer.singleShot(4000, lambda: missing() and QTimer.singleShot(11000, second_check))
 
 
-def ask_how_to_open(app, force_ask):
-    """'terminal' or 'web': the remembered choice, or the start screen's answer (None when it was closed)."""
+def run_start_screen(app, progress_file):
+    """The loading screen (the launcher's progress, read from `progress_file`) in the start-up window, which later
+    becomes the Terminal-or-Web choice. Returns (window, outcome): 'ready', 'restart', 'failed' (the window then shows
+    what went wrong until it is closed) or 'closed'."""
+    from PySide6.QtCore import QEventLoop
+
+    from . import progress
+    from .chooser import Frame, StartPanel
+
+    frame = Frame()
+    panel = StartPanel()
+    frame.set_body(panel, fade=False)
+    frame.show()
+    frame.raise_()
+    frame.activateWindow()
+    loop = QEventLoop()
+    outcome = {'v': None}
+    frame.closed.connect(lambda: (outcome.__setitem__('v', outcome['v'] or 'closed'), loop.quit()))
+
+    def poll():
+        if outcome['v'] in ('closed', 'failed'):
+            return
+        info = progress.read(progress_file)
+        state = info['state']
+        if state == 'failed':
+            outcome['v'] = 'failed'
+            log_path = Path.home() / '.trading-platform' / 'launcher.log'
+            panel.show_failure(info.get('message') or 'Something went wrong while starting.', info.get('details'), info.get('hints'),
+                               log_path, frame.close)
+            return  # stays up until closed
+        if state in ('ready', 'restart'):
+            panel.show_progress(100, info['label'] or 'Ready')
+            if panel.shown >= 99.5 or state == 'restart':
+                outcome['v'] = state
+                loop.quit()
+                return
+        else:
+            panel.show_progress(info['pct'], info['label'])
+        QTimer.singleShot(33, poll)
+
+    poll()
+    loop.exec()
+    return frame, outcome['v'] or 'closed'
+
+
+def ask_how_to_open(app, force_ask, frame=None):
+    """'terminal' or 'web': the remembered choice, or the start screen's answer (None when it was closed). With the
+    start-up window (`frame`) the question appears in it, in place of the loading screen."""
     from PySide6.QtCore import QEventLoop
     from PySide6.QtGui import QGuiApplication
 
@@ -622,17 +668,25 @@ def ask_how_to_open(app, force_ask):
     how = choice.decide(saved, force_ask, shift)
     if how:
         return how
-    from .chooser import Chooser
+    from .chooser import ChoicePanel, Chooser
 
     answer = []
-    screen = Chooser(preselect=saved or 'terminal')
     loop = QEventLoop()
-    screen.chosen.connect(lambda c, keep: answer.append((c, keep)))
-    screen.destroyed.connect(loop.quit)
-    screen.setAttribute(Qt.WA_DeleteOnClose)
-    screen.show()
-    screen.raise_()
-    screen.activateWindow()
+    if frame is not None:
+        panel = ChoicePanel(preselect=saved or 'terminal')
+        panel.chosen.connect(lambda c, keep: (answer.append((c, keep)), loop.quit()))
+        frame.closed.connect(loop.quit)
+        frame.set_body(panel)
+        frame.raise_()
+        frame.activateWindow()
+    else:
+        screen = Chooser(preselect=saved or 'terminal')
+        screen.chosen.connect(lambda c, keep: answer.append((c, keep)))
+        screen.destroyed.connect(loop.quit)
+        screen.setAttribute(Qt.WA_DeleteOnClose)
+        screen.show()
+        screen.raise_()
+        screen.activateWindow()
     loop.exec()
     if not answer:
         return None
@@ -668,6 +722,7 @@ def main(argv=None):
     parser.add_argument('--wait', type=float, default=8.0)
     parser.add_argument('--storage', help='browser storage folder (checks)')
     parser.add_argument('--choose', action='store_true', help='ask Terminal or Web even when a choice is remembered')
+    parser.add_argument('--starting', help='show the loading screen, following this progress file from the launcher')
     args = parser.parse_args(argv)
 
     import os
@@ -687,19 +742,29 @@ def main(argv=None):
     app.styleHints().setColorScheme(Qt.ColorScheme.Dark)  # a dark window frame, matching the terminal
     if not args.screenshot and console.managed() and hand_over_to_running_app(args.choose, instance_name(args.url)):
         return 0  # already open in the tray: it brought its window back, and its helper is already warm
+    frame = None
     if args.screenshot:
         how = 'terminal'
     else:
         if console.managed():
             console.hide()  # loading is done: only the start screen shows (the helper keeps running, hidden)
         app.setQuitOnLastWindowClosed(False)  # the start screen closing isn't the app closing
-        how = ask_how_to_open(app, args.choose)
+        if args.starting:  # the launcher is still working: its progress in the start-up window
+            from . import progress
+            frame, outcome = run_start_screen(app, args.starting)
+            if outcome != 'ready':
+                return {'restart': progress.RESTART_APP, 'failed': 2}.get(outcome, 0)
+        how = ask_how_to_open(app, args.choose, frame)
         app.setQuitOnLastWindowClosed(True)
         if how is None:
             return 0  # the start screen was closed without a choice
+        if frame is not None:
+            frame.body.setEnabled(False)  # chosen: the window stays a moment while the platform opens, then fades
     stays = console.managed()  # this app looks after the hidden helper: a tray icon, and Quit stops it
     if how == 'web':
         open_in_browser(args.url)
+        if frame is not None:
+            QTimer.singleShot(400, frame.fade_out_and_close)
         if not stays:
             return 0
     if stays:
@@ -724,7 +789,8 @@ def main(argv=None):
             win.raise_()
             win.activateWindow()
             return win
-        splash = QSplashScreen(splash_pixmap()) if (first and not args.screenshot) else None
+        # the start-up window is already on screen: it stays until the platform has loaded (no second splash)
+        splash = QSplashScreen(splash_pixmap()) if (first and not args.screenshot and frame is None) else None
         if splash:
             splash.show()
             app.processEvents()
@@ -742,7 +808,9 @@ def main(argv=None):
             if not win.isVisible():
                 win.show()
                 round_corners(win)
-        if splash:
+            if first and frame is not None and frame.isVisible():
+                frame.fade_out_and_close()
+        if splash or (first and frame is not None):
             win.page.loadFinished.connect(reveal)
             QTimer.singleShot(12000, reveal)  # never wait longer than this for a slow connection
         else:
@@ -782,12 +850,13 @@ def tray_menu(app, tray, url, open_window, how):
     menu.addAction(QAction('Open Trading Terminal', menu, triggered=lambda: open_window()))
     menu.addAction(QAction('Open in your browser', menu, triggered=lambda: QDesktopServices.openUrl(QUrl(url))))
     menu.addSeparator()
-    helper = QAction('Show helper window', menu)
-    helper.triggered.connect(lambda: console.hide() if console.visible() else console.show())
-    menu.addAction(helper)
+    # the helper's window is its own (started hidden by the launcher), or this app's console (started from a .bat)
+    show = QAction('Show helper window', menu, triggered=lambda: console.show() if console._hwnd() else console.request_helper_window('show'))
+    hide = QAction('Hide helper window', menu, triggered=lambda: console.hide() if console._hwnd() else console.request_helper_window('hide'))
+    menu.addAction(show)
+    menu.addAction(hide)
     menu.addSeparator()
     menu.addAction(QAction('Quit Trading Terminal (stops the helper)', menu, triggered=lambda: quit_all(app)))
-    menu.aboutToShow.connect(lambda: helper.setText('Hide helper window' if console.visible() else 'Show helper window'))
     tray.setContextMenu(menu)
     tray.setToolTip(f'{APP_NAME}: the helper is running')
     tray._menu = menu  # keep it alive

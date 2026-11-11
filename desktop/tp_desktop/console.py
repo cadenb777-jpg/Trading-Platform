@@ -52,5 +52,17 @@ def hide():
         ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE
 
 
+REQUEST = Path.home() / '.trading-platform' / 'helper-window'
+
+
+def request_helper_window(what, path=REQUEST):
+    """Asks the helper (running hidden in its own window) to 'show' or 'hide' it; it does so within a second."""
+    try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(what)
+    except OSError:
+        pass
+
+
 def helper_needs_you(path=NEEDS_YOU):
     return Path(path).exists()

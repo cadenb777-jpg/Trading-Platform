@@ -664,6 +664,28 @@ def hide_console():
         ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE
 
 
+#: The desktop app's tray menu asks the hidden helper window to show or hide itself through this file ('show'/'hide').
+WINDOW_REQUEST = DATA_DIR / 'helper-window'
+
+
+def window_request():
+    """Carries out a show/hide request from the tray menu (checked once a second by the helper's screen)."""
+    if not os.environ.get(HIDE_CONSOLE):
+        return
+    try:
+        what = WINDOW_REQUEST.read_text().strip()
+    except OSError:
+        return
+    try:
+        WINDOW_REQUEST.unlink()
+    except OSError:
+        pass
+    if what == 'show':
+        show_console()
+    elif what == 'hide':
+        hide_console()
+
+
 def needs_you(on):
     """While the window is handed to you (a question, the login steps, an error), the desktop app shows it."""
     if not os.environ.get(HIDE_CONSOLE):
@@ -988,7 +1010,10 @@ class HelperScreen:
     def _ready_text(self):
         print()
         print('  ' + rgb((235, 235, 245), 'Open ') + rgb(self.palette[1], self.url, bold=True))
-        print('  ' + rgb((150, 160, 190), 'Keep this window open while you use the platform. To stop the helper, close it or press Ctrl+C.'))
+        if os.environ.get(HIDE_CONSOLE):
+            print('  ' + rgb((150, 160, 190), 'This window can stay hidden: Hide helper window in the Trading Terminal tray menu. Closing it stops the helper.'))
+        else:
+            print('  ' + rgb((150, 160, 190), 'Keep this window open while you use the platform. To stop the helper, close it or press Ctrl+C.'))
         print('  ' + rgb((110, 120, 150), f'Behind-the-scenes messages go to {self.log_path}'))
         if self.warning:
             warn(self.warning)
@@ -1013,6 +1038,7 @@ class HelperScreen:
 
     def tick(self):
         self.frame += 1
+        window_request()
         self.draw_status()
 
     def draw_status(self):
