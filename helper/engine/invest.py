@@ -96,8 +96,18 @@ async def closes(ctx, symbol):
         _login_check(response)
         if response.status_code != 200:
             raise EngineError(f'Schwab returned {response.status_code} for {symbol}')
-        return [[c['datetime'] // 1000, c['close']] for c in response.json().get('candles', []) if _num(c.get('close'))]
-    return await ctx.cached(('board-closes', symbol), 3 * 3600, load, persist=True, stale_ok=True)
+        return one_per_day([[c['datetime'] // 1000, c['close']] for c in response.json().get('candles', []) if _num(c.get('close'))])
+    # cleaned on the way out too, so a copy saved before this rule existed is right at once
+    return one_per_day(await ctx.cached(('board-closes', symbol), 3 * 3600, load, persist=True, stale_ok=True))
+
+
+def one_per_day(rows):
+    """Daily closes in date order with one row per New York day (the newest row of a day wins). Schwab's daily list
+    can repeat a day or stamp one twice; every return, risk and chart figure assumes one close per day."""
+    days = {}
+    for t, c in sorted(rows or [], key=lambda r: r[0]):
+        days[datahub.ny_date(t)] = [t, c]
+    return list(days.values())
 
 
 def performance(rows, price=None):

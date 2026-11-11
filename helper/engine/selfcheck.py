@@ -160,8 +160,9 @@ def check_bars(rows, symbol='SPY', now_ts=None, max_jump=0.25, max_age_days=5):
         return result('history-clean', 'accuracy', None, f'{symbol} daily history not available to check.')
     problems = []
     times = [r[0] for r in rows]
-    if any(b <= a for a, b in zip(times, times[1:])):
-        problems.append('days out of order or repeated')
+    bad = next((b for a, b in zip(times, times[1:]) if b <= a), None)
+    if bad is not None:
+        problems.append(f'days out of order or repeated (first at {dt.datetime.fromtimestamp(bad, dt.timezone.utc).date()})')
     if any(not (isinstance(r[1], (int, float)) and r[1] > 0) for r in rows):
         problems.append('a zero or negative price')
     jumps = [(rows[i][0], rows[i][1] / rows[i - 1][1] - 1) for i in range(1, len(rows))
