@@ -18,6 +18,7 @@ import type { Portfolio } from '../portfolio/types';
 import { getCalendar } from '../pages/calendarPage';
 import { describeAlert, type HelperAlert } from '../ui/alertsLogic';
 import { formatPrice, h, timeAgo } from '../ui/dom';
+import { keepScroll } from '../ui/keepScroll';
 import { icon } from '../ui/icons';
 import { tickerAttr } from '../ui/tickerCard';
 import type { CurvePoint } from '../ui/yieldCurve';
@@ -202,7 +203,7 @@ export function createMorningBrief(d: BriefDeps) {
       if (!accountsBody.isConnected) return; // Home is closed: wait (the next load replaces this)
       if (moved && document.visibilityState === 'visible') {
         moved = false;
-        redraw();
+        keepScroll(accountsBody, redraw); // a live redraw never moves the movers list you're reading
       }
     }, 3000);
     stopLive = () => {

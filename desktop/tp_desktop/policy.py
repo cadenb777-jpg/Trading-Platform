@@ -118,7 +118,23 @@ def helper_start_command(helper_dir, platform):
 #: Speed and smoothness: draw with the graphics card and never slow the page's timers down. (Forcing the card past
 #: Chromium's cautious list and "zero-copy" drawing were tried and dropped: on Intel graphics they made scrolling
 #: flicker, and the owner's card is used without them.) Added to anything already in QTWEBENGINE_CHROMIUM_FLAGS.
-FAST_FLAGS = ('--enable-gpu-rasterization', '--disable-renderer-backgrounding', '--disable-background-timer-throttling')
+FAST_FLAGS = ('--enable-gpu-rasterization', '--disable-renderer-backgrounding', '--disable-background-timer-throttling',
+              # the owner's window went black after the screen slept / long runs: Windows resets the graphics driver,
+              # Chromium's GPU process dies, and after a few crashes Chromium stops restarting it (the page then never
+              # draws again). Without the limit it always comes back.
+              '--disable-gpu-process-crash-limit')
+
+
+#: The window is "blank" when every sampled pixel is this dark or darker on all three channels. The website is never
+#: pure black (its darkest colour is the navy #050d19, blue 25), so only a page that has stopped drawing matches.
+BLANK_MAX = 4
+
+
+def looks_blank(colors, minimum=9):
+    """True when enough pixels were sampled and every one is (near) pure black: the page has stopped drawing (its
+    graphics process died) while the window's own buttons still show. colors = [(r, g, b), ...]."""
+    colors = list(colors)
+    return len(colors) >= minimum and all(max(c) <= BLANK_MAX for c in colors)
 
 
 def chromium_flags(existing):

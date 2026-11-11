@@ -73,4 +73,8 @@ whenever the owner repeats or adds one.
 - 2026-11-11 · Home "Edge today" card (implied open, futures vs fair value, box lending vs T-bill), and new Home cards
   join saved layouts once (Layout.seen) · proposed · owner: "I notice no new changes": the edge tools sat low on Futures.
   Lesson: every new capability gets a visible home on the first screen, not only a page section.
+- 2026-11-11 · #12 jitter fix and Edge today · approved (merged by the owner).
+- 2026-11-12 · Account table no longer jumps to the top on live refresh (keepScroll); desktop black screen after the
+  screen sleeps or long runs (GPU crash limit off + black-window watchdog that reloads) · proposed · owner reports.
+  Lesson: any live redraw must keep scroll positions; the desktop app must recover by itself from GPU/driver resets.
 

@@ -196,6 +196,13 @@ class Window(QMainWindow):
         self.view.titleChanged.connect(self.on_title)
         self.settings = QSettings('TradingPlatform', 'Desktop')
         self.retry = QTimer(self, interval=15000, singleShot=True, timeout=self.go_home)
+        # Black-screen watchdog: if the page stops drawing (its graphics process died after the screen slept or a
+        # driver reset) the window turns black while the window buttons still show. Check every 20 s and whenever the
+        # app comes back to the front; two blank looks in a row reload the page.
+        self.blank_looks = 0
+        self.blank_timer = QTimer(self, interval=20000, timeout=self.check_blank)
+        self.blank_timer.start()
+        app.applicationStateChanged.connect(lambda state: state == Qt.ApplicationState.ApplicationActive and QTimer.singleShot(1500, self.check_blank))
         self.page.loadingChanged.connect(self.on_loading)
         self.view.printFinished.connect(lambda ok: setattr(self, 'printer', None))
         self.shortcuts()
@@ -333,6 +340,34 @@ class Window(QMainWindow):
             self.view.print(self.printer)
         else:
             self.printer = None
+
+    def check_blank(self):
+        """Samples a 5 x 5 grid of the page's pixels; a page that is solid black twice in a row is reloaded."""
+        if not self.isVisible() or self.isMinimized():
+            return  # (a loading page is painted navy, never black, so it can't trip this)
+        img = self.view.grab().toImage()
+        w, h = img.width(), img.height()
+        if w < 50 or h < 50:
+            return
+        colors = []
+        for i in range(5):
+            for j in range(5):
+                c = img.pixelColor(int(w * (i + 0.5) / 5), int(h * (j + 0.5) / 5))
+                colors.append((c.red(), c.green(), c.blue()))
+        if not policy.looks_blank(colors):
+            self.blank_looks = 0
+            return
+        self.blank_looks += 1
+        if self.blank_looks < 2:
+            QTimer.singleShot(2500, self.check_blank)  # look again soon before deciding
+            return
+        self.blank_looks = 0
+        try:
+            with open(Path.home() / '.trading-platform' / 'launcher.log', 'a', encoding='utf-8') as f:
+                f.write('Desktop: the page stopped drawing (black window); reloading it.\n')
+        except OSError:
+            pass
+        self.view.reload()  # the same reload F5 uses
 
     def closeEvent(self, event):
         if self.main:
