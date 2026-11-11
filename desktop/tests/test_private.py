@@ -67,6 +67,7 @@ class Launch(unittest.TestCase):
         self.assertEqual(app_cmd[-2:], ['--url', private.URL])
         self.assertEqual(app_env.get(private.FLAG), '1')
         self.assertEqual(calls[1][1]['env'].get(private.FLAG), '1')  # the helper too: no online updates
+        self.assertEqual(calls[1][1]['env'].get('TP_PLATFORM_URL'), private.URL)  # its screen shows the local address
 
 
 if __name__ == '__main__':

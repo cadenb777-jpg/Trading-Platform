@@ -110,6 +110,7 @@ def run_app(updated, url=None):
     env = {**os.environ, 'TP_HELPER_BY_LAUNCHER': '1'}  # the app opens the helper itself only without this flag
     if url:
         env[private.FLAG] = '1'  # private mode: the helper's online updates stay off (git pull updates it)
+        env['TP_PLATFORM_URL'] = url  # and its start screen shows this computer's address
     if hidden:
         env[console.FLAG] = '1'
         console.NEEDS_YOU.unlink(missing_ok=True)  # left over from a helper that stopped while waiting for you

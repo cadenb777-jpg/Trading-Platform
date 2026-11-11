@@ -56,7 +56,11 @@ HELPER_VERSION = 51
 HOST = '127.0.0.1'
 PORT = 8765
 CALLBACK_URL = 'https://127.0.0.1:8182'
+#: The platform's address: the published website, or the copy on this computer in private mode (the desktop launcher's
+#: --private sets TP_PLATFORM_URL; only an address on this computer is taken from it).
 PLATFORM_URL = 'https://cadenb777-jpg.github.io/Trading-Platform/'
+if os.environ.get('TP_PLATFORM_URL', '').startswith(('http://127.0.0.1:', 'http://localhost:')):
+    PLATFORM_URL = os.environ['TP_PLATFORM_URL']
 
 # Keys and login tokens live in your home folder, never inside the project folder.
 DATA_DIR = Path.home() / '.trading-platform'
