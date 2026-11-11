@@ -685,7 +685,7 @@ def main(argv=None):
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setWindowIcon(app_icon())
     app.styleHints().setColorScheme(Qt.ColorScheme.Dark)  # a dark window frame, matching the terminal
-    if not args.screenshot and console.managed() and hand_over_to_running_app(args.choose):
+    if not args.screenshot and console.managed() and hand_over_to_running_app(args.choose, instance_name(args.url)):
         return 0  # already open in the tray: it brought its window back, and its helper is already warm
     if args.screenshot:
         how = 'terminal'
@@ -753,7 +753,7 @@ def main(argv=None):
     tray = connect_notifications(profile, app, current)
     if stays:
         tray_menu(app, tray, args.url, open_window, how)
-        listen_for_second_start(app, lambda: open_window() if how == 'terminal' else QDesktopServices.openUrl(QUrl(args.url)))
+        listen_for_second_start(app, instance_name(args.url), lambda: open_window() if how == 'terminal' else QDesktopServices.openUrl(QUrl(args.url)))
     if how == 'terminal':
         win = open_window(first=True)
     if not args.screenshot:
@@ -817,12 +817,18 @@ def tray_menu(app, tray, url, open_window, how):
 INSTANCE = 'TradingTerminal-' + ''.join(ch for ch in (__import__('getpass').getuser() or 'me') if ch.isalnum())[:40]
 
 
-def hand_over_to_running_app(choose=False):
+def instance_name(url):
+    """One running copy per platform address: the private copy (this computer's address) and the online one never
+    hand over to each other (a private start used to open the online one, offline while the repository is private)."""
+    return INSTANCE if policy.is_platform(url, policy.PLATFORM_URL) else INSTANCE + '-private'
+
+
+def hand_over_to_running_app(choose=False, name=INSTANCE):
     """True when Trading Terminal is already running (in the tray): it is asked to open its window, so this start ends."""
     from PySide6.QtNetwork import QLocalSocket
 
     sock = QLocalSocket()
-    sock.connectToServer(INSTANCE)
+    sock.connectToServer(name)
     if not sock.waitForConnected(400):
         return False
     sock.write(b'choose\n' if choose else b'open\n')
@@ -832,13 +838,13 @@ def hand_over_to_running_app(choose=False):
     return True
 
 
-def listen_for_second_start(app, open_it):
+def listen_for_second_start(app, name, open_it):
     """Double-clicking the icon again while the app is in the tray opens its window (no second copy, no second start)."""
     from PySide6.QtNetwork import QLocalServer
 
     server = QLocalServer(app)
-    QLocalServer.removeServer(INSTANCE)  # a leftover from a copy that crashed
-    if not server.listen(INSTANCE):
+    QLocalServer.removeServer(name)  # a leftover from a copy that crashed
+    if not server.listen(name):
         return None
 
     def incoming():
