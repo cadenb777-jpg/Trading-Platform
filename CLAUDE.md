@@ -566,6 +566,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 
 - helper/engine/selfcheck.py runs every 30 minutes (security, data, accuracy, speed), keeps ~/.trading-platform/
   selfcheck.json, shows in the status bar (src/ui/selfCheck.ts, helper v53+) and goes into Send diagnostics.
+- Research → Where the money comes from: helper/engine/segments.py reads 10-K XBRL dimensional facts (product,
+  segment, region, segment margin) + the label file; src/research/segmentsView.ts. R&D work list:
+  docs/research/institutional-edge.md.
 - Scheduled improvement sessions follow docs/improvement/PLAYBOOK.md: propose only (branch + pull request with a
   plain-language report), never merge, never trade, never weaken security; the owner approves every change. Lessons
   (approved / turned down / rejected by experiment) go in docs/improvement/LESSONS.md.

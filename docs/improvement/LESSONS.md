@@ -35,6 +35,9 @@ whenever the owner repeats or adds one.
 - **Free data first;** paid data only when the owner decides.
 - **Owner's choices already made:** the helper checks for updates every 2 minutes and installs by itself; the scanner
   runs every 5 minutes over the Nasdaq-100 only; no AI summary buttons on the Chart page or Portfolios; Bull stays.
+- **Do the R&D without being asked** (2026-11-12): research how institutions get edge (papers, GitHub, practitioner
+  talks), get the maths right from primary sources, see how Bloomberg and the pro tools display it, build it nicely,
+  test it. Work down docs/research/institutional-edge.md, one complete item per run.
 - **Safety, always:** never trade, never weaken security, never merge; real-money orders only behind preview + confirm.
 
 ## Log
@@ -77,4 +80,9 @@ whenever the owner repeats or adds one.
 - 2026-11-12 · Account table no longer jumps to the top on live refresh (keepScroll); desktop black screen after the
   screen sleeps or long runs (GPU crash limit off + black-window watchdog that reloads) · proposed · owner reports.
   Lesson: any live redraw must keep scroll positions; the desktop app must recover by itself from GPU/driver resets.
+- 2026-11-12 · Research → Where the money comes from: revenue by product/service, business segment and region (with
+  share, growth and segment margin) read from the 10-K's own XBRL dimensional facts and label file (helper 57) ·
+  approved (owner asked) · the SEC company-facts API omits dimensional data, so "product revenue" was all the platform
+  had; tested on Apple FY2025 figures (parts add up to $416.161B). Lesson: the owner's example was one of many: research
+  and build the whole class (docs/research/institutional-edge.md).
 

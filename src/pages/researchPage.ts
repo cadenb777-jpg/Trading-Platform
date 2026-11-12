@@ -1,6 +1,7 @@
 import { toneVsPrev } from '../research/tone';
 /** Research: a company's financial statements, ratios, valuation (DCF) and SEC filings. */
 import { yearBars } from '../research/yearBars';
+import { segmentsPanel } from '../research/segmentsView';
 import { openStockNews, stockNewsCard } from '../ui/stockNews';
 import { runId } from '../ui/command';
 import { cotSummary } from '../futures/cot';
@@ -215,6 +216,8 @@ export function createResearchPage() {
         { label: 'Net margin', value: pct(lastRatio('netMargin'), 1), tone: (() => { const m = (d.ratios.netMargin ?? []).filter((x): x is number => x != null); return toneVsPrev('netMargin', m[m.length - 1], m[m.length - 2]); })(), hint: 'Green: higher than the year before; red: lower' },
         { label: 'Free cash flow yield', value: pct(v.fcfYield), tone: v.fcfYield == null ? '' : v.fcfYield < 0 ? 'down' : '' },
       ]),
+      // what the company actually sells and where (its 10-K's product, segment and region breakdowns)
+      segmentsPanel(d.symbol),
       // futures positioning for the company's market: one line, the full COT table is on Futures
       cotSummary(d.symbol, undefined, { quiet: true }),
       stockNewsCard(d.symbol, 5),

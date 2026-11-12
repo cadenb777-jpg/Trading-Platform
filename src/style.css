@@ -11063,3 +11063,15 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .edge-value.up { color: var(--up); }
 .edge-value.down { color: var(--down); }
 .edge-detail { overflow-wrap: anywhere; }
+
+/* Research: where the money comes from (src/research/segmentsView.ts) */
+.seg-body { display: grid; gap: var(--sp-4); }
+.seg-head { margin: 0 0 var(--sp-2); color: var(--label); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; }
+.seg-row { display: grid; grid-template-columns: minmax(120px, 1.4fr) minmax(80px, 2fr) repeat(4, minmax(56px, auto)); gap: var(--sp-3); align-items: center; padding: 5px 0; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); }
+.seg-row:last-child { border-bottom: 0; }
+.seg-name { color: var(--text); }
+.seg-bar { height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--line) 70%, transparent); overflow: hidden; }
+.seg-bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, color-mix(in srgb, var(--label) 65%, transparent), var(--label)); }
+.seg-num { text-align: right; }
+.seg-note, .seg-source { margin: var(--sp-1) 0 0; }
+@media (max-width: 640px) { .seg-row { grid-template-columns: 1fr auto auto; } .seg-bar { grid-column: 1 / -1; order: 9; } }

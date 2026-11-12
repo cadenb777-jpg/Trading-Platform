@@ -35,6 +35,24 @@ The rules every scheduled improvement session follows. The owner approves every 
    other platforms' better *capabilities* freely; never take their logos, product names, copied code, copied help text
    or a look-alike screen (what would get the owner sued when selling); no AGPL code; no real firm's branding.
 
+## The R&D workflow (the owner's, 2026-11-12): do this without being asked
+
+The owner should never have to name a feature. Each run is a research-and-build cycle:
+
+1. **Find how institutions get edge.** Research papers (SSRN, arXiv, NY Fed / BIS staff reports), GitHub projects,
+   practitioner talks and write-ups, vendor methodology pages: what do big firms calculate that individuals don't see?
+2. **Get the maths right.** The formula and its reasoning from primary sources; re-derive it; know its assumptions
+   and where it fails.
+3. **See how professional tools show it.** Bloomberg, LSEG Workspace, FactSet, TradingView, thinkorswim, Koyfin,
+   SpotGamma, CME tools: their public docs, guides and screenshots. Take the clearest way to show it; build it in our
+   own look and words.
+4. **Build it nicely,** end to end: data (free first), maths (tested), display (with source and time), links onward.
+5. **Test it.** Known answers for the maths, real-world figures checked against the source, screenshots at several
+   sizes, the release audit and click-through.
+
+The work list is `docs/research/institutional-edge.md`: take the top item not yet done (or a better one you found:
+add it to the list with its sources), deliver it complete in one run, mark it done, and add what you learned.
+
 ## The loop (human judgement + machine checking)
 
 1. **Learn from experience.** Read `docs/improvement/LESSONS.md` (what was proposed before, what the owner approved or

@@ -1,0 +1,79 @@
+# Institutional edge: research roadmap
+
+How large institutions get an information edge, what of it a free-data terminal can rebuild, the maths behind each,
+and how professional tools show it. Improvement runs work down this list (one complete item per run, built,
+displayed and tested), mark items done, and add new findings. Every item follows the R&D workflow in
+`docs/improvement/PLAYBOOK.md`.
+
+Columns: **what institutions use** · **free data** · **maths (primary source)** · **how pros show it** ·
+**how we prove it right** · **status**.
+
+## 1. Company fundamentals, as deep as the filing goes
+
+- **Revenue by product, segment and region; segment margins** (Bloomberg segment and geographic data).
+  Free: SEC EDGAR XBRL instance documents (dimensional facts: srt:ProductOrServiceAxis,
+  us-gaap:StatementBusinessSegmentsAxis, srt:StatementGeographicalAxis; the SEC company-facts API omits them).
+  Shown: ranked bars with share, growth and margin per part. Proof: parts add up to reported total; tested on Apple
+  FY2025 10-K figures. **Done (helper 57, Research → Where the money comes from).**
+- **Customer and supplier concentration** (Bloomberg SPLC). Free: XBRL `ConcentrationRiskPercentage1` with
+  `srt:MajorCustomersAxis` / `us-gaap:ConcentrationRiskByBenchmarkAxis`, plus 10-K text ("Customer A accounted for
+  ..."). Shown: a relationship list with % of revenue and the counterpart's own page. Proof: matches the filing note.
+- **Segment history and trends** (multi-year segment bars; which business is growing). Free: the same XBRL across the
+  last 5 10-Ks. Shown: stacked area of revenue by segment over time.
+
+## 2. Rates and the Fed
+
+- **Rate-decision odds per FOMC meeting** (Bloomberg WIRP, CME FedWatch). Free: 30-day fed funds futures (/ZQ) quotes
+  from Schwab; FOMC dates (already in the calendar). Maths: implied rate = 100 − price; split the month's average
+  around the meeting day; probability of a 25 bp move = implied change / 0.25 (CME FedWatch methodology; expanding
+  probability tree for later meetings). Shown: a table of meetings × probabilities, implied rate path chart.
+  Proof: hand-worked CME example reproduced in a test; compared with the published FedWatch numbers on the same day.
+- **Net liquidity** (macro desks' liquidity gauge). Free: FRED WALCL − WTREGEN − RRPONTSYD (weekly). Maths: the
+  difference, aligned to Wednesday dates. Shown: line with the S&P 500 beside it. Proof and honesty: report the
+  correlation of weekly *changes* (not levels, which are spuriously correlated) with its confidence interval.
+
+## 3. Options and positioning
+
+- **Dealer gamma exposure (GEX) and the zero-gamma level** (SpotGamma-style; desks watch where dealer hedging adds or
+  dampens moves). Free: Schwab option chains (open interest, implied volatility). Maths: Σ gamma × OI × 100 × S² ×
+  0.01, calls +, puts − (naive dealer-sign assumption, stated); zero-gamma by re-pricing gamma (Black-Scholes) over a
+  grid of spot prices. Shown: GEX by strike bars, flip level line on the chart. Proof: Black-Scholes gamma against
+  reference values; GEX on a hand-built chain.
+- **Volatility risk premium** (implied vs realized). Free: Schwab ATM implied vol; realized vol from daily closes.
+  Evidence: NY Fed Staff Report 867 (term structure of variance risk premia). Shown: implied vs realized lines and the
+  gap; percentile vs its own history. Proof: realized vol formula tested; IV checked against the chain.
+- **Earnings implied move vs history** (options desks). Free: front straddle price around the report from Schwab;
+  past earnings-day moves from daily bars. Maths: implied move ≈ straddle / price; compare with the distribution
+  (median, 75th percentile) of the last 8–12 reaction moves. Evidence mixed (large samples show overpricing on average,
+  not consistently): show it as information with the history, never as a signal by itself.
+- **Off-exchange ("dark pool") volume share** (institutional flow). Free: FINRA OTC Transparency ATS weekly data
+  (api.finra.org; 2-week lag for Tier 1 stocks). Shown: weekly off-exchange share vs its own average. Proof: totals
+  match FINRA's published week.
+
+## 4. Portfolio maths (linear algebra)
+
+- **Factor exposures** (Barra/Axioma-style risk). Free: Kenneth French Data Library daily factors (Mkt-RF, SMB, HML,
+  RMW, CMA, Mom). Maths: OLS of portfolio excess returns on factors (β, t-stats, R²), rolling window. Shown: factor
+  bars with confidence intervals, "what your portfolio is really betting on". Proof: regression on synthetic data with
+  known betas recovers them.
+- **Risk decomposition and eigen-portfolios.** Maths: covariance with Ledoit-Wolf shrinkage; marginal and component
+  contributions to risk (w ⊙ Σw / σ); principal components of the holdings' returns (what drives the portfolio).
+  Shown: contribution bars, PCA "hidden bets". Proof: contributions sum to total volatility; PCA on a known matrix.
+
+## 5. Relative value and arbitrage monitors
+
+- **Index futures vs fair value; box-spread rates vs T-bills.** **Done (helper 55–56, #10/#11).**
+- **ETF and closed-end fund premium/discount to NAV.** Free: Schwab price; NAV from issuer/SEC N-PORT. Proof: NAV date
+  shown; flagged when stale.
+- **Put-call parity deviations** (conversion/reversal). Free: Schwab chains. Maths: C − P = S − K·e^(−rT) − PV(div).
+  Shown only after bid/ask, borrow and dividends; most "violations" vanish after costs (say so).
+- **Pairs and cointegration.** Maths: Engle-Granger / Johansen, half-life of mean reversion; must pass the platform's
+  random-entry and walk-forward tests before any signal is shown.
+
+## How professional tools display data (patterns to adapt in our own look)
+
+- One question per panel, the answer first (a number or a ranked bar), detail on demand.
+- Every figure with its source and time; a "dated" warning when stale.
+- Ranked horizontal bars for compositions (not pies); small multiples for comparisons over time.
+- Tables right-aligned numbers, monospace digits, colour only for direction.
+- Drill-down: every name links to its own page (stock → overview, chart, filings, options).
