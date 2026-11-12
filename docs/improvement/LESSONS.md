@@ -28,6 +28,11 @@ whenever the owner repeats or adds one.
   (2026-11-11: hidden pages polling every 5 s made everything slow; fixed in #9).
 - **Use other languages where they are measurably better** (2026-11-11), e.g. Rust/WebAssembly for heavy browser maths
   or a compiled worker for the scanner, with before/after timings. It must install by itself on the owner's PC.
+- **Proactive R&D, not just the example given** (2026-11-12, asked more than once): study what professional
+  platforms show (Bloomberg's revenue by product/segment/region, trade flows, statements as filed, options-implied
+  views, rates and relative value), find the free source, research the papers and the maths (new maths where it gives
+  edge), and build it without being told. Work from docs/research/rd-backlog.md: build the top item each run and add
+  at least two newly researched items. Install whatever skills/plugins the work needs and say which.
 - **Every figure shows its source and time;** never invented; missing data says "unavailable" and why.
 - **Every entity links onward** (a stock to its overview, chart, financials, options, research, trade ticket): no dead
   ends.
