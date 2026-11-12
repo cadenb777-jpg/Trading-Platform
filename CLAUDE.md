@@ -110,8 +110,14 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   sends self-started refreshes through the background budget of budgeted sources (Schwab); invest.closes ('board-closes3') keeps finished sessions only and stays
   valid until the next close + 15 min (stocks; futures 3 h; missing_last_close looks again every 30 min); invest.history
   adds today's live price (with_live_point); Sources table waitP95Ms/waitMaxMs = queue wait of your requests.
+  Fitted curve (v61, engine/curvefit.py `bonds.curvefit`; src/invest/curveFit.ts + curveView.ts = Investments > Bonds >
+  "What the curve says", deep link #invest/bonds/curve, CURVE_HELPER_VERSION): Nelson-Siegel-Svensson zero curve fitted to
+  Treasury's daily par curve (bills simple, 1y and coupons semiannual; 6 starting shapes; past fits saved per date in
+  cache.db 'nss-fits' and refitted only if Treasury revises), gap per maturity vs its own 52 weekly fits (|z| >= 2.5 =
+  unusual), forwards (1y1y, 2y1y, 5y5y, 10y10y), breakevens (nominal − Treasury real curve, same day only), recession probit
+  on 10y − 3m (GS10 − TB3MS as bond-equivalent) fitted by MLE on outcomes NBER has had a year to date, with its record.
   Home "Edge today" widget (id 'edge', src/home/edge.ts edgeLines, tested): ES/NQ implied open or futures vs fair
-  value and the 3-month box vs T-bill, each linking to its Futures panel. Home layouts keep `seen` (every widget offered):
+  value and the 3-month box vs T-bill, each linking to its Futures panel, plus the curve's recession odds (#invest/bonds/curve). Home layouts keep `seen` (every widget offered):
   a widget released later joins a saved layout once after its first card; removing it sticks.
   Pop-ups: no backdrop-filter on .modal-backdrop (a full-screen blur over animated content dropped scrolling to ~20 fps);
   .modal-body has overscroll-behavior: contain; the indicator window (.mgr) is a fixed 84vh with only its lists scrolling.

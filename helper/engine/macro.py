@@ -37,8 +37,6 @@ SERIES = [
 CURVE = [('DGS1MO', '1M'), ('DGS3MO', '3M'), ('DGS6MO', '6M'), ('DGS1', '1Y'), ('DGS2', '2Y'), ('DGS5', '5Y'), ('DGS10', '10Y'), ('DGS30', '30Y')]
 
 FRED_API = 'https://api.stlouisfed.org/fred/series/observations'
-TREASURY_CSV = ('https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/'
-                '{year}/all?type=daily_treasury_yield_curve&field_tdr_date_value={year}&page&_format=csv')
 TREASURY_COLUMNS = {'DGS1MO': '1 Mo', 'DGS3MO': '3 Mo', 'DGS6MO': '6 Mo', 'DGS1': '1 Yr', 'DGS2': '2 Yr',
                     'DGS5': '5 Yr', 'DGS10': '10 Yr', 'DGS30': '30 Yr'}
 FRESH_SECONDS = 3600
@@ -59,19 +57,19 @@ def parse_fred_csv(text):
     return rows
 
 
-async def _fred_download(ctx, series_id):
+async def _fred_download(ctx, series_id, start=START):
     from . import settings
     key = settings.get('fred_key')
     async with _fred_slots:
         if key:
             # The free FRED API (with a key) is faster and more reliable than the CSV download.
-            response = await datahub.get(ctx.http, 'fred', FRED_API, params={'series_id': series_id, 'api_key': key, 'file_type': 'json', 'observation_start': START})
+            response = await datahub.get(ctx.http, 'fred', FRED_API, params={'series_id': series_id, 'api_key': key, 'file_type': 'json', 'observation_start': start})
             response.raise_for_status()
             return [(o['date'], float(o['value'])) for o in response.json().get('observations', []) if o.get('value') not in ('.', '', None)]
         last = None
         for attempt in range(2):
             try:
-                response = await datahub.get(ctx.http, 'fred', FRED_CSV, retries=0, params={'id': series_id, 'cosd': START}, headers={'Accept': 'text/csv,*/*'})
+                response = await datahub.get(ctx.http, 'fred', FRED_CSV, retries=0, params={'id': series_id, 'cosd': start}, headers={'Accept': 'text/csv,*/*'})
                 response.raise_for_status()
                 return parse_fred_csv(response.text)
             except (httpx.HTTPError, datahub.DataError) as err:
@@ -81,24 +79,15 @@ async def _fred_download(ctx, series_id):
 
 
 async def treasury_yields(ctx):
-    """Daily Treasury yield curve from treasury.gov (backup when FRED can't be reached): {series id: rows}."""
-    async def load():
-        year = dt.date.today().year
-        out = {sid: [] for sid in TREASURY_COLUMNS}
-        for y in (year - 1, year):
-            response = await datahub.get(ctx.http, 'treasury', TREASURY_CSV.format(year=y))
-            response.raise_for_status()
-            lines = response.text.strip().splitlines()
-            header = [h.strip().strip('"') for h in lines[0].split(',')]
-            for line in lines[1:]:
-                cells = [c.strip().strip('"') for c in line.split(',')]
-                m, d, yy = cells[0].split('/')
-                date = f'{yy}-{m}-{d}'
-                for sid, col in TREASURY_COLUMNS.items():
-                    if col in header and cells[header.index(col)]:
-                        out[sid].append((date, float(cells[header.index(col)])))
-        return {k: sorted(v) for k, v in out.items()}
-    return await ctx.cached('treasury-curve', FRESH_SECONDS, load, persist=True, stale_ok=True)
+    """Daily Treasury yield curve from treasury.gov (backup when FRED can't be reached): {series id: rows}. Uses the
+    same download as the fitted curve (curvefit.treasury_curve)."""
+    from . import curvefit
+    days = await curvefit.treasury_curve(ctx)
+    out = {}
+    for sid, col in TREASURY_COLUMNS.items():
+        years = curvefit.TENORS[col]
+        out[sid] = [(d, pt[years]) for d, pt in days if years in pt]
+    return out
 
 
 async def fred(ctx, series_id):

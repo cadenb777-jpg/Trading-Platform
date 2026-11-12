@@ -11169,3 +11169,70 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .mm-rank-bar { position: relative; width: 70px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--line) 80%, transparent); }
 .mm-rank-bar i { position: absolute; top: -3px; width: 4px; height: 10px; margin-left: -2px; border-radius: 2px; background: var(--label); }
 @media (max-width: 640px) { .mm-read-grid { grid-template-columns: 1fr; } .mm-quad { max-width: 180px; margin-top: 16px; } }
+
+/* Bonds → What the curve says (src/invest/curveView.ts) */
+.cf-view { display: grid; gap: var(--sp-4); min-width: 0; }
+.cf-intro { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--sp-2) var(--sp-4); }
+.cf-intro p { margin: 0; max-width: 72ch; }
+.cf-body { display: grid; gap: var(--sp-4); min-width: 0; }
+.cf-figure { margin: 0; min-width: 0; }
+.cf-svg { display: block; width: 100%; height: auto; max-height: 340px; }
+.cf-grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 1 3; }
+.cf-axis { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.cf-fitted { fill: none; stroke: var(--viz-1); stroke-width: 2.5; }
+.cf-forward { fill: none; stroke: var(--viz-2); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.cf-dot circle { fill: var(--text-strong); stroke: var(--surface); stroke-width: 1.5; }
+.cf-dot.unusual circle { fill: var(--label); }
+.cf-stem { stroke: var(--muted); stroke-width: 1; }
+.cf-dot.unusual .cf-stem { stroke: var(--label); stroke-width: 2; }
+.cf-legend { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); color: var(--muted); margin-top: var(--sp-1); }
+.cf-key { display: inline-flex; align-items: center; gap: 6px; }
+.cf-key::before { content: ''; display: inline-block; width: 18px; height: 0; border-top: 2.5px solid var(--viz-1); }
+.cf-key.dot::before { width: 8px; height: 8px; border: 0; border-radius: 50%; background: var(--text-strong); }
+.cf-key.forward::before { border-top: 1.5px dashed var(--viz-2); }
+.cf-headline { margin: var(--sp-2) 0; }
+.cf-headline.strong { color: var(--label); font-weight: 600; }
+.cf-table-wrap { overflow-x: auto; }
+.cf-table { width: 100%; }
+.cf-table th[scope='row'] { color: var(--label); font-weight: 600; }
+.cf-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.cf-table td.num:not(.muted) { color: var(--text-strong); }
+.cf-range-head, .cf-range-cell { width: 260px; }
+.cf-range-head > span { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2); white-space: nowrap; }
+.cf-range-head small { color: var(--muted); font-weight: 400; letter-spacing: 0; text-transform: none; }
+.cf-range { position: relative; display: block; height: 14px; min-width: 160px; }
+.cf-range i { position: absolute; display: block; }
+.cf-zero { left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.cf-band { top: 4px; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--viz-1) 30%, transparent); }
+.cf-usual { top: 2px; height: 10px; width: 2px; margin-left: -1px; background: var(--viz-1); }
+.cf-now { top: 1px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--text-strong); border: 2px solid var(--surface); }
+.cf-now.rich, .cf-now.cheap { background: var(--label); }
+.cf-unusual th[scope='row'], .cf-read-strong { color: var(--label); font-weight: 600; }
+.cf-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--sp-4); }
+.cf-grid-2 > .panel { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); align-content: start; }
+.cf-grid-2 p { margin: 0; }
+.cf-small-table { width: 100%; }
+.cf-small-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.cf-small-table td.num:not(.muted) { color: var(--text-strong); }
+.cf-caption { caption-side: top; text-align: left; color: var(--label); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; padding-bottom: var(--sp-1); }
+.cf-rec { display: grid; gap: var(--sp-2); }
+.cf-rec-head { display: flex; align-items: center; gap: var(--sp-3); }
+.cf-rec-value { font-size: 2.2rem; line-height: 1; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.cf-rec-value.down { color: var(--down); }
+.cf-rec-word { font-weight: 600; color: var(--text-strong); }
+.cf-odds-svg { display: block; width: 100%; max-width: 420px; height: auto; }
+.cf-odds-bar { fill: color-mix(in srgb, var(--viz-1) 70%, transparent); }
+.cf-odds-bar.high { fill: var(--label); }
+.cf-alarm { stroke: var(--muted); stroke-dasharray: 3 3; }
+.cf-sources a { color: inherit; }
+@media (max-width: 560px) {
+  .cf-range-head, .cf-range-cell { width: 96px; }
+  .cf-range { min-width: 88px; }
+  .cf-table th, .cf-table td, .cf-small-table th, .cf-small-table td { padding-left: 6px; padding-right: 6px; }
+  .cf-rec-value { font-size: 1.8rem; }
+  /* the phone keeps what answers the question: yield, distance from the curve, today vs usual, the breakeven */
+  .cf-table .cf-wide, .cf-small-table .cf-wide { display: none; }
+  .cf-range-head small { display: none; }
+}
+.cf-small-table th[scope='row'] { text-transform: none; letter-spacing: 0; font-size: var(--fs-sm); }
+.cf-table thead th:not(.cf-range-head), .cf-small-table th { white-space: normal; }

@@ -28,6 +28,11 @@ whenever the owner repeats or adds one.
   (2026-11-11: hidden pages polling every 5 s made everything slow; fixed in #9).
 - **Use other languages where they are measurably better** (2026-11-11), e.g. Rust/WebAssembly for heavy browser maths
   or a compiled worker for the scanner, with before/after timings. It must install by itself on the owner's PC.
+- **Proactive R&D, not just the example given** (2026-11-12, asked more than once): study what professional
+  platforms show (Bloomberg's revenue by product/segment/region, trade flows, statements as filed, options-implied
+  views, rates and relative value), find the free source, research the papers and the maths (new maths where it gives
+  edge), and build it without being told. Work from docs/research/rd-backlog.md: build the top item each run and add
+  at least two newly researched items. Install whatever skills/plugins the work needs and say which.
 - **Every figure shows its source and time;** never invented; missing data says "unavailable" and why.
 - **Every entity links onward** (a stock to its overview, chart, financials, options, research, trade ticket): no dead
   ends.
@@ -100,3 +105,12 @@ whenever the owner repeats or adds one.
   monitor table instead of 18 chart cards · approved (owner: "looks outdated and random, make it cleaner but still
   showing good stuff for that extra edge") · Lesson: lead with the answer (the regime), keep detail in one scannable
   table; every series' place in its own history is the cheap extra edge.
+- 2026-11-12 · #13 Account table keeps its place; desktop black-screen recovery · approved (merged by the owner).
+- 2026-11-12 · #14 Fitted Treasury curve "What the curve says" (helper 61): rich/cheap maturities against each one's own
+  year, forwards, breakevens and yield-curve recession odds with the model's record; Home Edge today line · proposed ·
+  backlog B5+B6 (top unbuilt item with free data verifiable from the research environment). Lessons: a coupon par curve
+  drawn between coupon dates zig-zags (draw it on half-years); NSS has several local fits (each of 6 starting shapes won
+  on some days of 2025-26), so fit from all of them and save past fits instead of warm-starting (warm starts were 18x
+  faster but 30% worse); with 14 maturities a 2 SD "unusual" fires by chance about half of all days, so 2.5 SD.
+  newyorkfed.org is blocked from the research environment: the recession probit is fitted here from FRED instead
+  (a = -0.75, b = -0.56 on 790 months), which is reproducible and shown on screen.

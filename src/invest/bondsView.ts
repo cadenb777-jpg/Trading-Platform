@@ -15,10 +15,13 @@ import { BOARDS } from './catalog';
 import { boardTable, errorBox, loadBoard, openSymbol, skeletonBoard, type BoardRow, type InvestContext } from './shared';
 import { interactive, type MiniItem } from './rowInteract';
 import { aiAction, compareAction, type GoAction } from './goTo';
+import { createCurveView } from './curveView';
 
-type Tab = 'market' | 'auctions' | 'lookup' | 'calculator' | 'ladder';
+export type BondTab = 'market' | 'curve' | 'auctions' | 'lookup' | 'calculator' | 'ladder';
+type Tab = BondTab;
 const TABS: [Tab, string][] = [
   ['market', 'Bond market'],
+  ['curve', 'What the curve says'],
   ['auctions', 'Treasury auctions'],
   ['lookup', 'Look up a bond (CUSIP)'],
   ['calculator', 'Bond calculator'],
@@ -98,8 +101,16 @@ export function createBondsView(ctx: InvestContext) {
     render();
   }
 
+  let curveView: ReturnType<typeof createCurveView> | null = null;
+  function renderCurve() {
+    curveView ??= createCurveView();
+    body.replaceChildren(curveView.el);
+    curveView.load();
+  }
+
   function render() {
     if (tab === 'market') return renderMarket();
+    if (tab === 'curve') return renderCurve();
     if (tab === 'auctions') return renderAuctions();
     if (tab === 'lookup') return renderLookup();
     if (tab === 'calculator') return renderCalculator();
@@ -441,6 +452,13 @@ export function createBondsView(ctx: InvestContext) {
     el,
     show() {
       render();
+    },
+    /** Opens a tab (deep link #invest/bonds/<tab>). */
+    hasTab(t: string | undefined) {
+      return !!t && TABS.some(([id]) => id === t);
+    },
+    openTab(t: string) {
+      if (TABS.some(([id]) => id === t)) setTab(t as Tab);
     },
     refresh() {
       if (tab === 'market') renderMarket();

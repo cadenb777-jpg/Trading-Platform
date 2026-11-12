@@ -33,6 +33,13 @@ Columns: **what institutions use** · **free data** · **maths (primary source)*
   around the meeting day; probability of a 25 bp move = implied change / 0.25 (CME FedWatch methodology; expanding
   probability tree for later meetings). Shown: a table of meetings × probabilities, implied rate path chart.
   Proof: hand-worked CME example reproduced in a test; compared with the published FedWatch numbers on the same day. **Done (helper 59, Macro → Fed rate odds).**
+- **Fitted Treasury curve, rich/cheap maturities, forwards, breakevens, recession odds** (Bloomberg curve and relative
+  value screens; the Fed's own GSW curve; the NY Fed's yield-curve model). Free: Treasury daily par and real yield
+  curves; FRED GS10, TB3MS, USREC. Maths: Nelson-Siegel-Svensson zero curve fitted to par yields (Gürkaynak, Sack and
+  Wright 2006); gap vs each maturity's own year of weekly fits (|z| >= 2.5); forwards from the zero curve; probit on the
+  10y-3m spread fitted by maximum likelihood since 1959 (Estrella and Mishkin 1998), shown with its record and false
+  alarms. Proof: flat-curve par yields, fit recovers a known curve, probit recovers known coefficients, AUC by hand.
+  **Done (helper 61, Investments → Bonds → What the curve says; Home Edge today line).**
 - **Net liquidity** (macro desks' liquidity gauge). Free: FRED WALCL − WTREGEN − RRPONTSYD (weekly). Maths: the
   difference, aligned to Wednesday dates. Shown: line with the S&P 500 beside it. Proof and honesty: report the
   correlation of weekly *changes* (not levels, which are spuriously correlated) with its confidence interval.

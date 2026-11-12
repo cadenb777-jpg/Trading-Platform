@@ -413,31 +413,42 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
       edgeNote('Edge readings couldn’t be loaded. Press refresh on this card, or open Futures.');
     }
   }
+  let edgeGen = 0;
   async function drawEdge() {
     const { carryReady, boxReady, engineRequest: req } = await import('../data/schwab');
     // never leave earlier readings on screen as if current
     if (!helper.isConnected) return edgeNote('Edge readings appear when the helper is running.');
     if (!carryReady()) return edgeNote('Update the helper to see edge readings: Settings > About > Update now.');
+    const { curveReady } = await import('../invest/curveView');
+    const gen = ++edgeGen;
+    // the curve can take a while on its first fit of the day: fair value and box rates are drawn first, the curve
+    // line joins when it arrives
+    const curveP = curveReady() ? req<import('../invest/curveFit').CurveFit>('bonds.curvefit', {}, 120_000).catch(() => null) : Promise.resolve(null);
     const [carry, box] = await Promise.all([
       req<import('../futures/fairValue').Carry>('futures.carry', {}, 30_000).catch(() => null),
       boxReady() ? req<import('../futures/boxRates').BoxReply>('rates.box', {}, 60_000).catch(() => null) : Promise.resolve(null),
     ]);
     const { edgeLines } = await import('../home/edge');
-    const lines = edgeLines(carry, box);
-    edgeStamp.set(carry ? carry.asOf : null, { source: 'Schwab, FRED, Yahoo' });
-    edgeBody.replaceChildren(
-      ...(lines.length
-        ? lines.map((l) =>
-            h(
-              'a',
-              { class: 'edge-line', href: l.href, title: `${l.detail}. Source: ${l.source}. Open the full tool.` },
-              h('span', { class: 'edge-label' }, l.label),
-              h('b', { class: `edge-value num ${l.tone}` }, l.value),
-              h('span', { class: 'muted small edge-detail' }, l.detail),
-            ),
-          )
-        : [h('p', { class: 'muted small' }, 'No edge readings yet: they need Schwab futures and option quotes, FRED and Yahoo. Open Futures to see each tool.')]),
-    );
+    const paint = (curve: import('../invest/curveFit').CurveFit | null, waiting: boolean) => {
+      if (gen !== edgeGen) return; // a newer refresh owns the card
+      const lines = edgeLines(carry, box, curve);
+      edgeStamp.set(carry ? carry.asOf : null, { source: curve ? 'Schwab, FRED, Yahoo, U.S. Treasury' : 'Schwab, FRED, Yahoo' });
+      edgeBody.replaceChildren(
+        ...(lines.length
+          ? lines.map((l) =>
+              h(
+                'a',
+                { class: 'edge-line', href: l.href, title: `${l.detail}. Source: ${l.source}. Open the full tool.` },
+                h('span', { class: 'edge-label' }, l.label),
+                h('b', { class: `edge-value num ${l.tone}` }, l.value),
+                h('span', { class: 'muted small edge-detail' }, l.detail),
+              ),
+            )
+          : [h('p', { class: 'muted small' }, waiting ? 'Loading edge readings…' : 'No edge readings yet: they need Schwab futures and option quotes, FRED and Yahoo. Open Futures to see each tool.')]),
+      );
+    };
+    paint(null, curveReady());
+    paint(await curveP, false);
   }
 
   // ---------- widgets (src/home/widgets.ts: layout saved per device) ----------

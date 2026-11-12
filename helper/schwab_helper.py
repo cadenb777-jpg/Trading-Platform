@@ -51,7 +51,7 @@ from engine.safexml import fromstring as safe_fromstring  # noqa: E402  (refuses
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 60
+HELPER_VERSION = 61
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -1249,6 +1249,7 @@ WARM_UP = [
     ('invest.board', {'symbols': ['$SPX', '$COMPX', 'VTI', 'AGG', 'PSP', 'IBIT', 'GLD']}),
     ('macro.curve', {}),
     ('bonds.market', {}),
+    ('bonds.curvefit', {}),  # Home's Edge today line; the first fit of the day takes a while
 ]
 
 
