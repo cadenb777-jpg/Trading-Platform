@@ -89,6 +89,10 @@ add it to the list with its sources), deliver it complete in one run, mark it do
 
 ## Research areas (where to look for edge and better tools)
 
+The ranked agenda lives in docs/research/rd-backlog.md (companies beyond the standard statements, economy and trade,
+options-implied maths, arbitrage and relative value, launch readiness). Each run builds its top unbuilt item and adds
+at least two newly researched ones. The ideas below are the starting map.
+
 - **Professional terminals' capabilities:** what Bloomberg, Refinitiv/LSEG Workspace, FactSet, TradingView, thinkorswim,
   Koyfin and others can do that this platform can't, from their public documentation, design write-ups and reviews.
   Build the better capability (and improve on it) in this platform's own design and words.
