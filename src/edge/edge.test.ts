@@ -93,3 +93,17 @@ describe('segment growth', () => {
     expect(cagr([null, 50])).toBeNull();
   });
 });
+
+import { dollars, watchlistSymbols } from './liveFlow';
+
+describe('live flow', () => {
+  it('takes stock symbols from the watchlist', () => {
+    expect(watchlistSymbols([{ provider: 'coinbase', symbol: 'BTC-USD' }, { provider: 'schwab', symbol: 'nvda' }, { provider: 'schwab', symbol: '$SPX' }, { provider: 'schwab', symbol: 'NVDA' }, { provider: 'schwab', symbol: 'BRK.B' }], 15)).toEqual(['NVDA', 'BRK.B']);
+    expect(watchlistSymbols([{ provider: 'schwab', symbol: 'A' }, { provider: 'schwab', symbol: 'B' }], 1)).toEqual(['A']);
+  });
+  it('formats amounts', () => {
+    expect(dollars(2_450_000)).toBe('$2.45M');
+    expect(dollars(350_000)).toBe('$350K');
+    expect(dollars(undefined)).toBe('—');
+  });
+});

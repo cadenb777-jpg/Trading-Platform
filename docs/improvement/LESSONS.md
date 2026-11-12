@@ -114,3 +114,7 @@ whenever the owner repeats or adds one.
   faster but 30% worse); with 14 maturities a 2 SD "unusual" fires by chance about half of all days, so 2.5 SD.
   newyorkfed.org is blocked from the research environment: the recession probit is fitted here from FRED instead
   (a = -0.75, b = -0.56 on 790 months), which is reproducible and shown on screen.
+- 2026-11-12 · Live flow (helper 62): dark-pool block prints from Alpaca's full-market tape (venue D) and big options
+  trades from 2-minute Schwab chain checks, with phone/desktop alerts · approved (owner: "theres got to be some way to
+  set it up so its not all based on 3 week old data") · Webull left out (its trading API has no tape). Lesson: the
+  weekly FINRA file is the slow, labelled version; the same off-exchange trades are on the tape in (near) real time.

@@ -51,7 +51,7 @@ from engine.safexml import fromstring as safe_fromstring  # noqa: E402  (refuses
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 61
+HELPER_VERSION = 62
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -1288,6 +1288,16 @@ async def selfcheck_schedule(market):
     await selfcheck.loop(market.engine)
 
 
+async def liveflow_schedule(market):
+    """Live flow (engine/liveflow.py): big off-exchange prints (Alpaca) and big options trades (Schwab) on the owner's
+    chosen symbols, with alerts even when no tab is open."""
+    await engine.wait_loaded()
+    if 'liveflow' in engine.LOAD_ERRORS:
+        return
+    from engine import liveflow
+    await liveflow.loop(market.engine)
+
+
 async def prospect_schedule(market):
     """Keeps the prospecting data (engine/prospect.py) fresh, only for sources the owner has downloaded once."""
     await engine.wait_loaded()
@@ -1361,7 +1371,7 @@ async def run(client, sec_contact='', open_browser=True, config=None):
     async with server:
         jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market), warm_up(market),
                 open_when_ready(market, open_browser), market_scanner(market), prospect_schedule(market), market.update_loop(),
-                selfcheck_schedule(market)]
+                selfcheck_schedule(market), liveflow_schedule(market)]
         if DESKTOP:  # the website's helper runs the scanner, prospecting and updates; this one only answers the app
             jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market)]
         if SCREEN:

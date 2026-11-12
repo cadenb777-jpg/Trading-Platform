@@ -589,6 +589,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (engine/factors.py: Ken French daily FF5 + Mom, OLS Newey-West, PCA hidden bets, Meucci effective bets) on
   Portfolios after an analysis; research.segmenthistory (last 3 10-Ks merged, ConcentrationRiskPercentage1 customers)
   on Research.
+- Live flow (helper 62, engine/liveflow.py, Flow → Live flow tab, src/edge/liveFlow.ts): a helper loop (liveflow_schedule)
+  reads Alpaca SIP trades (alpaca.trades, data host only; free plan = 15 min behind, detected by itself) every minute
+  4am-8pm ET and keeps venue 'D' (reported to FINRA = off-exchange) prints >= blockMin; polls Schwab chains every 2 min in
+  the session for contracts whose day volume grew by >= optionMin of premium (first poll only remembers). Alerts go
+  through alerts.deliver (phone + tabs), one per symbol and kind per 5 min (later ones summed). Config in store
+  collection 'liveflow' (engine-only). Never trades.
 - Macro page (US tab), top to bottom: Today's read (regime quadrant from src/macro/monitor.ts regime(): 3-month changes
   of jobs, claims, retail sales, GDP vs CPI, core PCE, breakevens; plus six key numbers), Fed odds + net liquidity,
   yield curve, one Macro monitor table (latest, 1m, 1y, 2-year sparkline, percentile since 2006; row opens history).

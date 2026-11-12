@@ -14,8 +14,8 @@ from .core import EngineError, handler
 DB_PATH = Path.home() / '.trading-platform' / 'platform.db'
 # alt_holdings: your private/alternative investments (e.g. from iCapital statements), entered or imported by you.
 # alerts: run by the helper (engine/alerts.py); saved only through alerts.save, which checks them.
-COLLECTIONS = {'portfolios', 'clients', 'branding', 'alt_holdings', 'alerts', 'prospect_searches', 'prospect_notes'}
-ENGINE_ONLY = {'alerts'}
+COLLECTIONS = {'portfolios', 'clients', 'branding', 'alt_holdings', 'alerts', 'prospect_searches', 'prospect_notes', 'liveflow'}
+ENGINE_ONLY = {'alerts', 'liveflow'}
 
 _db = None
 

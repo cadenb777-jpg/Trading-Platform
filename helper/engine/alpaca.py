@@ -27,6 +27,8 @@ log = logging.getLogger('engine.alpaca')
 NEW_YORK = ZoneInfo('America/New_York')
 
 DATA_URL = 'https://data.alpaca.markets/v2/stocks/bars'
+#: Individual trades (for off-exchange block prints, engine/liveflow.py).
+TRADES_URL = 'https://data.alpaca.markets/v2/stocks/trades'
 #: The platform's intraday bar sizes -> Alpaca's names for them. (Daily/weekly history comes from Schwab.)
 TIMEFRAMES = {'1m': '1Min', '5m': '5Min', '10m': '10Min', '15m': '15Min', '30m': '30Min', '1h': '1Hour'}
 #: Alpaca's full-market history starts in 2016.
@@ -192,12 +194,12 @@ def _error_message(response):
         return response.text[:200]
 
 
-async def _get(ctx, params):
+async def _get(ctx, params, url=DATA_URL):
     """One market-data call, paced, with a single retry after a rate-limit reply."""
     headers = _headers()
     for attempt in range(2):
         # Through the data hub's 'alpaca' gate (pacing, network errors, health); 429 handling stays below.
-        response = await datahub.call('alpaca', lambda: ctx.http.get(DATA_URL, params=params, headers=headers),
+        response = await datahub.call('alpaca', lambda: ctx.http.get(url, params=params, headers=headers),
                                       gap=MIN_CALL_GAP, retries=0, passthrough=True, background=BACKGROUND.get())
         if response.status_code == 200:
             return response.json()
@@ -236,6 +238,22 @@ async def _download(ctx, symbol, timeframe, start, end):
         if isinstance(raw, dict):  # multi-symbol reply: {"bars": {"AAPL": [...]}}
             raw = raw.get(symbol) or []
         out.extend(b for b in (parse_bar(r) for r in raw) if b)
+        token = data.get('next_page_token')
+        if not token:
+            break
+        params = {**params, 'page_token': token}
+    return out
+
+
+async def trades(ctx, symbols, start, end, max_pages=20):
+    """Every trade (full market, SIP) for `symbols` between start and end (unix seconds): {symbol: [raw trade]}.
+    Raw trades carry t (time), x (venue code; 'D' = reported to FINRA, i.e. off-exchange), p, s, c (conditions)."""
+    params = {'symbols': ','.join(symbols), 'start': _rfc3339(start), 'end': _rfc3339(end), 'limit': PAGE_LIMIT, 'feed': 'sip', 'sort': 'asc'}
+    out = {}
+    for _ in range(max_pages):
+        data = await _get(ctx, params, TRADES_URL)
+        for sym, rows in (data.get('trades') or {}).items():
+            out.setdefault(sym, []).extend(rows or [])
         token = data.get('next_page_token')
         if not token:
             break

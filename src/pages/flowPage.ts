@@ -10,6 +10,7 @@ import { withTableTools } from '../ui/tableTools';
 import { optionsAnalyticsBlock } from '../flow/optionsAnalytics';
 import { optEdgePanel } from '../edge/optEdge';
 import { navPremiumPanel, offExchangePanel } from '../edge/offExchange';
+import { liveFlowView } from '../edge/liveFlow';
 import { tickerAttr } from '../ui/tickerCard';
 import { cotSummary, openCotOnFutures, type CotSymbolData } from '../futures/cot';
 import { isStockSymbol, linkPanel, markPanel } from '../ui/linkGroups';
@@ -97,8 +98,8 @@ interface PositioningData {
   errors: Record<string, string>;
 }
 
-type Tab = 'positioning' | 'options' | 'insiders';
-const TAB_LABELS: Record<Tab, string> = { positioning: 'Stock positioning', options: 'Options flow', insiders: 'Insider trades' };
+type Tab = 'positioning' | 'options' | 'insiders' | 'live';
+const TAB_LABELS: Record<Tab, string> = { positioning: 'Stock positioning', options: 'Options flow', insiders: 'Insider trades', live: 'Live flow' };
 
 const ratioText = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(2));
 const pcTone = (v: number | null | undefined) => (v == null ? '' : v > 1 ? 'down' : v < 0.7 ? 'up' : '');
@@ -144,7 +145,20 @@ export function createFlowPage() {
   let request = 0;
   /** The options expiration the user picked, kept across automatic refreshes. */
   let chosenExpiration: string | undefined;
+  let stopLive = () => {};
   async function load(expiration?: string, quiet = false) {
+    stopLive();
+    stopLive = () => {};
+    if (tab === 'live') {
+      // its own symbols and polling: the symbol box and AI button don't apply
+      ++request;
+      ai.panel.hidden = true;
+      lastInsight = null;
+      const view = liveFlowView();
+      stopLive = view.stop;
+      frame.body.replaceChildren(view.el);
+      return;
+    }
     if (expiration !== undefined || !quiet) chosenExpiration = expiration;
     expiration = chosenExpiration;
     const symbol = symbolInput.value.trim().toUpperCase();
@@ -458,6 +472,7 @@ export function createFlowPage() {
       load();
     },
     stop() {
+      stopLive();
       clearInterval(timer);
       timer = undefined;
     },
