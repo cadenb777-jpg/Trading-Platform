@@ -12,6 +12,19 @@ export interface Quote {
   prevClose: number | null;
   /** True when the change shown is the latest session's move (the market is closed and the quote said "unchanged"). */
   lastSession?: boolean;
+  /** Where the price came from (helper 63+: the newest trade among Schwab, Alpaca, Yahoo and option chains). */
+  src?: string;
+  /** Time of the trade behind the price (unix seconds). */
+  at?: number;
+}
+
+/** Hover text for a price (pure, tested): its source and how old the trade behind it is. */
+export function sourceTitle(q: Quote | undefined, nowMs = Date.now()): string {
+  if (!q?.src) return '';
+  if (!q.at) return `Price from ${q.src}`;
+  const age = Math.max(0, Math.round(nowMs / 1000 - q.at));
+  const ago = age < 60 ? `${age} s` : age < 3600 ? `${Math.round(age / 60)} min` : `${Math.round(age / 3600)} h`;
+  return `Price from ${q.src} · last trade ${ago} ago`;
 }
 
 /** A symbol together with the market it trades on. */

@@ -198,7 +198,13 @@ async def chain(ctx, symbol):
             raise EngineError('Schwab login expired. Close the helper and start it again to log in.')
         if response.status_code != 200:
             raise EngineError(f'Schwab returned {response.status_code} for {symbol} options')
-        return {'chain': response.json(), 'at': time.time()}
+        data = response.json()
+        try:
+            from . import pricehub
+            pricehub.offer_chain(symbol, data)  # the underlying's quote comes free with the chain
+        except Exception:
+            pass
+        return {'chain': data, 'at': time.time()}
     hit = await ctx.cached(('chain', symbol), 60, load)
     return hit['chain'], hit['at']
 

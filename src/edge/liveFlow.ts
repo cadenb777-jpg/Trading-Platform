@@ -119,14 +119,22 @@ export function liveFlowView(): { el: HTMLElement; stop: () => void } {
     try {
       const s = await engineRequest<LiveState>('liveflow.save', { config }, 20000);
       editing = false;
+      shownForm = '';
+      (document.activeElement as HTMLElement | null)?.blur?.();
       render(s);
     } catch (err) {
       statusLine.textContent = `Couldn’t save: ${(err as Error).message}`;
     }
   });
 
+  let shownFeed = '';
+  let shownForm = '';
   function render(s: LiveState) {
-    if (!editing) fillForm(s);
+    const formKey = JSON.stringify(s.config);
+    if (!editing && !form.contains(document.activeElement) && formKey !== shownForm) {
+      shownForm = formKey;
+      fillForm(s);
+    }
     const errs = Object.entries(s.status.errors);
     statusLine.replaceChildren(
       h('b', {}, 'Dark pools: '), s.alpaca ? s.status.darkPool : 'needs your free Alpaca keys (Settings → Data connections)',
@@ -134,6 +142,9 @@ export function liveFlowView(): { el: HTMLElement; stop: () => void } {
       s.status.lastRun ? ` · checked ${new Date(s.status.lastRun * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : '',
       errs.length ? h('span', { class: 'down' }, ` · ${errs.map(([k, v]) => `${k}: ${v}`).join('; ')}`) : '',
     );
+    const feedKey = `${s.feed.length}:${s.feed[0]?.time ?? ''}:${s.feed[0]?.title ?? ''}:${s.config.symbols.length}`;
+    if (feedKey === shownFeed) return; // nothing new: the list (and the scroll position) stay as they are
+    shownFeed = feedKey;
     list.replaceChildren(...(s.feed.length ? s.feed.map(row) : [h('li', { class: 'muted small lf-empty' }, s.config.symbols.length ? 'Nothing big yet. Prints and trades above your thresholds appear here as they happen.' : 'Pick symbols above and press Start watching.')]));
   }
 

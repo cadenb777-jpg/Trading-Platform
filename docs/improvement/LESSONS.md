@@ -118,3 +118,8 @@ whenever the owner repeats or adds one.
   trades from 2-minute Schwab chain checks, with phone/desktop alerts · approved (owner: "theres got to be some way to
   set it up so its not all based on 3 week old data") · Webull left out (its trading API has no tape). Lesson: the
   weekly FINRA file is the slow, labelled version; the same off-exchange trades are on the tape in (near) real time.
+- 2026-11-12 · Triangulated prices (helper 63): newest trade wins across Schwab stream/quote, option chains, Alpaca and
+  Yahoo (backups only for quiet symbols), stray backup prints refused · approved (owner asked) · the first design held
+  back a real >1.5% jump from Schwab for up to 30 s; the guard now applies to backups only. Scroll check on Macro and
+  every Flow tab: 0 slow frames (max 17 ms). Live flow redraws only when the feed changes and never rebuilds a
+  focused form. Lesson: a guard against bad data must not delay the move you care about most.

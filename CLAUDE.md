@@ -595,6 +595,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   the session for contracts whose day volume grew by >= optionMin of premium (first poll only remembers). Alerts go
   through alerts.deliver (phone + tabs), one per symbol and kind per 5 min (later ones summed). Config in store
   collection 'liveflow' (engine-only). Never trades.
+- Triangulated prices (helper 63, engine/pricehub.py): every price offer (Schwab stream tick with TRADE_TIME_MILLIS,
+  Schwab official quote tradeTime, option-chain underlying, and for symbols quiet > 20 s in 4am-8pm ET Alpaca latest
+  trade (feed=iex, free) then Yahoo v7 quote, each at most once a minute) goes through HUB.offer: the newest trade wins;
+  backups more than 1.5% from two agreeing recent sources are refused (Schwab's own prices never are). Quotes carry
+  src/at; the watchlist price shows them on hover (sourceTitle). prices.sources {symbol} lists every source.
 - Macro page (US tab), top to bottom: Today's read (regime quadrant from src/macro/monitor.ts regime(): 3-month changes
   of jobs, claims, retail sales, GDP vs CPI, core PCE, breakevens; plus six key numbers), Fed odds + net liquidity,
   yield curve, one Macro monitor table (latest, 1m, 1y, 2-year sparkline, percentile since 2006; row opens history).

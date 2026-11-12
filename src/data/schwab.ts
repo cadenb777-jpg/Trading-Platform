@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 62;
+export const LATEST_HELPER_VERSION = 63;
 /** The "Log in to Schwab" request (schwab_login) and the in-place re-login need this version. */
 export const SCHWAB_LOGIN_HELPER_VERSION = 47;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
@@ -222,7 +222,7 @@ type HelperMessage =
   | { type: 'engine_event'; id: number; event: EngineEvent }
   | { type: 'error'; id: number | null; message: string }
   | { type: 'trade'; symbol: string; price: number; size: number; time: number }
-  | { type: 'quote'; symbol: string; last: number | null; prevClose: number | null }
+  | { type: 'quote'; symbol: string; last: number | null; prevClose: number | null; src?: string; at?: number }
   | { type: 'alert'; title: string; message: string };
 
 /** A helper alert that just fired (shown as a desktop notification in every open tab). */

@@ -51,7 +51,7 @@ from engine.safexml import fromstring as safe_fromstring  # noqa: E402  (refuses
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 62
+HELPER_VERSION = 63
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -976,7 +976,7 @@ class Market:
             total = item.get('TOTAL_VOLUME')
             if price is not None or item.get('CLOSE_PRICE') is not None:
                 quote = self.quotes.setdefault(symbol, {'last': None, 'prevClose': (self.official.get(symbol) or {}).get('prevClose')})
-                if price is not None:
+                if price is not None and self.take_price(symbol, price, item.get('TRADE_TIME_MILLIS') or default_time, 'stream'):
                     quote['last'] = price
                 if item.get('CLOSE_PRICE') is not None and symbol not in self.official:
                     quote['prevClose'] = item['CLOSE_PRICE']
@@ -998,6 +998,47 @@ class Market:
                 continue
             trade = {'type': 'trade', 'symbol': symbol, 'price': last, 'size': size, 'time': trade_time / 1000}
             broadcast(self.listeners.get(symbol, set()), json.dumps(trade))
+
+    def price_hub(self):
+        """engine/pricehub.py once the engine has loaded it, else None (prices then work as before)."""
+        return sys.modules.get('engine.pricehub')
+
+    def take_price(self, symbol, price, at, source):
+        """True when `price` should be shown: the newest trade from any source that isn't a stray print. Records its
+        source and trade time on the quote. Without the hub (engine still loading, or no trade time) it is taken."""
+        hub = self.price_hub()
+        if not hub or not at:
+            return True
+        if not hub.HUB.offer(symbol, price, at, source):
+            return False
+        quote = self.quotes.get(symbol)
+        if quote is not None:
+            quote['src'] = hub.NAMES.get(source, source)
+            quote['at'] = round(float(at) / (1000 if float(at) > 1e11 else 1), 3)
+        return True
+
+    async def fresh_prices(self):
+        """Every 10 s in market hours: asks backups (Alpaca, then Yahoo) about watched symbols that have gone quiet and
+        shows any newer trade the hub holds (also from option chains). No requests while every symbol is fresh."""
+        while True:
+            await asyncio.sleep(10)
+            hub = self.price_hub()
+            if not hub or not self.engine:
+                continue
+            now_ny = dt.datetime.now(EASTERN)
+            if now_ny.weekday() >= 5 or not (4 <= now_ny.hour < 20):
+                continue
+            symbols = [s for s in self.watched() if SYMBOL_PATTERN.match(s) and not s.startswith(('$', '/'))]
+            try:
+                await hub.backups(self.engine, symbols)
+            except Exception as err:
+                log.debug('Backup prices failed: %s', err)
+            for symbol in symbols:
+                best = hub.HUB.best.get(symbol)
+                quote = self.quotes.get(symbol)
+                if best and quote is not None and best[1] > (quote.get('at') or 0) and best[0] != quote.get('last'):
+                    quote['last'], quote['at'], quote['src'] = best[0], round(best[1], 3), hub.NAMES.get(best[2], best[2])
+                    self.dirty_quotes.add(symbol)
 
     @staticmethod
     def official_quote(item):
@@ -1034,7 +1075,10 @@ class Market:
                     self.official[symbol] = official
                     quote = self.quotes.setdefault(symbol, {'last': None, 'prevClose': None})
                     quote['prevClose'] = official['prevClose']
-                    if quote['last'] is None or symbol not in self.seen:
+                    q = item.get('quote') or {}
+                    traded = q.get('tradeTime') or q.get('quoteTime')
+                    # the newest trade wins: the official quote replaces the stream's price when the stream has stalled
+                    if self.take_price(symbol, official['last'], traded, 'schwab') or quote['last'] is None or symbol not in self.seen:
                         quote['last'] = official['last']
                     self.dirty_quotes.add(symbol)
             self.official_wake.clear()
@@ -1371,9 +1415,9 @@ async def run(client, sec_contact='', open_browser=True, config=None):
     async with server:
         jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market), warm_up(market),
                 open_when_ready(market, open_browser), market_scanner(market), prospect_schedule(market), market.update_loop(),
-                selfcheck_schedule(market), liveflow_schedule(market)]
+                selfcheck_schedule(market), liveflow_schedule(market), market.fresh_prices()]
         if DESKTOP:  # the website's helper runs the scanner, prospecting and updates; this one only answers the app
-            jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market)]
+            jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market), market.fresh_prices()]
         if SCREEN:
             SCREEN.ready(PLATFORM_URL, LOG_PATH, os.environ.get('TP_LAUNCH_WARNING', ''))
             return await until_restart(market, [*jobs, screen_clock()])
