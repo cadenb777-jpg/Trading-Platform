@@ -223,3 +223,106 @@ async def segments(ctx, msg):
         raise EngineError('Give a ticker.')
     period = 'quarter' if msg.get('period') == 'quarter' else 'annual'
     return await latest(ctx, symbol, period)
+
+
+# ---------- segment history and customer concentration (helper 59) ----------
+
+CONCENTRATION = 'ConcentrationRiskPercentage1'
+BENCHMARKS = {'RevenueFromContractWithCustomerMember': 'revenue', 'SalesRevenueNetMember': 'revenue', 'RevenueBenchmarkMember': 'revenue',
+              'AccountsReceivableMember': 'receivables', 'TradeAccountsReceivableMember': 'receivables', 'CostOfGoodsAndServiceBenchmarkMember': 'purchases'}
+HISTORY_FILINGS = 3  # each 10-K carries three years, so three filings give five or more years
+
+
+def history_parts(contexts, facts, labels):
+    """One filing -> {'concept', 'axes': {axis: {end iso: {name: value}}}, 'totals': {end iso: value}} for full years."""
+    concept, totals_by_end = totals(contexts, facts, REVENUE, 'annual')
+    if not concept:
+        return None
+    axes = {}
+    for axis, _ in AXES:
+        for end, members in breakdown(contexts, facts, concept, axis, 'annual').items():
+            axes.setdefault(axis, {})[end.isoformat()] = {member_name(m, labels): v for m, v in members.items()}
+    return {'concept': concept, 'axes': axes, 'totals': {e.isoformat(): v for e, v in totals_by_end.items()}}
+
+
+def merge_history(parts_newest_first):
+    """Several filings' parts -> per axis: years (oldest first) and one series per part name (None where missing).
+    A year reported in several filings is taken from the newest (restated figures win)."""
+    out = []
+    for axis, heading in AXES:
+        by_year = {}
+        for parts in parts_newest_first:
+            for end, members in ((parts or {}).get('axes') or {}).get(axis, {}).items():
+                by_year.setdefault(end, members)
+        if len(by_year) < 2:
+            continue
+        years = sorted(by_year)
+        names = sorted({n for m in by_year.values() for n in m}, key=lambda n: -(by_year[years[-1]].get(n) or 0))
+        out.append({'axis': axis, 'heading': heading, 'years': years,
+                    'series': [{'name': n, 'values': [by_year[y].get(n) for y in years]} for n in names]})
+    return out
+
+
+def concentration(contexts, facts, labels):
+    """Customers (or suppliers) the company names as a big share of revenue, receivables or purchases, newest period."""
+    rows = []
+    for f in facts:
+        if f['concept'] != CONCENTRATION:
+            continue
+        c = contexts.get(f['context'])
+        if not c:
+            continue
+        dims = {_local(a): m for a, m in c['dims'].items()}
+        customer = dims.get('MajorCustomersAxis') or dims.get('ConcentrationRiskByMajorCustomerAxis')
+        if not customer:
+            continue
+        bench = BENCHMARKS.get(_local(dims.get('ConcentrationRiskByBenchmarkAxis', '')), 'other')
+        kind = 'supplier' if 'Supplier' in dims.get('ConcentrationRiskByTypeAxis', '') else 'customer'
+        rows.append({'name': member_name(customer, labels), 'share': f['value'], 'of': bench, 'kind': kind, 'end': c['end'].isoformat(),
+                     'extraDims': len(dims) > 3})
+    if not rows:
+        return []
+    newest = max(r['end'] for r in rows)
+    best = {}
+    for r in rows:
+        if r['end'] != newest or r['extraDims']:
+            continue
+        key = (r['name'], r['of'], r['kind'])
+        best[key] = max(best.get(key, 0), r['share'])
+    return sorted(({'name': n, 'of': o, 'kind': k, 'share': v, 'end': newest} for (n, o, k), v in best.items()), key=lambda r: -r['share'])
+
+
+async def _filing_parts(ctx, cik, f):
+    folder = f'https://www.sec.gov/Archives/edgar/data/{cik}/{f["accession"].replace("-", "")}/'
+
+    async def load():
+        index = (await sec.sec_get(ctx, folder + 'index.json')).json()
+        names = [i.get('name', '') for i in index.get('directory', {}).get('item', [])]
+        instance, label_file = pick_files(names)
+        if not instance:
+            return None
+        contexts, facts = parse_instance((await sec.sec_get(ctx, folder + instance)).text)
+        labels = parse_labels((await sec.sec_get(ctx, folder + label_file)).text) if label_file else {}
+        return {'parts': history_parts(contexts, facts, labels), 'concentration': concentration(contexts, facts, labels)}
+    return await ctx.cached(('seghist', f['accession']), 30 * 86400, load, persist=True)
+
+
+@handler('research.segmenthistory')
+async def segment_history(ctx, msg):
+    symbol = str(msg.get('symbol') or '').strip().upper()
+    if not symbol:
+        raise EngineError('Give a ticker.')
+    co = await sec.company(ctx, symbol)
+    cik = co['cik']
+    filings = sec.recent_filings(await sec.submissions(ctx, cik), forms=('10-K',), limit=HISTORY_FILINGS)
+    if not filings:
+        raise EngineError(f'{symbol} has no 10-K on file with the SEC.')
+    loaded = []
+    for f in filings:  # one at a time: the SEC asks for gentle pacing
+        try:
+            loaded.append(await _filing_parts(ctx, cik, f))
+        except Exception:
+            loaded.append(None)
+    newest = next((x for x in loaded if x), None)
+    return {'symbol': symbol, 'company': co.get('name', symbol), 'history': merge_history([x['parts'] for x in loaded if x]),
+            'concentration': newest['concentration'] if newest else [], 'filings': [{'form': f['form'], 'filed': f['filed'], 'url': sec.filing_url(cik, f['accession'], f['document'])} for f in filings]}

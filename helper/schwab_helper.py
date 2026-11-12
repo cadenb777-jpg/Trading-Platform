@@ -51,7 +51,7 @@ from engine.safexml import fromstring as safe_fromstring  # noqa: E402  (refuses
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 58
+HELPER_VERSION = 59
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -153,7 +153,9 @@ STOPWORDS = set('the and for with from that this will after over into amid says 
 CALENDAR_FEEDS = ['https://nfs.faireconomy.media/ff_calendar_thisweek.json']
 CALENDAR_CACHE_SECONDS = 3600
 # Fed rate decision days (2:00 PM ET). Check https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
-FOMC_DECISIONS = ['2026-01-28', '2026-03-18', '2026-04-29', '2026-06-17', '2026-07-29', '2026-09-16', '2026-10-28', '2026-12-09']
+FOMC_DECISIONS = ['2026-01-28', '2026-03-18', '2026-04-29', '2026-06-17', '2026-07-29', '2026-09-16', '2026-10-28', '2026-12-09',
+                  # 2027: the Fed's tentative schedule (announced Sept 5, 2025)
+                  '2027-01-27', '2027-03-17', '2027-04-28', '2027-06-09', '2027-07-28', '2027-09-15', '2027-10-27', '2027-12-08']
 EASTERN = ZoneInfo('America/New_York')
 STARTED = time.time()
 # Headlines for one ticker, e.g. from your watchlist.

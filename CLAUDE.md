@@ -572,7 +572,16 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per
   column; negated labels flip the sign; cash start/end balances map to the year columns); src/research/asReportedView.ts.
-  Helper 58 (research.asreported {symbol, period, role}). R&D work list:
+  Helper 58 (research.asreported {symbol, period, role}).
+- Edge tools (helper 59, panels in src/edge/, shared shell edgePanel + EDGE_HELPER_VERSION, classes xe-*): macro.fedodds
+  (engine/rates.py: /ZQ futures via Schwab, CME FedWatch tree, FOMC list incl. tentative 2027) and macro.netliquidity
+  (WALCL - WDTGAL - RRPONTSYD, change correlation with CI) on Macro; quant.optedge (engine/optedge.py: gamma flip by
+  re-pricing BS gamma on a +-15% grid, 30d IV vs 20d RV, VIX premium, earnings reactions from 8-K Item 2.02 times,
+  implied move needs the Finnhub key) on Flow → Options; flow.offexchange (FINRA weeklySummary ATS/OTC, anonymous
+  POST) and invest.navpremium (Schwab nAV else Yahoo navPrice) on Flow → Positioning; portfolio.factors
+  (engine/factors.py: Ken French daily FF5 + Mom, OLS Newey-West, PCA hidden bets, Meucci effective bets) on
+  Portfolios after an analysis; research.segmenthistory (last 3 10-Ks merged, ConcentrationRiskPercentage1 customers)
+  on Research. R&D work list:
   docs/research/institutional-edge.md.
 - Scheduled improvement sessions follow docs/improvement/PLAYBOOK.md: propose only (branch + pull request with a
   plain-language report), never merge, never trade, never weaken security; the owner approves every change. Lessons

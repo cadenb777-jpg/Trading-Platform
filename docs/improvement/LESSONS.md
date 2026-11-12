@@ -90,3 +90,9 @@ whenever the owner repeats or adds one.
   (helper 58) · approved (owner asked: "a thing setup for every company that i choose", "it looks like you just did
   apple") · Lesson: say plainly that a feature works for every ticker and show it on a second company; the Apple
   numbers in a test read to the owner as "Apple only".
+- 2026-11-12 · Ten edge tools at once (helper 59): Fed rate odds, net liquidity, gamma flip, implied vs realized
+  volatility with the VIX premium, earnings move vs past reactions, dark-pool share, fund premium to NAV, factor
+  exposures, hidden bets, segment history and biggest customers · approved (owner asked: "do everything that they
+  have") · each checked against a hand-worked or synthetic example; the PCA test exposed that equal-volatility
+  independent holdings have no unique components (documented). Lesson: give every new panel class names of its own
+  (xe-*): the Home card's .edge-body turned the new panels into columns until a browser check caught it.

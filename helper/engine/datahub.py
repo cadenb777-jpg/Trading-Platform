@@ -96,6 +96,7 @@ SOURCES = {s.name: s for s in (
     Source('treasury', 'US Treasury', concurrency=3, about='Yield curve backup, auctions (Fiscal Data).'),
     Source('cftc', 'CFTC', concurrency=3, about='Commitments of Traders (weekly).'),
     Source('finra', 'FINRA', concurrency=4, about='Daily short-sale volume.'),
+    Source('french', 'Ken French Data Library', concurrency=2, about='Daily Fama-French factors (factor exposures).'),
     Source('census', 'Census geocoder', concurrency=1, retries=1, about='Address lookups for prospecting.'),
     Source('news', 'News and calendar feeds', concurrency=6, retries=1, about='Google News and CNBC RSS; Forex Factory calendar.'),
     Source('webull', 'Webull', retries=0, about='Your Webull account (its own gate and limits in webull.py).'),
@@ -109,7 +110,8 @@ HOSTS = {
     'api.nasdaq.com': 'nasdaq', 'data.alpaca.markets': 'alpaca',
     'fred.stlouisfed.org': 'fred', 'api.stlouisfed.org': 'fred',
     'home.treasury.gov': 'treasury', 'api.fiscaldata.treasury.gov': 'treasury',
-    'publicreporting.cftc.gov': 'cftc', 'cdn.finra.org': 'finra',
+    'publicreporting.cftc.gov': 'cftc', 'cdn.finra.org': 'finra', 'api.finra.org': 'finra',
+    'mba.tuck.dartmouth.edu': 'french',
     'geocoding.geo.census.gov': 'census', 'news.google.com': 'news', 'www.cnbc.com': 'news', 'search.cnbc.com': 'news',
     'nfs.faireconomy.media': 'news',
 }

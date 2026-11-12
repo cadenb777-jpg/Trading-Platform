@@ -8,6 +8,8 @@ import { barList, compact, createLineChart, dataTable, money, pageFrame, pct, st
 import { formatPrice, h } from '../ui/dom';
 import { withTableTools } from '../ui/tableTools';
 import { optionsAnalyticsBlock } from '../flow/optionsAnalytics';
+import { optEdgePanel } from '../edge/optEdge';
+import { navPremiumPanel, offExchangePanel } from '../edge/offExchange';
 import { tickerAttr } from '../ui/tickerCard';
 import { cotSummary, openCotOnFutures, type CotSymbolData } from '../futures/cot';
 import { isStockSymbol, linkPanel, markPanel } from '../ui/linkGroups';
@@ -270,6 +272,7 @@ export function createFlowPage() {
           volumeBars(d, nearSpot),
         ),
       ),
+      optEdgePanel(d.symbol),
       h(
         'section',
         { class: 'panel' },
@@ -405,6 +408,7 @@ export function createFlowPage() {
       // COT: one line here; the full table and charts are on Futures
       cotSummary(cot, d.errors.cot),
       h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Daily short-sale volume'), h('span', { class: 'muted small' }, 'FINRA, % of volume')), sv ? shortBox : unavailable('shortVolume')),
+      h('div', { class: 'xe-grid' }, offExchangePanel(d.symbol), navPremiumPanel(d.symbol)),
       h(
         'div',
         { class: 'two-col' },

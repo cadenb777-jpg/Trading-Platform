@@ -3,6 +3,7 @@
  * The owner's real accounts (marked "mine": imported statements, synced Webull accounts) have their home on the
  * Account page; "Analyse in Portfolios" there opens one here, with a note and "Save as a what-if copy".
  */
+import { factorsPanel } from '../edge/factors';
 import { engineRequest } from '../data/schwab';
 import { deleteDoc, listDocs, saveDoc } from '../data/store';
 import { PRIVATE_FUNDS, STRATEGIES, type Strategy } from '../invest/catalog';
@@ -442,6 +443,7 @@ export function createPortfolioPage() {
       const holdings = holdingsPayload(current, priceMap(prices));
       const a = await engineRequest<Analysis>('portfolio.analyze', { holdings, benchmark: current.benchmark, rebalance: current.rebalance, since: current.inception }, 120000);
       renderAnalysis(a);
+      if (holdings.length > 1) results.append(factorsPanel(holdings, current.rebalance));
     } catch (err) {
       results.replaceChildren(h('div', { class: 'ap-error' }, (err as Error).message));
     }

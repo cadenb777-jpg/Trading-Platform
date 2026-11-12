@@ -8,6 +8,8 @@ import { openChartWindow } from '../ui/chartWindow';
 import { openFredWindow } from '../ui/fredWindow';
 import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
 import { asOfStamp } from '../ui/dataHealth';
+import { fedOddsPanel } from '../edge/fedOdds';
+import { netLiquidityPanel } from '../edge/netLiquidity';
 import { createWorldTab } from './macroWorld';
 
 interface Series {
@@ -201,6 +203,7 @@ export function createMacroPage() {
     frame.body.replaceChildren(
       ai.panel,
       curvePanel,
+      h('div', { class: 'xe-grid' }, fedOddsPanel(), netLiquidityPanel()),
       ...groups.map((g) =>
         h(
           'section',

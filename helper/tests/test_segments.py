@@ -120,3 +120,27 @@ class AppleFY2025(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class HistoryAndConcentration(unittest.TestCase):
+    def test_merge_newest_filing_wins_and_years_ordered(self):
+        new = {'axes': {'ProductOrServiceAxis': {'2025-09-27': {'iPhone': 209586, 'Mac': 33708}, '2024-09-28': {'iPhone': 201183, 'Mac': 29984}}}}
+        old = {'axes': {'ProductOrServiceAxis': {'2024-09-28': {'iPhone': 1, 'Mac': 1}, '2023-09-30': {'iPhone': 200583, 'Mac': 29357}}}}
+        h = sg.merge_history([new, old])
+        self.assertEqual(h[0]['years'], ['2023-09-30', '2024-09-28', '2025-09-27'])
+        iphone = next(s for s in h[0]['series'] if s['name'] == 'iPhone')
+        self.assertEqual(iphone['values'], [200583, 201183, 209586])
+        self.assertEqual(h[0]['series'][0]['name'], 'iPhone')  # biggest in the newest year first
+
+    def test_concentration_from_dimensional_facts(self):
+        import datetime as dt
+        d = dt.date
+        contexts = {
+            'a': {'start': d(2024, 1, 1), 'end': d(2024, 12, 31), 'days': 365, 'dims': {'srt:MajorCustomersAxis': 'x:CustomerAMember', 'us-gaap:ConcentrationRiskByBenchmarkAxis': 'us-gaap:RevenueFromContractWithCustomerMember', 'us-gaap:ConcentrationRiskByTypeAxis': 'us-gaap:CustomerConcentrationRiskMember'}},
+            'b': {'start': d(2023, 1, 1), 'end': d(2023, 12, 31), 'days': 365, 'dims': {'srt:MajorCustomersAxis': 'x:CustomerAMember', 'us-gaap:ConcentrationRiskByBenchmarkAxis': 'us-gaap:RevenueFromContractWithCustomerMember'}},
+            'c': {'start': None, 'end': d(2024, 12, 31), 'days': 0, 'dims': {'srt:MajorCustomersAxis': 'x:CustomerBMember', 'us-gaap:ConcentrationRiskByBenchmarkAxis': 'us-gaap:AccountsReceivableMember'}},
+        }
+        facts = [{'concept': 'ConcentrationRiskPercentage1', 'context': 'a', 'value': 0.19}, {'concept': 'ConcentrationRiskPercentage1', 'context': 'b', 'value': 0.12},
+                 {'concept': 'ConcentrationRiskPercentage1', 'context': 'c', 'value': 0.11}]
+        rows = sg.concentration(contexts, facts, {'x:CustomerAMember': 'Customer A [Member]'})
+        self.assertEqual([(r['name'], r['of'], r['share']) for r in rows], [('Customer A', 'revenue', 0.19), ('Customer B', 'receivables', 0.11)])

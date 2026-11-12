@@ -12,7 +12,7 @@ import threading
 
 from .core import HANDLERS, EngineContext, EngineError, background, handler
 
-MODULES = ('diagnostics', 'datacheck', 'store', 'settings', 'alpaca', 'sec', 'flow', 'research', 'macro', 'quant', 'positioning', 'smartmoney', 'invest', 'worldmacro', 'predictions', 'finnhub', 'connections', 'futures_market', 'carry', 'boxrates', 'alts', 'crosscheck', 'dividends', 'webull', 'risk', 'tearsheet', 'options_math', 'comps', 'tax', 'scanner', 'alerts', 'prospect', 'journal', 'gametheory', 'selfcheck', 'segments', 'asreported', 'ai')
+MODULES = ('diagnostics', 'datacheck', 'store', 'settings', 'alpaca', 'sec', 'flow', 'research', 'macro', 'quant', 'positioning', 'smartmoney', 'invest', 'worldmacro', 'predictions', 'finnhub', 'connections', 'futures_market', 'carry', 'boxrates', 'alts', 'crosscheck', 'dividends', 'webull', 'risk', 'tearsheet', 'options_math', 'comps', 'tax', 'scanner', 'alerts', 'prospect', 'journal', 'gametheory', 'selfcheck', 'segments', 'asreported', 'rates', 'optedge', 'factors', 'offexchange', 'ai')
 #: module name -> why it couldn't load
 LOAD_ERRORS = {}
 #: set once every module has been imported (or failed to)

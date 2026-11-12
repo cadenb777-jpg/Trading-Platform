@@ -11092,3 +11092,49 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .ar-arrow { color: var(--faint); }
 .ar-table tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .ar-source { margin: var(--sp-2) 0 0; }
+/* Edge panels (src/edge/) */
+.xe-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: var(--sp-4); }
+.xe-grid > .panel { min-width: 0; }
+.xe-body { display: grid; gap: var(--sp-3); min-width: 0; }
+.xe-body p { margin: 0; }
+.xe-source { margin-top: var(--sp-1); }
+.xe-chart { min-height: 200px; }
+.fed-rows { display: grid; font-size: var(--fs-sm); }
+.fed-row { display: grid; grid-template-columns: minmax(96px, 1fr) minmax(120px, 2.2fr) minmax(86px, auto) minmax(70px, auto); gap: var(--sp-3); align-items: center; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.fed-row:last-child { border-bottom: 0; }
+.fed-headrow { color: var(--label); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; }
+.fed-row .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-strong); }
+.fed-headrow .num { color: var(--label); }
+.fed-bar { display: flex; height: 16px; border-radius: 4px; overflow: hidden; background: color-mix(in srgb, var(--line) 60%, transparent); }
+.fed-bar i { display: flex; align-items: center; justify-content: center; font-style: normal; font-size: 10px; font-weight: 700; color: var(--on-fill); min-width: 2px; }
+.fed-bar .cut { background: var(--viz-1); }
+.fed-bar .hold { background: color-mix(in srgb, var(--muted) 55%, transparent); color: var(--text-strong); }
+.fed-bar .hike { background: var(--viz-2); }
+@media (max-width: 560px) { .fed-row { grid-template-columns: 1fr auto auto; } .fed-row > :nth-child(2) { grid-column: 1 / -1; order: 9; } }
+.xe-sub { margin: var(--sp-2) 0 0; color: var(--label); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; }
+.gex-fig { margin: 0; }
+.gex-curve { width: 100%; height: 120px; display: block; }
+.gex-curve .zero { stroke: var(--line); stroke-width: 1; }
+.gex-curve .curve { fill: none; stroke: var(--viz-1); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.gex-curve .spot { stroke: var(--text-strong); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.gex-curve .flip { stroke: var(--viz-2); stroke-width: 1.5; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.earn-moves { display: flex; flex-wrap: wrap; gap: 6px; }
+.earn-move { font-size: var(--fs-xs); font-variant-numeric: tabular-nums; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--line); }
+.earn-move.up { color: var(--up-text); }
+.earn-move.down { color: var(--down-text); }
+.fx-rows { display: grid; font-size: var(--fs-sm); }
+.fx-row { display: grid; grid-template-columns: minmax(150px, 1.4fr) minmax(120px, 2fr) 48px minmax(120px, 1.4fr); gap: var(--sp-3); align-items: center; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.fx-row:last-child { border-bottom: 0; }
+.fx-track { position: relative; height: 16px; }
+.fx-track i { position: absolute; top: 50%; transform: translateY(-50%); }
+.fx-zero { left: 50%; width: 1px; height: 16px; background: var(--muted); }
+.fx-range { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--viz-1) 45%, transparent); }
+.fx-dot { width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--viz-1); border: 1px solid var(--text-strong); }
+.fx-beta { text-align: right; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.fx-comps { display: grid; gap: var(--sp-2); }
+.fx-comp { display: grid; gap: 2px; font-size: var(--fs-sm); }
+@media (max-width: 640px) { .fx-row { grid-template-columns: 1fr 48px; } .fx-track { grid-column: 1 / -1; order: 9; } .fx-read { grid-column: 1 / -1; } }
+.sh-table caption { text-align: left; padding: 0 0 var(--sp-1); }
+.ar-table td.num.up { color: var(--up-text); }
+.ar-table td.num.down { color: var(--down-text); }
+.conc-list { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; font-size: var(--fs-sm); }

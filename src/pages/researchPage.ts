@@ -3,6 +3,7 @@ import { toneVsPrev } from '../research/tone';
 import { yearBars } from '../research/yearBars';
 import { segmentsPanel } from '../research/segmentsView';
 import { asReportedPanel } from '../research/asReportedView';
+import { segmentHistoryPanel } from '../edge/segmentHistory';
 import { openStockNews, stockNewsCard } from '../ui/stockNews';
 import { runId } from '../ui/command';
 import { cotSummary } from '../futures/cot';
@@ -220,6 +221,7 @@ export function createResearchPage() {
       ]),
       // what the company actually sells and where (its 10-K's product, segment and region breakdowns)
       segmentsPanel(d.symbol),
+      segmentHistoryPanel(d.symbol),
       // futures positioning for the company's market: one line, the full COT table is on Futures
       cotSummary(d.symbol, undefined, { quiet: true }),
       stockNewsCard(d.symbol, 5),
