@@ -575,7 +575,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Helper 58 (research.asreported {symbol, period, role}).
 - Edge tools (helper 59, panels in src/edge/, shared shell edgePanel + EDGE_HELPER_VERSION, classes xe-*): macro.fedodds
   (engine/rates.py: /ZQ futures via Schwab, CME FedWatch tree, FOMC list incl. tentative 2027) and macro.netliquidity
-  (WALCL - WDTGAL - RRPONTSYD, change correlation with CI) on Macro; quant.optedge (engine/optedge.py: gamma flip by
+  (WALCL - WDTGAL - RRPONTSYD, change correlation with CI) on Macro; flow.offexchange also has `days` (helper 60: FINRA
+  daily CNMSshvol TotalVolume = all off-exchange volume, over Schwab daily volume, out the same evening); quant.optedge (engine/optedge.py: gamma flip by
   re-pricing BS gamma on a +-15% grid, 30d IV vs 20d RV, VIX premium, earnings reactions from 8-K Item 2.02 times,
   implied move needs the Finnhub key) on Flow → Options; flow.offexchange (FINRA weeklySummary ATS/OTC, anonymous
   POST) and invest.navpremium (Schwab nAV else Yahoo navPrice) on Flow → Positioning; portfolio.factors

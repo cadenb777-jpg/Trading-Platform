@@ -15,12 +15,21 @@ export interface OffWeek {
   atsShare: number;
   offShare: number;
 }
+export interface OffDay {
+  date: string;
+  offExchange: number;
+  volume: number;
+  share: number;
+}
 export interface OffExchange {
   symbol: string;
   weeks: OffWeek[];
-  latest: OffWeek;
-  avgAtsShare: number;
-  avgOffShare: number;
+  days: OffDay[];
+  latest?: OffWeek;
+  avgAtsShare?: number;
+  avgOffShare?: number;
+  dailyAvg?: number;
+  weeklyError?: string;
   source: string;
 }
 export interface NavPremium {
@@ -35,8 +44,18 @@ export interface NavPremium {
   note: string;
 }
 
+/** Plain reading of the latest day against its own average (pure, tested). */
+export function dailyRead(d: OffExchange): string {
+  const last = d.days[d.days.length - 1];
+  if (!last || d.dailyAvg == null) return '';
+  const diff = last.share - d.dailyAvg;
+  const move = Math.abs(diff) < 0.02 ? 'about its usual level' : `${(Math.abs(diff) * 100).toFixed(1)} points ${diff > 0 ? 'above' : 'below'} its ${d.days.length}-day average`;
+  return `${last.date}: ${pctU(last.share, 1)} of the day’s shares traded off-exchange, ${move}.`;
+}
+
 /** Plain reading of the latest week against its own average (pure, tested). */
 export function offRead(d: OffExchange): string {
+  if (!d.latest || d.avgAtsShare == null) return d.weeklyError ? `Weekly dark-pool figures unavailable: ${d.weeklyError}` : '';
   const diff = d.latest.atsShare - d.avgAtsShare;
   const move = Math.abs(diff) < 0.01 ? 'about its usual level' : diff > 0 ? `${(diff * 100).toFixed(1)} points above its ${d.weeks.length}-week average` : `${(-diff * 100).toFixed(1)} points below its ${d.weeks.length}-week average`;
   return `Week of ${d.latest.week}: ${pctU(d.latest.atsShare, 1)} of shares traded in dark pools, ${move}. It shows where trading happened, not whether it was buying or selling.`;
@@ -54,25 +73,28 @@ export function offExchangePanel(symbol: string): HTMLElement {
   return edgePanel<OffExchange>({
     title: 'Dark-pool share',
     term: 'darkPool',
-    sub: 'Off-exchange share of weekly volume (FINRA)',
+    sub: 'Off-exchange share: daily (same evening) and weekly (FINRA)',
     request: 'flow.offexchange',
     params: { symbol },
     timeout: 90000,
     render(d, body) {
+      d.days ??= []; // helper 59 sent weekly figures only
       const box = h('div', { class: 'xe-chart' });
+      const day = d.days[d.days.length - 1];
       body.append(
         statCards([
-          { label: 'Dark pools (ATS)', value: pctU(d.latest.atsShare, 1), hint: `Week of ${d.latest.week} · ${d.weeks.length}-week average ${pctU(d.avgAtsShare, 1)}` },
-          { label: 'All off-exchange', value: pctU(d.latest.offShare, 1), hint: `Dark pools plus internalisers · average ${pctU(d.avgOffShare, 1)}` },
+          { label: 'Off-exchange, latest day', value: day ? pctU(day.share, 1) : '—', hint: day ? `${day.date} · ${d.days.length}-day average ${pctU(d.dailyAvg ?? null, 1)} · out the same evening` : 'FINRA daily file not available' },
+          { label: 'Dark pools (ATS), weekly', value: d.latest ? pctU(d.latest.atsShare, 1) : '—', hint: d.latest ? `Week of ${d.latest.week} · average ${pctU(d.avgAtsShare ?? null, 1)} · 2–4 weeks late` : 'Weekly figures unavailable' },
         ]),
+        h('p', { class: 'small' }, dailyRead(d)),
         h('p', { class: 'small' }, offRead(d)),
         box,
-        sourceLine(`${d.source}. FINRA publishes 2–4 weeks late, so the newest week is that old.`),
+        sourceLine(`${d.source}. Daily = every off-exchange trade (dark pools plus wholesalers filling retail orders); weekly splits out the dark pools but FINRA publishes it 2–4 weeks late. Neither says buying or selling.`),
       );
       requestAnimationFrame(() =>
         createLineChart(box, { height: 180, title: `${d.symbol} off-exchange share`, format: (v) => `${v.toFixed(0)}%` }).set([
-          { name: 'Dark pools', color: THEME.viz1, data: d.weeks.map((w) => ({ time: w.week, value: w.atsShare * 100 })) },
-          { name: 'All off-exchange', color: THEME.viz2, width: 1, data: d.weeks.map((w) => ({ time: w.week, value: w.offShare * 100 })) },
+          ...(d.days.length ? [{ name: 'Off-exchange (daily)', color: THEME.viz2, data: d.days.map((x) => ({ time: x.date, value: x.share * 100 })) }] : []),
+          ...(d.weeks.length ? [{ name: 'Dark pools (weekly)', color: THEME.viz1, data: d.weeks.map((w) => ({ time: w.week, value: w.atsShare * 100 })) }] : []),
         ]),
       );
     },

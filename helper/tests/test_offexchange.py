@@ -28,6 +28,13 @@ class OffExchange(unittest.TestCase):
         self.assertAlmostEqual(rows[0]['offShare'], 0.40)
         self.assertEqual(ox.shares_of_volume({'2026-11-02': 5}, {}, bars), [])  # no volume that week: left out
 
+    def test_daily_shares(self):
+        bars = [(dt.date(2026, 11, 10), 1000), (dt.date(2026, 11, 11), 2000)]
+        rows = [{'date': '2026-11-10', 'total': 450}, {'date': '2026-11-11', 'total': 5000}, {'date': '2026-11-12', 'total': 10}]
+        out = ox.daily_shares(rows, bars)
+        self.assertEqual(len(out), 1)  # 11-11 doesn't fit (more off-exchange than total), 11-12 has no bar yet
+        self.assertAlmostEqual(out[0]['share'], 0.45)
+
     def test_premium_and_yahoo_nav(self):
         self.assertAlmostEqual(ox.premium(9.0, 10.0), -0.10)
         self.assertIsNone(ox.premium(None, 10))

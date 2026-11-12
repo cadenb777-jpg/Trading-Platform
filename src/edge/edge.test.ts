@@ -63,15 +63,22 @@ describe('factor readings', () => {
   });
 });
 
-import { offRead, premiumRead, type OffExchange } from './offExchange';
+import { dailyRead, offRead, premiumRead, type OffExchange } from './offExchange';
 import { cagr } from './segmentHistory';
 
 describe('off-exchange and fund value', () => {
   const w = { week: '2026-10-19', ats: 150, otc: 250, total: 1000, atsShare: 0.15, offShare: 0.4 };
   it('compares the latest week with its average', () => {
-    const d: OffExchange = { symbol: 'X', weeks: [w, w], latest: w, avgAtsShare: 0.12, avgOffShare: 0.4, source: '' };
+    const d: OffExchange = { symbol: 'X', weeks: [w, w], days: [], latest: w, avgAtsShare: 0.12, avgOffShare: 0.4, source: '' };
     expect(offRead(d)).toContain('3.0 points above its 2-week average');
     expect(offRead({ ...d, avgAtsShare: 0.149 })).toContain('about its usual level');
+    expect(offRead({ ...d, latest: undefined, weeklyError: 'FINRA asked for an API login for this data.' })).toContain('unavailable');
+  });
+  it('reads the latest day', () => {
+    const days = [{ date: '2026-11-11', offExchange: 1, volume: 2, share: 0.4 }, { date: '2026-11-12', offExchange: 1, volume: 2, share: 0.47 }];
+    const d: OffExchange = { symbol: 'X', weeks: [], days, dailyAvg: 0.435, source: '' };
+    expect(dailyRead(d)).toBe('2026-11-12: 47.0% of the day’s shares traded off-exchange, 3.5 points above its 2-day average.');
+    expect(dailyRead({ ...d, days: [] })).toBe('');
   });
   it('reads a premium or discount', () => {
     expect(premiumRead({ symbol: 'SPY', assetType: 'ETF', nav: 500, premium: 0.0005, note: '' })).toContain('in line with its holdings');

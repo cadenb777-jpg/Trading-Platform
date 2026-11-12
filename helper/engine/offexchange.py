@@ -6,6 +6,9 @@ Where a stock really trades, and whether a fund trades at its value.
    (internalisers, non-ATS OTC) for the symbol, against the total consolidated volume of the same week (Schwab daily
    bars). FINRA publishes with a delay (2 weeks for the biggest stocks, 4 for the rest), so the latest week shown is
    that old. Rising dark-pool share can mean large holders working orders quietly; it does not say buy or sell.
+   Daily and same-evening: FINRA's daily short-sale volume files (CNMSshvol, already used for short volume) carry each
+   stock's total volume reported to FINRA's trade reporting facilities, i.e. all off-exchange trades (dark pools plus
+   wholesalers and other internalisers). That over the day's consolidated volume is the daily off-exchange share.
 2. A fund's price against its net asset value (premium/discount): the last close against the NAV it published for the
    same day (Schwab quote nAV, else Yahoo's navPrice). For ETFs arbitrage keeps it small; closed-end funds can sit at
    wide discounts for years (a classic relative-value trade, and also a trap: the discount can widen).
@@ -16,7 +19,7 @@ import asyncio
 import datetime as dt
 from zoneinfo import ZoneInfo
 
-from . import crosscheck, datahub
+from . import crosscheck, datahub, positioning
 from .core import EngineError, handler
 
 FINRA = 'https://api.finra.org/data/group/otcMarket/name/weeklySummary'
@@ -69,6 +72,17 @@ def yahoo_nav(data):
     return float(value) if isinstance(value, (int, float)) and value > 0 else None
 
 
+def daily_shares(finra_rows, bars):
+    """[{date, total (FINRA off-exchange volume)}] and [(date, consolidated volume)] -> daily off-exchange share."""
+    volume = {d.isoformat(): v for d, v in bars}
+    out = []
+    for r in finra_rows:
+        total = volume.get(r['date'])
+        if total and r.get('total') and r['total'] <= total * 1.05:  # a day whose volumes don't fit is left out
+            out.append({'date': r['date'], 'offExchange': r['total'], 'volume': total, 'share': min(1.0, r['total'] / total)})
+    return out
+
+
 def premium(price, nav):
     return price / nav - 1 if price and nav else None
 
@@ -92,17 +106,33 @@ async def offexchange(ctx, msg):
         raise EngineError('Enter a symbol')
 
     async def load():
-        ats, otc, bars = await asyncio.gather(_finra(ctx, symbol, ATS), _finra(ctx, symbol, OTC), ctx.daily_bars(symbol, 1))
+        ats, otc, bars = await asyncio.gather(_finra(ctx, symbol, ATS), _finra(ctx, symbol, OTC), ctx.daily_bars(symbol, 1), return_exceptions=True)
+        if isinstance(bars, Exception):
+            raise bars
         daily = [(dt.datetime.fromtimestamp(b['time'], NY).date(), b.get('volume') or 0) for b in bars]
-        rows = shares_of_volume(weekly_shares(ats), weekly_shares(otc), daily)
-        if not rows:
-            raise EngineError(f'FINRA has no off-exchange weeks for {symbol}.')
-        rows = rows[-WEEKS:]
-        avg = sum(r['atsShare'] for r in rows) / len(rows)
-        return {'symbol': symbol, 'weeks': rows, 'latest': rows[-1], 'avgAtsShare': avg,
-                'avgOffShare': sum(r['offShare'] for r in rows) / len(rows),
-                'source': 'FINRA OTC Transparency (ATS and non-ATS weekly), total volume from Schwab'}
-    return await ctx.cached(('offexchange', symbol), 12 * 3600, load, persist=True, stale_ok=True)
+        rows = [] if isinstance(ats, Exception) or isinstance(otc, Exception) else shares_of_volume(weekly_shares(ats), weekly_shares(otc), daily)[-WEEKS:]
+        weekly_error = str(ats if isinstance(ats, Exception) else otc) if isinstance(ats, Exception) or isinstance(otc, Exception) else ''
+        return {'weeks': rows, 'daily': [(d.isoformat(), v) for d, v in daily], 'weeklyError': weekly_error}
+
+    weekly = await ctx.cached(('offexchange2', symbol), 12 * 3600, load, persist=True, stale_ok=True)
+    # the daily files come out each evening: asked for every time (each file is cached by flow.short_volume's loader)
+    try:
+        short = await positioning.short_volume(ctx, {'symbol': symbol, 'days': 40})
+        bars = [(dt.date.fromisoformat(d), v) for d, v in weekly['daily']]
+        days = daily_shares(short['rows'], bars)
+    except Exception:
+        days = []
+    rows = weekly['weeks']
+    if not rows and not days:
+        raise EngineError(weekly['weeklyError'] or f'FINRA has no off-exchange data for {symbol}.')
+    out = {'symbol': symbol, 'weeks': rows, 'days': days, 'weeklyError': weekly['weeklyError'],
+           'source': 'FINRA OTC Transparency (ATS and non-ATS weekly) and FINRA daily trade-reporting volume; total volume from Schwab'}
+    if rows:
+        out.update({'latest': rows[-1], 'avgAtsShare': sum(r['atsShare'] for r in rows) / len(rows),
+                    'avgOffShare': sum(r['offShare'] for r in rows) / len(rows)})
+    if days:
+        out['dailyAvg'] = sum(d['share'] for d in days) / len(days)
+    return out
 
 
 @handler('invest.navpremium')
