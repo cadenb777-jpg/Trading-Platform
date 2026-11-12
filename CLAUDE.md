@@ -567,7 +567,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 - helper/engine/selfcheck.py runs every 30 minutes (security, data, accuracy, speed), keeps ~/.trading-platform/
   selfcheck.json, shows in the status bar (src/ui/selfCheck.ts, helper v53+) and goes into Send diagnostics.
 - Research → Where the money comes from: helper/engine/segments.py reads 10-K XBRL dimensional facts (product,
-  segment, region, segment margin) + the label file; src/research/segmentsView.ts. R&D work list:
+  segment, region, segment margin) + the label file; src/research/segmentsView.ts.
+- Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
+  asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
+  instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per
+  column; negated labels flip the sign; cash start/end balances map to the year columns); src/research/asReportedView.ts.
+  Helper 58 (research.asreported {symbol, period, role}). R&D work list:
   docs/research/institutional-edge.md.
 - Scheduled improvement sessions follow docs/improvement/PLAYBOOK.md: propose only (branch + pull request with a
   plain-language report), never merge, never trade, never weaken security; the owner approves every change. Lessons

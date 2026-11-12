@@ -11075,3 +11075,20 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .seg-num { text-align: right; }
 .seg-note, .seg-source { margin: var(--sp-1) 0 0; }
 @media (max-width: 640px) { .seg-row { grid-template-columns: 1fr auto auto; } .seg-bar { grid-column: 1 / -1; order: 9; } }
+/* Research → Financials → As reported (src/research/asReportedView.ts) */
+.ar-panel .panel-head { flex-wrap: wrap; gap: var(--sp-2); }
+.ar-pick { max-width: min(100%, 360px); background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; font-size: var(--fs-sm); }
+.ar-loading { opacity: 0.55; transition: opacity 0.15s; }
+.ar-scroll { overflow-x: auto; max-width: 100%; }
+.ar-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.ar-table th, .ar-table td { padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.ar-table thead th { color: var(--label); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-align: right; position: sticky; top: 0; background: var(--panel); }
+.ar-table tbody th { text-align: left; font-weight: 400; color: var(--text); white-space: normal; min-width: 220px; }
+.ar-table td.num { text-align: right; color: var(--text-strong); }
+.ar-table tr.ar-heading th { color: var(--label); font-weight: 600; padding-top: 10px; }
+.ar-table tr.ar-total th, .ar-table tr.ar-total td { font-weight: 700; border-top: 1px solid var(--muted); }
+.ar-table tr.ar-member th { color: var(--muted); }
+.ar-table tr.ar-member td.num { color: var(--muted); }
+.ar-arrow { color: var(--faint); }
+.ar-table tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.ar-source { margin: var(--sp-2) 0 0; }

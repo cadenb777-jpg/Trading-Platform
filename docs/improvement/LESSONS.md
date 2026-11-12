@@ -85,4 +85,8 @@ whenever the owner repeats or adds one.
   approved (owner asked) · the SEC company-facts API omits dimensional data, so "product revenue" was all the platform
   had; tested on Apple FY2025 figures (parts add up to $416.161B). Lesson: the owner's example was one of many: research
   and build the whole class (docs/research/institutional-edge.md).
-
+- 2026-11-12 · Research → Financials → As reported, for any ticker: each statement and every note's detail table
+  in the company's own lines, order and words, with the parts it reports under a line (net sales → products / services)
+  (helper 58) · approved (owner asked: "a thing setup for every company that i choose", "it looks like you just did
+  apple") · Lesson: say plainly that a feature works for every ticker and show it on a second company; the Apple
+  numbers in a test read to the owner as "Apple only".

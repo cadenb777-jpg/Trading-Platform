@@ -2,6 +2,7 @@ import { toneVsPrev } from '../research/tone';
 /** Research: a company's financial statements, ratios, valuation (DCF) and SEC filings. */
 import { yearBars } from '../research/yearBars';
 import { segmentsPanel } from '../research/segmentsView';
+import { asReportedPanel } from '../research/asReportedView';
 import { openStockNews, stockNewsCard } from '../ui/stockNews';
 import { runId } from '../ui/command';
 import { cotSummary } from '../futures/cot';
@@ -96,6 +97,7 @@ export function createResearchPage() {
   let tab: Tab = 'overview';
   let data: CompanyData | null = null;
   let period: 'annual' | 'quarterly' = 'annual';
+  let layout: 'reported' | 'standard' = 'reported';
   let riskFree = 0.042;
   /** Which valuation tool is open beside the DCF, and the DCF's last value per share (for the football field). */
   let tool: 'dcf' | 'comps' | 'lbo' | 'merger' = 'dcf';
@@ -266,8 +268,23 @@ export function createResearchPage() {
           (i) => (['netIncome', 'freeCashFlow', 'equity'].includes(keys.filter((k) => s.values[k]?.some((v) => v != null))[i]) ? 'total' : ''),
         ),
       );
+    const layoutToggle = h(
+      'div',
+      { class: 'segmented', role: 'group', 'aria-label': 'Statement layout' },
+      ...(
+        [
+          ['reported', 'As reported'],
+          ['standard', 'Standard'],
+        ] as const
+      ).map(([l, label]) => h('button', { class: l === layout ? 'active' : '', 'aria-pressed': String(l === layout), onclick: () => ((layout = l), render()) }, label)),
+    );
+    if (layout === 'reported')
+      return [
+        h('div', { class: 'ap-controls' }, layoutToggle, toggle, h('span', { class: 'muted small' }, 'Every line the company reports, in its own order, with its parts and every note.')),
+        asReportedPanel(d.symbol, quarterly),
+      ];
     return [
-      h('div', { class: 'ap-controls' }, toggle, h('span', { class: 'muted small' }, quarterly ? 'Fourth quarters are worked out as the full year minus the first three.' : 'From each 10-K annual report.')),
+      h('div', { class: 'ap-controls' }, layoutToggle, toggle, h('span', { class: 'muted small' }, quarterly ? 'Fourth quarters are worked out as the full year minus the first three.' : 'Same lines for every company, 5 years side by side.')),
       table('Income statement', d.sections.income),
       table('Balance sheet', d.sections.balance),
       table('Cash flow', d.sections.cashflow),

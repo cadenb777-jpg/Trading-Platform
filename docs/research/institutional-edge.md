@@ -15,6 +15,11 @@ Columns: **what institutions use** · **free data** · **maths (primary source)*
   us-gaap:StatementBusinessSegmentsAxis, srt:StatementGeographicalAxis; the SEC company-facts API omits them).
   Shown: ranked bars with share, growth and margin per part. Proof: parts add up to reported total; tested on Apple
   FY2025 10-K figures. **Done (helper 57, Research → Where the money comes from).**
+- **Statements as reported, line by line, with every note's detail table** (Bloomberg's "as reported" financials).
+  Free: the filing's own presentation linkbase, schema role titles and label linkbase with the XBRL instance. Shown:
+  the company's own layout, totals bold, the parts it reports under a line indented (↳), a picker for every note.
+  Proof: rows follow the filing's order; drill-down parts add up; negated labels and cash start/end balances tested.
+  **Done (helper 58, Research → Financials → As reported).**
 - **Customer and supplier concentration** (Bloomberg SPLC). Free: XBRL `ConcentrationRiskPercentage1` with
   `srt:MajorCustomersAxis` / `us-gaap:ConcentrationRiskByBenchmarkAxis`, plus 10-K text ("Customer A accounted for
   ..."). Shown: a relationship list with % of revenue and the counterpart's own page. Proof: matches the filing note.
