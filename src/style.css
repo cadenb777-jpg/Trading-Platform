@@ -11138,3 +11138,34 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .ar-table td.num.up { color: var(--up-text); }
 .ar-table td.num.down { color: var(--down-text); }
 .conc-list { margin: 0; padding-left: 1.1rem; display: grid; gap: 4px; font-size: var(--fs-sm); }
+/* Macro page (src/pages/macroPage.ts) */
+.mm-read-grid { display: grid; grid-template-columns: 180px 1fr; gap: var(--sp-4); align-items: center; }
+.mm-quad { position: relative; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 8px; background:
+  linear-gradient(var(--line), var(--line)) 50% 0 / 1px 100% no-repeat, linear-gradient(var(--line), var(--line)) 0 50% / 100% 1px no-repeat; }
+.mm-quad .q { position: absolute; font-size: var(--fs-xs); color: var(--muted); }
+.mm-quad .tl { top: 6px; left: 8px; } .mm-quad .tr { top: 6px; right: 8px; } .mm-quad .bl { bottom: 6px; left: 8px; } .mm-quad .br { bottom: 6px; right: 8px; }
+.mm-quad .axis { position: absolute; font-size: 10px; color: var(--faint); letter-spacing: 0.05em; }
+.mm-quad .axis.x { bottom: -16px; right: 0; } .mm-quad .axis.y { top: -16px; left: 0; }
+.mm-quad .dot { position: absolute; width: 14px; height: 14px; margin: 0 0 -7px -7px; border-radius: 50%; background: var(--label); box-shadow: 0 0 0 4px color-mix(in srgb, var(--label) 25%, transparent); }
+.mm-read-text p { margin: 4px 0; }
+.mm-regime { font-size: 1.35rem; font-weight: 700; color: var(--text-strong); }
+.mm-votes ul { margin: 4px 0; padding-left: 1.1rem; }
+.mm-keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--sp-2); margin-top: var(--sp-4); }
+.mm-key { display: grid; gap: 2px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
+.mm-key-label { color: var(--label); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.mm-key-value { color: var(--text-strong); font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mm-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.mm-table th, .mm-table td { padding: 5px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.mm-table thead th { color: var(--label); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; }
+.mm-table .num { text-align: right; }
+.mm-table tbody th { font-weight: 400; color: var(--text); white-space: normal; min-width: 180px; }
+.mm-table .mm-val { color: var(--text-strong); font-weight: 600; }
+.mm-table tr.mm-group th { color: var(--label); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding-top: 12px; border-bottom-color: var(--border); }
+.mm-table tbody tr.clickable-row { cursor: pointer; }
+.mm-table tbody tr.clickable-row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.mm-spark { width: 120px; height: 28px; display: block; }
+.mm-spark polyline { fill: none; stroke: var(--viz-1); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.mm-rank { display: inline-flex; align-items: center; gap: 6px; }
+.mm-rank-bar { position: relative; width: 70px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--line) 80%, transparent); }
+.mm-rank-bar i { position: absolute; top: -3px; width: 4px; height: 10px; margin-left: -2px; border-radius: 2px; background: var(--label); }
+@media (max-width: 640px) { .mm-read-grid { grid-template-columns: 1fr; } .mm-quad { max-width: 180px; margin-top: 16px; } }

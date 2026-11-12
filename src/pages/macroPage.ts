@@ -1,15 +1,18 @@
-/** Macro: the US economy at a glance (rates, inflation, jobs, growth, markets) and the Treasury yield curve, plus a
- * World tab (macroWorld.ts: countries by region, US and euro-area detail from free official sources). */
+/** Macro: the US economy, laid out the way macro desks read it: today's regime (growth and inflation, each speeding up or
+ * slowing), the key numbers, Fed rate odds and net liquidity, the Treasury curve, then one compact monitor of every
+ * series (latest, 1-month and 1-year change, 2-year trend, where it sits in its own history). World tab: macroWorld.ts. */
 import { insightButton } from '../ai/insight';
 import { clearEngineCache, engineRequest } from '../data/schwab';
-import { createLineChart, pageFrame } from '../ui/charts';
+import { pageFrame } from '../ui/charts';
 import { activatable, h } from '../ui/dom';
 import { openChartWindow } from '../ui/chartWindow';
 import { openFredWindow } from '../ui/fredWindow';
 import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
 import { asOfStamp } from '../ui/dataHealth';
+import { infoTip } from '../ui/glossary';
 import { fedOddsPanel } from '../edge/fedOdds';
 import { netLiquidityPanel } from '../edge/netLiquidity';
+import { percentileNow, regime, sparkPoints, valueAgo, type Point, type RegimeInput } from '../macro/monitor';
 import { createWorldTab } from './macroWorld';
 
 interface Series {
@@ -23,12 +26,12 @@ interface Series {
   previous: number | null;
   monthAgo: number | null;
   yearAgo: number | null;
-  data: { time: string; value: number }[];
+  data: Point[];
 }
 
-
-type Range = '1y' | '5y' | 'max';
-const RANGE_DAYS: Record<Range, number> = { '1y': 366, '5y': 5 * 366, max: 1e6 };
+/** The key numbers at the top. */
+const KEY = ['DFF', 'DGS10', 'T10Y2Y', 'CPIAUCSL', 'UNRATE', 'BAMLH0A0HYM2'];
+const SHORT: Record<string, string> = { DFF: 'Fed funds', DGS10: '10-year yield', T10Y2Y: '10y − 2y', CPIAUCSL: 'Inflation (CPI)', UNRATE: 'Unemployment', BAMLH0A0HYM2: 'Junk bond spread' };
 
 function fmt(v: number | null | undefined, unit: string) {
   if (v == null || !Number.isFinite(v)) return '—';
@@ -73,13 +76,56 @@ async function pool<T>(items: T[], limit: number, job: (item: T) => Promise<void
   }));
 }
 
+const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+const lastN = (s: Series | undefined, n: number) => (s ? s.data.slice(-n).map((p) => p.value) : []);
+const diff = (a: number | null, b: number | null) => (a == null || b == null ? null : a - b);
+
+/** Growth and inflation votes from the loaded series (3-month changes; thresholds in each series' own units). */
+function regimeInputs(get: (id: string) => Series | undefined): [RegimeInput[], RegimeInput[]] {
+  const pay = get('PAYEMS'), claims = get('ICSA'), retail = get('RSAFS'), gdp = get('GDPC1');
+  const cpi = get('CPIAUCSL'), pce = get('PCEPILFE'), be = get('T10YIE');
+  const ago = (s: Series | undefined, days: number) => (s ? diff(s.value, valueAgo(s.data, days)) : null);
+  return [
+    [
+      { name: 'Jobs added (3-month vs 12-month average)', change: diff(avg(lastN(pay, 3)), avg(lastN(pay, 12))), threshold: 25 },
+      { name: 'Jobless claims (4-week vs 26-week average)', change: diff(avg(lastN(claims, 4)), avg(lastN(claims, 26))), threshold: 10000, sign: -1 },
+      { name: 'Retail sales growth (3 months)', change: ago(retail, 91), threshold: 0.5 },
+      { name: 'GDP growth (latest vs prior year)', change: gdp ? diff(gdp.value, avg(lastN(gdp, 5).slice(0, -1))) : null, threshold: 0.5 },
+    ],
+    [
+      { name: 'CPI inflation (3 months)', change: ago(cpi, 91), threshold: 0.15 },
+      { name: 'Core PCE inflation (3 months)', change: ago(pce, 91), threshold: 0.15 },
+      { name: 'Inflation expectations (3 months)', change: ago(be, 91), threshold: 0.1 },
+    ],
+  ];
+}
+
+function spark(data: Point[]) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 120 28');
+  svg.setAttribute('class', 'mm-spark');
+  svg.setAttribute('aria-hidden', 'true');
+  const line = document.createElementNS(ns, 'polyline');
+  line.setAttribute('points', sparkPoints(data, 120, 28));
+  svg.append(line);
+  return svg;
+}
+
+/** Where today's reading sits in its history since 2006: a bar with a marker and a word. */
+function rankCell(p: number | null) {
+  if (p == null) return h('span', { class: 'muted' }, '—');
+  const word = p >= 0.9 ? 'near high' : p <= 0.1 ? 'near low' : p >= 0.67 ? 'high' : p <= 0.33 ? 'low' : 'middle';
+  return h('span', { class: 'mm-rank', title: `Higher than ${Math.round(p * 100)}% of readings since 2006` }, h('span', { class: 'mm-rank-bar' }, h('i', { style: `left:${(p * 100).toFixed(0)}%` })), h('span', { class: 'small muted' }, word));
+}
+
 export function createMacroPage() {
-  let range: Range = '5y';
   const loaded = new Map<string, Series>();
-  const cards = new Map<string, { el: HTMLElement; chart: ReturnType<typeof createLineChart> | null; box: HTMLElement }>();
+  const rows = new Map<string, HTMLTableRowElement>();
   let curve: CurvePoint[] = [];
   let catalog: CatalogEntry[] = [];
   const curvePanel = h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Treasury yield curve')), h('div', { class: 'skeleton', style: 'height:260px' }));
+  const readPanel = h('section', { class: 'panel mm-read' }, h('div', { class: 'skeleton', style: 'height:150px' }));
   const note = h('p', { class: 'ap-note' });
   const stamp = h('span', { class: 'muted small' });
   const ai = insightButton(() => {
@@ -87,11 +133,9 @@ export function createMacroPage() {
     const readings = [...loaded.values()].map((s) => ({ name: s.name, group: s.group, unit: s.unit, date: s.date, value: s.value, previous: s.previous, monthAgo: s.monthAgo, yearAgo: s.yearAgo }));
     return { topic: 'macro', symbol: '', title: 'AI read: the economy', data: { readings, yieldCurve: curve } };
   });
-  const rangeButtons = (['1y', '5y', 'max'] as Range[]).map((r) => h('button', { 'data-range': r, onclick: () => setRange(r) }, r === 'max' ? 'Since 2006' : r === '1y' ? '1 year' : '5 years'));
-  const frame = pageFrame('Macro', 'The economy at a glance, from the St. Louis Fed (FRED) and the US Treasury. Updates automatically.', [
+  const frame = pageFrame('Macro', 'The economy the way macro desks read it: the regime, the Fed, liquidity, the curve and every key series. From FRED and the US Treasury.', [
     stamp,
     ai.button,
-    h('div', { class: 'segmented' }, ...rangeButtons),
     h('button', { class: 'btn', title: 'Load fresh data now', onclick: () => (clearEngineCache('macro.'), load()) }, 'Refresh'),
   ]);
 
@@ -135,36 +179,6 @@ export function createMacroPage() {
     }
   }
 
-  function setRange(r: Range) {
-    range = r;
-    rangeButtons.forEach((b) => b.classList.toggle('active', b.dataset.range === range));
-    for (const id of loaded.keys()) drawChart(id);
-  }
-
-  const cutoff = () => new Date(Date.now() - RANGE_DAYS[range] * 86400000).toISOString().slice(0, 10);
-
-  function drawChart(id: string) {
-    const s = loaded.get(id);
-    const card = cards.get(id);
-    if (!s || !card) return;
-    if (!card.chart) {
-      card.box.classList.remove('skeleton');
-      card.box.replaceChildren();
-      card.chart = createLineChart(card.box, { height: 130, format: (v) => fmt(v, s.unit === 'K' ? '' : s.unit), title: s.name, expand: false });
-      card.chart.chart.applyOptions({ rightPriceScale: { visible: false }, timeScale: { visible: false }, crosshair: { horzLine: { visible: false } } });
-    }
-    card.chart.set([{ name: s.name, color: '#2962ff', width: 2, data: s.data.filter((p) => p.time >= cutoff()) }]);
-  }
-
-  function fillCard(s: Series) {
-    const card = cards.get(s.id);
-    if (!card) return;
-    card.el.classList.remove('loading');
-    card.el.querySelector('.macro-value')!.replaceChildren(h('b', {}, fmt(s.value, s.unit)), h('span', { class: 'muted small asof', title: 'The date of the latest reading FRED has published' }, `${s.date} · FRED`));
-    card.el.querySelector('.macro-changes')!.replaceChildren(...[change(s, s.monthAgo, '1m'), change(s, s.yearAgo, '1y')].filter((n): n is HTMLSpanElement => !!n));
-    drawChart(s.id);
-  }
-
   /** Full history in a chart window: daily data for rates and levels, the transformed series for yearly changes. */
   function openSeries(id: string) {
     const s = loaded.get(id);
@@ -174,64 +188,126 @@ export function createMacroPage() {
     openChartWindow({ title: s.name, subtitle: `FRED ${id} · latest ${s.date}`, lines: [{ name: s.name, color: '#2962ff', data: s.data }], format: (v) => fmt(v, s.unit), changeAs: s.unit === '%' || s.unit === 'K' ? 'points' : 'percent' });
   }
 
-  function failCard(id: string, err: unknown) {
-    const card = cards.get(id);
-    if (!card) return;
-    card.el.classList.remove('loading');
-    card.box.classList.remove('skeleton');
-    card.chart = null;
-    card.box.replaceChildren(
-      h('div', { class: 'macro-error' }, h('span', {}, (err as Error).message || 'Unavailable'), h('button', { class: 'btn small', onclick: () => loadSeries(id) }, 'Retry')),
+  function fillRow(s: Series) {
+    const tr = rows.get(s.id);
+    if (!tr) return;
+    tr.classList.remove('loading');
+    tr.replaceChildren(
+      h('th', { scope: 'row' }, s.name),
+      h('td', { class: 'num mm-val' }, fmt(s.value, s.unit)),
+      h('td', { class: 'num' }, change(s, s.monthAgo, '') ?? '—'),
+      h('td', { class: 'num' }, change(s, s.yearAgo, '') ?? '—'),
+      h('td', { class: 'mm-trend' }, spark(s.data)),
+      h('td', {}, rankCell(percentileNow(s.data))),
+      h('td', { class: 'muted small mm-date' }, s.date),
     );
+  }
+
+  function failRow(id: string, err: unknown) {
+    const tr = rows.get(id);
+    const name = catalog.find((c) => c.id === id)?.name ?? id;
+    tr?.replaceChildren(h('th', { scope: 'row' }, name), h('td', { colspan: 6, class: 'muted small' }, (err as Error).message || 'Unavailable', ' ', h('button', { class: 'btn small', onclick: (e: Event) => (e.stopPropagation(), loadSeries(id)) }, 'Retry')));
   }
 
   async function loadSeries(id: string) {
     try {
       const s = await engineRequest<Series>('macro.series', { series: id }, 45000);
       loaded.set(id, s);
-      fillCard(s);
+      fillRow(s);
       return true;
     } catch (err) {
-      failCard(id, err);
+      failRow(id, err);
       return false;
     }
   }
 
-  function skeleton() {
-    cards.clear();
-    const groups = [...new Set(catalog.map((c) => c.group))];
-    frame.body.replaceChildren(
-      ai.panel,
-      curvePanel,
-      h('div', { class: 'xe-grid' }, fedOddsPanel(), netLiquidityPanel()),
-      ...groups.map((g) =>
+  /** Today's read: the regime quadrant, the votes behind it and the six key numbers. */
+  function renderRead() {
+    const r = regime(...regimeInputs((id) => loaded.get(id)));
+    const pos = (v: number) => `${(50 + Math.max(-1, Math.min(1, v)) * 42).toFixed(1)}%`;
+    const arrow = (d: string) => (d === 'rising' ? '↑ speeding up' : d === 'falling' ? '↓ slowing' : '→ steady');
+    const key = KEY.map((id) => loaded.get(id)).filter((s): s is Series => !!s);
+    readPanel.replaceChildren(
+      h('div', { class: 'panel-head' }, h('h3', {}, 'Today’s read', infoTip('macroRegime')), h('span', { class: 'muted small' }, 'Growth and inflation, each speeding up or slowing over the last 3 months')),
+      h(
+        'div',
+        { class: 'mm-read-grid' },
         h(
-          'section',
-          {},
-          h('h2', { class: 'group-title' }, g),
+          'div',
+          { class: 'mm-quad', role: 'img', 'aria-label': `Regime: ${r.label}` },
+          h('span', { class: 'q tl' }, 'Stagflation'),
+          h('span', { class: 'q tr' }, 'Reflation'),
+          h('span', { class: 'q bl' }, 'Slowdown'),
+          h('span', { class: 'q br' }, 'Goldilocks'),
+          h('span', { class: 'axis x' }, 'Growth →'),
+          h('span', { class: 'axis y' }, 'Inflation →'),
+          h('i', { class: 'dot', style: `left:${pos(r.growthScore)};bottom:${pos(r.inflationScore)}` }),
+        ),
+        h(
+          'div',
+          { class: 'mm-read-text' },
+          h('div', { class: 'mm-regime' }, r.label),
+          h('p', { class: 'small' }, r.meaning),
+          h('p', { class: 'small' }, h('b', {}, 'Growth '), arrow(r.growth), ' · ', h('b', {}, 'Inflation '), arrow(r.inflation)),
           h(
-            'div',
-            { class: 'macro-grid' },
-            ...catalog
-              .filter((c) => c.group === g)
-              .map((c) => {
-                const box = h('div', { class: 'skeleton', style: 'height:130px' });
-                const el = activatable(h(
-                  'div',
-                  { class: 'panel macro-card loading clickable-card', title: 'Click for the full history: zoom, ranges, stats', onclick: () => openSeries(c.id) },
-                  h('div', { class: 'muted small' }, c.name),
-                  h('div', { class: 'macro-value' }, h('span', { class: 'skeleton', style: 'width:90px;height:28px' })),
-                  h('div', { class: 'macro-changes small' }),
-                  box,
-                ));
-                cards.set(c.id, { el, box, chart: null });
-                return el;
-              }),
+            'details',
+            { class: 'mm-votes' },
+            h('summary', { class: 'small muted' }, `What it’s based on (${r.votes.length} readings)`),
+            h('ul', {}, ...r.votes.map((v) => h('li', { class: 'small' }, `${v.name}: ${v.direction === 'rising' ? 'up' : v.direction === 'falling' ? 'down' : 'flat'}`))),
+            h('p', { class: 'small muted' }, 'A framing, not a forecast: regimes change, and the "historically" notes are tendencies.'),
           ),
         ),
       ),
+      h(
+        'div',
+        { class: 'mm-keys' },
+        ...key.map((s) =>
+          activatable(
+            h(
+              'div',
+              { class: 'mm-key clickable-card', title: 'Click for the full history', onclick: () => openSeries(s.id) },
+              h('span', { class: 'mm-key-label' }, SHORT[s.id] ?? s.name),
+              h('span', { class: 'mm-key-value' }, fmt(s.value, s.unit)),
+              h('span', { class: 'small' }, change(s, s.monthAgo, '1m') ?? ''),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  function skeleton() {
+    rows.clear();
+    const groups = [...new Set(catalog.map((c) => c.group))];
+    const head = h('thead', {}, h('tr', {}, ...['Series', 'Latest', '1 month', '1 year', '2-year trend', 'Vs history since 2006', 'As of'].map((c, i) => h('th', { scope: 'col', class: i >= 1 && i <= 3 ? 'num' : '' }, c))));
+    const bodies = groups.map((g) =>
+      h(
+        'tbody',
+        {},
+        h('tr', { class: 'mm-group' }, h('th', { colspan: 7, scope: 'colgroup' }, g)),
+        ...catalog
+          .filter((c) => c.group === g)
+          .map((c) => {
+            const tr = h('tr', { class: 'loading clickable-row', title: 'Click for the full history', onclick: () => openSeries(c.id) }, h('th', { scope: 'row' }, c.name), h('td', { colspan: 6 }, h('span', { class: 'skeleton', style: 'display:block;height:14px;width:60%' })));
+            activatable(tr);
+            rows.set(c.id, tr);
+            return tr;
+          }),
+      ),
+    );
+    frame.body.replaceChildren(
+      ai.panel,
+      readPanel,
+      h('div', { class: 'xe-grid' }, fedOddsPanel(), netLiquidityPanel()),
+      curvePanel,
+      h(
+        'section',
+        { class: 'panel' },
+        h('div', { class: 'panel-head' }, h('h3', {}, 'Macro monitor'), h('span', { class: 'muted small' }, 'Green/red: whether the change is usually good or bad news for the economy. Click a row for its full history.')),
+        h('div', { class: 'ar-scroll' }, h('table', { class: 'mm-table' }, head, ...bodies)),
+      ),
       note,
-      h('p', { class: 'ap-note' }, 'Sources: Federal Reserve Bank of St. Louis (FRED) and treasury.gov. Green/red shows whether a change is usually good or bad news for the economy.'),
+      h('p', { class: 'ap-note' }, 'Sources: Federal Reserve Bank of St. Louis (FRED), treasury.gov, Schwab (fed funds futures).'),
     );
   }
 
@@ -275,6 +351,7 @@ export function createMacroPage() {
           if (!(await loadSeries(c.id))) failures.push(c.name);
         }),
       ]);
+      renderRead();
       stamp.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
       if (failures.length) note.textContent = `Couldn't load ${failures.length} series. If this keeps happening, add a free FRED API key in Settings (gear icon) for a faster, more reliable connection.`;
     } catch (err) {
@@ -289,7 +366,6 @@ export function createMacroPage() {
   return {
     el: frame.el,
     start() {
-      rangeButtons.forEach((b) => b.classList.toggle('active', b.dataset.range === range));
       setTab(tab);
       // Economic data changes at most daily; check again every 30 minutes while the page is open.
       timer ??= setInterval(load, 30 * 60 * 1000);

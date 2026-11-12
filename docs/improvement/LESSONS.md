@@ -96,3 +96,7 @@ whenever the owner repeats or adds one.
   have") · each checked against a hand-worked or synthetic example; the PCA test exposed that equal-volatility
   independent holdings have no unique components (documented). Lesson: give every new panel class names of its own
   (xe-*): the Home card's .edge-body turned the new panels into columns until a browser check caught it.
+- 2026-11-12 · Macro page redesigned: regime read and key numbers first, then the edge panels, the curve and one compact
+  monitor table instead of 18 chart cards · approved (owner: "looks outdated and random, make it cleaner but still
+  showing good stuff for that extra edge") · Lesson: lead with the answer (the regime), keep detail in one scannable
+  table; every series' place in its own history is the cheap extra edge.

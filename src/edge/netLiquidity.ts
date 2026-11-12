@@ -39,7 +39,7 @@ export function netLiquidityPanel(): HTMLElement {
     render(d, body) {
       const l = d.latest;
       const chg = (then: number | null) => (then ? l.value / then - 1 : null);
-      const tone = (v: number | null) => (v == null ? '' : v >= 0 ? 'up' : 'down');
+      const tone = (v: number | null) => (v == null || Math.abs(v) < 0.0005 ? '' : v > 0 ? 'up' : 'down');
       const box = h('div', { class: 'xe-chart' });
       body.append(
         statCards([

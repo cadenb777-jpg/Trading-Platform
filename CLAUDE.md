@@ -581,7 +581,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   POST) and invest.navpremium (Schwab nAV else Yahoo navPrice) on Flow → Positioning; portfolio.factors
   (engine/factors.py: Ken French daily FF5 + Mom, OLS Newey-West, PCA hidden bets, Meucci effective bets) on
   Portfolios after an analysis; research.segmenthistory (last 3 10-Ks merged, ConcentrationRiskPercentage1 customers)
-  on Research. R&D work list:
+  on Research.
+- Macro page (US tab), top to bottom: Today's read (regime quadrant from src/macro/monitor.ts regime(): 3-month changes
+  of jobs, claims, retail sales, GDP vs CPI, core PCE, breakevens; plus six key numbers), Fed odds + net liquidity,
+  yield curve, one Macro monitor table (latest, 1m, 1y, 2-year sparkline, percentile since 2006; row opens history).
+  R&D work list:
   docs/research/institutional-edge.md.
 - Scheduled improvement sessions follow docs/improvement/PLAYBOOK.md: propose only (branch + pull request with a
   plain-language report), never merge, never trade, never weaken security; the owner approves every change. Lessons
