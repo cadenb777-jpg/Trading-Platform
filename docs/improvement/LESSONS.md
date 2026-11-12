@@ -106,7 +106,7 @@ whenever the owner repeats or adds one.
   showing good stuff for that extra edge") · Lesson: lead with the answer (the regime), keep detail in one scannable
   table; every series' place in its own history is the cheap extra edge.
 - 2026-11-12 · #13 Account table keeps its place; desktop black-screen recovery · approved (merged by the owner).
-- 2026-11-12 · Fitted Treasury curve "What the curve says" (helper 61): rich/cheap maturities against each one's own
+- 2026-11-12 · #14 Fitted Treasury curve "What the curve says" (helper 61): rich/cheap maturities against each one's own
   year, forwards, breakevens and yield-curve recession odds with the model's record; Home Edge today line · proposed ·
   backlog B5+B6 (top unbuilt item with free data verifiable from the research environment). Lessons: a coupon par curve
   drawn between coupon dates zig-zags (draw it on half-years); NSS has several local fits (each of 6 starting shapes won
