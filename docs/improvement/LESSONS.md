@@ -105,3 +105,12 @@ whenever the owner repeats or adds one.
   monitor table instead of 18 chart cards · approved (owner: "looks outdated and random, make it cleaner but still
   showing good stuff for that extra edge") · Lesson: lead with the answer (the regime), keep detail in one scannable
   table; every series' place in its own history is the cheap extra edge.
+- 2026-11-12 · #13 Account table keeps its place; desktop black-screen recovery · approved (merged by the owner).
+- 2026-11-12 · Fitted Treasury curve "What the curve says" (helper 61): rich/cheap maturities against each one's own
+  year, forwards, breakevens and yield-curve recession odds with the model's record; Home Edge today line · proposed ·
+  backlog B5+B6 (top unbuilt item with free data verifiable from the research environment). Lessons: a coupon par curve
+  drawn between coupon dates zig-zags (draw it on half-years); NSS has several local fits (each of 6 starting shapes won
+  on some days of 2025-26), so fit from all of them and save past fits instead of warm-starting (warm starts were 18x
+  faster but 30% worse); with 14 maturities a 2 SD "unusual" fires by chance about half of all days, so 2.5 SD.
+  newyorkfed.org is blocked from the research environment: the recession probit is fitted here from FRED instead
+  (a = -0.75, b = -0.56 on 790 months), which is reproducible and shown on screen.

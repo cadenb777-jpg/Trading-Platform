@@ -1,11 +1,13 @@
 /**
  * Home's "Edge today" card: the platform's verified market-edge readings in one place, each with its source, linking to
  * the full tool. Pure and tested in edge.test.ts. Readings come from helper futures.carry (index futures fair value)
- * and rates.box (SPX box-spread rates vs Treasury bills); any that are missing are simply left out.
+ * and rates.box (SPX box-spread rates vs Treasury bills), and bonds.curvefit (yield-curve recession odds and the most
+ * unusual maturity against the fitted curve); any that are missing are simply left out.
  */
 import { benchmarkRow, months, rate } from '../futures/boxRates';
 import type { BoxReply } from '../futures/boxRates';
 import { level, signedPct, signedPts, signedUsd, type Carry } from '../futures/fairValue';
+import { curveEdgeLine, type CurveFit } from '../invest/curveFit';
 
 export interface EdgeLine {
   /** What it is, in plain words. */
@@ -24,7 +26,7 @@ export interface EdgeLine {
 const ok = (v: number | null | undefined): v is number => v != null && Number.isFinite(v);
 const tone = (v: number | null | undefined): EdgeLine['tone'] => (!ok(v) || Math.abs(v) < 1e-9 ? '' : v > 0 ? 'up' : 'down');
 
-export function edgeLines(carry: Carry | null, box: BoxReply | null): EdgeLine[] {
+export function edgeLines(carry: Carry | null, box: BoxReply | null, curve: CurveFit | null = null): EdgeLine[] {
   const out: EdgeLine[] = [];
   for (const root of ['ES', 'NQ']) {
     const r = carry?.rows.find((x) => x.root === root);
@@ -60,5 +62,7 @@ export function edgeLines(carry: Carry | null, box: BoxReply | null): EdgeLine[]
       source: 'Schwab SPX options, FRED Treasury curve',
     });
   }
+  const c = curveEdgeLine(curve);
+  if (c) out.push(c);
   return out;
 }

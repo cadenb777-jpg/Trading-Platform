@@ -318,6 +318,7 @@ export function createInvestmentsPage(ctx: InvestContext) {
   }
 
   let started = false;
+  let appliedSub = '';
   return {
     el: frame.el,
     /** Opens a section (the command bar's BONDS / WB). */
@@ -326,8 +327,19 @@ export function createInvestmentsPage(ctx: InvestContext) {
       if (started) showSection(next);
       else section = next; // start() shows it
     },
-    start() {
-      if (!started) {
+    start(sub = '') {
+      // deep link: #invest/<section>[/<tab>], e.g. #invest/bonds/curve from Home's Edge today. Applied only when the
+      // link changes, so coming Back to the page keeps the section and tab the person moved to since.
+      const fresh = sub !== appliedSub;
+      appliedSub = sub;
+      const [want, tab] = sub.split('/');
+      const deep = fresh && SECTIONS.some((s) => s.id === want) ? (want as Section) : null;
+      const bondTab = deep === 'bonds' && bonds.hasTab(tab) ? tab : null;
+      if (deep) {
+        started = true;
+        showSection(deep, !bondTab);
+        if (bondTab) bonds.openTab(bondTab);
+      } else if (!started) {
         started = true;
         showSection(section);
       } else if (section === 'crypto') renderCrypto();
