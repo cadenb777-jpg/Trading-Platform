@@ -70,7 +70,8 @@ class Ladder(unittest.TestCase):
 
 class OldCache(unittest.TestCase):
     def test_copy_saved_before_68_gets_its_ladder(self):
-        old = {'statements': {'x': 1}, 'shares': 5}          # saved by helper 67: no 'maturities'
+        # saved by helper 67: no 'maturities' (its statements already have the helper-71 lines, so only the ladders load)
+        old = {'statements': {'annual': {'values': {'receivables': [], 'ppe': [], 'retainedEarnings': []}}}, 'shares': 5}
         asked = []
 
         class Ctx:
@@ -85,7 +86,7 @@ class OldCache(unittest.TestCase):
         with mock.patch.object(r.sec, '_json', fake_json):
             core = asyncio.run(r.company_core(Ctx(), 320193, with_maturities=True))
             self.assertEqual(core['maturities']['buckets']['year2'], 2e9)
-            self.assertEqual(core['statements'], {'x': 1})
+            self.assertEqual(core['shares'], 5)
             self.assertIsNone(core['obligations'])
             self.assertEqual(asked, ['sec-core', 'sec-ladders'])
             # comps (no ladder wanted) never downloads it
@@ -133,6 +134,25 @@ class Obligations(unittest.TestCase):
         two = r.obligations(facts({'PurchaseObligation': [fact('2026-01-25', 45e9, 'n', '2026-02-25')],
                                    'UnrecordedUnconditionalPurchaseObligationBalanceSheetAmount': [fact('2026-01-25', 22.7e9, 'n', '2026-02-25')]}))
         self.assertEqual(two['purchase']['value'], 22.7e9)
+
+
+class HealthLines(unittest.TestCase):
+    def test_copy_without_the_helper_71_lines_is_read_again(self):
+        old = {'statements': {'annual': {'values': {'revenue': []}}}, 'shares': 5, 'maturities': None, 'obligations': None}
+        fresh = {'statements': {'annual': {'values': {'receivables': [1], 'ppe': [2], 'retainedEarnings': [3]}}}, 'shares': 6,
+                 'maturities': None, 'obligations': None}
+        asked = []
+
+        class Ctx:
+            async def cached(self, key, ttl, load, persist=False, stale_ok=False):
+                asked.append(key[0])
+                return old if key[0] == 'sec-core' else fresh
+        core = asyncio.run(r.company_core(Ctx(), 320193, with_maturities=True))
+        self.assertEqual((core['shares'], asked), (6, ['sec-core', 'sec-core71']))
+        # comps never asks for it
+        asked.clear()
+        asyncio.run(r.company_core(Ctx(), 320193))
+        self.assertEqual(asked, ['sec-core'])
 
 
 class Yields(unittest.TestCase):
