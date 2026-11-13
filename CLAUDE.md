@@ -608,6 +608,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   trade (feed=iex, free) then Yahoo v7 quote, each at most once a minute) goes through HUB.offer: the newest trade wins;
   backups more than 1.5% from two agreeing recent sources are refused (Schwab's own prices never are). Quotes carry
   src/at; the watchlist price shows them on hover (sourceTitle). prices.sources {symbol} lists every source.
+- Crypto backup route (helper 65, engine/crypto.py): when the browser's Coinbase request fails, src/data/coinbase.ts
+  asks crypto.candles (Coinbase from the helper, then Alpaca v1beta3 crypto bars (public, no key), then Kraken OHLC,
+  all returned in Coinbase candle format) and goes through the helper for 10 minutes; watchlist/Investments crypto
+  prices quiet for 20 s are polled via crypto.stats (Alpaca snapshots, then Coinbase stats).
 - Macro page (US tab), top to bottom: Today's read (regime quadrant from src/macro/monitor.ts regime(): 3-month changes
   of jobs, claims, retail sales, GDP vs CPI, core PCE, breakevens; plus six key numbers), Fed odds + net liquidity,
   yield curve, one Macro monitor table (latest, 1m, 1y, 2-year sparkline, percentile since 2006; row opens history).

@@ -1,11 +1,51 @@
 /**
- * Coinbase Exchange public market data: free, real-time, no account needed.
+ * Coinbase Exchange public market data: free, real-time, no account needed. When the browser can't reach Coinbase
+ * directly, candles and prices come through the helper instead (engine/crypto.py: Coinbase from this computer, then
+ * Alpaca's free crypto data, then Kraken), so crypto charts keep working (helper 65+).
  * REST docs: https://docs.cdp.coinbase.com/exchange/reference/exchangerestapi_getproductcandles
  * WebSocket docs: https://docs.cdp.coinbase.com/exchange/docs/websocket-channels
  */
 import { TIMEFRAME_SECONDS, applyTrade, cleanBars, regroupBars, type Bar, type Timeframe } from '../types';
 import { fetchJson, reconnectingSocket, type DataProvider } from './provider';
 import type { Quote } from './quotes';
+import { engineRequest, helper } from './schwab';
+
+export const CRYPTO_HELPER_VERSION = 65;
+/** After a direct request fails, go through the helper for this long before trying Coinbase directly again. */
+const DIRECT_RETRY_MS = 10 * 60 * 1000;
+let directFailedAt = 0;
+/** Where the last crypto data came from ('Coinbase' direct, or the helper's source), for the chart's status. */
+export let cryptoSource = 'Coinbase';
+const helperReady = () => (helper.version ?? 0) >= CRYPTO_HELPER_VERSION;
+
+/** Whether to try Coinbase directly now (pure, tested). */
+export function tryDirect(failedAt: number, now: number, haveHelper: boolean): boolean {
+  return !haveHelper || !failedAt || now - failedAt > DIRECT_RETRY_MS;
+}
+
+/** One page of candles: straight from Coinbase, or through the helper when that fails. */
+async function candlePage(symbol: string, granularity: number, start: number, end: number, signal: AbortSignal): Promise<Candle[]> {
+  let direct: Error | null = null;
+  if (tryDirect(directFailedAt, Date.now(), helperReady())) {
+    try {
+      const qs = new URLSearchParams({ granularity: String(granularity), start: new Date(start * 1000).toISOString(), end: new Date(end * 1000).toISOString() });
+      const page = await fetchJson<Candle[] | { message: string }>(`${REST}/products/${encodeURIComponent(symbol)}/candles?${qs}`, { signal });
+      if (Array.isArray(page)) {
+        cryptoSource = 'Coinbase';
+        return page;
+      }
+      direct = new Error(page.message || 'Unexpected response from Coinbase');
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') throw err;
+      direct = err as Error;
+    }
+    directFailedAt = Date.now();
+  }
+  if (!helperReady()) throw new Error(`Couldn’t reach Coinbase: ${direct?.message ?? 'no reply'}. The helper update (65) adds a backup route.`);
+  const r = await engineRequest<{ candles: Candle[]; source: string }>('crypto.candles', { symbol, granularity, start, end }, 30000, undefined, signal);
+  cryptoSource = `${r.source} (via helper)`;
+  return r.candles;
+}
 
 const REST = 'https://api.exchange.coinbase.com';
 const WS = 'wss://ws-feed.exchange.coinbase.com';
@@ -38,18 +78,12 @@ async function loadCandles(symbol: string, timeframe: Timeframe, signal: AbortSi
   const results = await inBatches(
     Array.from({ length: pages }, (_, i) => () => {
       const end = now - i * PAGE * granularity;
-      const qs = new URLSearchParams({
-        granularity: String(granularity),
-        start: new Date((end - PAGE * granularity) * 1000).toISOString(),
-        end: new Date(end * 1000).toISOString(),
-      });
-      return fetchJson<Candle[] | { message: string }>(`${REST}/products/${encodeURIComponent(symbol)}/candles?${qs}`, { signal });
+      return candlePage(symbol, granularity, end - PAGE * granularity, end, signal);
     }),
     5,
   );
   const byTime = new Map<number, Bar>();
   for (const page of results) {
-    if (!Array.isArray(page)) throw new Error(page.message || 'Unexpected response from Coinbase');
     for (const [time, low, high, open, close, volume] of page) byTime.set(time, { time, open, high, low, close, volume });
   }
   const bars = cleanBars([...byTime.values()]);
@@ -125,6 +159,8 @@ class CoinbaseQuotes {
   private readonly latest = new Map<string, Quote>();
   private ws: WebSocket | null = null;
   private stop: (() => void) | null = null;
+  private lastAt = new Map<string, number>();
+  private poll: ReturnType<typeof setInterval> | null = null;
 
   listen(symbol: string, onQuote: (q: Quote) => void): () => void {
     let set = this.listeners.get(symbol);
@@ -148,11 +184,14 @@ class CoinbaseQuotes {
         this.stop?.();
         this.stop = null;
         this.ws = null;
+        if (this.poll) clearInterval(this.poll);
+        this.poll = null;
       }
     };
   }
 
   private emit(quote: Quote) {
+    this.lastAt.set(quote.symbol, Date.now());
     this.latest.set(quote.symbol, quote);
     for (const fn of this.listeners.get(quote.symbol) ?? []) fn(quote);
   }
@@ -164,7 +203,24 @@ class CoinbaseQuotes {
         this.emit({ symbol, last: Number(stats.last), prevClose: Number(stats.open) });
       }
     } catch {
-      // The live ticker will fill it in.
+      // The live ticker fills it in; if that can't connect either, the helper does (pollQuiet).
+      this.pollQuiet();
+    }
+  }
+
+  /** Prices for symbols the live feed hasn't updated in 20 s, through the helper (Alpaca, then Coinbase). */
+  private async pollQuiet() {
+    if (!helperReady()) return;
+    const now = Date.now();
+    const quiet = [...this.listeners.keys()].filter((s) => now - (this.lastAt.get(s) ?? 0) > 20000);
+    if (!quiet.length) return;
+    try {
+      const r = await engineRequest<{ quotes: Record<string, { last: number; open: number }> }>('crypto.stats', { symbols: quiet }, 15000);
+      for (const [symbol, q] of Object.entries(r.quotes)) {
+        if (this.listeners.has(symbol)) this.emit({ symbol, last: q.last, prevClose: q.open });
+      }
+    } catch {
+      // no source answered: try again on the next round
     }
   }
 
@@ -173,6 +229,7 @@ class CoinbaseQuotes {
   }
 
   private ensureConnected() {
+    this.poll ??= setInterval(() => this.pollQuiet(), 15000);
     if (this.stop) return;
     this.stop = reconnectingSocket(
       WS,
