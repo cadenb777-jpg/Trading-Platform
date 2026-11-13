@@ -180,6 +180,7 @@ export class ChartView {
       localization: { timeFormatter: (t: Time) => crosshairLabel(t as number, this.axisOpts) },
     });
     this.stopTheme = followTheme(this.chart, {
+      fill: 'left', // keep the zoom and the right edge; only close an empty strip before the first candle
       onChange: () => {
         this.recolorMain();
         this.chrome.update();

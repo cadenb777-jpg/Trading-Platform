@@ -83,10 +83,50 @@ export function chartThemeOptions(transparent = false) {
 }
 
 /** Repaints a chart when the theme changes; stops once the chart has been removed. */
-export function followTheme(chart: IChartApi, opts: { transparent?: boolean; hideVertGrid?: boolean; onChange?: () => void } = {}) {
+/** What to do with empty space before the first bar (pure, tested): 'fit' refits the data to the width, 'left'
+ * stretches the bars from the left edge and keeps the right edge (and the zoom), null when there is none. */
+export function emptyLeftFix(range: { from: number; to: number } | null, mode: 'fit' | 'left'): { fit: true } | { from: number; to: number } | null {
+  if (!range || range.from >= -1) return null;
+  return mode === 'fit' ? { fit: true } : { from: -0.5, to: range.to };
+}
+
+/**
+ * Keeps a chart's data filling its width. Charts are often built while their page is still hidden (pages load in the
+ * background so they open at once) or before the window settles; fitted at zero width, the library then keeps the
+ * candle spacing and pads the new width with an empty strip before the first candle. On every resize (page shown,
+ * window resized, panel opened) that strip is closed. Returns a stop function.
+ */
+export function keepFilled(chart: IChartApi, mode: 'fit' | 'left' = 'fit'): () => void {
+  let frame = 0;
+  let observer: ResizeObserver | null = null;
+  const check = () => {
+    frame = 0;
+    try {
+      const ts = chart.timeScale();
+      const fix = emptyLeftFix(ts.getVisibleLogicalRange(), mode);
+      if (!fix) return;
+      if ('fit' in fix) ts.fitContent();
+      else ts.setVisibleLogicalRange(fix);
+    } catch {
+      observer?.disconnect(); // the chart was removed
+    }
+  };
+  if (typeof ResizeObserver === 'undefined') return () => {};
+  observer = new ResizeObserver(() => {
+    if (!frame) frame = requestAnimationFrame(check);
+  });
+  observer.observe(chart.chartElement());
+  return () => {
+    cancelAnimationFrame(frame);
+    observer?.disconnect();
+  };
+}
+
+export function followTheme(chart: IChartApi, opts: { transparent?: boolean; hideVertGrid?: boolean; onChange?: () => void; fill?: 'fit' | 'left' | false } = {}) {
   // Every chart, from creation: the theme's colours, no library watermark, and our square dotted grid.
   chart.applyOptions(chartThemeOptions(opts.transparent));
   attachSquareGrid(chart, { color: () => THEME.grid });
+  const stopFill = opts.fill === false ? () => {} : keepFilled(chart, opts.fill ?? 'fit');
   const stop = onThemeChange(() => {
     try {
       const o = chartThemeOptions(opts.transparent);
@@ -109,6 +149,7 @@ export function followTheme(chart: IChartApi, opts: { transparent?: boolean; hid
   window.addEventListener('tp:clock', onClock);
   return () => {
     window.removeEventListener('tp:clock', onClock);
+    stopFill();
     stop();
   };
 }
