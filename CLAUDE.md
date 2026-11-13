@@ -132,6 +132,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   change; never gross auction sales: bills roll over). No cache of its own (each loader caches its source; FRED history
   via ratesdesk._full). "Money and housing" panel on Bonds > Bond market; "How fast the government is borrowing" on What
   the curve says; Home Edge today adds "Overnight money is tight" only when tight (each Edge line paints on arrival).
+  Credit and reserves (v67, engine/creditdesk.py `bonds.system`, SYSTEM_HELPER_VERSION/systemReady in schwab.ts; src/invest/
+  systemDesk.ts pure + systemDeskView.ts, panel on Bonds > Bond market): reserves = WRESBAL / GDP of the week's own
+  quarter (unpublished quarters grown at the last year's average quarterly growth, flagged gdpEstimated) vs the week of
+  2019-09-18 (6.4%, money markets broke) in today's dollars; paper = 90-day AA financial CP - 3-month bill (discount basis,
+  since 1997, stressed >= 95th percentile; not on Home: too costly for a rare line); lending = SLOOS DRTSCILM net %
+  tightening, tightening/easing at +-10 (symmetric). edgeLines takes one named object {carry, box, curve, money}.
   Home "Edge today" widget (id 'edge', src/home/edge.ts edgeLines, tested): ES/NQ implied open or futures vs fair
   value and the 3-month box vs T-bill, each linking to its Futures panel, plus the curve's recession odds (#invest/bonds/curve). Home layouts keep `seen` (every widget offered):
   a widget released later joins a saved layout once after its first card; removing it sticks.

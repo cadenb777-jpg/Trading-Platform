@@ -11319,3 +11319,4 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .md-fact { display: grid; gap: 1px; }
 .md-fact b { color: var(--text-strong); }
 .md-fact b, .md-fact span { text-align: left; }
+.sd-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }

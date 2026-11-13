@@ -434,7 +434,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     let waiting = 2;
     const paint = () => {
       if (gen !== edgeGen) return; // a newer refresh owns the card
-      const lines = edgeLines(carry, box, curve, money);
+      const lines = edgeLines({ carry, box, curve, money });
       edgeStamp.set(carry ? carry.asOf : null, { source: curve || money ? 'Schwab, FRED, Yahoo, U.S. Treasury' : 'Schwab, FRED, Yahoo' });
       edgeBody.replaceChildren(
         ...(lines.length

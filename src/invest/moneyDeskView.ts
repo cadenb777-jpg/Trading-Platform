@@ -17,7 +17,7 @@ export { moneyReady };
 const whenReady = (body: HTMLElement, el: HTMLElement, go: () => void) => whenReadyFor(body, el, go, moneyReady);
 
 /** A small line that repaints in the other theme's colour (stops listening once it leaves the page). */
-function themedSpark(values: number[], baseline: number | null, title: string) {
+export function themedSpark(values: number[], baseline: number | null, title: string) {
   const box = h('span', { class: 'md-spark', title }, sparkline(values, baseline, THEME.viz1));
   const off = onThemeChange(() => (box.isConnected ? box.replaceChildren(sparkline(values, baseline, THEME.viz1)) : off()));
   return box;
@@ -25,7 +25,7 @@ function themedSpark(values: number[], baseline: number | null, title: string) {
 
 const load = () => engineRequest<MoneyReply>('bonds.money', {}, 60_000);
 
-function fact(label: string, value: string, note = '') {
+export function fact(label: string, value: string, note = '') {
   return h('div', { class: 'md-fact' }, h('span', { class: 'muted small' }, label), h('b', { class: 'num' }, value), note ? h('span', { class: 'muted small' }, note) : '');
 }
 

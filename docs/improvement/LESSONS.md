@@ -138,3 +138,9 @@ whenever the owner repeats or adds one.
   all. Lessons: share of a flow needs the net flow, not gross sales; a percentile gate ranked against a mostly-negative
   history still fires on routine month-end bumps, so name the calendar effect; don't cache a combined reply whose parts
   can fail (cache each source instead).
+- 2026-11-13 · Credit and reserves (helper 67): bank reserves vs GDP against the September 2019 breaking point, commercial
+  paper vs T-bills, banks' lending standards · proposed (stacked on #16) · backlog B14-B16. Review caught a mixed basis:
+  dividing today's reserves by last quarter's GDP but a year ago by its own quarter's made the year-on-year trend wrong by
+  about as much as the change itself; every week now uses its own quarter (unpublished = estimated, flagged). Lessons:
+  compare like with like before quoting a change; label thresholds symmetrically (easing at any negative but tightening
+  only at +20 was lopsided); a Home line that is almost never shown isn't worth five downloads on every Home refresh.
