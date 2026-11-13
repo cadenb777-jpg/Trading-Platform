@@ -11329,3 +11329,4 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .dd-bar { display: block; height: 100%; background: var(--viz-1); border-radius: 2px; }
 .dd-bar.soon { background: var(--label); }
 .dd-amt { text-align: right; color: var(--text-strong); }
+.dd-sub { margin-top: var(--sp-1); }

@@ -1,29 +1,30 @@
 /**
  * Research overview: Debt and dilution. Reads only what research.company already returned (annual statements,
- * valuation, and from helper 68 the 10-K maturity ladder); maths and sentences in debtDilution.ts (tested).
+ * valuation, from helper 68 the 10-K maturity ladder, from helper 69 leases, commitments, uncertain tax and today's
+ * corporate yields); maths and sentences in debtDilution.ts and obligations.ts (tested).
  */
-import { debtLadderReady } from '../data/schwab';
+import { debtLadderReady, engineRequest, obligationsReady } from '../data/schwab';
 import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { fact } from '../invest/moneyDeskView';
 import { money } from '../ui/charts';
-import { BUCKETS, coverWords, fy, interestCover, ladder, ladderWords, pc, payouts, payoutWords, shareChange, shareCount, sharesWords, type Maturities, type Statements } from './debtDilution';
+import { leases, leaseWords, purchaseWords, refinancing, refinancingWords, taxWords, type CorpYields, type Obligations } from './obligations';
+import { BUCKETS, coverWords, day, fy, interestCover, ladder, ladderWords, pc, payouts, payoutWords, shareChange, shareCount, sharesWords, type Maturities, type Statements } from './debtDilution';
 
-const day = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
 function block(title: string, term: string, ...body: (Node | string)[]) {
   return h('div', { class: 'md-block' }, h('div', { class: 'cf-caption' }, title, infoTip(term)), h('div', { class: 'md-body' }, ...body));
 }
 
 /** Horizontal bars, one per year bucket, on one scale; a bucket the filing leaves out says so. */
-function ladderBars(m: Maturities): HTMLElement {
-  const amounts = BUCKETS.map(([k]) => m.buckets[k]);
+function ladderBars(buckets: Partial<Record<string, number | null>>, label: string): HTMLElement {
+  const amounts = BUCKETS.map(([k]) => buckets[k] ?? null);
   const max = Math.max(...amounts.map((v) => v ?? 0), 1);
   return h(
     'div',
-    { class: 'dd-ladder', role: 'list', 'aria-label': 'Debt principal due by year' },
+    { class: 'dd-ladder', role: 'list', 'aria-label': label },
     ...BUCKETS.map(([k, label]) => {
-      const v = m.buckets[k];
+      const v = buckets[k] ?? null;
       return h(
         'div',
         { class: 'dd-row', role: 'listitem' },
@@ -40,6 +41,20 @@ export interface DebtDilutionInput {
   marketCap: number | null;
   cash: number | null;
   maturities?: Maturities | null;
+  obligations?: Obligations | null;
+}
+
+const link = (f: { url?: string; form: string; filed: string }) =>
+  f.url ? h('a', { href: f.url, target: '_blank', rel: 'noopener' }, `${f.form} filed ${day(f.filed)}`) : `${f.form} filed ${day(f.filed)}`;
+const fred = (sid: string, name: string) => h('a', { href: `https://fred.stlouisfed.org/series/${sid}`, target: '_blank', rel: 'noopener' }, name);
+
+/** "Leases, commitments and tax positions at Sep 26, 2026." (dates grouped, first name capitalised) */
+function asOfWords(items: [string, string][]): string {
+  const byDate = new Map<string, string[]>();
+  for (const [name, asOf] of items) byDate.set(day(asOf), [...(byDate.get(day(asOf)) ?? []), name.toLowerCase()]);
+  const list = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0]);
+  const t = [...byDate].map(([d, names]) => `${list(names)} at ${d}`).join('; ');
+  return `${t.charAt(0).toUpperCase()}${t.slice(1)}.`;
 }
 
 export function debtDilutionPanel(d: DebtDilutionInput): HTMLElement {
@@ -47,6 +62,29 @@ export function debtDilutionPanel(d: DebtDilutionInput): HTMLElement {
   const cover = interestCover(d.annual);
   const shares = shareChange(d.annual);
   const pay = payouts(d.annual, d.marketCap);
+  const lease = leases(d.obligations, lad, d.maturities);
+  const o = d.obligations;
+  // today's corporate yields: their own request (FRED), painted when they arrive; never holds up the page
+  const refiText = h('p', { class: 'small', hidden: true });
+  const refiSource = h('span', {});
+  if (lad?.dueIn2 && obligationsReady()) {
+    engineRequest<CorpYields>('research.corpyields', {}, 30_000).then(
+      (y) => {
+        const refi = refinancing(lad, d.annual, y);
+        if (!refi) return;
+        refiText.textContent = refinancingWords(refi);
+        refiText.hidden = false;
+        const links = [refi.ig ? fred(refi.ig.series, 'ICE BofA US corporate (investment grade)') : null, refi.hy ? fred(refi.hy.series, 'ICE BofA US high yield') : null].filter(
+          (x): x is HTMLAnchorElement => x != null,
+        );
+        refiSource.replaceChildren(' Yields: ', ...links.flatMap((x, i) => (i ? [' and ', x] : [x])), ', effective yield via FRED.');
+      },
+      () => {
+        refiText.textContent = 'Today’s corporate bond yields couldn’t be loaded from FRED, so the cost of borrowing this again isn’t shown.';
+        refiText.hidden = false;
+      },
+    );
+  }
 
   const debt = block(
     'Debt coming due',
@@ -56,13 +94,16 @@ export function debtDilutionPanel(d: DebtDilutionInput): HTMLElement {
           lad.dueIn2 != null || d.maturities.buckets.next12 == null
             ? h('div', { class: 'md-head' }, h('b', { class: 'md-value num' }, money(lad.dueIn2)), h('span', { class: 'muted small' }, 'due within 2 years'))
             : h('div', { class: 'md-head' }, h('b', { class: 'md-value num' }, money(d.maturities.buckets.next12)), h('span', { class: 'muted small' }, 'due within 12 months')),
-          ladderBars(d.maturities),
+          ladderBars(d.maturities.buckets, 'Debt principal due by year'),
           h('p', { class: 'small' }, ladderWords(lad, d.maturities, d.cash)),
+          refiText,
           h(
             'p',
             { class: 'muted small' },
             `Principal by year after the balance sheet of ${day(d.maturities.asOf)}; cash and short-term investments from the latest quarter. `,
-            d.maturities.url ? h('a', { href: d.maturities.url, target: '_blank', rel: 'noopener' }, `${d.maturities.form} filed ${day(d.maturities.filed)}`) : `${d.maturities.form} filed ${day(d.maturities.filed)}`,
+            link(d.maturities),
+            '.',
+            refiSource,
           ),
         ]
       : [
@@ -113,10 +154,51 @@ export function debtDilutionPanel(d: DebtDilutionInput): HTMLElement {
     ),
   );
 
+  // footnote: what each part is as of, then each filing once
+  const parts = o ? ([['Leases', o.leases], ['finance leases', o.financeLease], ['commitments', o.purchase], ['tax positions', o.uncertainTax]] as const).filter(([, f]) => f) : [];
+  const filings = [...new Map(parts.map(([, f]) => [f!.accession, f!])).values()];
+  const beyond = block(
+    'Beyond the debt line',
+    'offBalance',
+    ...(o && parts.length
+      ? [
+          h(
+            'div',
+            { class: 'md-facts' },
+            ...(lease?.presentValue != null ? [fact('Lease liability', money(lease.presentValue), lease.addsToDebt != null ? `+${pc(lease.addsToDebt, 0)} on debt` : 'operating leases')] : []),
+            ...(o.purchase ? [fact('Purchase commitments', money(o.purchase.value), 'not on the balance sheet')] : []),
+            ...(o.uncertainTax ? [fact('Uncertain tax', money(o.uncertainTax.value), 'reserved for')] : []),
+          ),
+          ...(o.leases
+            ? [h('div', { class: 'cf-caption dd-sub' }, 'Operating lease payments by year'), ladderBars(o.leases.buckets, 'Operating lease payments due by year')]
+            : []),
+          ...(lease ? [h('p', { class: 'small' }, leaseWords(lease))] : []),
+          ...(o.purchase ? [h('p', { class: 'small' }, purchaseWords(o.purchase, d.cash))] : []),
+          ...(o.uncertainTax ? [h('p', { class: 'small' }, taxWords(o.uncertainTax, d.cash))] : []),
+          h(
+            'p',
+            { class: 'muted small' },
+            asOfWords(parts.map(([name, f]) => [name, f!.asOf])),
+            ' From the ',
+            ...filings.flatMap((f, i) => (i ? [i === filings.length - 1 ? ' and ' : ', ', link(f)] : [link(f)])),
+            '.',
+          ),
+        ]
+      : [
+          h(
+            'p',
+            { class: 'muted small' },
+            !obligationsReady() && d.obligations === undefined
+              ? 'Leases, purchase commitments and tax positions arrive with the next helper update (it installs by itself).'
+              : 'The latest 10-K doesn’t tag leases, purchase commitments or uncertain tax positions in its data.',
+          ),
+        ]),
+  );
+
   return h(
     'section',
     { class: 'panel dd-panel' },
-    h('div', { class: 'panel-head' }, h('h3', {}, 'Debt and dilution'), h('span', { class: 'muted small' }, 'When the debt comes due, and whether buybacks really shrink the share count')),
-    h('div', { class: 'md-grid' }, debt, dil),
+    h('div', { class: 'panel-head' }, h('h3', {}, 'Debt and dilution'), h('span', { class: 'muted small' }, 'When the debt comes due, what else the company owes, and whether buybacks really shrink the share count')),
+    h('div', { class: 'md-grid' }, debt, beyond, dil),
   );
 }

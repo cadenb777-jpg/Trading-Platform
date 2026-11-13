@@ -29,7 +29,9 @@ export const BUCKETS: [BucketKey, string][] = [
   ['after5', 'After 5 years'],
 ];
 
-const ok = (v: number | null | undefined): v is number => v != null && Number.isFinite(v);
+export const ok = (v: number | null | undefined): v is number => v != null && Number.isFinite(v);
+/** '2026-11-03' -> 'Nov 3, 2026' */
+export const day = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 /** A year-on-year change in the share count close to a whole-number ratio (2x, 3x, 4x... or 1/2, 1/3...) is a stock
  * split or reverse split left unrestated in an older filing, not dilution. Within 8%, because buybacks and new shares
  * move the diluted count a little in the same year. Anything else, however big (share sales, stock-paid mergers), is

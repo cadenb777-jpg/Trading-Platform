@@ -151,3 +151,11 @@ whenever the owner repeats or adds one.
   compound across a jump of over a third; read every bucket of a table from one filing and date (Coca-Cola's 10-K has no
   "after year five" tag, so the total is called partial instead of borrowing last year's); say when a line stops being
   reported (Apple last tagged interest expense in FY2023) instead of showing an old ratio as current.
+- 2026-11-13 · #19 Beyond the debt line (helper 69, stacked on #18): what borrowing the debt due within 2 years again
+  would cost at today's investment-grade and high-yield averages, lease payments by year with the part that is interest
+  and lease-adjusted debt, purchase commitments and uncertain tax positions against cash · proposed · backlog A11-A12.
+  No credit rating is guessed: both market averages are shown and labelled as averages. Review removed "versus the
+  company's own average cost" (interest expense / year-end principal mixes in commercial paper, leases and fees and
+  could say "cheaper" when it is dearer) and moved the FRED yields off the Research page's critical path. Lessons: a
+  ratio built from two lines that don't measure the same thing is worse than no ratio; never add figures from
+  different year-ends (lease-adjusted debt checks the dates match).

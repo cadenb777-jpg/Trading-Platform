@@ -381,6 +381,8 @@ class Comparables(unittest.TestCase):
             out = asyncio.run(research.company(None, {'symbol': 'AAPL'}))
         self.assertEqual(out['valuation']['marketCap'], 400)
         self.assertIsNone(out['maturities'])  # no ladder in this core: null, never invented
+        self.assertIsNone(out['obligations'])
+        self.assertNotIn('corpYields', out)  # its own request: the page never waits on FRED
 
     def test_closest_by_revenue_on_a_log_scale(self):
         revs = {1: 50, 2: 210, 3: 1000, 4: 95}

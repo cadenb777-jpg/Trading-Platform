@@ -86,11 +86,64 @@ class OldCache(unittest.TestCase):
             core = asyncio.run(r.company_core(Ctx(), 320193, with_maturities=True))
             self.assertEqual(core['maturities']['buckets']['year2'], 2e9)
             self.assertEqual(core['statements'], {'x': 1})
-            self.assertEqual(asked, ['sec-core', 'sec-maturities'])
+            self.assertIsNone(core['obligations'])
+            self.assertEqual(asked, ['sec-core', 'sec-ladders'])
             # comps (no ladder wanted) never downloads it
             asked.clear()
             self.assertNotIn('maturities', asyncio.run(r.company_core(Ctx(), 320193)))
             self.assertEqual(asked, ['sec-core'])
+            # a helper-68 copy (ladder but no obligations) also gets the new parts
+            old.update(maturities=None)
+            asked.clear()
+            core = asyncio.run(r.company_core(Ctx(), 320193, with_maturities=True))
+            self.assertEqual(asked, ['sec-core', 'sec-ladders'])
+            self.assertEqual(core['maturities']['buckets']['year2'], 2e9)
+
+
+L = 'LesseeOperatingLeaseLiabilityPaymentsDue'
+
+
+class Obligations(unittest.TestCase):
+    def test_apple_fy2026(self):
+        # Apple FY2026 10-K: lease payments 1.98 / 2.053 / 1.921 / 1.617 / 1.41 / 6.362, total 15.343, present value
+        # 12.912 ($bn); purchase commitments 24.844; unrecognized tax benefits 22.487
+        rows = {L + s: [fact('2026-09-26', v, NEW, '2026-11-03')] for s, v in (
+            ('NextTwelveMonths', 1.98e9), ('YearTwo', 2.053e9), ('YearThree', 1.921e9), ('YearFour', 1.617e9), ('YearFive', 1.41e9),
+            ('AfterYearFive', 6.362e9), ('', 15.343e9))}
+        rows['OperatingLeaseLiability'] = [fact('2026-09-26', 12.912e9, NEW, '2026-11-03')]
+        rows['FinanceLeaseLiability'] = [fact('2026-09-26', 1.456e9, NEW, '2026-11-03')]
+        rows['UnrecordedUnconditionalPurchaseObligationBalanceSheetAmount'] = [fact('2026-09-26', 24.844e9, NEW, '2026-11-03')]
+        # an older, bigger figure under the other tag never wins over the newer year
+        rows['PurchaseObligation'] = [fact('2025-09-27', 45e9, OLD, '2025-10-31')]
+        rows['UnrecognizedTaxBenefits'] = [fact('2026-09-26', 22.487e9, NEW, '2026-11-03'), fact('2025-09-27', 21e9, NEW, '2026-11-03')]
+        o = r.obligations(facts(rows))
+        b = o['leases']['buckets']
+        self.assertEqual((b['next12'], b['after5'], b['total'], b['presentValue']), (1.98e9, 6.362e9, 15.343e9, 12.912e9))
+        self.assertEqual(o['leases']['asOf'], '2026-09-26')
+        self.assertEqual(o['financeLease']['value'], 1.456e9)
+        self.assertEqual((o['purchase']['value'], o['purchase']['asOf'], o['purchase']['tag']),
+                         (24.844e9, '2026-09-26', 'UnrecordedUnconditionalPurchaseObligationBalanceSheetAmount'))
+        self.assertEqual((o['uncertainTax']['value'], o['uncertainTax']['asOf']), (22.487e9, '2026-09-26'))
+
+    def test_missing_parts(self):
+        o = r.obligations(facts({'UnrecognizedTaxBenefits': [fact('2025-12-31', 857e6, 'ko', '2026-02-20')]}))
+        self.assertEqual((o['leases'], o['financeLease'], o['purchase'], o['uncertainTax']['value']), (None, None, None, 857e6))
+        self.assertIsNone(r.obligations(facts({})))
+        # the same date under both purchase tags: the first (the total) wins
+        two = r.obligations(facts({'PurchaseObligation': [fact('2026-01-25', 45e9, 'n', '2026-02-25')],
+                                   'UnrecordedUnconditionalPurchaseObligationBalanceSheetAmount': [fact('2026-01-25', 22.7e9, 'n', '2026-02-25')]}))
+        self.assertEqual(two['purchase']['value'], 22.7e9)
+
+
+class Yields(unittest.TestCase):
+    def test_latest_of_each_and_failures(self):
+        async def fred(ctx, sid):
+            if sid == 'BAMLH0A0HYM2EY':
+                raise RuntimeError('FRED down')
+            return [['2026-11-09', 5.73], ['2026-11-10', None], ['2026-11-11', 5.84]]
+        with mock.patch('engine.macro.fred', fred):
+            y = asyncio.run(r.corp_yields(None))
+        self.assertEqual(y, {'ig': {'value': 5.84, 'date': '2026-11-11', 'series': 'BAMLC0A0CMEY'}, 'hy': None})
 
 
 if __name__ == '__main__':
