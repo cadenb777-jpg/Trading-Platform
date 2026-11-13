@@ -35,3 +35,28 @@ valuable ideas into this platform (our own code, free sources only), and optiona
 
 Not ported: paid-key connectors, the 400 strategy scripts (our Setups/strategy lab already tests strategies with
 honest statistics), crypto exchange connectors, the AI agent frameworks (our assistant already acts on the platform).
+
+## Second pass (Fincept README at eec7ff7, 2026-11-09)
+
+Same rule as the first pass, and the owner's own: **its code is never copied, translated or "re-engineered"** (the
+AGPL-3.0 would then oblige publishing this whole platform). Only its published feature list was read; each capability
+below is built from public documentation, free sources and published maths in our own code. Bloomberg likewise: its
+capabilities, never its look, names or screens.
+
+Its open build lists: analytics (DCF, optimisation, VaR, derivatives, fixed income, an 18-module QuantLib suite), 37 AI
+agents, 100+ data connectors, crypto feeds (Kraken, Hyperliquid), paper trading and 16 brokers, a visual node editor,
+and "global intelligence" (maritime tracking, geopolitics from HDX/ACLED, relationship mapping), news clustering and
+deviation monitors. Most analytics are already here (first pass, institutional-edge.md, rd-backlog.md). The gaps:
+
+| # | Capability | Free source | Method | Home | Effort | Edge |
+|---|---|---|---|---|---|---|
+| F1 | **News surge monitor** (a stock's headlines far above its normal pace, Bloomberg-style "unusual news") | the news the helper already fetches (Google News / CNBC RSS) | daily headline count per symbol vs its own 30-day mean and SD (z-score), grouped stories counted once | Home Edge + Live flow alerts | S | Medium |
+| F2 | **Geopolitical risk** by country and over time | Caldara and Iacoviello Geopolitical Risk index (free download, daily and monthly; AER 2022) and the GDELT 2.0 DOC API (no key: article volume and tone by query) | GPR level and percentile; GDELT conflict-coverage volume by country vs its own baseline | Macro → World | M | Medium |
+| F3 | **Supply chain and relationship map** (who a company sells to, buys from, competes with) | 10-K concentration (built, A4), segments (A1), SEC full-text search for "customer"/"supplier" mentions, the SEC ticker list to link names | named counterparties as a graph; each linked company opens its own page; exposure % where disclosed | Research → "Who it depends on" | M | High |
+| F4 | **Crypto positioning**: perpetual-futures funding rates, open interest and basis for BTC/ETH/SOL | Hyperliquid public info API and Kraken Futures public tickers (no key) | annualised funding, OI change, perp − spot basis; percentile vs own history (collected going forward) | Investments → Crypto | S | High |
+| F5 | **Supply-chain stress** (Fincept's maritime tracking, done with free indexes instead of ship-by-ship AIS) | NY Fed Global Supply Chain Pressure Index (free monthly), FRED freight series (TSIFRGHT, transport services) | level and percentile, 3-month change | Macro | S | Medium |
+| F6 | **AI desks**: the assistant answering as a named role (macro strategist, value analyst, risk manager, options trader) with that desk's tools and checklist | existing AI engine and tools | one prompt and tool list per desk; never trades | AI panel | S | Medium |
+
+Left out on purpose: ship-by-ship maritime tracking (needs a per-user AIS key and a heavy live map; F5 gives the
+signal), the node editor (alerts, schedules and the improvement runs already automate), a second paper-trading engine
+(Webull Test is paper trading), and 37 agent personas (F6 covers the useful desks; simplicity scales).
