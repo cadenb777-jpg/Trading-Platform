@@ -11258,3 +11258,49 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
   .lf-form { grid-template-columns: 1fr 1fr; } .lf-field.wide { grid-column: 1 / -1; } .lf-checks { grid-column: 1 / -1; }
   .lf-row { grid-template-columns: auto auto 1fr auto; } .lf-msg { grid-column: 1 / -1; }
 }
+
+/* Rates desk pack (src/invest/ratesDeskView.ts): credit ladder, auction scorecard, term premium */
+.rd-panel { display: grid; gap: var(--sp-3); min-width: 0; }
+.rd-panel > p { margin: 0; }
+.rd-table { width: 100%; }
+.rd-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.rd-table td.num:not(.muted) { color: var(--text-strong); }
+.rd-table th[scope='row'] .link-btn { color: var(--label); font-weight: 600; }
+.rd-range-head { width: 220px; }
+.rd-range-cell { display: flex; align-items: center; gap: var(--sp-2); }
+.rd-range { position: relative; display: block; flex: 1; height: 14px; min-width: 120px; }
+.rd-range i { position: absolute; display: block; }
+.rd-track { left: 0; right: 0; top: 5px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--viz-1) 30%, transparent); }
+.rd-dot { top: 1px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--text-strong); border: 2px solid var(--surface); }
+.rd-dot.unusual { background: var(--label); }
+.rd-pct { color: var(--muted); min-width: 3.2em; text-align: right; font-variant-numeric: tabular-nums; }
+.rd-pct.strong { color: var(--label); font-weight: 600; }
+.rd-auctions { list-style: none; margin: 0; padding: 0; display: grid; }
+.rd-auctions li { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(140px, auto) minmax(70px, auto); grid-template-areas: 'name read yield' 'sent sent sent'; gap: 2px var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+.rd-auctions li:last-child { border-bottom: 0; }
+.rd-auction-name { grid-area: name; }
+.rd-auction-name b { color: var(--label); }
+/* demand is neither good nor bad news for the owner: neutral data colours (green/red stay for good/bad), with a mark */
+.rd-read { grid-area: read; font-weight: 600; color: var(--muted); }
+.rd-read.up { color: var(--viz-1); }
+.rd-read.up::before { content: '▲ '; }
+.rd-read.down { color: var(--viz-2); }
+.rd-read.down::before { content: '▼ '; }
+.rd-yield { grid-area: yield; text-align: right; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.rd-sentence { grid-area: sent; }
+.rd-tp { display: grid; gap: var(--sp-2); }
+.rd-tp-body { display: grid; gap: var(--sp-2); }
+.rd-tp p { margin: 0; }
+.rd-tp-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.rd-tp-value { font-size: 1.6rem; line-height: 1; color: var(--text-strong); }
+.rd-tp-spark { display: block; width: 140px; height: 32px; }
+.rd-tp-spark svg { width: 100%; height: 100%; }
+@media (max-width: 560px) {
+  .rd-range-head { width: 70px; }
+  .rd-range { min-width: 60px; }
+  .rd-pct, .rd-table .cf-wide { display: none; }
+  .rd-table th, .rd-table td { padding-left: 6px; padding-right: 6px; }
+  .rd-table thead th { white-space: normal; }
+  .rd-table th[scope='row'] .link-btn { white-space: normal; text-align: left; }
+  .rd-auctions li { grid-template-columns: 1fr auto; grid-template-areas: 'name yield' 'read read' 'sent sent'; }
+}

@@ -40,6 +40,8 @@ Columns: **what institutions use** · **free data** · **maths (primary source)*
   10y-3m spread fitted by maximum likelihood since 1959 (Estrella and Mishkin 1998), shown with its record and false
   alarms. Proof: flat-curve par yields, fit recovers a known curve, probit recovers known coefficients, AUC by hand.
   **Done (helper 61, Investments → Bonds → What the curve says; Home Edge today line).**
+- **Term premium, credit spreads by rating, auction demand** (rates/credit desks' monitors). Kim-Wright via FRED;
+  ICE BofA OAS by rating via FRED (3 years); Fiscal Data bidder splits. **Done (helper 64, Bonds tabs).**
 - **Net liquidity** (macro desks' liquidity gauge). Free: FRED WALCL − WTREGEN − RRPONTSYD (weekly). Maths: the
   difference, aligned to Wednesday dates. Shown: line with the S&P 500 beside it. Proof and honesty: report the
   correlation of weekly *changes* (not levels, which are spuriously correlated) with its confidence interval.

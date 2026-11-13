@@ -357,6 +357,13 @@ def auction_row(r):
         'bidToCover': _num(r.get('bid_to_cover_ratio')),
         'offering': _num(r.get('offering_amt')),
         'reopening': text('reopening') == 'Yes',
+        # demand breakdown (helper 64, Auction demand scorecard): competitive amounts accepted by bidder type
+        'tips': text('inflation_index_security') == 'Yes',
+        'frn': text('floating_rate') == 'Yes',
+        'dealers': _num(r.get('primary_dealer_accepted')),
+        'direct': _num(r.get('direct_bidder_accepted')),
+        'indirect': _num(r.get('indirect_bidder_accepted')),
+        'accepted': _num(r.get('total_accepted')),
     }
 
 
@@ -364,9 +371,11 @@ def auction_row(r):
 async def auctions(ctx, msg):
     """Recent Treasury auction results and the auctions coming up."""
     async def load():
-        recent, upcoming = await asyncio.gather(
+        recent, upcoming, coupons = await asyncio.gather(
             fiscal(ctx, 'auctions_query', {'sort': '-auction_date', 'page[size]': '150'}),
             fiscal(ctx, 'upcoming_auctions', {'sort': 'auction_date', 'page[size]': '60'}),
+            # notes and bonds only, about 2 years: enough past auctions of each maturity for the demand scorecard
+            fiscal(ctx, 'auctions_query', {'sort': '-auction_date', 'page[size]': '200', 'filter': 'security_type:in:(Note,Bond)'}),
             return_exceptions=True)
         if isinstance(recent, Exception) and isinstance(upcoming, Exception):
             raise EngineError(f'Could not reach the Treasury ({type(recent).__name__}).')
@@ -378,8 +387,14 @@ async def auctions(ctx, msg):
             row = auction_row(r)
             if row['auctionDate'] >= today:
                 coming.setdefault((row['cusip'], row['auctionDate']), row)
-        return {'results': results[:120], 'upcoming': sorted(coming.values(), key=lambda r: r['auctionDate'])}
-    return await ctx.cached('treasury-auctions', 3600, load, persist=True, stale_ok=True)
+        # None = the notes-and-bonds download failed (the page says it couldn't load, never "no results")
+        held = None
+        if not isinstance(coupons, Exception):
+            held = [auction_row(r) for r in coupons]
+            held = [r for r in held if r['auctionDate'] and r['auctionDate'] <= today and r['yield']]
+        return {'results': results[:120], 'upcoming': sorted(coming.values(), key=lambda r: r['auctionDate']), 'coupons': held}
+    # key '2' (helper 64): saved replies from older helpers have no coupons / bidder fields
+    return await ctx.cached('treasury-auctions2', 3600, load, persist=True, stale_ok=True)
 
 
 MONTHS = {m: i for i, m in enumerate(['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'], 1)}
