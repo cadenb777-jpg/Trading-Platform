@@ -66,6 +66,6 @@ describe('What the curve says', () => {
     expect(curveEdgeLine({ ...d, recession: { ...rec, probability: 0.45 } } as CurveFit)!.tone).toBe('down');
     expect(curveEdgeLine({ ...d, recession: null } as unknown as CurveFit)).toBeNull();
     expect(curveEdgeLine(null)).toBeNull();
-    expect(edgeLines(null, null, d).map((l) => l.label)).toEqual(['Recession odds, next 12 months']);
+    expect(edgeLines({ curve: d }).map((l) => l.label)).toEqual(['Recession odds, next 12 months']);
   });
 });

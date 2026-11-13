@@ -53,9 +53,9 @@ describe('Edge today with money', () => {
   it('adds the funding line only when tight', async () => {
     const { edgeLines } = await import('../home/edge');
     const calm = { funding: { ...funding } } as MoneyReply;
-    expect(edgeLines(null, null, null, calm)).toEqual([]);
+    expect(edgeLines({ money: calm })).toEqual([]);
     const tight = { funding: { ...funding, spreadBp: 6, spreadPct: 96, reading: 'tight' as const } } as MoneyReply;
-    expect(edgeLines(null, null, null, tight).map((l) => l.label)).toEqual(['Overnight money is tight']);
+    expect(edgeLines({ money: tight }).map((l) => l.label)).toEqual(['Overnight money is tight']);
   });
 });
 

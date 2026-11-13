@@ -27,7 +27,15 @@ export interface EdgeLine {
 const ok = (v: number | null | undefined): v is number => v != null && Number.isFinite(v);
 const tone = (v: number | null | undefined): EdgeLine['tone'] => (!ok(v) || Math.abs(v) < 1e-9 ? '' : v > 0 ? 'up' : 'down');
 
-export function edgeLines(carry: Carry | null, box: BoxReply | null, curve: CurveFit | null = null, money: MoneyReply | null = null): EdgeLine[] {
+/** Every reading is optional and named, so a new one joins without touching the callers. */
+export interface EdgeInputs {
+  carry?: Carry | null;
+  box?: BoxReply | null;
+  curve?: CurveFit | null;
+  money?: MoneyReply | null;
+}
+
+export function edgeLines({ carry = null, box = null, curve = null, money = null }: EdgeInputs): EdgeLine[] {
   const out: EdgeLine[] = [];
   for (const root of ['ES', 'NQ']) {
     const r = carry?.rows.find((x) => x.root === root);

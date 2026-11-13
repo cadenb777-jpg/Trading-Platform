@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 66;
+export const LATEST_HELPER_VERSION = 67;
 /** The "Log in to Schwab" request (schwab_login) and the in-place re-login need this version. */
 export const SCHWAB_LOGIN_HELPER_VERSION = 47;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
@@ -87,6 +87,9 @@ export const boxReady = () => !helper.tooOld && (helper.version ?? 0) >= BOX_HEL
  *  the view, so Home can ask without loading the view's code. */
 export const MONEY_HELPER_VERSION = 66;
 export const moneyReady = () => !helper.tooOld && (helper.version ?? 0) >= MONEY_HELPER_VERSION;
+/** Credit and reserves (helper 67: bonds.system = reserves vs GDP, commercial paper spread, bank lending standards). */
+export const SYSTEM_HELPER_VERSION = 67;
+export const systemReady = () => !helper.tooOld && (helper.version ?? 0) >= SYSTEM_HELPER_VERSION;
 /** The Strategy Lab's game.* requests and the Equilibrium-Prime assistant mode (ai.chat with `mode`) need this version. */
 export const GAME_HELPER_VERSION = 44;
 /** True when the connected helper has the game-theory engine (v44+). */
@@ -576,6 +579,7 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'bonds.credit': 30 * 60_000,
   'bonds.termpremium': 30 * 60_000,
   'bonds.money': 30 * 60_000,
+  'bonds.system': 30 * 60_000,
   'quant.tearsheet': 5 * 60_000,
   'quant.comps': 10 * 60_000,
   'invest.history': 5 * 60_000,

@@ -183,7 +183,7 @@ async def money(ctx, msg):
         _fred(ctx, 'SOFR', '2021-07-01'), _fred(ctx, 'SOFR1', '2021-07-01'), _fred(ctx, 'SOFR99', '2021-07-01'),
         _fred(ctx, 'IORB', '2021-07-01'), _fred(ctx, 'MORTGAGE30US', '1971-01-01'), _fred(ctx, 'DGS10', '1971-01-01'),
         _debt(ctx), _mspd(ctx), return_exceptions=True)
-    bad = lambda *xs: any(isinstance(x, Exception) for x in xs)  # noqa: E731
+    bad = lambda *xs: any(isinstance(x, BaseException) for x in xs)  # noqa: E731 (CancelledError is a BaseException)
     notes, out = [], {}
     out['funding'] = None if bad(sofr, s1, s99, iorb) else funding(sofr, s1, s99, iorb)
     if bad(sofr, s1, s99, iorb):
