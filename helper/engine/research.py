@@ -374,8 +374,7 @@ async def company_core(ctx, cik, with_maturities=False):
         # Company facts files are large, so only the finished statements are kept on disk.
         company_facts = await sec._json(ctx, sec.FACTS_URL.format(cik=cik))
         return {'statements': statements(company_facts), 'shares': _latest_shares(company_facts), **_ladders(company_facts)}
-    # 'sec-core72': copies saved before helper 72 have no LTM column
-    core = await ctx.cached(('sec-core72', cik), 6 * 3600, load_core, persist=True, stale_ok=True)
+    core = await ctx.cached(('sec-core', cik), 6 * 3600, load_core, persist=True, stale_ok=True)
     if with_maturities and not all(k in core['statements']['annual']['values'] for k in HEALTH_KEYS):
         # a copy saved before helper 71 lacks the lines the health scores need: read the whole core once more
         # (its own key, so the stale copy isn't served again) instead of waiting for the 6 h refresh
