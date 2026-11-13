@@ -124,6 +124,20 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   and `coupons` (notes+bonds, ~2 years; null = that download failed) for the Auction demand scorecard (vs last 6 of the
   same family 2/3/5/7/10/20/30, strong/weak at btc z - dealer-share z >= 3, measured ~1 in 10 each way). No tail proxy
   (closing-curve stand-in was noise: LESSONS).
+  Money and supply (v66, engine/moneydesk.py `bonds.money`, MONEY_HELPER_VERSION/moneyReady in schwab.ts; src/invest/
+  moneyDesk.ts pure + moneyDeskView.ts): funding = SOFR - IORB and SOFR99 - SOFR1 (FRED, since IORB began July 2021),
+  percentile; tight = >= 90th and SOFR above IORB outside month-end days (last 3 / first 2 calendar days = 'month-end',
+  never on Home); mortgage = MORTGAGE30US - DGS10 on or before (weekly, since 1971, median); supply = Debt to the Penny
+  (held by the public, 30/91/365-day change, pace) + MSPD month-ends (bills' share of marketable debt and of its net
+  change; never gross auction sales: bills roll over). No cache of its own (each loader caches its source; FRED history
+  via ratesdesk._full). "Money and housing" panel on Bonds > Bond market; "How fast the government is borrowing" on What
+  the curve says; Home Edge today adds "Overnight money is tight" only when tight (each Edge line paints on arrival).
+  Credit and reserves (v67, engine/creditdesk.py `bonds.system`, SYSTEM_HELPER_VERSION/systemReady in schwab.ts; src/invest/
+  systemDesk.ts pure + systemDeskView.ts, panel on Bonds > Bond market): reserves = WRESBAL / GDP of the week's own
+  quarter (unpublished quarters grown at the last year's average quarterly growth, flagged gdpEstimated) vs the week of
+  2019-09-18 (6.4%, money markets broke) in today's dollars; paper = 90-day AA financial CP - 3-month bill (discount basis,
+  since 1997, stressed >= 95th percentile; not on Home: too costly for a rare line); lending = SLOOS DRTSCILM net %
+  tightening, tightening/easing at +-10 (symmetric). edgeLines takes one named object {carry, box, curve, money}.
   Home "Edge today" widget (id 'edge', src/home/edge.ts edgeLines, tested): ES/NQ implied open or futures vs fair
   value and the 3-month box vs T-bill, each linking to its Futures panel, plus the curve's recession odds (#invest/bonds/curve). Home layouts keep `seen` (every widget offered):
   a widget released later joins a saved layout once after its first card; removing it sticks.
