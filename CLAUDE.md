@@ -124,6 +124,14 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   and `coupons` (notes+bonds, ~2 years; null = that download failed) for the Auction demand scorecard (vs last 6 of the
   same family 2/3/5/7/10/20/30, strong/weak at btc z - dealer-share z >= 3, measured ~1 in 10 each way). No tail proxy
   (closing-curve stand-in was noise: LESSONS).
+  Money and supply (v66, engine/moneydesk.py `bonds.money`, MONEY_HELPER_VERSION/moneyReady in schwab.ts; src/invest/
+  moneyDesk.ts pure + moneyDeskView.ts): funding = SOFR - IORB and SOFR99 - SOFR1 (FRED, since IORB began July 2021),
+  percentile; tight = >= 90th and SOFR above IORB outside month-end days (last 3 / first 2 calendar days = 'month-end',
+  never on Home); mortgage = MORTGAGE30US - DGS10 on or before (weekly, since 1971, median); supply = Debt to the Penny
+  (held by the public, 30/91/365-day change, pace) + MSPD month-ends (bills' share of marketable debt and of its net
+  change; never gross auction sales: bills roll over). No cache of its own (each loader caches its source; FRED history
+  via ratesdesk._full). "Money and housing" panel on Bonds > Bond market; "How fast the government is borrowing" on What
+  the curve says; Home Edge today adds "Overnight money is tight" only when tight (each Edge line paints on arrival).
   Home "Edge today" widget (id 'edge', src/home/edge.ts edgeLines, tested): ES/NQ implied open or futures vs fair
   value and the 3-month box vs T-bill, each linking to its Futures panel, plus the curve's recession odds (#invest/bonds/curve). Home layouts keep `seen` (every widget offered):
   a widget released later joins a saved layout once after its first card; removing it sticks.

@@ -17,6 +17,7 @@ import { interactive, type MiniItem } from './rowInteract';
 import { aiAction, compareAction, type GoAction } from './goTo';
 import { createCurveView } from './curveView';
 import { auctionScorecard, creditPanel } from './ratesDeskView';
+import { moneyPanel } from './moneyDeskView';
 import type { AuctionRow } from './ratesDesk';
 
 export type BondTab = 'market' | 'curve' | 'auctions' | 'lookup' | 'calculator' | 'ladder';
@@ -147,7 +148,7 @@ export function createBondsView(ctx: InvestContext) {
     const rates = h('div', { class: 'inv-rates' }, h('div', { class: 'skeleton', style: 'height:120px' }));
     const curvePanel = h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Treasury yield curve'), h('span', { class: 'muted small' }, 'What the government pays to borrow for each length of time')), h('div', { class: 'skeleton', style: 'height:240px' }));
     const boards = h('div', { class: 'inv-boards' }, ...BOARDS.bonds.map(skeletonBoard));
-    body.replaceChildren(h('div', { class: 'home-ai-row' }, ai.button, h('span', { class: 'muted small' }, 'What are bonds saying about growth, inflation and risk?')), ai.panel, rates, creditPanel(), curvePanel, h('h2', { class: 'group-title' }, 'Bond funds (ETFs)'), boards);
+    body.replaceChildren(h('div', { class: 'home-ai-row' }, ai.button, h('span', { class: 'muted small' }, 'What are bonds saying about growth, inflation and risk?')), ai.panel, rates, creditPanel(), moneyPanel(), curvePanel, h('h2', { class: 'group-title' }, 'Bond funds (ETFs)'), boards);
     engineRequest<{ series: RateSeries[]; failed: string[] }>('bonds.market', {}, 60000)
       .then(({ series, failed }) => {
         seen.rates = series;

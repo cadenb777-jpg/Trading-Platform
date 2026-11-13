@@ -11304,3 +11304,18 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
   .rd-table th[scope='row'] .link-btn { white-space: normal; text-align: left; }
   .rd-auctions li { grid-template-columns: 1fr auto; grid-template-areas: 'name yield' 'read read' 'sent sent'; }
 }
+
+/* Money and supply (src/invest/moneyDeskView.ts) */
+.md-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: var(--sp-4); }
+.md-block, .md-body { display: grid; gap: var(--sp-2); align-content: start; min-width: 0; }
+.md-body p { margin: 0; }
+.md-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.md-value { font-size: 1.6rem; line-height: 1; color: var(--text-strong); }
+.md-read { font-weight: 600; color: var(--muted); }
+.md-read.tight { color: var(--label); }
+.md-spark { display: block; width: 160px; height: 34px; }
+.md-spark svg { width: 100%; height: 100%; }
+.md-facts { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-5, 24px); }
+.md-fact { display: grid; gap: 1px; }
+.md-fact b { color: var(--text-strong); }
+.md-fact b, .md-fact span { text-align: left; }

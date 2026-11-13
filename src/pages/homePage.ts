@@ -415,24 +415,27 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
   }
   let edgeGen = 0;
   async function drawEdge() {
-    const { carryReady, boxReady, engineRequest: req } = await import('../data/schwab');
+    const { carryReady, boxReady, moneyReady, engineRequest: req } = await import('../data/schwab');
     // never leave earlier readings on screen as if current
     if (!helper.isConnected) return edgeNote('Edge readings appear when the helper is running.');
     if (!carryReady()) return edgeNote('Update the helper to see edge readings: Settings > About > Update now.');
-    const { curveReady } = await import('../invest/curveView');
     const gen = ++edgeGen;
-    // the curve can take a while on its first fit of the day: fair value and box rates are drawn first, the curve
-    // line joins when it arrives
+    // the slow readings start first and join when they arrive: fair value and box rates are drawn as soon as they are
+    // back, then the curve's recession line and (only when tight) overnight funding, each on its own
+    const moneyP = moneyReady() ? req<import('../invest/moneyDesk').MoneyReply>('bonds.money', {}, 60_000).catch(() => null) : Promise.resolve(null);
+    const carryP = req<import('../futures/fairValue').Carry>('futures.carry', {}, 30_000).catch(() => null);
+    const boxP = boxReady() ? req<import('../futures/boxRates').BoxReply>('rates.box', {}, 60_000).catch(() => null) : Promise.resolve(null);
+    const { curveReady } = await import('../invest/curveView');
     const curveP = curveReady() ? req<import('../invest/curveFit').CurveFit>('bonds.curvefit', {}, 120_000).catch(() => null) : Promise.resolve(null);
-    const [carry, box] = await Promise.all([
-      req<import('../futures/fairValue').Carry>('futures.carry', {}, 30_000).catch(() => null),
-      boxReady() ? req<import('../futures/boxRates').BoxReply>('rates.box', {}, 60_000).catch(() => null) : Promise.resolve(null),
-    ]);
+    const [carry, box] = await Promise.all([carryP, boxP]);
     const { edgeLines } = await import('../home/edge');
-    const paint = (curve: import('../invest/curveFit').CurveFit | null, waiting: boolean) => {
+    let curve: import('../invest/curveFit').CurveFit | null = null;
+    let money: import('../invest/moneyDesk').MoneyReply | null = null;
+    let waiting = 2;
+    const paint = () => {
       if (gen !== edgeGen) return; // a newer refresh owns the card
-      const lines = edgeLines(carry, box, curve);
-      edgeStamp.set(carry ? carry.asOf : null, { source: curve ? 'Schwab, FRED, Yahoo, U.S. Treasury' : 'Schwab, FRED, Yahoo' });
+      const lines = edgeLines(carry, box, curve, money);
+      edgeStamp.set(carry ? carry.asOf : null, { source: curve || money ? 'Schwab, FRED, Yahoo, U.S. Treasury' : 'Schwab, FRED, Yahoo' });
       edgeBody.replaceChildren(
         ...(lines.length
           ? lines.map((l) =>
@@ -444,11 +447,14 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
                 h('span', { class: 'muted small edge-detail' }, l.detail),
               ),
             )
-          : [h('p', { class: 'muted small' }, waiting ? 'Loading edge readings…' : 'No edge readings yet: they need Schwab futures and option quotes, FRED and Yahoo. Open Futures to see each tool.')]),
+          : [h('p', { class: 'muted small' }, waiting && (curveReady() || moneyReady()) ? 'Loading edge readings…' : 'No edge readings yet: they need Schwab futures and option quotes, FRED and Yahoo. Open Futures to see each tool.')]),
       );
     };
-    paint(null, curveReady());
-    paint(await curveP, false);
+    paint();
+    await Promise.all([
+      curveP.then((c) => ((curve = c), waiting--, paint())),
+      moneyP.then((m) => ((money = m), waiting--, paint())),
+    ]);
   }
 
   // ---------- widgets (src/home/widgets.ts: layout saved per device) ----------

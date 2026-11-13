@@ -8,6 +8,7 @@ import { benchmarkRow, months, rate } from '../futures/boxRates';
 import type { BoxReply } from '../futures/boxRates';
 import { level, signedPct, signedPts, signedUsd, type Carry } from '../futures/fairValue';
 import { curveEdgeLine, type CurveFit } from '../invest/curveFit';
+import { fundingEdgeLine, type MoneyReply } from '../invest/moneyDesk';
 
 export interface EdgeLine {
   /** What it is, in plain words. */
@@ -26,7 +27,7 @@ export interface EdgeLine {
 const ok = (v: number | null | undefined): v is number => v != null && Number.isFinite(v);
 const tone = (v: number | null | undefined): EdgeLine['tone'] => (!ok(v) || Math.abs(v) < 1e-9 ? '' : v > 0 ? 'up' : 'down');
 
-export function edgeLines(carry: Carry | null, box: BoxReply | null, curve: CurveFit | null = null): EdgeLine[] {
+export function edgeLines(carry: Carry | null, box: BoxReply | null, curve: CurveFit | null = null, money: MoneyReply | null = null): EdgeLine[] {
   const out: EdgeLine[] = [];
   for (const root of ['ES', 'NQ']) {
     const r = carry?.rows.find((x) => x.root === root);
@@ -64,5 +65,8 @@ export function edgeLines(carry: Carry | null, box: BoxReply | null, curve: Curv
   }
   const c = curveEdgeLine(curve);
   if (c) out.push(c);
+  // overnight funding joins only when it is tight (a warning, not a daily figure)
+  const f = fundingEdgeLine(money);
+  if (f) out.push(f);
   return out;
 }

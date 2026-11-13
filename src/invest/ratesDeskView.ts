@@ -14,7 +14,7 @@ import { creditHeadline, LOOKBACK, READ_AT, READ_WORDS, scoreAuctions, scoreSent
 export const RATES_DESK_HELPER_VERSION = 64;
 export const ratesDeskReady = () => !helper.tooOld && (helper.version ?? 0) >= RATES_DESK_HELPER_VERSION;
 
-const day = (iso: string | null | undefined) => (iso ? new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '—');
+export const day = (iso: string | null | undefined) => (iso ? new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '—');
 const bpChange = (now: number | null | undefined, then: number | null | undefined, scale = 100) => {
   if (now == null || then == null) return '—';
   const v = Math.round((now - then) * scale);
@@ -23,12 +23,13 @@ const bpChange = (now: number | null | undefined, then: number | null | undefine
 
 const monthYear = (iso: string | undefined) => (iso ? new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : '—');
 
-/** Runs `go` once a new enough helper is connected (now, or when it says hello), else shows why it is waiting. */
-function whenReady(body: HTMLElement, el: HTMLElement, go: () => void) {
-  if (ratesDeskReady()) return go();
+/** Runs `go` once a new enough helper is connected (now, or when it says hello), else shows why it is waiting.
+ *  Shared by the rates desk and money desk panels. */
+export function whenReady(body: HTMLElement, el: HTMLElement, go: () => void, ready: () => boolean = ratesDeskReady) {
+  if (ready()) return go();
   body.replaceChildren(h('p', { class: 'muted small' }, helper.isConnected ? 'Arrives with the next helper update (it installs by itself).' : 'Start the helper to see this.'));
   const off = helper.onStatusChange(() => {
-    if (!ratesDeskReady()) return;
+    if (!ready()) return;
     off();
     if (el.isConnected) go();
   });
