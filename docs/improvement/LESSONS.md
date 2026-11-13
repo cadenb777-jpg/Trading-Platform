@@ -160,6 +160,13 @@ whenever the owner repeats or adds one.
   ratio built from two lines that don't measure the same thing is worse than no ratio; never add figures from
   different year-ends (lease-adjusted debt checks the dates match).
 - 2026-11-13 · #20 Earnings quality: Piotroski F-score checklist (each check with both years' numbers) and accruals by year
-  on the Research overview, from the statements research.company already returns (no helper change) · proposed ·
+  on the Research overview, from the statements research.company already returns (no helper change) · approved (merged) ·
   backlog A13-A14. Both are labelled readings, not signals, until tested on the owner's stocks. A check without its
   figures is "no data" and the score says "of 8" rather than counting it as a fail.
+- 2026-11-13 · #21 Health scores (helper 71): Beneish M-score (all 8 ratios or no score; never a guessed 1.0) and Altman
+  Z-score (manufacturers with a live price get the 1968 Z; manufacturers without one get Z' on book values; others get
+  Z''; banks and insurers aren't scored) on Earnings quality · proposed · backlog A15-A16. Review caught a reason
+  sentence that could say the opposite of the truth: ratios with negative weights raise the score by falling, so only
+  positive-weight ratios are named. Lessons: a filer that omits a total (Coca-Cola has no total liabilities tag) gets a
+  derived figure only with a label; never set today's market value against an older year's accounts; check glossary
+  keys for clashes (the price z-score already used `zscore`).

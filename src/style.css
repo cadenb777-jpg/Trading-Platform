@@ -11331,6 +11331,7 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .dd-amt { text-align: right; color: var(--text-strong); }
 .dd-sub { margin-top: var(--sp-1); }
 /* Research: Earnings quality (src/research/qualityView.ts) */
+.qe-panel .md-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); }
 .qe-table { overflow-x: auto; }
 .qe-table td.label { white-space: normal; }
 .qe-mark { display: inline-block; width: 1.4em; font-weight: 700; }

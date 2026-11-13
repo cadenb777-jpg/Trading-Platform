@@ -29,11 +29,16 @@ INCOME = [
 BALANCE = [
     ('cash', 'Cash & equivalents', ['CashAndCashEquivalentsAtCarryingValue', 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', 'Cash']),
     ('shortInvestments', 'Short-term investments', ['MarketableSecuritiesCurrent', 'ShortTermInvestments', 'AvailableForSaleSecuritiesDebtSecuritiesCurrent']),
+    # helper 71: for the Beneish M-score and Altman Z-score on Research (Earnings quality)
+    ('receivables', 'Accounts receivable', ['AccountsReceivableNetCurrent', 'ReceivablesNetCurrent']),
     ('currentAssets', 'Current assets', ['AssetsCurrent']),
+    ('ppe', 'Property, plant & equipment', ['PropertyPlantAndEquipmentNet',
+                                            'PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulatedDepreciationAndAmortization']),
     ('totalAssets', 'Total assets', ['Assets']),
     ('currentLiabilities', 'Current liabilities', ['LiabilitiesCurrent']),
     ('longTermDebt', 'Long-term debt', ['LongTermDebtNoncurrent', 'LongTermDebt', 'LongTermDebtAndCapitalLeaseObligations']),
     ('totalLiabilities', 'Total liabilities', ['Liabilities']),
+    ('retainedEarnings', 'Retained earnings', ['RetainedEarningsAccumulatedDeficit']),
     ('equity', "Shareholders' equity", ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest']),
 ]
 CASH_FLOW = [
@@ -329,6 +334,10 @@ async def company_core(ctx, cik, with_maturities=False):
         company_facts = await sec._json(ctx, sec.FACTS_URL.format(cik=cik))
         return {'statements': statements(company_facts), 'shares': _latest_shares(company_facts), **_ladders(company_facts)}
     core = await ctx.cached(('sec-core', cik), 6 * 3600, load_core, persist=True, stale_ok=True)
+    if with_maturities and not all(k in core['statements']['annual']['values'] for k in HEALTH_KEYS):
+        # a copy saved before helper 71 lacks the lines the health scores need: read the whole core once more
+        # (its own key, so the stale copy isn't served again) instead of waiting for the 6 h refresh
+        core = await ctx.cached(('sec-core71', cik), 6 * 3600, load_core, persist=True, stale_ok=True)
     if with_maturities and not all(k in core for k in LADDER_KEYS):
         # a copy saved by an older helper has no ladders: read them once on their own (expires with the 6 h core copy)
         async def load_ladders():
@@ -338,6 +347,8 @@ async def company_core(ctx, cik, with_maturities=False):
 
 
 LADDER_KEYS = ('maturities', 'obligations')
+#: statement lines added in helper 71 (Beneish M-score, Altman Z-score)
+HEALTH_KEYS = ('receivables', 'ppe', 'retainedEarnings')
 
 
 def _ladders(company_facts):
@@ -389,6 +400,8 @@ async def company(ctx, msg):
             'name': subs.get('name') or info['name'],
             'cik': info['cik'],
             'industry': subs.get('sicDescription', ''),
+            # helper 71: the SEC industry code (manufacturers 2000-3999 get Altman's original Z-score)
+            'sic': subs.get('sic', ''),
             'exchange': ', '.join(subs.get('exchanges') or []),
             'fiscalYearEnd': subs.get('fiscalYearEnd', ''),
             'website': subs.get('website', ''),

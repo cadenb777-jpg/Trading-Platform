@@ -19,11 +19,12 @@
  */
 import { fy, looksLikeSplit, ok, pc, type Statements } from './debtDilution';
 
-const at = (a: Statements, key: string, i: number): number | null => {
+/** One statement figure (finite), or null; shared with health.ts. */
+export const at = (a: Statements, key: string, i: number): number | null => {
   const v = a.values[key]?.[i];
   return i >= 0 && ok(v) ? v : null;
 };
-const div = (x: number | null, y: number | null): number | null => (x != null && y != null && y !== 0 ? x / y : null);
+export const div = (x: number | null, y: number | null): number | null => (x != null && y != null && y !== 0 ? x / y : null);
 const avg = (x: number | null, y: number | null): number | null => (x != null && y != null ? (x + y) / 2 : null);
 
 // ---------- accruals ----------

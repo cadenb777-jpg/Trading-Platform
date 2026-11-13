@@ -233,7 +233,7 @@ export function createResearchPage() {
       // debt maturities (10-K), interest cover, share count and buybacks after stock pay
       debtDilutionPanel({ annual: d.annual, marketCap: v.marketCap, cash: v.cash, maturities: d.maturities, obligations: d.obligations }),
       // Piotroski F-score and accruals, from the same annual statements
-      qualityPanel(d.annual),
+      qualityPanel(d.annual, { sic: (d.profile as { sic?: string }).sic, marketCap: v.marketCap, labels: d.labels }),
       // futures positioning for the company's market: one line, the full COT table is on Futures
       cotSummary(d.symbol, undefined, { quiet: true }),
       stockNewsCard(d.symbol, 5),
