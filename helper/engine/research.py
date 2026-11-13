@@ -238,7 +238,48 @@ def statements(company_facts):
         table['grossProfit'] = [g if g is not None else (r - c if r is not None and c is not None else None) for g, r, c in zip(table['grossProfit'], rev, cost)]
         table['freeCashFlow'] = [o - (c or 0) if o is not None else None for o, c in zip(table['operatingCashFlow'], table['capex'])]
         out[name] = {'periods': ends, 'values': table}
+    ltm = last_twelve_months(out['quarterly'], out['annual'])
+    if ltm:
+        out['annual']['ltm'] = ltm
     return out
+
+
+#: averaged (not added up) over the four quarters of the last twelve months
+AVERAGED = {'dilutedShares'}
+
+
+def _consecutive_quarters(ends):
+    """True when four quarter ends follow each other (about 9 months from the first to the last)."""
+    if len(ends) != 4:
+        return False
+    span = _days(ends[0], ends[-1])
+    steps = [_days(a, b) for a, b in zip(ends, ends[1:])]
+    return 250 <= span <= 300 and all(75 <= d <= 105 for d in steps)
+
+
+def last_twelve_months(quarterly, annual):
+    """The last twelve months (Bloomberg's LTM column) when the newest quarter is after the latest fiscal year: flows
+    added over the last four quarters, share counts averaged, balance-sheet items as of the newest quarter. None when
+    the last four quarters aren't complete and consecutive, or the newest quarter is the fiscal year end itself."""
+    q_ends, a_ends = quarterly['periods'], annual['periods']
+    if len(q_ends) < 4 or not a_ends or q_ends[-1] <= a_ends[-1] or _same_period(q_ends[-1], a_ends[-1]):
+        return None
+    last4 = q_ends[-4:]
+    if not _consecutive_quarters(last4):
+        return None
+    values = {}
+    for key, row in quarterly['values'].items():
+        if key in INSTANT:
+            values[key] = row[-1]
+            continue
+        q = row[-4:]
+        if any(x is None for x in q):
+            values[key] = None
+        elif key in AVERAGED:
+            values[key] = sum(q) / 4
+        else:
+            values[key] = sum(q)
+    return {'end': q_ends[-1], 'start': last4[0], 'values': values}
 
 
 def _div(a, b):
@@ -268,7 +309,7 @@ def ttm(quarterly, annual, key):
         return values[-1] if values else None
     q = quarterly['values'][key][-4:]
     if len(q) == 4 and all(x is not None for x in q):
-        return sum(q)
+        return sum(q) / 4 if key in AVERAGED else sum(q)  # share counts are averaged, not added up
     values = [x for x in annual['values'][key] if x is not None]
     return values[-1] if values else None
 
@@ -333,7 +374,8 @@ async def company_core(ctx, cik, with_maturities=False):
         # Company facts files are large, so only the finished statements are kept on disk.
         company_facts = await sec._json(ctx, sec.FACTS_URL.format(cik=cik))
         return {'statements': statements(company_facts), 'shares': _latest_shares(company_facts), **_ladders(company_facts)}
-    core = await ctx.cached(('sec-core', cik), 6 * 3600, load_core, persist=True, stale_ok=True)
+    # 'sec-core72': copies saved before helper 72 have no LTM column
+    core = await ctx.cached(('sec-core72', cik), 6 * 3600, load_core, persist=True, stale_ok=True)
     if with_maturities and not all(k in core['statements']['annual']['values'] for k in HEALTH_KEYS):
         # a copy saved before helper 71 lacks the lines the health scores need: read the whole core once more
         # (its own key, so the stale copy isn't served again) instead of waiting for the 6 h refresh

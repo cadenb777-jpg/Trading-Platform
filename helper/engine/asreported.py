@@ -138,11 +138,15 @@ def _columns(contexts, used, period):
         keys.add((c['start'] if c['days'] else None, c['end']))
     durations = [k for k in keys if k[0]]
     if durations:
-        want = (350, 380) if period == 'annual' else (80, 100)
-        fit = [k for k in durations if want[0] <= (k[1] - k[0]).days <= want[1]]
+        if period == 'annual':
+            fit = [k for k in durations if 350 <= (k[1] - k[0]).days <= 380]
+        else:
+            # a 10-Q: the quarter and the year to date (6 or 9 months), this year and last year side by side
+            fit = [k for k in durations if 80 <= (k[1] - k[0]).days <= 100 or 150 <= (k[1] - k[0]).days <= 300]
         keys = set(fit or durations) | {k for k in keys if not k[0]}
     instants = sorted([k for k in keys if not k[0]], key=lambda k: k[1], reverse=True)
-    spans = sorted([k for k in keys if k[0]], key=lambda k: k[1], reverse=True)
+    # newest first; for the same end, the quarter before the year to date
+    spans = sorted([k for k in keys if k[0]], key=lambda k: (-k[1].toordinal(), (k[1] - k[0]).days))
     return spans[:MAX_COLUMNS] if spans else instants[:MAX_COLUMNS]
 
 
@@ -294,7 +298,7 @@ async def load(ctx, symbol, period='annual'):
         items = catalogue(roles, presentation)
         built = {it['role']: build_statement(it['role'], presentation, contexts, facts, labels, kind) for it in items}
         return {'items': [it for it in items if built[it['role']]['rows']], 'statements': built}
-    data = await ctx.cached(('asreported', f['accession']), 30 * 86400, parse, persist=True)
+    data = await ctx.cached(('asreported72', f['accession']), 30 * 86400, parse, persist=True)
     return co, f, cik, data
 
 

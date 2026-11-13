@@ -28,6 +28,8 @@ type Values = Record<string, (number | null)[]>;
 interface Statements {
   periods: string[];
   values: Values;
+  /** The last twelve months to the newest quarter, when it is after the latest fiscal year (helper 72+). */
+  ltm?: { end: string; start: string; values: Record<string, number | null> };
 }
 
 export interface CompanyData {
@@ -269,16 +271,23 @@ export function createResearchPage() {
     // quarters are compared with the same quarter a year before (as traders read earnings), years with the year before
     const back = quarterly ? 4 : 1;
     const fmt = (key: string, v: number | null) => (v == null ? '—' : key === 'epsDiluted' ? `$${v.toFixed(2)}` : key === 'dilutedShares' ? compact(v) : money(v));
+    // the yearly tables end with the last twelve months to the newest quarter (this year's numbers before the 10-K)
+    const ltm = !quarterly ? s.ltm : undefined;
+    const ltmCell = (k: string) => {
+      const v = ltm?.values[k] ?? null;
+      const last = s.values[k]?.[s.values[k].length - 1] ?? null;
+      return { v: fmt(k, v), cls: `ltm ${toneVsPrev(k, v, last)}`, title: `Last twelve months to ${ltm ? periodLabel(ltm.end, true) : ''}: the four latest quarters added up (balance-sheet lines as of that quarter)` };
+    };
     const table = (title: string, keys: string[]) =>
       h(
         'section',
         { class: 'panel' },
         h('div', { class: 'panel-head' }, h('h3', {}, title)),
         dataTable(
-          ['', ...s.periods.map((p) => periodLabel(p, quarterly))],
+          ['', ...s.periods.map((p) => periodLabel(p, quarterly)), ...(ltm ? [`LTM ${periodLabel(ltm.end, true)}`] : [])],
           keys
             .filter((k) => s.values[k]?.some((v) => v != null))
-            .map((k) => [{ v: d.labels[k] ?? k, cls: 'label' }, ...s.values[k].map((v, i) => ({ v: fmt(k, v), cls: toneVsPrev(k, v, s.values[k][i - back]), title: toneTitle(k, v, s.values[k][i - back], quarterly) }))]),
+            .map((k) => [{ v: d.labels[k] ?? k, cls: 'label' }, ...s.values[k].map((v, i) => ({ v: fmt(k, v), cls: toneVsPrev(k, v, s.values[k][i - back]), title: toneTitle(k, v, s.values[k][i - back], quarterly) })), ...(ltm ? [ltmCell(k)] : [])]),
           (i) => (['netIncome', 'freeCashFlow', 'equity'].includes(keys.filter((k) => s.values[k]?.some((v) => v != null))[i]) ? 'total' : ''),
         ),
       );
@@ -294,7 +303,17 @@ export function createResearchPage() {
     );
     if (layout === 'reported')
       return [
-        h('div', { class: 'ap-controls' }, layoutToggle, toggle, h('span', { class: 'muted small' }, 'Every line the company reports, in its own order, with its parts and every note.')),
+        h(
+          'div',
+          { class: 'ap-controls' },
+          layoutToggle,
+          toggle,
+          h('span', { class: 'muted small' }, 'Every line the company reports, in its own order, with its parts and every note.'),
+          // this year's numbers live in the 10-Qs until the 10-K comes out
+          !quarterly && d.quarterly.periods.length && d.annual.periods.length && d.quarterly.periods[d.quarterly.periods.length - 1] > d.annual.periods[d.annual.periods.length - 1]
+            ? h('button', { class: 'btn small', onclick: () => ((period = 'quarterly'), render()) }, `Show this year so far (to ${periodLabel(d.quarterly.periods[d.quarterly.periods.length - 1], true)})`)
+            : '',
+        ),
         asReportedPanel(d.symbol, quarterly),
       ];
     return [

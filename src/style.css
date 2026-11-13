@@ -11342,3 +11342,4 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .qe-bar { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
 .qe-bar.neg { background: var(--viz-1); }
 .qe-bar.pos { background: var(--label); }
+.data-table td.ltm { border-left: 1px solid var(--line); font-style: italic; }
