@@ -35,7 +35,7 @@ function verdict(s: Setup): { tone: 'good' | 'ok' | 'wait' | 'no'; title: string
       text: `${s.conflict.strategy} says ${s.conflict.direction > 0 ? 'BUY' : 'SELL'} on ${s.symbol} at the same time${s.conflict.tier ? ` (${s.conflict.tier}-grade)` : ''}. The strategies look at different time frames, so both can be "right", but they can't both work. Most traders wait, or take only the higher grade at a small size.${why}`,
     };
   if (s.tier === 'A')
-    return { tone: 'good', title: 'Yes, this meets every rule', text: 'The strategy has beaten random entries across the Nasdaq-100 after costs and after correcting for every strategy tested, it survives double costs and worked in both halves of its history, this stock\'s own record isn\'t losing, no earnings get in the way and the target is worth the risk. Take it at your normal size if the entry triggers.' };
+    return { tone: 'good', title: 'Yes, this meets every rule', text: 'The strategy has beaten random entries across the scanned Nasdaq stocks after costs and after correcting for every strategy tested, it survives double costs and worked in both halves of its history, this stock\'s own record isn\'t losing, no earnings get in the way and the target is worth the risk. Take it at your normal size if the entry triggers.' };
   if (s.tier === 'B')
     return { tone: 'ok', title: 'Reasonable, at a smaller size', text: `Nothing about this setup is against it and the strategy has made money overall, but it hasn't cleared every A-grade test.${why} A common approach is half your normal size.` };
   return { tone: 'no', title: 'Watch only: not a trade yet', text: `This is the closest candidate, not a trade.${why}` };
@@ -250,8 +250,8 @@ export function tradeGuideBody(s: Setup, strat: StrategyInfo | undefined, onOpen
       'The statistics behind it',
       st.trades
         ? h('p', {}, `On ${s.symbol}: ${st.trades} past trades in its backtest, ${Math.round((st.winRate ?? 0) * 100)}% winners, ${pct(st.expectancy, 2)} per trade after costs, held ${st.avgBars?.toFixed(1) ?? '—'} ${s.unit ?? 'day'}s on average (${st.grade}).`)
-        : h('p', { class: 'muted' }, `No past trades on ${s.symbol} with this strategy, so the record below is for all Nasdaq-100 stocks.`),
-      rec ? h('p', {}, termLabel(`Across the Nasdaq-100 (${long ? 'buys' : 'sells'} only${strat?.lab ? `, trades since ${strat.forward?.since ?? 'it was first shown'}` : ''})`, strat?.lab ? 'forward' : 'trades'), `: ${rec.stats.trades} trades, ${Math.round((rec.stats.winRate ?? 0) * 100)}% winners, ${pct(rec.stats.expectancy, 2)} per trade, profit factor ${rec.stats.profitFactor ?? '—'}.`) : '',
+        : h('p', { class: 'muted' }, `No past trades on ${s.symbol} with this strategy, so the record below is for all scanned stocks.`),
+      rec ? h('p', {}, termLabel(`Across the scanned stocks (${long ? 'buys' : 'sells'} only${strat?.lab ? `, trades since ${strat.forward?.since ?? 'it was first shown'}` : ''})`, strat?.lab ? 'forward' : 'trades'), `: ${rec.stats.trades} trades, ${Math.round((rec.stats.winRate ?? 0) * 100)}% winners, ${pct(rec.stats.expectancy, 2)} per trade, profit factor ${rec.stats.profitFactor ?? '—'}.`) : '',
       re
         ? h('p', {}, termLabel('Random-entry test', 'randomentry'), ` (${re.runs?.toLocaleString() ?? '1,000'} runs): `, h('b', { class: re.verdict === 'edge' ? 'up' : re.verdict === 'maybe' ? 'warn' : 'down' }, re.verdict === 'edge' ? 'the strategy beat chance' : re.verdict === 'maybe' ? 'inconclusive' : 'not clearly better than chance'), ` (p = ${re.p.toFixed(2)}${re.pAdjusted != null ? `; ${re.pAdjusted.toFixed(2)} after correcting for ${re.family} tests` : ''}; trades in the same week count as one draw).`)
         : '',

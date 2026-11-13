@@ -24,6 +24,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import alpaca, flow, lab, positioning, ruletests, sec
+from . import universe as universe_mod
 from . import strategies as st
 from . import datahub
 from .core import EngineError, background, handler, market_session
@@ -56,7 +57,7 @@ _SECTOR_LISTS = {
     'Financials & real estate': 'PYPL CSGP',
 }
 SECTORS = {sym: name for name, syms in _SECTOR_LISTS.items() for sym in syms.split()}
-UNIVERSE = NASDAQ_100
+UNIVERSE = NASDAQ_100  # the core list, always scanned; engine/universe.py adds the most traded Nasdaq stocks
 CONTEXT = ['QQQ']  # read for the market regime, not traded
 NDX_COT = '209742'  # Nasdaq-100 E-mini futures: the COT market for Nasdaq stocks
 # Schwab allows about 120 requests a minute for the whole app, and the charts share it: the scanner sends one
@@ -337,9 +338,16 @@ def prune_old_cache(disk):
         return 0
 
 
+EXTENDED_DAILY_DAYS = 5 * 366  # stocks outside the Nasdaq-100 (memory: see engine/universe.py)
+EXTENDED_WEEKLY_DAYS = 8 * 366
+
+
 async def daily_history(ctx, symbol):
-    """About 15 years of daily bars, fetched once per day (the live quote supplies today's bar during the day)."""
-    return await _history(ctx, symbol, 'get_price_history_every_day', DAILY_DAYS, 'scan-daily-15y', _until_tomorrow())
+    """About 15 years of daily bars (5 for stocks outside the Nasdaq-100), fetched once per day (the live quote
+    supplies today's bar during the day)."""
+    if symbol in NASDAQ_100 or symbol in CONTEXT:
+        return await _history(ctx, symbol, 'get_price_history_every_day', DAILY_DAYS, 'scan-daily-15y', _until_tomorrow())
+    return await _history(ctx, symbol, 'get_price_history_every_day', EXTENDED_DAILY_DAYS, 'scan-daily-5y', _until_tomorrow())
 
 
 async def live_quotes(ctx, symbols):
@@ -612,8 +620,10 @@ async def hourly_history(ctx, symbol):
 
 
 async def weekly_history(ctx, symbol):
-    """About 15 years of weekly bars, fetched once a day."""
-    return await _history(ctx, symbol, 'get_price_history_every_week', 15 * 366, 'scan-weekly', _until_tomorrow())
+    """About 15 years of weekly bars (8 outside the Nasdaq-100), fetched once a day."""
+    if symbol in NASDAQ_100:
+        return await _history(ctx, symbol, 'get_price_history_every_week', 15 * 366, 'scan-weekly', _until_tomorrow())
+    return await _history(ctx, symbol, 'get_price_history_every_week', EXTENDED_WEEKLY_DAYS, 'scan-weekly-8y', _until_tomorrow())
 
 
 async def dark_pool(ctx, s):
@@ -641,7 +651,8 @@ async def cot_rows_for(ctx, code):
 
 
 async def market_for(ctx, symbol):
-    if symbol in NASDAQ_100 and symbol not in positioning.SYMBOL_MARKET:
+    # every Nasdaq stock reads Nasdaq-100 futures positioning unless it has its own mapped market (no lookups per stock)
+    if symbol not in positioning.SYMBOL_MARKET:
         return NDX_COT
     try:
         code, _ = await positioning.related_market(ctx, symbol)
@@ -1366,17 +1377,35 @@ def _retire_failed(horizon, lab_forward):
         lab.install(survivors)
 
 
+async def scan_universe(ctx, pctx):
+    """The stocks to scan (engine/universe.py: the most traded Nasdaq common stocks plus the Nasdaq-100), or the
+    Nasdaq-100 alone when the Nasdaq directory or the quotes can't be read."""
+    try:
+        u = await universe_mod.liquid(ctx, lambda names: live_quotes(pctx, names), NASDAQ_100)
+        return {'symbols': u['symbols'], 'hourlySymbols': u['hourly'], 'labSymbols': u['lab'], 'listed': u['listed'],
+                'liquid': u['liquid'], 'count': len(u['symbols']), 'hourly': len(u['hourly']), 'lab': len(u['lab']),
+                'label': f"Nasdaq: the {len(u['symbols'])} most traded stocks"}
+    except EngineError:
+        raise
+    except Exception as err:
+        log.info('Scanner universe unavailable, scanning the Nasdaq-100: %s', err)
+        base = list(UNIVERSE)  # the configured core list (the Nasdaq-100)
+        return {'symbols': base, 'hourlySymbols': base, 'labSymbols': base, 'count': len(base),
+                'label': 'Nasdaq-100 (the full Nasdaq list could not be read this time)'}
+
+
 async def scan(ctx, news=None, publish=None):
-    """One full scan of the Nasdaq-100 on every time frame. `publish` receives the results after each time frame,
+    """One full scan of the most traded Nasdaq stocks (engine/universe.py) on every time frame. `publish` receives the results after each time frame,
     so the page fills in while the slower ones (hourly bars) are still loading."""
     session = market_session()
     pctx = _PacedContext(ctx)
     _lab_state()
     bad = bad_symbols()  # symbols Schwab didn't know earlier today (e.g. a ticker change) wait a day
-    symbols = [s for s in UNIVERSE if s not in bad]
+    uni = await scan_universe(ctx, pctx)
+    symbols = [s for s in uni['symbols'] if s not in bad]
     quotes = await live_quotes(pctx, symbols + CONTEXT + ['$VIX'])
     cot_rows, cot_of, histories = {}, {}, {}
-    skipped = [{'symbol': b, 'reason': 'unknown'} for b in sorted(bad) if b in UNIVERSE]
+    skipped = [{'symbol': b, 'reason': 'unknown'} for b in sorted(bad) if b in uni['symbols']]
     for sym in symbols + CONTEXT:
         try:
             histories[sym] = await daily_history(ctx, sym)
@@ -1419,7 +1448,8 @@ async def scan(ctx, news=None, publish=None):
     def assemble():
         swing = horizons.get('swing') or {}
         return {
-            'updated': time.time(), 'session': session, 'universe': 'Nasdaq-100', 'scanned': swing.get('scanned', 0),
+            'updated': time.time(), 'session': session, 'universe': uni['label'], 'universeInfo': {k: uni.get(k) for k in ('listed', 'liquid', 'count', 'hourly', 'lab')},
+            'scanned': swing.get('scanned', 0),
             'skipped': skipped, 'regime': regime, 'primary': 'weekly_swing', 'version': SCAN_VERSION,
             'alpaca': alpaca.available(),
             'horizons': horizons, 'horizonInfo': {h: {k: st.HORIZONS[h][k] for k in ('label', 'hold', 'bar', 'unit', 'higher')} for h in HORIZON_ORDER},
@@ -1430,7 +1460,8 @@ async def scan(ctx, news=None, publish=None):
     tier_rank = {'A': 0, 'B': 1, 'C': 2}
     swing_pass = None
     for horizon in HORIZON_ORDER:
-        rows = await _horizon_rows(ctx, horizon, symbols, histories, quotes, cot_of)
+        hourly_set = set(uni['hourlySymbols'])
+        rows = await _horizon_rows(ctx, horizon, [x for x in symbols if horizon != 'short' or x in hourly_set], histories, quotes, cot_of)
         if not rows:
             horizons[horizon] = {'scanned': 0, 'strategies': {}, 'setups': [], 'filteredOut': [], 'updated': time.time(),
                                  'error': 'No price history for this time frame yet'}
@@ -1463,11 +1494,13 @@ async def scan(ctx, news=None, publish=None):
         ls = _lab.setdefault(horizon, {})
         if week and _lab_state().get('_runs', {}).get(horizon) != week and not ls.get('running'):
             ls['running'] = True
-            ls['task'] = background(_run_lab(horizon, rows, stamp, market, daily))
+            lab_set = set(uni['labSymbols'])
+            ls['task'] = background(_run_lab(horizon, [r for r in rows if r[0] in lab_set], stamp, market, daily))
         rs = _rules.setdefault(horizon, {})
         if week and (rules_saved.get(horizon) or {}).get('week') != week and not rs.get('running'):
             rs['running'] = True
-            rs['task'] = background(_run_rule_tests(horizon, rows, regimes, ndx_rows if horizon != 'short' else ndx_rows, daily, week))
+            lab_set = set(uni['labSymbols'])
+            rs['task'] = background(_run_rule_tests(horizon, [r for r in rows if r[0] in lab_set], regimes, ndx_rows, daily, week))
         horizons[horizon] = {
             'lab': _lab_summary(horizon), 'labRunning': bool(ls.get('running')), 'ruleTests': rules_saved.get(horizon), 'rulesRunning': bool(rs.get('running')),
             'scanned': len(rows), 'updated': time.time(), 'strategies': stats, 'setups': setups[:60], 'edge': summary['edge'],

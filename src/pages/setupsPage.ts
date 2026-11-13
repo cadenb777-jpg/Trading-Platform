@@ -1,7 +1,7 @@
 /**
  * Setups: the scanner's own page. Pick a time frame (short swing on hourly bars, swing on daily bars, position on
  * weekly bars); see the evidence behind each strategy (pooled backtest, 1,000-run random-entry test, Monte Carlo,
- * and the COT + z-score edge study); browse every Nasdaq-100 setup in a sortable list; and open one to get its
+ * and the COT + z-score edge study); browse every setup across the most traded Nasdaq stocks in a sortable list; and open one to get its
  * live entry status, a chart with the entry, stop and target, and the step-by-step trade guide. Watched setups
  * follow the live price and alert when it is time to enter (or too late to chase). With helper 32+ the entry alerts
  * also run in the helper (engine/alerts.py), so they reach the phone with this tab closed.
@@ -204,7 +204,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   const status = h('div', { class: 'sp-status muted small' });
   const horizonTabs = h('div', { class: 'segmented sp-horizons' }, ...HORIZONS.map((x) => h('button', { 'data-h': x.key, onclick: () => setPref('horizon', x.key) }, h('b', {}, x.label), h('span', { class: 'muted tiny' }, ` ${x.hold}`))));
   const notifyBtn = h('button', { class: 'btn', title: 'Let the platform show desktop notifications for entry alerts', onclick: askNotify }, 'Enable alerts');
-  const frame = pageFrame('Setups', 'Nasdaq-100 trade setups on three time frames. Every result is after costs and tested against 1,000 random entries.', [horizonTabs, notifyBtn]);
+  const frame = pageFrame('Setups', 'Trade setups across the most traded Nasdaq stocks on three time frames. Every result is after costs and tested against 1,000 random entries.', [horizonTabs, notifyBtn]);
   frame.functions(
     [
       { label: 'Scan now', icon: 'refresh', title: 'Scan again now', run: () => refresh(true) },
@@ -292,7 +292,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
       h('span', {}, 'Nasdaq-100 ', h('b', { class: r.qqqAbove200 === 1 ? 'up' : r.qqqAbove200 === -1 ? 'down' : '' }, r.qqqAbove200 === 1 ? 'above its 200-day average' : r.qqqAbove200 === -1 ? 'below its 200-day average' : 'trend unknown'), r.qqqWeek != null ? ` (week ${pct(r.qqqWeek)})` : ''),
       r.ndxCot != null ? h('span', { title: 'COT reading (3-year index): shown for context; it counts in grades only if the edge study passes' }, 'Futures commercials ', h('b', {}, `${r.ndxCot.toFixed(0)}/100`), ' ', h('a', { href: '#futures/cot', class: 'small' }, 'See all on Futures →')) : '',
       r.vix != null ? h('span', {}, `VIX ${r.vix.toFixed(1)}`) : '',
-      h('span', {}, hr ? `${hr.scanned != null ? `${hr.scanned} stocks` : 'Scan'}${hr.updated ? ` · scanned ${timeAgo(hr.updated)}` : ''}` : 'this time frame is still loading…', data.stale ? h('b', { class: 'warn' }, ' · saved scan, refreshing…') : data.scanning ? ' · scanning now…' : data.nextScan ? ` · next scan in ${Math.max(1, Math.round((data.nextScan - Date.now() / 1000) / 60))} min` : '', data.error ? h('span', { class: 'down' }, ` · last scan failed: ${data.error}`) : ''),
+      h('span', { title: (data as { universe?: string }).universe ?? '' }, hr ? `${hr.scanned != null ? `${hr.scanned} stocks` : 'Scan'}${hr.updated ? ` · scanned ${timeAgo(hr.updated)}` : ''}` : 'this time frame is still loading…', data.stale ? h('b', { class: 'warn' }, ' · saved scan, refreshing…') : data.scanning ? ' · scanning now…' : data.nextScan ? ` · next scan in ${Math.max(1, Math.round((data.nextScan - Date.now() / 1000) / 60))} min` : '', data.error ? h('span', { class: 'down' }, ` · last scan failed: ${data.error}`) : ''),
     );
     renderToday(hr);
     renderEvidence(hr);
@@ -320,7 +320,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   }
 
   function renderEvidence(hr: HorizonResult | undefined) {
-    if (!hr) return evidenceBody.replaceChildren(h('p', { class: 'empty-state' }, data?.loading ? 'The first scan is running: it downloads 15 years of history for every Nasdaq-100 stock, so it takes a few minutes after the helper starts. This page fills in by itself.' : 'This time frame is still being scanned; it appears here as soon as it is done.'));
+    if (!hr) return evidenceBody.replaceChildren(h('p', { class: 'empty-state' }, data?.loading ? 'The first scan is running: it downloads price history for every stock it scans (the most traded Nasdaq stocks: about 15 minutes the first time each day, then a few minutes). This page fills in by itself.' : 'This time frame is still being scanned; it appears here as soon as it is done.'));
     const cards = (Object.keys(hr.strategies) as StrategyKey[]).filter((k) => !hr.strategies[k].lab).map((k) => {
       const st = hr.strategies[k];
       if (!st) return '';
@@ -377,7 +377,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
         : '',
     );
     evidenceBody.replaceChildren(
-      h('p', { class: 'muted small' }, 'How each strategy\'s rules would have done on every Nasdaq-100 stock in this time frame\'s history. "Trades" are real past signals; each result is then tested with 1,000 random simulations. Click a card to show only that strategy\'s setups.'),
+      h('p', { class: 'muted small' }, 'How each strategy\'s rules would have done on every scanned stock in this time frame\'s history. "Trades" are real past signals; each result is then tested with 1,000 random simulations. Click a card to show only that strategy\'s setups.'),
       h('div', { class: 'sp-cards' }, ...cards, edge),
     );
   }
@@ -513,7 +513,7 @@ export function createSetupsPage(onOpenChart: (ref: MarketRef) => void) {
   }
 
   function renderList(hr: HorizonResult | undefined) {
-    if (!hr) return list.replaceChildren(h('p', { class: 'empty-state' }, data?.loading ? 'The first scan is running: it downloads 15 years of history for every Nasdaq-100 stock, so it takes a few minutes after the helper starts. This page fills in by itself.' : 'This time frame is still being scanned; it appears here as soon as it is done.'));
+    if (!hr) return list.replaceChildren(h('p', { class: 'empty-state' }, data?.loading ? 'The first scan is running: it downloads price history for every stock it scans (the most traded Nasdaq stocks: about 15 minutes the first time each day, then a few minutes). This page fills in by itself.' : 'This time frame is still being scanned; it appears here as soon as it is done.'));
     if (hr.error) return list.replaceChildren(h('p', { class: 'muted pad' }, hr.error));
     const rows = visible(hr);
     if (!rows.length) {

@@ -313,7 +313,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   are skipped for a day, only an expired login stops a scan. Time frames (strategies.HORIZONS): short (1-hour bars),
   swing (daily), position (weekly, 15 years). Results: `horizons[h]` = {strategies (sides.long/short with stats,
   randomEntry incl. pAdjusted, robust, monteCarlo/monteCarloR; lab ones carry forward.since), setups, edge (COT
-  study), lab, ruleTests, historyDays}; the top level keeps swing for older pages. Universe: Nasdaq-100 only (owner);
+  study), lab, ruleTests, historyDays}; the top level keeps swing for older pages. Universe (Setups v30 stage 1, engine/universe.py): the 400 most traded Nasdaq common stocks (nasdaqlisted.txt, price >= $5, 10-day dollar volume >= $10M, refreshed weekly) plus the Nasdaq-100 always; outside the Nasdaq-100 5y daily / 8y weekly history (memory); hourly on the top 150, lab and rule tests on the top 250; falls back to the Nasdaq-100. Plan: docs/research/setups-v30-plan.md;
   `SECTORS` feeds the page's open-risk-per-sector line (display only).
   Strategy lab (engine/lab.py): 11 triggers x up to 2 of 8 filters (trend, above200, adiv = A/D divergence, adx, volume,
   lowvol, tom = last trading day + first 3, market = QQQ vs 200-day; no tom on weekly) x side (814 combos), walk-forward
