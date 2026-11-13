@@ -124,7 +124,7 @@ whenever the owner repeats or adds one.
   every Flow tab: 0 slow frames (max 17 ms). Live flow redraws only when the feed changes and never rebuilds a
   focused form. Lesson: a guard against bad data must not delay the move you care about most.
 - 2026-11-12 · #14 Fitted Treasury curve "What the curve says" · approved (merged by the owner).
-- 2026-11-13 · Rates desk pack (helper 64): credit spreads by rating with what each notch pays, Treasury auction demand
+- 2026-11-13 · #15 Rates desk pack (helper 64): credit spreads by rating with what each notch pays, Treasury auction demand
   scorecard, Kim-Wright term premium · proposed · backlog B8-B10. Rejected by experiment: an auction "tail" against
   that day's fitted closing curve (76 auctions 2024-26: SD 3.7 bp, median 2.6 bp vs real tails of 1-2 bp: noise, so
   left out). Measured: a 2 SD strong/weak bar labelled a third of auctions; 3 SD labels ~1 in 10 each way. Lessons:
