@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 67;
+export const LATEST_HELPER_VERSION = 69;
 /** The "Log in to Schwab" request (schwab_login) and the in-place re-login need this version. */
 export const SCHWAB_LOGIN_HELPER_VERSION = 47;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
@@ -90,6 +90,12 @@ export const moneyReady = () => !helper.tooOld && (helper.version ?? 0) >= MONEY
 /** Credit and reserves (helper 67: bonds.system = reserves vs GDP, commercial paper spread, bank lending standards). */
 export const SYSTEM_HELPER_VERSION = 67;
 export const systemReady = () => !helper.tooOld && (helper.version ?? 0) >= SYSTEM_HELPER_VERSION;
+/** research.company carries `maturities` (the 10-K debt maturity ladder) from this helper on. */
+export const DEBT_LADDER_HELPER_VERSION = 68;
+export const debtLadderReady = () => !helper.tooOld && (helper.version ?? 0) >= DEBT_LADDER_HELPER_VERSION;
+/** research.company carries `obligations` (leases, purchase commitments, uncertain tax) and research.corpyields exists from this helper on. */
+export const OBLIGATIONS_HELPER_VERSION = 69;
+export const obligationsReady = () => !helper.tooOld && (helper.version ?? 0) >= OBLIGATIONS_HELPER_VERSION;
 /** The Strategy Lab's game.* requests and the Equilibrium-Prime assistant mode (ai.chat with `mode`) need this version. */
 export const GAME_HELPER_VERSION = 44;
 /** True when the connected helper has the game-theory engine (v44+). */
@@ -604,6 +610,7 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'research.insider_history': 60 * 60_000,
   'prospect.holders_by_symbol': 60 * 60_000,
   'research.company': 5 * 60_000,
+  'research.corpyields': 30 * 60_000,
   'alts.fund': 15 * 60_000,
   'crosscheck.value': 60_000,
   'data.identifiers': 60 * 60_000,

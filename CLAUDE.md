@@ -596,6 +596,20 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   selfcheck.json, shows in the status bar (src/ui/selfCheck.ts, helper v53+) and goes into Send diagnostics.
 - Research → Where the money comes from: helper/engine/segments.py reads 10-K XBRL dimensional facts (product,
   segment, region, segment margin) + the label file; src/research/segmentsView.ts.
+- Research → Debt and dilution (helper 68, DEBT_LADDER_HELPER_VERSION/debtLadderReady; src/research/debtDilution.ts pure +
+  debtDilutionView.ts): research.company adds `maturities` (research.maturities: the 10-K LongTermDebtMaturities...
+  ladder from one filing and its newest date: newest date, most buckets, then latest filed; missing buckets stay null;
+  company_core(with_maturities=True) reads it for a pre-68 'sec-core' copy via 'sec-maturities'); interest cover =
+  operating income / interest expense from the newest year with both (an operating loss is said as such; says when the
+  line stopped being reported); diluted share change 1/3/5 years, skipping only split-like ratios (looksLikeSplit:
+  within 8% of n or 1/n); buybacks (null = unknown, never 0), dividends and stock pay over today's market value.
+  Helper 69 (OBLIGATIONS_HELPER_VERSION/obligationsReady; src/research/obligations.ts pure): research.company adds
+  `obligations` {leases (operating: LEASE_TAGS ladder + total + presentValue, same one-filing rule), financeLease,
+  purchase (PURCHASE_TAGS), uncertainTax (UnrecognizedTaxBenefits)} via research._latest/_ladder ('sec-ladders' for older
+  saved copies). research.corpyields (its own request, never on research.company's path) = {ig BAMLC0A0CMEY, hy
+  BAMLH0A0HYM2EY} from macro.fred (the Bond market page's cache). Refinancing = debt due in 2 years x today's average
+  yields (no rating guessed; no "own average cost": interest expense also covers CP/leases/fees). Lease-adjusted debt
+  only from the same year-end as the ladder; the interest split is hidden above 40% of payments.
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per

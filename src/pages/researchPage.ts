@@ -1,5 +1,8 @@
 import { toneVsPrev } from '../research/tone';
 /** Research: a company's financial statements, ratios, valuation (DCF) and SEC filings. */
+import { debtDilutionPanel } from '../research/debtDilutionView';
+import { fy, type Maturities } from '../research/debtDilution';
+import type { Obligations } from '../research/obligations';
 import { yearBars } from '../research/yearBars';
 import { segmentsPanel } from '../research/segmentsView';
 import { asReportedPanel } from '../research/asReportedView';
@@ -55,6 +58,10 @@ export interface CompanyData {
   labels: Record<string, string>;
   sections: { income: string[]; balance: string[]; cashflow: string[] };
   filings: { form: string; filed: string; reportDate: string; description: string; url: string }[];
+  /** 10-K debt maturity ladder (helper 68+; null = the filing has none; missing = older helper). */
+  maturities?: Maturities | null;
+  /** Leases, purchase commitments, uncertain tax (helper 69+). */
+  obligations?: Obligations | null;
 }
 
 type Tab = 'overview' | 'financials' | 'valuation' | 'filings';
@@ -82,7 +89,7 @@ const RATIO_PLAIN = new Set(['currentRatio', 'debtToEquity']);
 const fmtX = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : `${v.toFixed(1)}×`);
 const periodLabel = (end: string, quarterly: boolean) => {
   const d = new Date(`${end}T00:00:00Z`);
-  return quarterly ? `${d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })} ${d.getUTCFullYear()}` : `FY${d.getUTCFullYear()}`;
+  return quarterly ? `${d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })} ${d.getUTCFullYear()}` : fy(end);
 };
 
 /** Hover text for a coloured cell: what it was compared with. */
@@ -222,6 +229,8 @@ export function createResearchPage() {
       // what the company actually sells and where (its 10-K's product, segment and region breakdowns)
       segmentsPanel(d.symbol),
       segmentHistoryPanel(d.symbol),
+      // debt maturities (10-K), interest cover, share count and buybacks after stock pay
+      debtDilutionPanel({ annual: d.annual, marketCap: v.marketCap, cash: v.cash, maturities: d.maturities, obligations: d.obligations }),
       // futures positioning for the company's market: one line, the full COT table is on Futures
       cotSummary(d.symbol, undefined, { quiet: true }),
       stockNewsCard(d.symbol, 5),

@@ -41,7 +41,7 @@ CASH_FLOW = [
     ('capex', 'Capital expenditures', ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets']),
     ('dna', 'Depreciation & amortization', ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'DepreciationAmortizationAndAccretionNet']),
     ('stockComp', 'Stock-based compensation', ['ShareBasedCompensation', 'AllocatedShareBasedCompensationExpense']),
-    ('buybacks', 'Share buybacks', ['PaymentsForRepurchaseOfCommonStock']),
+    ('buybacks', 'Share buybacks', ['PaymentsForRepurchaseOfCommonStock', 'PaymentsForRepurchaseOfEquity']),
     ('dividends', 'Dividends paid', ['PaymentsOfDividends', 'PaymentsOfDividendsCommonStock']),
 ]
 UNITS = {'epsDiluted': 'USD/shares', 'dilutedShares': 'shares'}
@@ -49,6 +49,31 @@ INSTANT = {key for key, _, _ in BALANCE}
 ANNUAL_FORMS = {'10-K', '10-K/A', '20-F', '20-F/A', '40-F', '10-KT'}
 YEARS = 10
 QUARTERS = 12
+#: the debt maturity table every 10-K carries (ASC 470-10-50-1: principal due in each of the next five years and after)
+MATURITY_TAGS = [
+    ('next12', 'LongTermDebtMaturitiesRepaymentsOfPrincipalInNextTwelveMonths'),  # pragma: allowlist secret (an XBRL tag name)
+    ('year2', 'LongTermDebtMaturitiesRepaymentsOfPrincipalInYearTwo'),
+    ('year3', 'LongTermDebtMaturitiesRepaymentsOfPrincipalInYearThree'),
+    ('year4', 'LongTermDebtMaturitiesRepaymentsOfPrincipalInYearFour'),
+    ('year5', 'LongTermDebtMaturitiesRepaymentsOfPrincipalInYearFive'),
+    ('after5', 'LongTermDebtMaturitiesRepaymentsOfPrincipalAfterYearFive'),
+]
+#: operating lease payments by year, their undiscounted total and the present value on the balance sheet (ASC 842)
+LEASE_TAGS = [
+    ('next12', 'LesseeOperatingLeaseLiabilityPaymentsDueNextTwelveMonths'),
+    ('year2', 'LesseeOperatingLeaseLiabilityPaymentsDueYearTwo'),
+    ('year3', 'LesseeOperatingLeaseLiabilityPaymentsDueYearThree'),
+    ('year4', 'LesseeOperatingLeaseLiabilityPaymentsDueYearFour'),
+    ('year5', 'LesseeOperatingLeaseLiabilityPaymentsDueYearFive'),
+    ('after5', 'LesseeOperatingLeaseLiabilityPaymentsDueAfterYearFive'),
+    ('total', 'LesseeOperatingLeaseLiabilityPaymentsDue'),
+    ('presentValue', 'OperatingLeaseLiability'),
+]
+#: purchase commitments not on the balance sheet; the first tag is the one most filers use for the total
+PURCHASE_TAGS = ['UnrecordedUnconditionalPurchaseObligationBalanceSheetAmount', 'PurchaseObligation']
+#: today's corporate bond yields (ICE BofA effective yield indexes via FRED), for the refinancing wall; the same
+#: cached series the Bond market page reads (macro.fred), so no extra download
+CORP_YIELDS = [('ig', 'BAMLC0A0CMEY'), ('hy', 'BAMLH0A0HYM2EY')]
 
 
 def _days(start, end):
@@ -124,6 +149,71 @@ def _align(series, count):
             row.append(match)
         table[key] = row
     return ends, table
+
+
+def maturities(company_facts):
+    """The debt maturity ladder from the newest annual report that has one: {asOf, filed, accession, form, buckets
+    {next12, year2..year5, after5: $ or None}}. Every bucket comes from that one filing and balance-sheet date (a bucket
+    the filing leaves out stays None, never borrowed from an older year). None when no annual report tags the table."""
+    return _ladder(company_facts, MATURITY_TAGS)
+
+
+def obligations(company_facts):
+    """What the company owes outside the debt line, each from the newest annual report that tags it (helper 69):
+    leases = operating lease payments by year (ASC 842-20-50-6) plus their total and present value (the liability on the
+    balance sheet), one filing and date like the debt ladder; purchase = unconditional purchase commitments not on the
+    balance sheet (ASC 440-10-50); uncertainTax = unrecognized tax benefits (ASC 740-10-50-15A: tax positions the
+    company itself reserves for). None when no annual report tags any of them."""
+    out = {'leases': _ladder(company_facts, LEASE_TAGS),
+           # finance leases are a separate liability (ASC 842-20-45-1); only the total is read
+           'financeLease': _latest(company_facts, ['FinanceLeaseLiability']),
+           'purchase': _latest(company_facts, PURCHASE_TAGS),
+           'uncertainTax': _latest(company_facts, ['UnrecognizedTaxBenefits'])}
+    return out if any(out.values()) else None
+
+
+def _latest(company_facts, tags):
+    """The newest annual-report value among `tags` (newest balance-sheet date, then the earlier tag in the list, then
+    the latest filed): {value, asOf, filed, accession, form, tag}, or None."""
+    gaap = company_facts.get('facts', {}).get('us-gaap', {})
+    best = None
+    for rank, tag in enumerate(tags):
+        for e in gaap.get(tag, {}).get('units', {}).get('USD', []):
+            if e.get('form') in ANNUAL_FORMS and e.get('end') and e.get('val') is not None and e.get('accn'):
+                k = (e['end'], -rank, e.get('filed', ''))
+                if best is None or k > best[0]:
+                    best = (k, {'value': e['val'], 'asOf': e['end'], 'filed': e.get('filed', ''), 'accession': e['accn'],
+                                'form': e['form'], 'tag': tag})
+    return best[1] if best else None
+
+
+def _ladder(company_facts, tags):
+    gaap = company_facts.get('facts', {}).get('us-gaap', {})
+    rows = []
+    for key, tag in tags:
+        for e in gaap.get(tag, {}).get('units', {}).get('USD', []):
+            if e.get('form') in ANNUAL_FORMS and e.get('end') and e.get('val') is not None and e.get('accn'):
+                rows.append((e.get('filed', ''), e['end'], e['accn'], e['form'], key, e['val']))
+    if not rows:
+        return None
+    # Each filing's own table is the one at its newest balance-sheet date (a 10-K also repeats last year's). Pick the
+    # newest date, then the filing with the most buckets for it (a partial 10-K/A never hides the full 10-K), then the
+    # latest filed.
+    own = {}
+    for f, e, a, fm, key, _ in rows:
+        cur = own.setdefault(a, {'end': e, 'filed': f, 'form': fm, 'keys': set()})
+        if e > cur['end']:
+            cur.update(end=e, keys=set())
+        if e == cur['end']:
+            cur['keys'].add(key)
+        cur['filed'] = max(cur['filed'], f)
+    accn, best = max(own.items(), key=lambda x: (x[1]['end'], len(x[1]['keys']), x[1]['filed']))
+    end, filed, form = best['end'], best['filed'], best['form']
+    buckets = {key: None for key, _ in tags}
+    for f, e, a, _, key, val in sorted(rows):
+        if a == accn and e == end:
+            buckets[key] = val
+    return {'asOf': end, 'filed': filed, 'accession': accn, 'form': form, 'buckets': buckets}
 
 
 def statements(company_facts):
@@ -232,13 +322,44 @@ async def beta(ctx, symbol, years=5):
     return cov / var if var else None
 
 
-async def company_core(ctx, cik):
+async def company_core(ctx, cik, with_maturities=False):
     """A company's statements (annual and quarterly) and latest share count from its XBRL company facts."""
     async def load_core():
         # Company facts files are large, so only the finished statements are kept on disk.
         company_facts = await sec._json(ctx, sec.FACTS_URL.format(cik=cik))
-        return {'statements': statements(company_facts), 'shares': _latest_shares(company_facts)}
-    return await ctx.cached(('sec-core', cik), 6 * 3600, load_core, persist=True, stale_ok=True)
+        return {'statements': statements(company_facts), 'shares': _latest_shares(company_facts), **_ladders(company_facts)}
+    core = await ctx.cached(('sec-core', cik), 6 * 3600, load_core, persist=True, stale_ok=True)
+    if with_maturities and not all(k in core for k in LADDER_KEYS):
+        # a copy saved by an older helper has no ladders: read them once on their own (expires with the 6 h core copy)
+        async def load_ladders():
+            return _ladders(await sec._json(ctx, sec.FACTS_URL.format(cik=cik)))
+        core = {**core, **await ctx.cached(('sec-ladders', cik), 6 * 3600, load_ladders, persist=True, stale_ok=True)}
+    return core
+
+
+LADDER_KEYS = ('maturities', 'obligations')
+
+
+def _ladders(company_facts):
+    return {'maturities': maturities(company_facts), 'obligations': obligations(company_facts)}
+
+
+@handler('research.corpyields')
+async def corp_yields_request(ctx, msg):
+    """Its own request, so a slow FRED never holds up the Research page (research.company doesn't wait for it)."""
+    return await corp_yields(ctx)
+
+
+async def corp_yields(ctx):
+    """Today's investment-grade and high-yield effective yields (%, with their date), or None for a series FRED
+    couldn't give."""
+    from . import macro
+    rows = await asyncio.gather(*(macro.fred(ctx, sid) for _, sid in CORP_YIELDS), return_exceptions=True)
+    out = {}
+    for (key, sid), r in zip(CORP_YIELDS, rows):
+        good = [] if isinstance(r, BaseException) else [x for x in r if x and x[1] is not None]
+        out[key] = {'value': good[-1][1], 'date': good[-1][0], 'series': sid} if good else None
+    return out
 
 
 @handler('research.company')
@@ -247,7 +368,7 @@ async def company(ctx, msg):
     if not symbol:
         raise EngineError('Enter a symbol')
     info = await sec.company(ctx, symbol)
-    core_task = company_core(ctx, info['cik'])
+    core_task = company_core(ctx, info['cik'], with_maturities=True)
     subs, core, q, b, tr = await asyncio.gather(sec.submissions(ctx, info['cik']), core_task, quote(ctx, symbol), beta(ctx, symbol),
                                              dividends.total_returns(ctx, [symbol]))
     st = core['statements']
@@ -301,4 +422,15 @@ async def company(ctx, msg):
             'cashflow': [k for k, _, _ in CASH_FLOW] + ['freeCashFlow'],
         },
         'filings': filings,
+        # helper 68: debt maturity ladder (SEC 10-K), with a link to the filing it came from
+        'maturities': _with_link(core.get('maturities'), info['cik']),
+        # helper 69: operating leases, purchase commitments and uncertain tax positions (SEC 10-K); today's corporate
+        # yields come from research.corpyields
+        'obligations': {k: _with_link(v, info['cik']) for k, v in core['obligations'].items()} if core.get('obligations') else None,
     }
+
+
+def _with_link(m, cik):
+    if not m:
+        return None
+    return {**m, 'url': f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{m['accession'].replace('-', '')}/{m['accession']}-index.htm"}

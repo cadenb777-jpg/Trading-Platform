@@ -132,15 +132,30 @@ whenever the owner repeats or adds one.
   (own request); a chart label must come from the data's real span ("since Nov 2023"), not a hard-coded "3 years".
 - 2026-11-13 · #15 Rates desk pack · approved (merged by the owner).
 - 2026-11-13 · #16 Money and supply (helper 66): overnight funding stress (SOFR vs IORB), mortgage spread, Treasury borrowing
-  pace and bill share; Home warns only when funding is tight outside month-ends · proposed · backlog B11-B13. Changed by
+  pace and bill share; Home warns only when funding is tight outside month-ends · approved (merged) · backlog B11-B13. Changed by
   measurement: bills' share of gross auction sales was 87% (short bills roll over every few weeks, so gross always looks
   bill-heavy); the honest figure is the net change in debt by type (MSPD): 57% of new marketable debt in 3 months, 23% of
   all. Lessons: share of a flow needs the net flow, not gross sales; a percentile gate ranked against a mostly-negative
   history still fires on routine month-end bumps, so name the calendar effect; don't cache a combined reply whose parts
   can fail (cache each source instead).
 - 2026-11-13 · #17 Credit and reserves (helper 67): bank reserves vs GDP against the September 2019 breaking point, commercial
-  paper vs T-bills, banks' lending standards · proposed (stacked on #16) · backlog B14-B16. Review caught a mixed basis:
+  paper vs T-bills, banks' lending standards · approved (merged) · backlog B14-B16. Review caught a mixed basis:
   dividing today's reserves by last quarter's GDP but a year ago by its own quarter's made the year-on-year trend wrong by
   about as much as the change itself; every week now uses its own quarter (unpublished = estimated, flagged). Lessons:
   compare like with like before quoting a change; label thresholds symmetrically (easing at any negative but tightening
   only at +20 was lopsided); a Home line that is almost never shown isn't worth five downloads on every Home refresh.
+- 2026-11-13 · #18 Debt and dilution (helper 68): the 10-K debt maturity ladder, interest cover, share count change and
+  buybacks after stock pay on the Research overview · proposed · backlog A5-A6. B17 (defaults vs spreads) was put on hold
+  rather than built with guessed default and recovery rates, because their source (spglobal.com) couldn't be reached.
+  Lessons: a share count series can jump at a split (Apple's FY2017 figure is pre-split, 5.25B vs 20.0B), so never
+  compound across a jump of over a third; read every bucket of a table from one filing and date (Coca-Cola's 10-K has no
+  "after year five" tag, so the total is called partial instead of borrowing last year's); say when a line stops being
+  reported (Apple last tagged interest expense in FY2023) instead of showing an old ratio as current.
+- 2026-11-13 · #19 Beyond the debt line (helper 69, stacked on #18): what borrowing the debt due within 2 years again
+  would cost at today's investment-grade and high-yield averages, lease payments by year with the part that is interest
+  and lease-adjusted debt, purchase commitments and uncertain tax positions against cash · proposed · backlog A11-A12.
+  No credit rating is guessed: both market averages are shown and labelled as averages. Review removed "versus the
+  company's own average cost" (interest expense / year-end principal mixes in commercial paper, leases and fees and
+  could say "cheaper" when it is dearer) and moved the FRED yields off the Research page's critical path. Lessons: a
+  ratio built from two lines that don't measure the same thing is worse than no ratio; never add figures from
+  different year-ends (lease-adjusted debt checks the dates match).
