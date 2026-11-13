@@ -11330,3 +11330,14 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .dd-bar.soon { background: var(--label); }
 .dd-amt { text-align: right; color: var(--text-strong); }
 .dd-sub { margin-top: var(--sp-1); }
+/* Research: Earnings quality (src/research/qualityView.ts) */
+.qe-table { overflow-x: auto; }
+.qe-table td.label { white-space: normal; }
+.qe-mark { display: inline-block; width: 1.4em; font-weight: 700; }
+.qe-bars { display: grid; gap: 4px; }
+.qe-row { display: grid; grid-template-columns: 4.5rem 1fr 4.5rem; align-items: center; gap: var(--sp-2); }
+.qe-track { position: relative; height: 10px; background: color-mix(in srgb, var(--muted) 14%, transparent); border-radius: 2px; }
+.qe-track::after { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--muted); }
+.qe-bar { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+.qe-bar.neg { background: var(--viz-1); }
+.qe-bar.pos { background: var(--label); }

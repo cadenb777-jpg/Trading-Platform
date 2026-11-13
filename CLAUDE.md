@@ -610,6 +610,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   BAMLH0A0HYM2EY} from macro.fred (the Bond market page's cache). Refinancing = debt due in 2 years x today's average
   yields (no rating guessed; no "own average cost": interest expense also covers CP/leases/fees). Lease-adjusted debt
   only from the same year-end as the ladder; the interest split is hidden above 40% of payments.
+- Research → Earnings quality (src/research/quality.ts pure + qualityView.ts, browser only): Piotroski F-score (2000
+  definitions: ROA/CFO over beginning assets, LTD / average assets, turnover = sales / beginning assets; "issued no
+  stock" = diluted count didn't rise; a check without its figures is unjudged, never a fail) and accruals = (net income
+  - CFO) / average assets per year (Hribar-Collins 2002, Sloan 1996), own-range percentile from 5 years. Readings only.
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per

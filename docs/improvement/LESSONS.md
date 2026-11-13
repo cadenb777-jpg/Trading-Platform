@@ -145,7 +145,7 @@ whenever the owner repeats or adds one.
   compare like with like before quoting a change; label thresholds symmetrically (easing at any negative but tightening
   only at +20 was lopsided); a Home line that is almost never shown isn't worth five downloads on every Home refresh.
 - 2026-11-13 · #18 Debt and dilution (helper 68): the 10-K debt maturity ladder, interest cover, share count change and
-  buybacks after stock pay on the Research overview · proposed · backlog A5-A6. B17 (defaults vs spreads) was put on hold
+  buybacks after stock pay on the Research overview · approved (merged) · backlog A5-A6. B17 (defaults vs spreads) was put on hold
   rather than built with guessed default and recovery rates, because their source (spglobal.com) couldn't be reached.
   Lessons: a share count series can jump at a split (Apple's FY2017 figure is pre-split, 5.25B vs 20.0B), so never
   compound across a jump of over a third; read every bucket of a table from one filing and date (Coca-Cola's 10-K has no
@@ -153,9 +153,13 @@ whenever the owner repeats or adds one.
   reported (Apple last tagged interest expense in FY2023) instead of showing an old ratio as current.
 - 2026-11-13 · #19 Beyond the debt line (helper 69, stacked on #18): what borrowing the debt due within 2 years again
   would cost at today's investment-grade and high-yield averages, lease payments by year with the part that is interest
-  and lease-adjusted debt, purchase commitments and uncertain tax positions against cash · proposed · backlog A11-A12.
+  and lease-adjusted debt, purchase commitments and uncertain tax positions against cash · approved (merged) · backlog A11-A12.
   No credit rating is guessed: both market averages are shown and labelled as averages. Review removed "versus the
   company's own average cost" (interest expense / year-end principal mixes in commercial paper, leases and fees and
   could say "cheaper" when it is dearer) and moved the FRED yields off the Research page's critical path. Lessons: a
   ratio built from two lines that don't measure the same thing is worse than no ratio; never add figures from
   different year-ends (lease-adjusted debt checks the dates match).
+- 2026-11-13 · #20 Earnings quality: Piotroski F-score checklist (each check with both years' numbers) and accruals by year
+  on the Research overview, from the statements research.company already returns (no helper change) · proposed ·
+  backlog A13-A14. Both are labelled readings, not signals, until tested on the owner's stocks. A check without its
+  figures is "no data" and the score says "of 8" rather than counting it as a fail.
