@@ -51,7 +51,7 @@ from engine.safexml import fromstring as safe_fromstring  # noqa: E402  (refuses
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 69
+HELPER_VERSION = 70
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -164,6 +164,11 @@ MAX_TICKER_FEEDS = 12
 NEWS_CACHE_SECONDS = 90
 NEWS_CACHE_MAX = 400  # feeds + article summaries kept in memory
 NEWS_LIMIT = 80
+# Only articles the helper can actually summarise are shown (owner's request): each is opened and summarised before
+# the list goes out. A news request waits at most this long; articles still being checked appear on the next refresh.
+READ_CHECK_SECONDS = 12
+READ_CHECK_SLOTS = 6
+UNREADABLE_RETRY_SECONDS = 6 * 3600
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36'
 
 log = logging.getLogger('helper')
@@ -458,6 +463,8 @@ def summarize_text(paragraphs, title, count=4):
 class NewsFetcher:
     def __init__(self):
         self.cache = {}  # url (or ('summary', link)) -> (fetched_at, data)
+        self.unreadable = {}  # article link -> when it couldn't be summarised (tried again after a few hours)
+        self.checking = {}  # article link -> the running readability check
         self.http = httpx.AsyncClient(timeout=10, follow_redirects=True, headers={'User-Agent': USER_AGENT})
 
     async def _cached(self, url, max_age, parse):
@@ -500,6 +507,49 @@ class NewsFetcher:
             else:
                 items.extend(result)
         return rank_news(items)[:NEWS_LIMIT], failed
+
+    async def readable(self, item):
+        """True when the article can be opened and summarised (its summary is then cached, so opening it is instant)."""
+        link = item.get('link') or ''
+        failed_at = self.unreadable.get(link)
+        if failed_at and time.time() - failed_at < UNREADABLE_RETRY_SECONDS:
+            return False
+        try:
+            result = await self.summary([link, *(item.get('otherLinks') or [])], item.get('title') or '')
+            ok = bool(result.get('points'))
+        except Exception:
+            ok = False
+        if not ok:
+            self.unreadable[link] = time.time()
+            if len(self.unreadable) > NEWS_CACHE_MAX:
+                for old in sorted(self.unreadable, key=self.unreadable.get)[:len(self.unreadable) // 2]:
+                    del self.unreadable[old]
+        return ok
+
+    async def get_readable(self, symbols, query='', budget=READ_CHECK_SECONDS):
+        """The news list with only the articles that can be summarised. Checks run a few at a time; any not finished
+        within `budget` seconds keep running (and are cached) and show up on the next refresh."""
+        items, failed = await self.get(symbols, query)
+        slots = asyncio.Semaphore(READ_CHECK_SLOTS)
+
+        async def check(item):
+            async with slots:
+                return await self.readable(item)
+        tasks = []
+        for item in items:
+            link = item.get('link') or ''
+            task = self.checking.get(link)
+            # a running check, or one that found the article readable, is reused; a failed one asks again (and
+            # readable() answers at once from `unreadable` until the retry time)
+            if task is None or (task.done() and (task.cancelled() or task.exception() is not None or not task.result())):
+                task = asyncio.ensure_future(check(item))
+                self.checking[link] = task
+                task.add_done_callback(lambda _t, k=link: self.checking.pop(k, None) if len(self.checking) > NEWS_CACHE_MAX else None)
+            tasks.append(task)
+        if tasks:
+            await asyncio.wait(tasks, timeout=budget)
+        keep = [i for i, t in zip(items, tasks) if t.done() and not t.cancelled() and t.exception() is None and t.result()]
+        return keep, failed
 
     async def summary(self, links, title):
         """Opens the article (trying each outlet that ran the story) and pulls out its key sentences."""
@@ -934,7 +984,9 @@ class Market:
         return {'type': 'summary', **(await self.news.summary(links, title))}
 
     async def news_reply(self, symbols, query=''):
-        items, failed = await self.news.get(symbols, query)
+        # only articles the helper can summarise (getters without the check, e.g. in tests, fall back to all)
+        getter = getattr(self.news, 'get_readable', None) or self.news.get
+        items, failed = await getter(symbols, query)
         return {'type': 'news', 'items': items, 'failed': failed}
 
     async def reply(self, ws, request_id, work, kind=None):
