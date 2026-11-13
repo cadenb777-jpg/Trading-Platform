@@ -11320,3 +11320,12 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .md-fact b { color: var(--text-strong); }
 .md-fact b, .md-fact span { text-align: left; }
 .sd-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); }
+
+/* Research: Debt and dilution (src/research/debtDilutionView.ts) */
+.dd-ladder { display: grid; gap: 4px; }
+.dd-row { display: grid; grid-template-columns: 7.5rem 1fr 4.5rem; align-items: center; gap: var(--sp-2); }
+.dd-label { color: var(--muted); }
+.dd-track { height: 10px; background: color-mix(in srgb, var(--muted) 14%, transparent); border-radius: 2px; overflow: hidden; }
+.dd-bar { display: block; height: 100%; background: var(--viz-1); border-radius: 2px; }
+.dd-bar.soon { background: var(--label); }
+.dd-amt { text-align: right; color: var(--text-strong); }

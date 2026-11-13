@@ -41,7 +41,7 @@ CASH_FLOW = [
     ('capex', 'Capital expenditures', ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets']),
     ('dna', 'Depreciation & amortization', ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'DepreciationAmortizationAndAccretionNet']),
     ('stockComp', 'Stock-based compensation', ['ShareBasedCompensation', 'AllocatedShareBasedCompensationExpense']),
-    ('buybacks', 'Share buybacks', ['PaymentsForRepurchaseOfCommonStock']),
+    ('buybacks', 'Share buybacks', ['PaymentsForRepurchaseOfCommonStock', 'PaymentsForRepurchaseOfEquity']),
     ('dividends', 'Dividends paid', ['PaymentsOfDividends', 'PaymentsOfDividendsCommonStock']),
 ]
 UNITS = {'epsDiluted': 'USD/shares', 'dilutedShares': 'shares'}
@@ -49,6 +49,15 @@ INSTANT = {key for key, _, _ in BALANCE}
 ANNUAL_FORMS = {'10-K', '10-K/A', '20-F', '20-F/A', '40-F', '10-KT'}
 YEARS = 10
 QUARTERS = 12
+#: the debt maturity table every 10-K carries (ASC 470-10-50-1: principal due in each of the next five years and after)
+MATURITY_TAGS = [
+    ('next12', 'LongTermDebtMaturitiesRepaymentsOfPrincipalInNextTwelveMonths'),  # pragma: allowlist secret (an XBRL tag name)
+    ('year2', 'LongTermDebtMaturitiesRepaymentsOfPrincipalInYearTwo'),
+    ('year3', 'LongTermDebtMaturitiesRepaymentsOfPrincipalInYearThree'),
+    ('year4', 'LongTermDebtMaturitiesRepaymentsOfPrincipalInYearFour'),
+    ('year5', 'LongTermDebtMaturitiesRepaymentsOfPrincipalInYearFive'),
+    ('after5', 'LongTermDebtMaturitiesRepaymentsOfPrincipalAfterYearFive'),
+]
 
 
 def _days(start, end):
@@ -124,6 +133,38 @@ def _align(series, count):
             row.append(match)
         table[key] = row
     return ends, table
+
+
+def maturities(company_facts):
+    """The debt maturity ladder from the newest annual report that has one: {asOf, filed, accession, form, buckets
+    {next12, year2..year5, after5: $ or None}}. Every bucket comes from that one filing and balance-sheet date (a bucket
+    the filing leaves out stays None, never borrowed from an older year). None when no annual report tags the table."""
+    gaap = company_facts.get('facts', {}).get('us-gaap', {})
+    rows = []
+    for key, tag in MATURITY_TAGS:
+        for e in gaap.get(tag, {}).get('units', {}).get('USD', []):
+            if e.get('form') in ANNUAL_FORMS and e.get('end') and e.get('val') is not None and e.get('accn'):
+                rows.append((e.get('filed', ''), e['end'], e['accn'], e['form'], key, e['val']))
+    if not rows:
+        return None
+    # Each filing's own table is the one at its newest balance-sheet date (a 10-K also repeats last year's). Pick the
+    # newest date, then the filing with the most buckets for it (a partial 10-K/A never hides the full 10-K), then the
+    # latest filed.
+    own = {}
+    for f, e, a, fm, key, _ in rows:
+        cur = own.setdefault(a, {'end': e, 'filed': f, 'form': fm, 'keys': set()})
+        if e > cur['end']:
+            cur.update(end=e, keys=set())
+        if e == cur['end']:
+            cur['keys'].add(key)
+        cur['filed'] = max(cur['filed'], f)
+    accn, best = max(own.items(), key=lambda x: (x[1]['end'], len(x[1]['keys']), x[1]['filed']))
+    end, filed, form = best['end'], best['filed'], best['form']
+    buckets = {key: None for key, _ in MATURITY_TAGS}
+    for f, e, a, _, key, val in sorted(rows):
+        if a == accn and e == end:
+            buckets[key] = val
+    return {'asOf': end, 'filed': filed, 'accession': accn, 'form': form, 'buckets': buckets}
 
 
 def statements(company_facts):
@@ -232,13 +273,19 @@ async def beta(ctx, symbol, years=5):
     return cov / var if var else None
 
 
-async def company_core(ctx, cik):
+async def company_core(ctx, cik, with_maturities=False):
     """A company's statements (annual and quarterly) and latest share count from its XBRL company facts."""
     async def load_core():
         # Company facts files are large, so only the finished statements are kept on disk.
         company_facts = await sec._json(ctx, sec.FACTS_URL.format(cik=cik))
-        return {'statements': statements(company_facts), 'shares': _latest_shares(company_facts)}
-    return await ctx.cached(('sec-core', cik), 6 * 3600, load_core, persist=True, stale_ok=True)
+        return {'statements': statements(company_facts), 'shares': _latest_shares(company_facts), 'maturities': maturities(company_facts)}
+    core = await ctx.cached(('sec-core', cik), 6 * 3600, load_core, persist=True, stale_ok=True)
+    if with_maturities and 'maturities' not in core:
+        # a copy saved before helper 68 has no ladder: read it once on its own (expires with the 6 h core copy)
+        async def load_ladder():
+            return {'maturities': maturities(await sec._json(ctx, sec.FACTS_URL.format(cik=cik)))}
+        core = {**core, **await ctx.cached(('sec-maturities', cik), 6 * 3600, load_ladder, persist=True, stale_ok=True)}
+    return core
 
 
 @handler('research.company')
@@ -247,7 +294,7 @@ async def company(ctx, msg):
     if not symbol:
         raise EngineError('Enter a symbol')
     info = await sec.company(ctx, symbol)
-    core_task = company_core(ctx, info['cik'])
+    core_task = company_core(ctx, info['cik'], with_maturities=True)
     subs, core, q, b, tr = await asyncio.gather(sec.submissions(ctx, info['cik']), core_task, quote(ctx, symbol), beta(ctx, symbol),
                                              dividends.total_returns(ctx, [symbol]))
     st = core['statements']
@@ -301,4 +348,12 @@ async def company(ctx, msg):
             'cashflow': [k for k, _, _ in CASH_FLOW] + ['freeCashFlow'],
         },
         'filings': filings,
+        # helper 68: debt maturity ladder (SEC 10-K), with a link to the filing it came from
+        'maturities': _with_link(core.get('maturities'), info['cik']),
     }
+
+
+def _with_link(m, cik):
+    if not m:
+        return None
+    return {**m, 'url': f"https://www.sec.gov/Archives/edgar/data/{int(cik)}/{m['accession'].replace('-', '')}/{m['accession']}-index.htm"}
