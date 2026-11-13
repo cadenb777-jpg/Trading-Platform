@@ -1,6 +1,7 @@
 import { toneVsPrev } from '../research/tone';
 /** Research: a company's financial statements, ratios, valuation (DCF) and SEC filings. */
 import { debtDilutionPanel } from '../research/debtDilutionView';
+import { qualityPanel } from '../research/qualityView';
 import { fy, type Maturities } from '../research/debtDilution';
 import type { Obligations } from '../research/obligations';
 import { yearBars } from '../research/yearBars';
@@ -231,6 +232,8 @@ export function createResearchPage() {
       segmentHistoryPanel(d.symbol),
       // debt maturities (10-K), interest cover, share count and buybacks after stock pay
       debtDilutionPanel({ annual: d.annual, marketCap: v.marketCap, cash: v.cash, maturities: d.maturities, obligations: d.obligations }),
+      // Piotroski F-score and accruals, from the same annual statements
+      qualityPanel(d.annual),
       // futures positioning for the company's market: one line, the full COT table is on Futures
       cotSummary(d.symbol, undefined, { quiet: true }),
       stockNewsCard(d.symbol, 5),
