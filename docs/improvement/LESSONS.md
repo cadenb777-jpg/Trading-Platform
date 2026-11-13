@@ -131,7 +131,7 @@ whenever the owner repeats or adds one.
   measure how often a label fires before choosing its threshold; keep optional slow sources off a page's critical path
   (own request); a chart label must come from the data's real span ("since Nov 2023"), not a hard-coded "3 years".
 - 2026-11-13 · #15 Rates desk pack · approved (merged by the owner).
-- 2026-11-13 · Money and supply (helper 66): overnight funding stress (SOFR vs IORB), mortgage spread, Treasury borrowing
+- 2026-11-13 · #16 Money and supply (helper 66): overnight funding stress (SOFR vs IORB), mortgage spread, Treasury borrowing
   pace and bill share; Home warns only when funding is tight outside month-ends · proposed · backlog B11-B13. Changed by
   measurement: bills' share of gross auction sales was 87% (short bills roll over every few weeks, so gross always looks
   bill-heavy); the honest figure is the net change in debt by type (MSPD): 57% of new marketable debt in 3 months, 23% of
