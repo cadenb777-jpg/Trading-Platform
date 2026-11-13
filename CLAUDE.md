@@ -116,6 +116,14 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   cache.db 'nss-fits' and refitted only if Treasury revises), gap per maturity vs its own 52 weekly fits (|z| >= 2.5 =
   unusual), forwards (1y1y, 2y1y, 5y5y, 10y10y), breakevens (nominal − Treasury real curve, same day only), recession probit
   on 10y − 3m (GS10 − TB3MS as bond-equivalent) fitted by MLE on outcomes NBER has had a year to date, with its record.
+  Rates desk pack (v64, engine/ratesdesk.py, RATES_DESK_HELPER_VERSION; src/invest/ratesDesk.ts pure + ratesDeskView.ts):
+  bonds.credit = ICE BofA OAS by rating AAA..CCC from FRED (FRED keeps ~3 years; percentile over the span returned, steps
+  between neighbouring ratings, <= 10th/>= 90th = unusually tight/wide) on Bonds > Bond market; bonds.termpremium =
+  Kim-Wright THREEFY10/THREEFYTP10 (expected = yield - premium, percentile since 1990, 260 weeks sent) on What the curve
+  says (its own request, never on the curve's critical path); bonds.auctions adds bidder splits (dealers/direct/indirect)
+  and `coupons` (notes+bonds, ~2 years; null = that download failed) for the Auction demand scorecard (vs last 6 of the
+  same family 2/3/5/7/10/20/30, strong/weak at btc z - dealer-share z >= 3, measured ~1 in 10 each way). No tail proxy
+  (closing-curve stand-in was noise: LESSONS).
   Home "Edge today" widget (id 'edge', src/home/edge.ts edgeLines, tested): ES/NQ implied open or futures vs fair
   value and the 3-month box vs T-bill, each linking to its Futures panel, plus the curve's recession odds (#invest/bonds/curve). Home layouts keep `seen` (every widget offered):
   a widget released later joins a saved layout once after its first card; removing it sticks.

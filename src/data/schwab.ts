@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 63;
+export const LATEST_HELPER_VERSION = 64;
 /** The "Log in to Schwab" request (schwab_login) and the in-place re-login need this version. */
 export const SCHWAB_LOGIN_HELPER_VERSION = 47;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
@@ -569,6 +569,8 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'research.segments': 60 * 60_000,
   'research.asreported': 60 * 60_000,
   'bonds.curvefit': 30 * 60_000,
+  'bonds.credit': 30 * 60_000,
+  'bonds.termpremium': 30 * 60_000,
   'quant.tearsheet': 5 * 60_000,
   'quant.comps': 10 * 60_000,
   'invest.history': 5 * 60_000,

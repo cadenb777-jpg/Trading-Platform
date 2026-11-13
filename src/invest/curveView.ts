@@ -8,6 +8,7 @@ import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { openFredWindow } from '../ui/fredWindow';
 import { asOfStamp } from '../ui/dataHealth';
+import { termPremiumBlock } from './ratesDeskView';
 import {
   bp,
   changeBp,
@@ -278,6 +279,7 @@ export function createCurveView(): { el: HTMLElement; load: (force?: boolean) =>
               forwardsBlock(d),
               breakevenBlock(d),
               h('p', { class: 'muted small' }, `Forwards from the fitted curve (${day(d.date)}). Breakeven = Treasury yield − TIPS real yield at the same maturity (Treasury real yield curve, ${day(d.realDate)}); it includes risk and liquidity premiums, so it is inflation compensation, not a forecast.`),
+              termPremiumBlock(),
             ),
           ),
           d.notes.length ? h('p', { class: 'muted small' }, d.notes.join(' ')) : '',
