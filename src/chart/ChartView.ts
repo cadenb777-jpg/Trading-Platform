@@ -170,7 +170,7 @@ export class ChartView {
         panes: { ...look.layout.panes, enableResize: true },
       },
       // The crosshair snaps to the nearest open/high/low/close; a flick of the chart glides to a stop.
-      crosshair: { ...look.crosshair, mode: CrosshairMode.MagnetOHLC },
+      crosshair: { ...look.crosshair, mode: CrosshairMode.Normal }, // follows the mouse; the magnet button snaps it
       kineticScroll: { mouse: true, touch: true },
       // Price labels about Bloomberg's spacing (the square grid follows them); a steady width and only whole labels.
       rightPriceScale: { ...look.rightPriceScale, tickMarkDensity: 2.6, minimumWidth: 80, entireTextOnly: true, ticksVisible: true },
@@ -730,7 +730,7 @@ export class ChartView {
     return v !== undefined && Number.isFinite(v) ? v : 0;
   }
 
-  /** Crosshair snapping to open/high/low/close (on by default; off while drawing freehand). */
+  /** Crosshair snapping to open/high/low/close: only with the magnet button on (the owner wants it to follow the mouse). */
   setCrosshairMagnet(on: boolean) {
     this.chart.applyOptions({ crosshair: { mode: on ? CrosshairMode.MagnetOHLC : CrosshairMode.Normal } });
   }

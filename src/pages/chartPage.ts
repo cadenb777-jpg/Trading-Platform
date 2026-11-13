@@ -228,8 +228,8 @@ export function createChartPage() {
   // ---------- Drawing tools ----------
 
   function renderDrawBar() {
-    // While drawing, the crosshair follows the mouse exactly unless the drawing magnet is on.
-    chart.setCrosshairMagnet(drawings.tool === 'cursor' || drawings.magnet);
+    // The crosshair follows the mouse exactly; the magnet button snaps it to the candles' open/high/low/close.
+    chart.setCrosshairMagnet(drawings.magnet);
     drawBar.replaceChildren(
       ...DRAWING_TOOLS.map((t) =>
         h(
