@@ -626,6 +626,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   statements add inventory and payables (own lines only, never a combined payables-and-accrued line; none = "not worked
   out"; no inventory line = cycle of customer and supplier days only, labelled); cover uses only years with capex
   reported and says so when free cash flow is negative. New statement lines go in research.STATEMENT_KEYS.
+- Research → Balance-sheet quality (helper 75, BALANCE_HELPER_VERSION/balanceReady; src/research/balanceQuality.ts pure
+  + balanceQualityView.ts): statements add deferredRevenue (ContractWithCustomerLiabilityCurrent, else the pre-2018
+  DeferredRevenueCurrent), goodwill, goodwillImpairment and intangibleImpairment (INCOME; missing = not reported, never
+  0); billed in advance = growth vs sales growth and months of sales; goodwill vs equity/assets with 5 years of
+  write-downs (share of the starting goodwill); a goodwill line the newest balance sheet lacks = "not shown since FYxxxx".
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per

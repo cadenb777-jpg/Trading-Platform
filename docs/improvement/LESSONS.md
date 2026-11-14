@@ -175,3 +175,10 @@ whenever the owner repeats or adds one.
   cash flow paid only 60% of its dividend (5 years: 1.0x). Lessons: read payables only from their own line (a combined
   payables-and-accrued line would inflate days to pay, so Coca-Cola gets "not worked out" rather than a wrong number);
   "no inventory ever reported" is zero, but one missing year is left out, never zero.
+- 2026-11-14 · #23 Balance-sheet quality (helper 75, stacked on #22): deferred revenue against sales (Microsoft's grew 13.0%
+  while sales grew 17.8%) and goodwill with its write-downs (Coca-Cola: 48% of equity; $13M of goodwill and $2.05B of trademarks and other intangibles written down in 5 years) ·
+  proposed · backlog A19-A20. Lessons: Apple stopped tagging goodwill after FY2017, so the panel says so instead of
+  showing an old figure; a reported zero write-down isn't a write-down and a missing tag isn't zero; tangible book was
+  dropped because intangibles are tagged too unevenly between companies to subtract honestly. Review caught the share
+  "written off" mixing trademark write-downs into a goodwill percentage (12% shown, 0.1% true): keep each figure to
+  its own base.

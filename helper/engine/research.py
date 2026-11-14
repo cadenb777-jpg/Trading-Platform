@@ -20,6 +20,12 @@ INCOME = [
     ('grossProfit', 'Gross profit', ['GrossProfit']),
     ('rnd', 'Research & development', ['ResearchAndDevelopmentExpense']),
     ('sga', 'Selling, general & admin', ['SellingGeneralAndAdministrativeExpense']),
+    # helper 75: write-downs, charged before operating income (a year without the tag = not reported, never zero);
+    # intangibles: the total first, then the indefinite- and finite-lived parts some filers tag instead
+    ('goodwillImpairment', 'Goodwill write-down', ['GoodwillImpairmentLoss']),
+    ('intangibleImpairment', 'Intangible write-down', ['ImpairmentOfIntangibleAssetsExcludingGoodwill',
+                                                       'ImpairmentOfIntangibleAssetsIndefinitelivedExcludingGoodwill',
+                                                       'ImpairmentOfIntangibleAssetsFinitelived']),
     ('operatingIncome', 'Operating income', ['OperatingIncomeLoss']),
     ('interestExpense', 'Interest expense', ['InterestExpense', 'InterestExpenseNonoperating', 'InterestExpenseDebt']),
     ('pretaxIncome', 'Pre-tax income', ['IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest',
@@ -40,8 +46,12 @@ BALANCE = [
     ('currentAssets', 'Current assets', ['AssetsCurrent']),
     ('ppe', 'Property, plant & equipment', ['PropertyPlantAndEquipmentNet',
                                             'PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulatedDepreciationAndAmortization']),
+    ('goodwill', 'Goodwill', ['Goodwill']),  # helper 75
     ('totalAssets', 'Total assets', ['Assets']),
     ('payables', 'Accounts payable', ['AccountsPayableCurrent', 'AccountsPayableTradeCurrent']),
+    # helper 75: billed in advance (ASC 606 renamed DeferredRevenueCurrent to ContractWithCustomerLiabilityCurrent in 2018:
+    # the same current concept), for Research's balance-sheet quality panel
+    ('deferredRevenue', 'Deferred revenue (current)', ['ContractWithCustomerLiabilityCurrent', 'DeferredRevenueCurrent']),
     ('currentLiabilities', 'Current liabilities', ['LiabilitiesCurrent']),
     ('longTermDebt', 'Long-term debt', ['LongTermDebtNoncurrent', 'LongTermDebt', 'LongTermDebtAndCapitalLeaseObligations']),
     ('totalLiabilities', 'Total liabilities', ['Liabilities']),
@@ -399,9 +409,10 @@ async def company_core(ctx, cik, with_maturities=False):
 
 
 LADDER_KEYS = ('maturities', 'obligations')
-#: statement lines added since helper 71 (71: Beneish M-score, Altman Z-score; 74: cash conversion cycle): a saved
-#: copy without one of them is read again once
-STATEMENT_KEYS = ('receivables', 'ppe', 'retainedEarnings', 'inventory', 'payables')
+#: statement lines added since helper 71 (71: Beneish M-score, Altman Z-score; 74: cash conversion cycle; 75: deferred
+#: revenue, goodwill and write-downs): a saved copy without one of them is read again once
+STATEMENT_KEYS = ('receivables', 'ppe', 'retainedEarnings', 'inventory', 'payables', 'deferredRevenue', 'goodwill',
+                  'goodwillImpairment', 'intangibleImpairment')
 
 
 def _ladders(company_facts):
