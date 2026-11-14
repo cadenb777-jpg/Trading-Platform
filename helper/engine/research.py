@@ -4,9 +4,12 @@ valuation inputs and the filings list. Prices and P/E come from Schwab's quote.
 """
 import asyncio
 import datetime as dt
+import logging
 
 from . import dividends, sec
 from .core import EngineError, handler
+
+log = logging.getLogger('engine.research')
 
 # Each line item lists the XBRL tags companies use for it, most common first. Companies switch tags
 # over the years, so for each period the first tag with a value wins.
@@ -31,10 +34,14 @@ BALANCE = [
     ('shortInvestments', 'Short-term investments', ['MarketableSecuritiesCurrent', 'ShortTermInvestments', 'AvailableForSaleSecuritiesDebtSecuritiesCurrent']),
     # helper 71: for the Beneish M-score and Altman Z-score on Research (Earnings quality)
     ('receivables', 'Accounts receivable', ['AccountsReceivableNetCurrent', 'ReceivablesNetCurrent']),
+    # helper 74: for the cash conversion cycle (payables only on their own line: a combined payables-and-accrued
+    # line would overstate days to pay)
+    ('inventory', 'Inventory', ['InventoryNet', 'RetailRelatedInventoryMerchandise']),
     ('currentAssets', 'Current assets', ['AssetsCurrent']),
     ('ppe', 'Property, plant & equipment', ['PropertyPlantAndEquipmentNet',
                                             'PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulatedDepreciationAndAmortization']),
     ('totalAssets', 'Total assets', ['Assets']),
+    ('payables', 'Accounts payable', ['AccountsPayableCurrent', 'AccountsPayableTradeCurrent']),
     ('currentLiabilities', 'Current liabilities', ['LiabilitiesCurrent']),
     ('longTermDebt', 'Long-term debt', ['LongTermDebtNoncurrent', 'LongTermDebt', 'LongTermDebtAndCapitalLeaseObligations']),
     ('totalLiabilities', 'Total liabilities', ['Liabilities']),
@@ -375,10 +382,14 @@ async def company_core(ctx, cik, with_maturities=False):
         company_facts = await sec._json(ctx, sec.FACTS_URL.format(cik=cik))
         return {'statements': statements(company_facts), 'shares': _latest_shares(company_facts), **_ladders(company_facts)}
     core = await ctx.cached(('sec-core', cik), 6 * 3600, load_core, persist=True, stale_ok=True)
-    if with_maturities and not all(k in core['statements']['annual']['values'] for k in HEALTH_KEYS):
-        # a copy saved before helper 71 lacks the lines the health scores need: read the whole core once more
-        # (its own key, so the stale copy isn't served again) instead of waiting for the 6 h refresh
-        core = await ctx.cached(('sec-core71', cik), 6 * 3600, load_core, persist=True, stale_ok=True)
+    if with_maturities and not all(k in core['statements']['annual']['values'] for k in STATEMENT_KEYS):
+        # a copy saved by an older helper lacks lines the Research panels need: reload that same key now (max age 0,
+        # one download, no second copy on disk); if the SEC can't be reached, keep the saved copy (the panels that
+        # need the new lines say so) rather than fail the whole page
+        try:
+            core = await ctx.cached(('sec-core', cik), 0, load_core, persist=True)
+        except Exception as err:  # noqa: BLE001 (any download/parse failure: the saved copy still serves the page)
+            log.info('research: re-reading %s for newer lines failed (%s); using the saved copy', cik, type(err).__name__)
     if with_maturities and not all(k in core for k in LADDER_KEYS):
         # a copy saved by an older helper has no ladders: read them once on their own (expires with the 6 h core copy)
         async def load_ladders():
@@ -388,8 +399,9 @@ async def company_core(ctx, cik, with_maturities=False):
 
 
 LADDER_KEYS = ('maturities', 'obligations')
-#: statement lines added in helper 71 (Beneish M-score, Altman Z-score)
-HEALTH_KEYS = ('receivables', 'ppe', 'retainedEarnings')
+#: statement lines added since helper 71 (71: Beneish M-score, Altman Z-score; 74: cash conversion cycle): a saved
+#: copy without one of them is read again once
+STATEMENT_KEYS = ('receivables', 'ppe', 'retainedEarnings', 'inventory', 'payables')
 
 
 def _ladders(company_facts):

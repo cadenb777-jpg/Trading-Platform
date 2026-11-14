@@ -29,9 +29,12 @@ class Lines(unittest.TestCase):
 
     def test_shown_in_the_balance_sheet(self):
         keys = [k for k, _, _ in r.BALANCE]
-        for k in ('receivables', 'ppe', 'retainedEarnings'):
+        for k in ('receivables', 'ppe', 'retainedEarnings', 'inventory', 'payables'):
             self.assertIn(k, keys)
-        self.assertIn('ReceivablesNetCurrent', dict((k, t) for k, _, t in r.BALANCE)['receivables'])
+        tags = dict((k, t) for k, _, t in r.BALANCE)
+        self.assertIn('ReceivablesNetCurrent', tags['receivables'])
+        # payables only on their own line (a combined payables-and-accrued line would overstate days to pay)
+        self.assertEqual(tags['payables'], ['AccountsPayableCurrent', 'AccountsPayableTradeCurrent'])
 
 
 if __name__ == '__main__':

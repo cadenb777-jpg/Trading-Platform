@@ -615,11 +615,17 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   stock" = diluted count didn't rise; a check without its figures is unjudged, never a fail) and accruals = (net income
   - CFO) / average assets per year (Hribar-Collins 2002, Sloan 1996), own-range percentile from 5 years. Readings only.
   Helper 71 (HEALTH_HELPER_VERSION/healthReady; src/research/health.ts pure): statements add receivables, ppe,
-  retainedEarnings and profile.sic (company_core re-reads a pre-71 'sec-core' copy as 'sec-core71'); Beneish M-score
+  retainedEarnings and profile.sic (company_core reloads a 'sec-core' copy missing any STATEMENT_KEYS line under the same key with max age 0, keeping the saved copy if the SEC fails); Beneish M-score
   (1999, 8 ratios, D&A for depreciation, cut-off -1.78; newest year pair with every line and finite ratios; only
   positive-weight ratios are named as reasons) and Altman: Z (1968; SIC 2000-3999, live market value, newest year only),
   Z' (1983 book values; manufacturers otherwise), Z'' (1983; everyone else; SIC 6000-6999 not scored); total liabilities
   = assets - equity when the filing has no Liabilities tag, labelled. Glossary keys mscore/altmanZ.
+- Research → Cash health (helper 74, CASH_CYCLE_HELPER_VERSION/cashCycleReady; src/research/cashHealth.ts pure +
+  cashHealthView.ts): dividend cover = free cash flow / dividends paid, newest year and the last 5 consecutive years (with
+  buybacks too), short years named; cash conversion cycle = DSO + DIO - DPO on year-end balances (Richards-Laughlin 1980),
+  statements add inventory and payables (own lines only, never a combined payables-and-accrued line; none = "not worked
+  out"; no inventory line = cycle of customer and supplier days only, labelled); cover uses only years with capex
+  reported and says so when free cash flow is negative. New statement lines go in research.STATEMENT_KEYS.
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per
