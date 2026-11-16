@@ -57,7 +57,9 @@ everything two clicks away, and a ticker typed anywhere opens one Security page.
 - Attention order on every view: one hero picture top-left, the key numbers beside it, detail below, AI read in
   the header.
 
-- [ ] 1b-1. Navigation registry and rail: six destinations, top row of views, redirects, remove the function bar.
+- [~] 1b-1. Navigation: done: the numbered function row is one "Actions" header button with a menu (keys 1-9 still
+      work; Home's sits in the greeting banner), so no page shows its buttons twice. To do: six destinations, top row
+      of views, redirects.
 - [ ] 1b-2. Security hub: one ticker, tabs Overview / Chart / Financials / Valuation / Flow / Filings / News.
 - [ ] 1b-3. Markets hub: Overview (boards + heat map) / Macro & rates / Calendar / Futures / Crypto.
 - [ ] 1b-4. Today page re-laid as the attention page (keeps greeting and ticker tape).
