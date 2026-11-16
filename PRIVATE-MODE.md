@@ -9,32 +9,25 @@ from a copy of the code on your computer instead. Your keys, logins and data sta
 
 1. **Install Git:** <https://git-scm.com> → *Download for Windows* → install with the default options.
 2. **Install Node.js:** <https://nodejs.org> → the **LTS** version → install with the default options.
-3. **Make your SSH key.** Open **Terminal** (right-click the Start button → *Terminal*) and run, with your own
-   GitHub email, pressing **Enter** at every question:
-   ```
-   ssh-keygen -t ed25519 -C "your GitHub email"
-   ```
-4. **Copy the public key:**
-   ```
-   type $env:USERPROFILE\.ssh\id_ed25519.pub | clip
-   ```
-   Only this `.pub` file is ever shared. The other file (`id_ed25519`, no `.pub`) is your private key: never share it.
-5. **Add it to GitHub:** github.com → your picture (top right) → **Settings** → **SSH and GPG keys** →
-   **New SSH key** → title "My PC" → paste → **Add SSH key**.
-6. **Test it:**
-   ```
-   ssh -T git@github.com
-   ```
-   Type **yes** if asked. It should say *Hi cadenb777-jpg!*
-7. **Get the code:**
+3. **Get the code** (one folder, in your user folder). Open **Terminal** (right-click the Start button → *Terminal*)
+   and run:
    ```
    cd $env:USERPROFILE
-   git clone git@github.com:cadenb777-jpg/Trading-Platform.git
+   git clone https://github.com/cadenb777-jpg/Trading-Platform.git
    ```
-8. **Start it:** open the **Trading-Platform** folder in your user folder and double-click
+   A GitHub sign-in window opens the first time: choose **Sign in with your browser** and approve. Git remembers it
+   (Windows Credential Manager), so later updates need no sign-in. (An SSH key works too, if you already have one.)
+4. **Start it:** open the **Trading-Platform** folder in your user folder and double-click
    **start-private-windows.bat**. The first start takes a few minutes (it installs the website's parts, builds the
    website and installs the app's parts). It then makes the **Trading Terminal** icon on your desktop and in the Start
    menu open this private copy (replacing the installed app's icon of that name).
+
+## Only one copy
+
+Keep just this one folder (`Trading-Platform` in your user folder). Close the Trading Terminal (tray icon → Quit), then
+uninstall the installed **Trading Terminal** app if you have it (Windows Settings → Apps), and delete any other copies of
+the platform (for example a ZIP copy on your Desktop) and their shortcuts. Never delete `.trading-platform` in your user
+folder: that is where your keys, logins, portfolios and data live.
 
 ## Every day
 

@@ -3,7 +3,7 @@ Private mode: the whole platform from your own copy of the code (a git clone), f
 private (GitHub only serves the website, the app's updates and the download for public repositories).
 
 start-private-windows.bat (in the clone's top folder) runs `launch.py --private`, which:
-  1. gets the latest changes with `git pull` (over your SSH key),
+  1. gets the latest changes with `git pull` (GitHub sign-in remembered by Windows, or an SSH key),
   2. installs the website's parts with npm when package-lock.json changed, and builds the website (npm run build) when
      the code changed since the last build,
   3. serves that build on this computer only (http://127.0.0.1:4173/, an address the helper already accepts),
@@ -25,7 +25,7 @@ HOST, PORT = '127.0.0.1', 4173
 URL = f'http://{HOST}:{PORT}/'
 FLAG = 'TP_PRIVATE'
 NODE_HINTS = ['Install Node.js (the LTS version) from nodejs.org with the default options, then start this again.']
-GIT_HINTS = ['Install Git for Windows from git-scm.com, set up your SSH key (see PRIVATE-MODE.md), then start this again.']
+GIT_HINTS = ['Install Git for Windows from git-scm.com, get the code with git clone (see PRIVATE-MODE.md), then start this again.']
 
 
 class StepError(Exception):
@@ -64,7 +64,7 @@ def pull(log):
         raise StepError('Git is not installed.', hints=GIT_HINTS)
     code, tail = _run([git, 'pull', '--ff-only'], log, timeout=120)
     if code != 0:
-        return 'Could not get the latest changes (no internet, or the SSH key isn’t set up): using the copy you have. ' + (tail[-1] if tail else '')
+        return 'Could not get the latest changes (no internet, or GitHub sign-in needed: see PRIVATE-MODE.md): using the copy you have. ' + (tail[-1] if tail else '')
     return 'Up to date.' if any('Already up to date' in t for t in tail) else 'Got the latest changes.'
 
 
