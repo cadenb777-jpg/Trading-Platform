@@ -4,25 +4,25 @@
    Text pairs are checked for 4.5:1 contrast in src/ui/tokens.test.ts. */
 :root {
   /* Layers: page -> surface (cards) -> raised (controls, hovers) -> high (active controls). */
-  --bg: #050d19;
-  --bg-deep: #040b16;
-  --bg-chart: #071629;
-  --surface: #0a1a2e;
-  --raised: #0f233b;
-  --high: #163150;
-  --line: #17304b;
-  --line-strong: #25476b;
+  --bg: #08090b;
+  --bg-deep: #050608;
+  --bg-chart: #0a0c0f;
+  --surface: #0f1216;
+  --raised: #151a20;
+  --high: #1d242c;
+  --line: #232a32;
+  --line-strong: #36414d;
   /* Text. */
-  --text: #e8f1fa;
+  --text: #e4e8ec;
   --text-strong: #ffffff;
-  --muted: #adc1d6;
-  --faint: #62809e;
+  --muted: #a6afb9;
+  --faint: #6a7480;
   /* Accents: sky for interaction, copper for highlights (active nav, key figures). */
   --accent: #7ac3ee;
   --accent-text: #8ac4ec;
   --on-accent: #04101f;
-  --accent-2: #c8763a;
-  --accent-2-text: #ffa24d;
+  --accent-2: #ff8a1f;
+  --accent-2-text: #ffa040;
   --focus: #8ac4ec;
   /* Gains and losses: a blue-leaning green and a warm red that also differ in lightness (colour-blind safe). */
   --up: #2fbf95;
@@ -38,21 +38,21 @@
   --grid-line: color-mix(in srgb, var(--accent) 6%, transparent);
   --glow-sky: color-mix(in srgb, var(--accent) 16%, transparent);
   --glow-copper: color-mix(in srgb, var(--accent-2) 16%, transparent);
-  --hero-bg: linear-gradient(160deg, var(--bg-deep) 0%, #071629 45%, #0e2740 100%);
-  --glass: color-mix(in srgb, var(--surface) 82%, transparent);
+  --hero-bg: linear-gradient(160deg, var(--bg-deep) 0%, #08142a 50%, #0e2740 100%);
+  --glass: color-mix(in srgb, var(--surface) 94%, transparent);
   /* Page atmosphere (one fixed layer behind everything): blueprint grid and soft colour spots.
      Spots are #rrggbbaa so tokens.test.ts can check text contrast where they are strongest. */
-  --grid-minor: color-mix(in srgb, var(--accent) 3.5%, transparent);
-  --grid-major: color-mix(in srgb, var(--accent) 7.5%, transparent);
+  --grid-minor: color-mix(in srgb, var(--accent) 2.5%, transparent);
+  --grid-major: color-mix(in srgb, var(--accent) 5%, transparent);
   /* the flowing background (atmosphere.ts): dark blue, blue, sky, orange, amber; alphas keep page text readable */
-  --spot-sky: #5fb2ea30;
-  --spot-copper: #e8793a42;
-  --spot-deep: #0b3a8a70;
-  --spot-blue: #1f6fc450;
-  --spot-amber: #f0a05a2c;
+  --spot-sky: #5fb2ea26;
+  --spot-copper: #ff8a1f22;
+  --spot-deep: #0b3a8a58;
+  --spot-blue: #1f6fc440;
+  --spot-amber: #f0a05a1a;
   /* Type. */
-  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-display: 'Cormorant Garamond', 'Iowan Old Style', Georgia, serif;
+  --font-ui: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  --font-display: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
   /* Motion: short and eased; prefers-reduced-motion turns it off (Accessibility block). */
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --dur-1: 120ms;
@@ -69,11 +69,11 @@
   --link: var(--accent-text);
   --control-active: var(--high);
   --ai: #b79cff;
-  --ai-bg: #13183a;
+  --ai-bg: #15132a;
   --ai-border: #3f418a;
   --ai-hover: #1b2250;
-  --ai-top: #0b1a30;
-  --insight-top: #111a38;
+  --ai-top: #0f1216;
+  --insight-top: #15132a;
   --ai-strong: #8f74ff;
   /* Categorical chart series (sky, copper, sea green), validated per mode; canvas charts use THEME.viz1-3. */
   --viz-1: #5aaae6;
@@ -82,11 +82,11 @@
   --banner-bg: #23170c;
   --banner-border: #6b4320;
   --banner-text: #ffd8b0;
-  --overlay: #020814c7;
+  --overlay: #020305c7;
   --logo-bg: #fff;
   --star: #f2b84b;
-  --scrim: #050d19d9;
-  --tooltip-bg: #071629f2;
+  --scrim: #08090bd9;
+  --tooltip-bg: #0f1216f5;
   --shadow-sm: 0 1px 2px #00000066;
   --shadow-md: 0 8px 24px #00000080, 0 0 0 1px #ffffff08;
   --shadow-lg: 0 20px 48px #000000a6, 0 0 0 1px #ffffff0a;
@@ -118,17 +118,17 @@
   --fs-md: 14px;
   --fs-lg: 15px;
   --fs-xl: 18px;
-  --fs-2xl: 22px;
-  --fs-display: 34px;
+  --fs-2xl: 20px;
+  --fs-display: 28px;
   --fs-num-lg: 20px;
   --font-mono: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
   /* Shapes and sizes. */
-  --radius-sm: 4px;
-  --radius: 6px;
-  --radius-lg: 10px;
+  --radius-sm: 2px;
+  --radius: 3px;
+  --radius-lg: 4px;
   --control-h: 32px;
-  --page-max: 1320px;
-  --page-pad: 24px 32px 40px;
+  --page-max: 1680px;
+  --page-pad: 14px 20px 32px;
 }
 
 /* Light mode (Settings > Appearance; saved per browser): paper, ink and slate with navy and copper accents. */
@@ -11361,3 +11361,696 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .co-checks { display: flex; gap: 12px; flex-wrap: wrap; padding-bottom: 6px; }
 .co-pager { display: flex; gap: 8px; margin-top: 8px; }
 .co-results { margin-top: 12px; }
+
+/* ===================================================================================================================
+   Terminal look (revamp item 1, 2026-11): the Fincept-style layer every page shares. Monospace type, flat near-black
+   panels with hairline borders, small uppercase amber headings with a rule, underlined uppercase tabs, compact
+   label/value cards and tables. Colours stay the tokens: amber labels, white figures, green/red for good/bad, sky for
+   interaction. Later in the file than the old rules on purpose, so it wins at equal specificity.
+   =================================================================================================================== */
+body {
+  font-size: 13px;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+/* Page header: one compact line (title, purpose, actions), not a hero. */
+.ap-header {
+  align-items: center;
+  gap: 6px 16px;
+  margin-bottom: var(--sp-3);
+  padding-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--line);
+}
+.ap-header h1,
+.cal-header h1 {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.ap-header h1::before,
+.cal-header h1::before {
+  display: none;
+}
+.ap-header p {
+  margin: 2px 0 0;
+  font-size: var(--fs-sm);
+}
+
+/* Panels: flat, hairline border, heading bar; a faint blue glow on hover keeps the platform's own signature. */
+.panel:hover {
+  box-shadow: 0 0 0 1px var(--accent-border), 0 0 24px var(--glow-sky);
+}
+.panel {
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: none;
+  padding: var(--sp-3);
+}
+.panel-head {
+  gap: 8px;
+  margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) var(--sp-3);
+  padding: 7px var(--sp-3);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--raised) 55%, transparent);
+}
+.panel-head h3,
+.pr-sec h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.panel-head .muted.small {
+  font-size: var(--fs-xs);
+}
+
+/* Tabs: uppercase, underlined when active (no filled pills). */
+.tabs {
+  gap: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+.tabs .tab,
+.tab {
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tabs .tab:hover,
+.tab:hover {
+  color: var(--text-strong);
+  background: transparent;
+}
+.tabs .tab.active,
+.tab.active,
+.tab[aria-selected='true'] {
+  color: var(--accent-2-text);
+  border-bottom-color: var(--accent-2);
+  background: transparent;
+}
+
+/* Stat cards become compact label/value tiles. */
+.stat-cards {
+  gap: 0;
+  padding: 1px 0 0 1px; /* room for the collapsed hairlines below */
+}
+.stat-card {
+  min-height: 0;
+  margin: -1px 0 0 -1px; /* neighbouring borders overlap into one hairline */
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--surface);
+  box-shadow: none;
+}
+.stat-card:hover {
+  transform: none;
+  box-shadow: none;
+}
+.stat-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.stat-value {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.stat-hint {
+  font-size: var(--fs-xs);
+}
+
+/* Tables: dense rows, uppercase amber headers, hairlines. */
+.data-table {
+  font-size: var(--fs-sm);
+}
+.data-table th {
+  padding: 6px 8px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+  background: var(--raised);
+  border-bottom: 1px solid var(--line-strong);
+}
+.data-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Buttons and inputs: square, compact. */
+.btn {
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.input,
+select.input {
+  border-radius: var(--radius-sm);
+}
+
+/* Label/value list (Fincept "TODAY'S TRADING" style): label left, figure right. */
+.kv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+.kv dt {
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.kv dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.kv dd.up {
+  color: var(--up-text);
+}
+.kv dd.down {
+  color: var(--down-text);
+}
+
+/* Nothing below 11 px (launch readability): function codes, info marks, small chart labels. */
+.code-hint,
+.tr-wdel,
+.cut,
+.hold,
+.axis.x,
+.axis.y {
+  font-size: 11px;
+}
+.info-tip {
+  font-size: 11px;
+  width: 15px;
+  height: 15px;
+}
+
+/* The greeting banner keeps the platform's signature: a blue glow top right, copper bottom left. */
+.home > .home-hero {
+  background:
+    radial-gradient(55% 140% at 100% 0, color-mix(in srgb, var(--accent) 26%, transparent), transparent 70%),
+    radial-gradient(40% 110% at 0 100%, color-mix(in srgb, var(--accent-2) 20%, transparent), transparent 70%),
+    var(--hero-bg);
+  border: 1px solid var(--line);
+}
+
+/* Visual building blocks (src/ui/viz.ts): gauge, ring, range track, flower, heat grid. Theme colours only. */
+.viz {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.viz-title {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.viz-cap {
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--muted);
+}
+.viz-cap b {
+  color: var(--text-strong);
+}
+.viz-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.viz-zone {
+  stroke-linecap: butt;
+  opacity: 0.85;
+}
+.viz-needle {
+  stroke: var(--text-strong);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 60%, transparent));
+}
+.viz-hub {
+  fill: var(--text-strong);
+}
+.viz-tick {
+  font-size: 11px;
+  fill: var(--faint);
+}
+.viz-reading {
+  font-size: 22px;
+  font-weight: 700;
+  fill: var(--text-strong);
+}
+.viz-gauge .viz-art {
+  max-width: 240px;
+  margin: 0 auto;
+}
+.viz-ring > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.viz-ring .viz-art {
+  width: 88px;
+}
+.viz-ring-bg {
+  stroke: var(--raised);
+}
+.viz-ring-text {
+  font-size: 15px;
+  font-weight: 700;
+  fill: var(--text-strong);
+}
+.viz-track {
+  position: relative;
+  height: 26px;
+  margin: 14px 4px 2px;
+}
+.viz-track-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 11px;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--down), var(--warn), var(--up));
+  opacity: 0.75;
+}
+.viz-track-mark {
+  position: absolute;
+  top: 6px;
+  width: 2px;
+  height: 14px;
+  margin-left: -1px;
+  background: var(--muted);
+}
+.viz-track-dot {
+  position: absolute;
+  top: 6px;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border-radius: 50%;
+  background: var(--text-strong);
+  box-shadow: 0 0 0 3px var(--surface), 0 0 12px var(--glow-sky);
+}
+.viz-track-dot b {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--text-strong);
+}
+.viz-track-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-xs);
+  color: var(--faint);
+}
+.viz-flower .viz-art {
+  max-width: 340px;
+  margin: 0 auto;
+}
+.viz-orbit {
+  stroke: var(--line);
+  stroke-dasharray: 2 4;
+}
+.viz-flow {
+  opacity: 0.8;
+  stroke-linecap: round;
+}
+.viz-flow:hover {
+  opacity: 1;
+}
+.viz-node {
+  fill: var(--raised);
+  stroke: var(--line-strong);
+}
+.viz-node-label {
+  font-size: 11px;
+  font-weight: 700;
+  fill: var(--text-strong);
+}
+.viz-node-value {
+  font-size: 11px;
+  fill: var(--muted);
+}
+.viz-centre {
+  fill: var(--surface);
+  stroke: var(--accent-2);
+}
+.viz-centre-text {
+  font-size: 12px;
+  font-weight: 700;
+  fill: var(--accent-2-text);
+}
+.viz-heat {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 3px;
+}
+.viz-heat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 54px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-strong);
+  font: inherit;
+  text-align: left;
+}
+button.viz-heat-tile {
+  cursor: pointer;
+}
+button.viz-heat-tile:hover {
+  outline: 1px solid var(--accent-border);
+}
+.viz-heat-tile b {
+  font-size: var(--fs-sm);
+}
+.viz-heat-tile span {
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+.viz-heat-tile small {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Research tear sheet (src/research/tearSheet.ts): strip, about, three columns. */
+.ts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.ts-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 18px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  font-size: var(--fs-sm);
+}
+.ts-sym {
+  color: var(--accent-2-text);
+  letter-spacing: 0.08em;
+}
+.ts-price {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.ts-strip .up {
+  color: var(--up-text);
+}
+.ts-strip .down {
+  color: var(--down-text);
+}
+.ts-about {
+  margin: 0;
+  max-width: 120ch;
+  font-size: var(--fs-md);
+  line-height: 1.6;
+  color: var(--text);
+}
+.ts-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(300px, 1.4fr) minmax(220px, 1fr);
+  gap: var(--sp-3);
+  align-items: start;
+}
+.ts-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.ts-centre {
+  gap: var(--sp-4);
+}
+.ts-note {
+  margin: -4px 2px 0;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.ts-rings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+.ts-rings .viz-cap {
+  text-align: center;
+}
+@media (max-width: 1100px) {
+  .ts-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .ts-centre {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+}
+@media (max-width: 640px) {
+  .ts-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Revamp (navigation): the numbered function row is one "Actions" header button with a menu; keys 1-9 still work. */
+.fn-bar {
+  position: relative;
+  display: inline-flex;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.fn-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md), 0 0 24px var(--glow-sky);
+}
+.fn-menu[hidden] {
+  display: none;
+}
+.fn-menu .fn-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fn-menu .fn-chip {
+  justify-content: flex-start;
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+.fn-menu .fn-chip:hover,
+.fn-menu .fn-chip:focus-visible {
+  background: var(--raised);
+}
+.fn-menu .fn-related {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  border-left: 0;
+}
+.fn-menu .fn-related-label {
+  padding: 2px 8px;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.fn-menu .fn-rel {
+  padding: 4px 8px;
+}
+.home > .home-hero {
+  position: relative;
+}
+.home-hero > .fn-bar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+}
+
+/* Revamp (navigation): the rail shows the six destinations only; each destination's views are the top row. */
+@media (min-width: 701px) {
+  .rail-tree {
+    display: none;
+  }
+  .rail-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: var(--sp-3);
+  }
+  .rail .nav-btn.rail-sec {
+    padding: 10px 12px;
+    font-size: var(--fs-md);
+    letter-spacing: 0.04em;
+  }
+  .rail .nav-btn.rail-sec.active,
+  .rail .nav-btn.rail-sec[aria-current] {
+    color: var(--text-strong);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    box-shadow: inset 2px 0 0 var(--accent-2), 0 0 18px var(--glow-sky);
+  }
+}
+.sub-tabs[hidden] {
+  display: none !important;
+}
+@media (max-width: 700px) {
+  /* phone bottom bar: the destinations and AI only (Launchpad is in the command bar) */
+  .rail .rail-launch {
+    display: none;
+  }
+  .rail .nav-btn.rail-sec,
+  .rail .ai-nav {
+    min-width: 0;
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+  .rail .nav-label {
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+  .home-hero > .fn-bar {
+    position: static;
+    align-self: flex-start;
+    order: 5;
+    margin-top: var(--sp-2);
+  }
+}
+
+/* Left menu lower half: the live market pulse (src/ui/railPulse.ts). */
+.rail-pulse {
+  display: none;
+}
+@media (min-width: 701px) {
+  .rail-pulse {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    margin: var(--sp-3) 0 var(--sp-2);
+    padding-top: var(--sp-2);
+    border-top: 1px solid var(--line);
+    scrollbar-width: thin;
+  }
+  body.rail-collapsed .rail-pulse {
+    display: none;
+  }
+}
+.rp-head {
+  padding: 6px 10px 4px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.rp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'name last' 'name chg';
+  align-items: center;
+  column-gap: 6px;
+  width: 100%;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.rp-row:hover {
+  background: var(--raised);
+  box-shadow: 0 0 12px var(--glow-sky);
+}
+.rp-name {
+  grid-area: name;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+.rp-last {
+  grid-area: last;
+  font-weight: 600;
+  color: var(--text-strong);
+  text-align: right;
+}
+.rp-chg {
+  grid-area: chg;
+  text-align: right;
+  color: var(--faint);
+}
+.rp-chg.up {
+  color: var(--up-text);
+}
+.rp-chg.down {
+  color: var(--down-text);
+}
+.fed-bar i,
+.fed-bar .cut,
+.fed-bar .hold {
+  font-size: 11px;
+}

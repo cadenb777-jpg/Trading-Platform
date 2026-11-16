@@ -682,8 +682,8 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
       createTickerTape().el,
       h('div', { class: 'hero-left' }, greetingEl, h('div', { class: 'hero-sub' }, dateEl, marketPill)),
       brief.strip,
+      fnBar,
     ),
-    fnBar,
     banner,
     // the AI read opens full width above the widgets (function 3), as on every other page
     marketRead.panel,

@@ -12,12 +12,14 @@ describe('nav registry', () => {
     expect([...loaders].sort()).toEqual([...ROUTES].sort());
   });
 
-  it('keeps the six sections in order, with the asked-for pages', () => {
-    expect(SECTIONS.map((s) => s.label)).toEqual(['Markets', 'Analyze', 'Money', 'Business', 'AI']);
-    expect(sectionPages('markets').map((p) => p.label)).toEqual(['Home', 'Investments', 'Futures', 'Macro', 'Calendar', 'Flow']);
-    expect(sectionPages('analyze').map((p) => p.label)).toEqual(['Chart', 'Research', 'Setups', 'Backtest', 'Strategy Lab']);
+  it('keeps the destinations in order (revamp: Today, Markets, Security, Ideas, My money, Business), with their views', () => {
+    expect(SECTIONS.map((s) => s.label)).toEqual(['Today', 'Markets', 'Security', 'Ideas', 'Money', 'Business', 'AI']);
+    expect(sectionPages('today').map((p) => p.label)).toEqual(['Home']);
+    expect(sectionPages('markets').map((p) => p.label)).toEqual(['Investments', 'Futures', 'Macro', 'Calendar']);
+    expect(sectionPages('security').map((p) => p.label)).toEqual(['Research', 'Chart', 'Flow']);
+    expect(sectionPages('ideas').map((p) => p.label)).toEqual(['Setups', 'Backtest', 'Strategy Lab']);
     expect(sectionPages('money').map((p) => p.label)).toEqual(['Account', 'Portfolios', 'Trade', 'Journal']);
-    expect(sectionPages('business').map((p) => p.label)).toEqual(['Clients', 'Prospects']);
+    expect(sectionPages('business').map((p) => p.label)).toEqual(['Prospects', 'Clients']);
   });
 
   it('gives every visible page a unique code, and never one an older code already means for another page', () => {
@@ -43,7 +45,7 @@ describe('nav registry', () => {
   it('opens a section on the page last visited there, else its first page', () => {
     expect(sectionTarget('money')).toBe('account');
     expect(sectionTarget('money', { money: 'journal' })).toBe('journal');
-    expect(sectionTarget('analyze', { analyze: 'chart/multi' })).toBe('chart/multi');
+    expect(sectionTarget('security', { security: 'chart/multi' })).toBe('chart/multi');
     expect(sectionTarget('money', { money: 'home' })).toBe('account'); // not a page of that section
     expect(sectionTarget('ai')).toBeNull();
     expect(pageOf('sec')?.hidden).toBe(true);

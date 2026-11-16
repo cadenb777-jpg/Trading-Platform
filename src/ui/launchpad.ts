@@ -142,7 +142,7 @@ export function openLaunchpad(run: (id: string) => void) {
     const pick = (ids: string[]) => ids.map((id) => byId.get(id)).filter((x): x is LaunchItem => !!x);
     body.replaceChildren(
       ...[group('Favourites', pick(favs)), group('Recent', pick(readList(RECENT_KEY)))].filter(Boolean) as HTMLElement[],
-      ...(['markets', 'analyze', 'money', 'business', 'ai', 'system'] as const).map((s) => group(SECTION_LABEL[s], items.filter((i) => i.section === s))).filter((x): x is HTMLElement => !!x),
+      ...(['today', 'markets', 'security', 'ideas', 'money', 'business', 'ai', 'system'] as const).map((s) => group(SECTION_LABEL[s], items.filter((i) => i.section === s))).filter((x): x is HTMLElement => !!x),
     );
   }
   input.addEventListener('input', draw);
