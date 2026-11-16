@@ -1061,8 +1061,9 @@ def apply(con):
     rows = []
     for r in new_firms:
         point = zcta.get(pr.zip5(r[12]))
-        rows.append(r[:29] + ((point[0], point[1], 'zip') if point else (None, None, '')))
-    con.executemany(f'INSERT OR REPLACE INTO firms VALUES ({",".join("?" * 32)})', rows)
+        # public-records firms file no Form ADV: no revenue estimate (rev_low, rev_likely, rev_high)
+        rows.append(r[:29] + ((point[0], point[1], 'zip') if point else (None, None, '')) + (None, None, None))
+    con.executemany(f'INSERT OR REPLACE INTO firms VALUES ({",".join("?" * 35)})', rows)
     con.executemany('INSERT INTO links VALUES (?, ?, ?, ?, ?, ?, ?)', links)
     con.executemany('INSERT INTO signals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', signals)
     con.executemany('INSERT INTO people VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', new_people)

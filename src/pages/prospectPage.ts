@@ -80,13 +80,14 @@ const SORTS: { id: SortKey | ''; label: string }[] = [
   { id: 'value13f', label: '13F value' },
   { id: 'clients', label: 'Most clients' },
   { id: 'funds', label: 'Private fund assets' },
+  { id: 'revenue', label: 'Estimated revenue' },
   { id: 'filed', label: 'Latest filing' },
   { id: 'name', label: 'Name A-Z' },
   { id: 'distance', label: 'Distance (radius)' },
   { id: 'position', label: 'Position size (holds)' },
 ];
 const PAGE = 100;
-const NUM_COLS = new Set(['aum', 'clients', 'value13f', 'employees', 'funds']);
+const NUM_COLS = new Set(['aum', 'clients', 'value13f', 'employees', 'funds', 'revenue']);
 const MAP_LIMIT = 2000;
 const STATES = 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR'.split(' ');
 
@@ -272,7 +273,7 @@ export function createProspectPage() {
   }
 
   // ---------- search form ----------
-  const input = (key: 'text' | 'city' | 'zip' | 'miles' | 'near' | 'aumMin' | 'aumMax' | 'holds' | 'minPosition', label: string, attrs: Record<string, string> = {}) => {
+  const input = (key: 'text' | 'city' | 'zip' | 'miles' | 'near' | 'aumMin' | 'aumMax' | 'revenueMin' | 'holds' | 'minPosition', label: string, attrs: Record<string, string> = {}) => {
     const el = h('input', { class: 'input', type: 'text', value: form[key], 'aria-label': label, ...attrs });
     el.addEventListener('input', () => (form[key] = el.value));
     el.addEventListener('keydown', (e) => e.key === 'Enter' && (e.preventDefault(), runSearch()));
@@ -317,6 +318,7 @@ export function createProspectPage() {
     h('div', { class: 'pr-row2' }, field('ZIP starts with', input('zip', 'ZIP code', { inputmode: 'numeric' })), field('Sort', sortSel)),
     h('fieldset', { class: 'pr-fieldset' }, h('legend', { class: 'muted small' }, 'Within a radius ', infoTip('prRadius')), h('div', { class: 'pr-radius-row' }, milesBox, h('span', { class: 'muted small' }, 'miles of'), nearBox)),
     h('div', { class: 'pr-row2' }, field(h('span', {}, 'AUM from ', infoTip('prAum')), input('aumMin', 'AUM minimum', { placeholder: 'e.g. 100m' })), field('AUM up to', input('aumMax', 'AUM maximum', { placeholder: 'e.g. 5b' }))),
+    h('div', { class: 'pr-row2' }, field(h('span', {}, 'Est. revenue from ', infoTip('prRevenue')), input('revenueMin', 'Revenue minimum', { placeholder: 'e.g. 2m' })), h('span')),
     h('div', { class: 'pr-field' }, h('span', { class: 'muted small' }, 'Serves (Form ADV client types)'), h('div', { class: 'chip-row pr-chips' }, ...CLIENT_FILTERS.map((c) => chipToggle(c === 'hnw' ? 'High net worth' : CLIENT_LABELS[c], () => form.clientTypes.includes(c), () => (form.clientTypes = form.clientTypes.includes(c) ? form.clientTypes.filter((x) => x !== c) : [...form.clientTypes, c]))))),
     h('div', { class: 'pr-checks' }, h('label', {}, box13f, ' Files 13F'), h('label', {}, boxFunds, ' Has private funds'), liquidityLabel),
     h('div', { class: 'pr-row2' }, field(h('span', {}, 'Holds (13F) ', infoTip('pr13f')), input('holds', 'Holds ticker or CUSIP', { placeholder: 'AAPL or CUSIP' })), field('Min position', input('minPosition', 'Minimum position', { placeholder: 'e.g. 1m' }))),
@@ -355,7 +357,7 @@ export function createProspectPage() {
   function rebuildFilters() {
     for (const [el, key] of [[textBox, 'text'], [milesBox, 'miles'], [nearBox, 'near']] as const) el.value = form[key];
     filters.querySelectorAll<HTMLInputElement>('input[type=text], input[type=search]').forEach((el) => {
-      const k = ({ City: 'city', 'ZIP code': 'zip', 'AUM minimum': 'aumMin', 'AUM maximum': 'aumMax', 'Holds ticker or CUSIP': 'holds', 'Minimum position': 'minPosition' } as Record<string, keyof SearchForm>)[el.getAttribute('aria-label') ?? ''];
+      const k = ({ City: 'city', 'ZIP code': 'zip', 'AUM minimum': 'aumMin', 'AUM maximum': 'aumMax', 'Revenue minimum': 'revenueMin', 'Holds ticker or CUSIP': 'holds', 'Minimum position': 'minPosition' } as Record<string, keyof SearchForm>)[el.getAttribute('aria-label') ?? ''];
       if (k) el.value = String(form[k]);
     });
     stateSel.value = form.state;
@@ -503,6 +505,12 @@ export function createProspectPage() {
         return td(f.aumTotal != null ? moneyText(f.aumTotal) : '—', f.aumTotal ?? '', 'num');
       case 'clients':
         return td(countText(f.clientsTotal), f.clientsTotal ?? '', 'num');
+      case 'revenue':
+        return td(
+          f.revLikely != null ? h('span', { title: `Estimated from Form ADV: ${moneyText(f.revLow ?? null)} – ${moneyText(f.revHigh ?? null)} a year (assets by client type × typical fee rates; not reported revenue)` }, `~${moneyText(f.revLikely)}`) : '—',
+          f.revLikely ?? '',
+          'num',
+        );
       case 'people':
         return td(
           f.topPeople?.length ? h('span', { class: 'pr-people' }, ...f.topPeople.map((p) => h('span', { class: p.keyTitle ? 'pr-key-title' : '', title: `${p.name}, ${p.title || 'no title'} (${p.source})` }, p.title || p.name))) : h('span', { class: 'muted small' }, 'None in filings'),

@@ -661,6 +661,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   asks crypto.candles (Coinbase from the helper, then Alpaca v1beta3 crypto bars (public, no key), then Kraken OHLC,
   all returned in Coinbase candle format) and goes through the helper for 10 minutes; watchlist/Investments crypto
   prices quiet for 20 s are polled via crypto.stats (Alpaca snapshots, then Coinbase stats).
+- Prospects revenue (helper 76): engine/prospect_revenue.py estimates yearly revenue from Form ADV (Item 5.D assets by
+  client type x typical fee rates; individuals/HNW by average account on a tiered schedule; performance fees = 20% of
+  the year's gain on pooled assets when 5.E says performance-based; headcount cross-check), stored as firms.rev_low/
+  rev_likely/rev_high (sort 'revenue', filter revenueMin, CSV). prospect.performance (engine/prospect_perf.py): 13F
+  holdings-based quarterly returns vs SPY (top 40 positions at each quarter start), the estimate with that return, and
+  reported revenue when the CIK files XBRL. Page: src/prospect/revenue.ts (+ "what it could be worth to you").
 - Macro page (US tab), top to bottom: Today's read (regime quadrant from src/macro/monitor.ts regime(): 3-month changes
   of jobs, claims, retail sales, GDP vs CPI, core PCE, breakevens; plus six key numbers), Fed odds + net liquidity,
   yield curve, one Macro monitor table (latest, 1m, 1y, 2-year sparkline, percentile since 2006; row opens history).

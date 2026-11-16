@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS firms (id TEXT PRIMARY KEY, name TEXT, other_names TE
   crd INTEGER, sec_number TEXT, cik INTEGER, street TEXT, city TEXT, state TEXT, zip TEXT, phone TEXT, website TEXT,
   aum_total REAL, aum_disc REAL, clients_total INTEGER, client_mix TEXT, client_types TEXT, employees INTEGER, fees TEXT,
   filing_date TEXT, has13f INTEGER, value_13f REAL, period_13f TEXT, funds INTEGER, funds_gav REAL, offerings INTEGER,
-  lat REAL, lon REAL, geo TEXT);
+  lat REAL, lon REAL, geo TEXT, rev_low REAL, rev_likely REAL, rev_high REAL);
 CREATE INDEX IF NOT EXISTS firms_state ON firms (state, city);
 CREATE INDEX IF NOT EXISTS firms_cik ON firms (cik);
 CREATE TABLE IF NOT EXISTS links (firm_id TEXT, source TEXT, source_key TEXT, method TEXT, score REAL, status TEXT, name TEXT);
@@ -167,7 +167,9 @@ CREATE TABLE IF NOT EXISTS adv_filings (crd INTEGER PRIMARY KEY, bulk_date TEXT,
 
 #: columns added after the first release (old databases get them on connect)
 MIGRATIONS = (('other_managers_13f', 'role', "TEXT DEFAULT ''"), ('private_funds', 'source', "TEXT DEFAULT ''"),
-              ('adv_filings', 'tried_for', "TEXT DEFAULT ''"))
+              ('adv_filings', 'tried_for', "TEXT DEFAULT ''"),
+              # estimated yearly revenue (engine/prospect_revenue.py), filled when the firm list is built
+              ('firms', 'rev_low', 'REAL'), ('firms', 'rev_likely', 'REAL'), ('firms', 'rev_high', 'REAL'))
 
 
 def connect(path=None):
@@ -177,10 +179,31 @@ def connect(path=None):
     con.row_factory = sqlite3.Row
     con.execute('PRAGMA journal_mode=WAL')
     con.executescript(SCHEMA)
+    added = set()
     for table, column, kind in MIGRATIONS:
         if column not in {r[1] for r in con.execute(f'PRAGMA table_info({table})')}:
             con.execute(f'ALTER TABLE {table} ADD COLUMN {column} {kind}')
+            added.add(column)
+    if 'rev_likely' in added:
+        fill_revenue(con)  # a database built before the revenue estimate: fill it in once
     return con
+
+
+def _revenue(aum_total, client_mix, fees, employees):
+    """(low, likely, high) estimated yearly revenue, or (None, None, None)."""
+    from . import prospect_revenue
+    mix = json.loads(client_mix) if isinstance(client_mix, str) and client_mix else (client_mix or {})
+    kinds = json.loads(fees) if isinstance(fees, str) and fees else (fees or [])
+    est = prospect_revenue.estimate(aum_total, mix, kinds, employees)
+    return (est['low'], est['likely'], est['high']) if est else (None, None, None)
+
+
+def fill_revenue(con):
+    """Estimated revenue for every firm already in the database (one pass, a few seconds)."""
+    rows = con.execute('SELECT id, aum_total, client_mix, fees, employees FROM firms').fetchall()
+    with con:
+        con.executemany('UPDATE firms SET rev_low = ?, rev_likely = ?, rev_high = ? WHERE id = ?',
+                        [(*_revenue(r['aum_total'], r['client_mix'], r['fees'], r['employees']), r['id']) for r in rows])
 
 
 def get_meta(con, key, default=None):
@@ -1410,11 +1433,11 @@ def build_firms(db_path, tickers=None):
                      f['crd'], f['sec_number'], f['cik'], f['street'], f['city'], (f['state'] or '').upper(), f['zip'], f['phone'],
                      f['website'], f['aum_total'], f['aum_disc'], f['clients_total'], json.dumps(mix) if mix else '', types,
                      f['employees'], f['fees'], f['filing_date'], f['has13f'], f['value_13f'], f['period_13f'], f['funds'],
-                     f['funds_gav'], f['offerings'], lat, lon, how))
+                     f['funds_gav'], f['offerings'], lat, lon, how, *_revenue(f['aum_total'], mix, f['fees'], f['employees'])))
     mapped = 0
     with con:
         con.execute('DELETE FROM firms')
-        con.executemany(f'INSERT INTO firms VALUES ({",".join("?" * 32)})', rows)
+        con.executemany(f'INSERT INTO firms VALUES ({",".join("?" * 35)})', rows)
         con.execute('DELETE FROM links')
         con.executemany('INSERT INTO links VALUES (?, ?, ?, ?, ?, ?, ?)', links)
         # People belong to the firm that carries their CRD or CIK.
@@ -2288,7 +2311,8 @@ def resolve_holding(con, holds):
 
 
 SORTS = {'aum': 'COALESCE(aum_total, value_13f, 0) DESC', 'name': 'name COLLATE NOCASE', 'clients': 'COALESCE(clients_total, 0) DESC',
-         'filed': 'filing_date DESC', 'value13f': 'COALESCE(value_13f, 0) DESC', 'funds': 'COALESCE(funds_gav, 0) DESC'}
+         'filed': 'filing_date DESC', 'value13f': 'COALESCE(value_13f, 0) DESC', 'funds': 'COALESCE(funds_gav, 0) DESC',
+         'revenue': 'COALESCE(rev_likely, 0) DESC'}
 
 
 def search(con, q):
@@ -2311,7 +2335,7 @@ def search(con, q):
     if q.get('zip'):
         where.append('zip LIKE ?')
         args.append(str(q['zip']).strip() + '%')
-    for field, col, op in (('aumMin', 'aum_total', '>='), ('aumMax', 'aum_total', '<=')):
+    for field, col, op in (('aumMin', 'aum_total', '>='), ('aumMax', 'aum_total', '<='), ('revenueMin', 'rev_likely', '>='), ('revenueMax', 'rev_likely', '<=')):
         if q.get(field) is not None and money(q.get(field)) is not None:
             where.append(f'{col} {op} ?')
             args.append(money(q[field]))
@@ -2432,6 +2456,8 @@ def firm_profile(con, firm_id, holdings_limit=200):
         raise EngineError('That firm is not in the prospect database (it may have been renamed in a newer download).')
     firm = _firm_row(row)
     firm['links'] = [dict(r) for r in con.execute('SELECT source, source_key AS sourceKey, method, score, status, name FROM links WHERE firm_id = ?', (firm_id,))]
+    from . import prospect_revenue
+    firm['revenue'] = prospect_revenue.estimate(firm.get('aumTotal'), firm.get('clientMix'), firm.get('fees'), firm.get('employees'))
     firm['aumHistory'] = [dict(r) for r in con.execute(
         'SELECT roster_date AS date, filing_date AS filed, aum_total AS aum, aum_disc AS discretionary, clients_total AS clients, employees '
         'FROM adv_history WHERE crd = ? ORDER BY roster_date', (row['crd'],))] if row['crd'] else []
@@ -2536,7 +2562,8 @@ def compare(con, ids):
 
 EXPORT_COLUMNS = [('name', 'Name'), ('type', 'Type'), ('confidence', 'Confidence'), ('crd', 'CRD'), ('secNumber', 'SEC number'),
                   ('cik', 'CIK'), ('aumTotal', 'Regulatory AUM ($)'), ('aumDisc', 'Discretionary AUM ($)'), ('clientsTotal', 'Clients'),
-                  ('employees', 'Employees'), ('value13f', '13F value ($)'), ('period13f', '13F quarter'), ('funds', 'Private funds'),
+                  ('employees', 'Employees'), ('revLikely', 'Estimated yearly revenue, likely ($)'), ('revLow', 'Estimated revenue, low ($)'),
+                  ('revHigh', 'Estimated revenue, high ($)'), ('value13f', '13F value ($)'), ('period13f', '13F quarter'), ('funds', 'Private funds'),
                   ('fundsGav', 'Private fund gross assets ($)'), ('street', 'Street'), ('city', 'City'), ('state', 'State'), ('zip', 'ZIP'),
                   ('phone', 'Phone'), ('website', 'Website'), ('filingDate', 'Latest filing'), ('distanceMiles', 'Distance (miles)'),
                   ('position', 'Position ($)'), ('reasons', 'Why this type')]
@@ -2699,7 +2726,8 @@ async def h_ingest(ctx, msg):
 @handler('prospect.search')
 async def h_search(ctx, msg):
     """{text, types[], state, city, zip, near:{lat,lon,miles}|{zip,miles}, aumMin, aumMax, clientTypes[], holds:{symbol|cusip},
-    minPosition, has13f, hasPrivateFunds, recentLiquidity, sort (aum|name|clients|filed|value13f|funds|distance|position), limit, offset}.
+    minPosition, has13f, hasPrivateFunds, recentLiquidity, revenueMin, revenueMax, sort (aum|name|clients|filed|value13f|funds|revenue|distance|position),
+    limit, offset}.
     `id` and `type` are the message's own (request id, kind), so firm types come as `types`."""
     return await _query(search, {k: v for k, v in msg.items() if not k.startswith('_') and k not in ('id', 'type')})
 

@@ -14,6 +14,7 @@ import { infoTip, termLabel } from '../ui/glossary';
 import { tickerAttr } from '../ui/tickerCard';
 import { columnChart, shareBar, shareList } from './charts';
 import { contactsSection } from './contacts';
+import { revenueSection } from './revenue';
 import { CHANGE_TONE, CHANGE_WORDS, CLIENT_LABELS, confidenceLabel, confidenceTone, countText, dateText, moneyText, quarterText, TYPE_SHORT, TYPE_TERM, weightText } from './logic';
 
 export interface ProfileContext {
@@ -393,6 +394,7 @@ export function renderProfile(p: ProspectProfile, ctx: ProfileContext): HTMLElem
     evidence,
     outreach,
     prospectContactsReady() ? contactsSection(p.id) : null,
+    revenueSection(p.id, p.aumTotal, p.revenue),
     aum,
     clients,
     people,

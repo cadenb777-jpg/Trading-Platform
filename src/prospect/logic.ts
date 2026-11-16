@@ -153,6 +153,8 @@ export interface SearchForm {
   near: string;
   aumMin: string;
   aumMax: string;
+  /** Estimated yearly revenue from (helper 76+). */
+  revenueMin: string;
   clientTypes: ClientType[];
   has13f: boolean;
   hasPrivateFunds: boolean;
@@ -163,7 +165,7 @@ export interface SearchForm {
   sort: SortKey | '';
 }
 
-export const emptyForm = (): SearchForm => ({ text: '', types: [], state: '', city: '', zip: '', miles: '', near: '', aumMin: '', aumMax: '', clientTypes: [], has13f: false, hasPrivateFunds: false, recentLiquidity: false, holds: '', minPosition: '', sort: '' });
+export const emptyForm = (): SearchForm => ({ text: '', types: [], state: '', city: '', zip: '', miles: '', near: '', aumMin: '', aumMax: '', revenueMin: '', clientTypes: [], has13f: false, hasPrivateFunds: false, recentLiquidity: false, holds: '', minPosition: '', sort: '' });
 
 /** A 9-character CUSIP (letters and digits, the last a digit). Anything else in "Holds" is read as a ticker. */
 export const isCusip = (s: string) => /^[0-9A-Z]{8}[0-9]$/.test(s.trim().toUpperCase());
@@ -187,6 +189,9 @@ export function formToQuery(f: SearchForm, point?: { lat: number; lon: number } 
   if (min != null && max != null && min > max) problems.push('The AUM minimum is above the maximum.');
   if (min != null) q.aumMin = min;
   if (max != null) q.aumMax = max;
+  const revMin = parseMoney(f.revenueMin ?? '');
+  if ((f.revenueMin ?? '').trim() && revMin == null) problems.push(`Revenue minimum "${f.revenueMin}" isn't a number (try 2m).`);
+  if (revMin != null) q.revenueMin = revMin;
   if (f.clientTypes.length) q.clientTypes = [...f.clientTypes];
   if (f.has13f) q.has13f = true;
   if (f.hasPrivateFunds) q.hasPrivateFunds = true;
@@ -249,6 +254,7 @@ export const RESULT_COLUMNS: Column[] = [
   { key: 'place', label: 'City / State', on: true },
   { key: 'aum', label: 'AUM', on: true },
   { key: 'clients', label: 'Clients', on: true },
+  { key: 'revenue', label: 'Est. revenue / yr', on: true },
   { key: 'people', label: 'People (titles)', on: true },
   { key: 'value13f', label: '13F value', on: true },
   { key: 'filed', label: 'Last filing', on: true },

@@ -11343,3 +11343,8 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .qe-bar.neg { background: var(--viz-1); }
 .qe-bar.pos { background: var(--label); }
 .data-table td.ltm { border-left: 1px solid var(--line); font-style: italic; }
+/* Prospects → revenue (src/prospect/revenue.ts) */
+.pr-terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--sp-2); margin: var(--sp-2) 0; }
+.pr-terms .input { width: 100%; }
+.pr-reported { margin: 0 0 var(--sp-2); }
+.pr-rev .warn-text { color: var(--warn-text); margin: 4px 0; }

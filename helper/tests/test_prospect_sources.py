@@ -94,8 +94,8 @@ class Base(unittest.TestCase):
 
     def add_firm(self, con, fid, name, type_, street, city, state, zip_code, cik=None, crd=None):
         row = [fid, name, '[]', type_, 'from filing', json.dumps(['from fixture']), crd, None, cik, street, city, state, zip_code, '', '',
-               None, None, None, '', ',', None, '', '2025-01-01', 0, None, None, 0, None, 0, None, None, '']
-        con.execute(f'INSERT INTO firms VALUES ({",".join("?" * 32)})', row)
+               None, None, None, '', ',', None, '', '2025-01-01', 0, None, None, 0, None, 0, None, None, '', None, None, None]
+        con.execute(f'INSERT INTO firms VALUES ({",".join("?" * len(row))})', row)
 
     def con(self):
         return ps.connect(self.db)

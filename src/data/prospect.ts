@@ -20,6 +20,8 @@ export interface ProspectQuery {
   near?: { lat: number; lon: number; miles: number } | { zip: string; miles: number };
   aumMin?: number;
   aumMax?: number;
+  /** Estimated yearly revenue (helper 76+). */
+  revenueMin?: number;
   clientTypes?: ClientType[];
   holds?: { symbol: string } | { cusip: string };
   minPosition?: number;
@@ -27,7 +29,7 @@ export interface ProspectQuery {
   hasPrivateFunds?: boolean;
   /** Has a liquidity signal (Form 144, S-1 seller, 8-K Item 2.01) in the last 12 months (public records). */
   recentLiquidity?: boolean;
-  sort?: 'aum' | 'name' | 'clients' | 'filed' | 'value13f' | 'funds' | 'distance' | 'position';
+  sort?: 'aum' | 'name' | 'clients' | 'filed' | 'value13f' | 'funds' | 'revenue' | 'distance' | 'position';
   limit?: number;
   offset?: number;
 }
@@ -59,6 +61,10 @@ export interface ProspectFirm {
   funds: number;
   fundsGav: number | null;
   offerings: number;
+  /** Estimated yearly revenue from Form ADV (helper 76+; null without ADV assets). */
+  revLow?: number | null;
+  revLikely?: number | null;
+  revHigh?: number | null;
   lat: number | null;
   lon: number | null;
   geo: '' | 'address' | 'zip';
@@ -76,6 +82,8 @@ export interface ProspectPosition {
 }
 
 export interface ProspectProfile extends ProspectFirm {
+  /** The Form ADV revenue estimate with its breakdown (helper 76+). */
+  revenue?: import('../prospect/revenue').RevenueEstimate | null;
   links: { source: string; sourceKey: string; method: string; score: number; status: 'linked' | 'possible'; name: string }[];
   aumHistory: { date: string; filed: string; aum: number | null; discretionary: number | null; clients: number | null; employees: number | null }[];
   people: { name: string; title: string; source: string; sourceRef: string; keyTitle: boolean; filed: string; ownership: string }[];
