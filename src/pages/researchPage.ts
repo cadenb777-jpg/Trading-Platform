@@ -2,6 +2,7 @@ import { toneVsPrev } from '../research/tone';
 /** Research: a company's financial statements, ratios, valuation (DCF) and SEC filings. */
 import { debtDilutionPanel } from '../research/debtDilutionView';
 import { qualityPanel } from '../research/qualityView';
+import { cashHealthPanel } from '../research/cashHealthView';
 import { fy, type Maturities } from '../research/debtDilution';
 import type { Obligations } from '../research/obligations';
 import { yearBars } from '../research/yearBars';
@@ -236,6 +237,8 @@ export function createResearchPage() {
       debtDilutionPanel({ annual: d.annual, marketCap: v.marketCap, cash: v.cash, maturities: d.maturities, obligations: d.obligations }),
       // Piotroski F-score and accruals, from the same annual statements
       qualityPanel(d.annual, { sic: (d.profile as { sic?: string }).sic, marketCap: v.marketCap, labels: d.labels }),
+      // dividend cover by free cash flow and the cash conversion cycle
+      cashHealthPanel(d.annual),
       // futures positioning for the company's market: one line, the full COT table is on Futures
       cotSummary(d.symbol, undefined, { quiet: true }),
       stockNewsCard(d.symbol, 5),

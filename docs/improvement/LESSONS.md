@@ -165,8 +165,13 @@ whenever the owner repeats or adds one.
   figures is "no data" and the score says "of 8" rather than counting it as a fail.
 - 2026-11-13 · #21 Health scores (helper 71): Beneish M-score (all 8 ratios or no score; never a guessed 1.0) and Altman
   Z-score (manufacturers with a live price get the 1968 Z; manufacturers without one get Z' on book values; others get
-  Z''; banks and insurers aren't scored) on Earnings quality · proposed · backlog A15-A16. Review caught a reason
+  Z''; banks and insurers aren't scored) on Earnings quality · approved (merged) · backlog A15-A16. Review caught a reason
   sentence that could say the opposite of the truth: ratios with negative weights raise the score by falling, so only
   positive-weight ratios are named. Lessons: a filer that omits a total (Coca-Cola has no total liabilities tag) gets a
   derived figure only with a label; never set today's market value against an older year's accounts; check glossary
   keys for clashes (the price z-score already used `zscore`).
+- 2026-11-13 · #22 Cash health (helper 74): dividend cover by free cash flow (newest year and 5 years, with and without
+  buybacks) and the cash conversion cycle, on the Research overview · proposed · backlog A17-A18. Coca-Cola's FY2025 free
+  cash flow paid only 60% of its dividend (5 years: 1.0x). Lessons: read payables only from their own line (a combined
+  payables-and-accrued line would inflate days to pay, so Coca-Cola gets "not worked out" rather than a wrong number);
+  "no inventory ever reported" is zero, but one missing year is left out, never zero.

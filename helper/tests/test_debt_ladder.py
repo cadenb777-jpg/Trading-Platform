@@ -71,7 +71,7 @@ class Ladder(unittest.TestCase):
 class OldCache(unittest.TestCase):
     def test_copy_saved_before_68_gets_its_ladder(self):
         # saved by helper 67: no 'maturities' (its statements already have the helper-71 lines, so only the ladders load)
-        old = {'statements': {'annual': {'values': {'receivables': [], 'ppe': [], 'retainedEarnings': []}}}, 'shares': 5}
+        old = {'statements': {'annual': {'values': {k: [] for k in r.STATEMENT_KEYS}}}, 'shares': 5}
         asked = []
 
         class Ctx:
@@ -137,22 +137,36 @@ class Obligations(unittest.TestCase):
 
 
 class HealthLines(unittest.TestCase):
-    def test_copy_without_the_helper_71_lines_is_read_again(self):
-        old = {'statements': {'annual': {'values': {'revenue': []}}}, 'shares': 5, 'maturities': None, 'obligations': None}
-        fresh = {'statements': {'annual': {'values': {'receivables': [1], 'ppe': [2], 'retainedEarnings': [3]}}}, 'shares': 6,
+    def test_copy_without_the_newer_lines_is_read_again(self):
+        # a helper-71..73 copy has the health lines but not the helper-74 inventory and payables: the same key is
+        # reloaded now (max age 0), never a second copy
+        old = {'statements': {'annual': {'values': {'receivables': [], 'ppe': [], 'retainedEarnings': []}}}, 'shares': 5,
+               'maturities': None, 'obligations': None}
+        fresh = {'statements': {'annual': {'values': {k: [1] for k in r.STATEMENT_KEYS}}}, 'shares': 6,
                  'maturities': None, 'obligations': None}
         asked = []
 
         class Ctx:
             async def cached(self, key, ttl, load, persist=False, stale_ok=False):
-                asked.append(key[0])
-                return old if key[0] == 'sec-core' else fresh
+                asked.append((key, ttl))
+                return old if ttl else fresh
         core = asyncio.run(r.company_core(Ctx(), 320193, with_maturities=True))
-        self.assertEqual((core['shares'], asked), (6, ['sec-core', 'sec-core71']))
+        self.assertEqual((core['shares'], asked), (6, [(('sec-core', 320193), 6 * 3600), (('sec-core', 320193), 0)]))
         # comps never asks for it
         asked.clear()
         asyncio.run(r.company_core(Ctx(), 320193))
-        self.assertEqual(asked, ['sec-core'])
+        self.assertEqual(asked, [(('sec-core', 320193), 6 * 3600)])
+
+    def test_a_failed_re_read_keeps_the_saved_copy(self):
+        old = {'statements': {'annual': {'values': {'revenue': []}}}, 'shares': 5, 'maturities': None, 'obligations': None}
+
+        class Ctx:
+            async def cached(self, key, ttl, load, persist=False, stale_ok=False):
+                if ttl == 0:
+                    raise RuntimeError('SEC unreachable')
+                return old
+        core = asyncio.run(r.company_core(Ctx(), 320193, with_maturities=True))
+        self.assertEqual(core['shares'], 5)  # the page still opens
 
 
 class Yields(unittest.TestCase):
