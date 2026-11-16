@@ -973,13 +973,10 @@ export function openPalette(opts: { scope?: { id: string; label: string } | null
       e.preventDefault();
       choose(active, e.shiftKey);
     } else if (e.key === 'Escape') {
+      // one press closes the bar (a first press that only cleared the text felt like a stuck screen)
       e.preventDefault();
       e.stopPropagation();
-      if (input.value) {
-        input.value = '';
-        search = [];
-        render();
-      } else close();
+      close();
     } else if (e.key === 'Tab') {
       e.preventDefault(); // focus stays in the bar; Tab completes instead
       e.stopPropagation(); // and no dialog's Tab trap underneath moves focus

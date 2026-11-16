@@ -11413,9 +11413,13 @@ body {
 }
 .panel-head {
   gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+/* a panel's own first heading becomes its full-width heading bar (later headings inside it stay in the flow) */
+.panel > .panel-head:first-child {
   margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) var(--sp-3);
   padding: 7px var(--sp-3);
-  border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--raised) 55%, transparent);
 }
 .panel-head h3,

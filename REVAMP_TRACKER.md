@@ -86,11 +86,16 @@ everything two clicks away, and a ticker typed anywhere opens one Security page.
       centre), heat grid; each with a plain-words caption. Owner: pictures first, text boxes of good information around
       them, little descriptors everywhere (rule-made words cost nothing; AI summary one click away).
 
+- [x] QA click-through (owner: "click through everything, no overlaps"): every page and every visible tab at 1280 and
+      375 px, Actions menus, command bar, adding and removing a chart indicator; checks overlapping boxes, clipped text,
+      slow clicks and console errors. Result 2026-11-16: 0 problems, 0 errors. Fixed on the way: one Escape now closes
+      the command bar; only a panel's first heading spans the panel (later ones overlapped the content above).
+
 ## Phase 3: pages (one PR each)
 
 - [ ] 5. Home: keep greeting + ticker tape (typography polish only); compact index strip with sparklines instead of
       three tall cards; market monitor heat map (sectors, watchlist); denser Edge today, accounts, setups, news.
-- [~] 6. Research: done so far: company description on open (Wikipedia via SEC CIK, helper 81), tear sheet with
+- [~] 6. Research: revenue by product and region as a flower beside the rows (done). Done earlier: company description on open (Wikipedia via SEC CIK, helper 81), tear sheet with
       valuation / share stats lists, 52-week range track, F-score gauge, margin rings, growth / returns / balance lists,
       plain-words lines. Still to do: chart with periods in the centre, analyst targets, peers and segments as a flower.
       Original plan: Fincept-style tear sheet (left: trading, valuation, share stats; centre: chart with
