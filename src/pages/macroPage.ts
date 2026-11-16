@@ -31,7 +31,7 @@ interface Series {
 
 /** The key numbers at the top. */
 const KEY = ['DFF', 'DGS10', 'T10Y2Y', 'CPIAUCSL', 'UNRATE', 'BAMLH0A0HYM2'];
-const SHORT: Record<string, string> = { DFF: 'Fed funds', DGS10: '10-year yield', T10Y2Y: '10y − 2y', CPIAUCSL: 'Inflation (CPI)', UNRATE: 'Unemployment', BAMLH0A0HYM2: 'Junk bond spread' };
+const SHORT: Record<string, string> = { DFF: 'Fed funds', DGS10: '10-year yield', T10Y2Y: '10y − 2y', CPIAUCSL: 'Inflation (CPI)', UNRATE: 'Unemployment', BAMLH0A0HYM2: 'Junk bond spread', DGS2: '2-year yield', MORTGAGE30US: '30y mortgage', T10YIE: '10y inflation exp.', PCEPILFE: 'Core PCE', VIXCLS: 'VIX', DTWEXBGS: 'Dollar index', DCOILWTICO: 'Oil (WTI)', ICSA: 'Jobless claims', PAYEMS: 'Jobs added', GDPC1: 'Real GDP growth' };
 
 function fmt(v: number | null | undefined, unit: string) {
   if (v == null || !Number.isFinite(v)) return '—';
@@ -119,6 +119,14 @@ function rankCell(p: number | null) {
   return h('span', { class: 'mm-rank', title: `Higher than ${Math.round(p * 100)}% of readings since 2006` }, h('span', { class: 'mm-rank-bar' }, h('i', { style: `left:${(p * 100).toFixed(0)}%` })), h('span', { class: 'small muted' }, word));
 }
 
+/** The rates board (Bloomberg BTMM-style): the key series in four groups, one dense tile each. */
+export const BOARD: { title: string; ids: string[] }[] = [
+  { title: 'Rates', ids: ['DFF', 'DGS2', 'DGS10', 'T10Y2Y', 'MORTGAGE30US'] },
+  { title: 'Credit & inflation', ids: ['BAMLH0A0HYM2', 'T10YIE', 'CPIAUCSL', 'PCEPILFE'] },
+  { title: 'Markets', ids: ['VIXCLS', 'DTWEXBGS', 'DCOILWTICO'] },
+  { title: 'Jobs & growth', ids: ['UNRATE', 'ICSA', 'PAYEMS', 'GDPC1'] },
+];
+
 export function createMacroPage() {
   const loaded = new Map<string, Series>();
   const rows = new Map<string, HTMLTableRowElement>();
@@ -126,6 +134,27 @@ export function createMacroPage() {
   let catalog: CatalogEntry[] = [];
   const curvePanel = h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Treasury yield curve')), h('div', { class: 'skeleton', style: 'height:260px' }));
   const readPanel = h('section', { class: 'panel mm-read' }, h('div', { class: 'skeleton', style: 'height:150px' }));
+  // sized like the finished board, so nothing below jumps when it fills in
+  const boardPanel = h('section', { class: 'panel mm-board-panel' }, h('div', { class: 'skeleton', style: 'height:300px' }));
+  function renderBoard() {
+    const tile = (id: string) => {
+      const s = loaded.get(id);
+      if (!s) return h('div', { class: 'mm-tile muted' }, h('span', { class: 'mm-tile-name' }, SHORT[id] ?? id), h('b', {}, '—'));
+      return h(
+        'button',
+        { type: 'button', class: 'mm-tile', title: `${s.name}: open its history`, onclick: () => rows.get(id)?.click() },
+        h('span', { class: 'mm-tile-name' }, SHORT[id] ?? s.name.replace(/\s*\(.*\)$/, '')),
+        h('b', { class: 'mm-tile-value' }, fmt(s.value, s.unit)),
+        h('span', { class: 'mm-tile-chg small' }, change(s, s.monthAgo, '1m') ?? ''),
+        spark(s.data.slice(-260)),
+        h('span', { class: 'mm-tile-rank' }, rankCell(percentileNow(s.data))),
+      );
+    };
+    boardPanel.replaceChildren(
+      h('div', { class: 'panel-head' }, h('h3', {}, 'Rates & markets board'), h('span', { class: 'muted small' }, 'Latest reading, change over a month (green/red: good/bad news for the economy), the last year, and where it sits since 2006. Click a tile for its history.')),
+      h('div', { class: 'mm-board' }, ...BOARD.map((g) => h('div', { class: 'mm-group' }, h('div', { class: 'mm-group-title' }, g.title), h('div', { class: 'mm-tiles' }, ...g.ids.map(tile))))),
+    );
+  }
   const note = h('p', { class: 'ap-note' });
   const stamp = h('span', { class: 'muted small' });
   const ai = insightButton(() => {
@@ -298,6 +327,7 @@ export function createMacroPage() {
     frame.body.replaceChildren(
       ai.panel,
       readPanel,
+      boardPanel,
       h('div', { class: 'xe-grid' }, fedOddsPanel(), netLiquidityPanel()),
       curvePanel,
       h(
@@ -352,6 +382,7 @@ export function createMacroPage() {
         }),
       ]);
       renderRead();
+      renderBoard();
       stamp.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
       if (failures.length) note.textContent = `Couldn't load ${failures.length} series. If this keeps happening, add a free FRED API key in Settings (gear icon) for a faster, more reliable connection.`;
     } catch (err) {

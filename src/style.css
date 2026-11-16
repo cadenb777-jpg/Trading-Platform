@@ -12206,3 +12206,92 @@ body[data-section='business'] { --section-accent: var(--hue-business); }
 .ts-chart-note.down {
   color: var(--down-text);
 }
+
+/* Macro → Rates & markets board (BTMM-style): four groups of dense tiles */
+.mm-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.mm-group {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .mm-group {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mm-group-title {
+  padding-top: 8px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--section-accent);
+}
+.mm-tiles {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 3px;
+}
+@media (max-width: 1100px) {
+  .mm-tiles {
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  }
+}
+.mm-tile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'name name' 'value chg' 'spark spark' 'rank rank';
+  align-items: baseline;
+  gap: 2px 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--raised) 60%, transparent);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mm-tile:hover {
+  border-color: color-mix(in srgb, var(--section-accent) 50%, var(--line));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--section-accent) 18%, transparent);
+}
+.mm-tile-name {
+  grid-area: name;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.mm-tile-value {
+  grid-area: value;
+  font-size: var(--fs-md);
+  color: var(--text-strong);
+}
+.mm-tile-chg {
+  grid-area: chg;
+  justify-self: end;
+  color: var(--muted);
+}
+.mm-tile-chg .up {
+  color: var(--up-text);
+}
+.mm-tile-chg .down {
+  color: var(--down-text);
+}
+.mm-tile .mm-spark {
+  grid-area: spark;
+  width: 100%;
+  height: 24px;
+}
+.mm-tile-rank {
+  grid-area: rank;
+}
