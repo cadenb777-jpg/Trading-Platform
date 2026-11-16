@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coverageNote, segmentRows, share, type SegmentSection } from './segmentsView';
+import { coverageNote, segmentRows, segmentWords, share, type SegmentSection } from './segmentsView';
 
 const apple: SegmentSection = {
   axis: 'ProductOrServiceAxis', heading: 'By product or service', sum: 416161, total: 416161, complete: true, coverage: 1,
@@ -22,5 +22,15 @@ describe('where the money comes from', () => {
   it('explains a breakdown that does not add up', () => {
     expect(coverageNote(apple)).toBe('Adds up to total sales.');
     expect(coverageNote({ ...apple, complete: false, coverage: 0.74 })).toContain('74%');
+  });
+});
+
+
+describe('segment flower words', () => {
+  it('names the biggest part, the fastest grower and any shrinking part', () => {
+    const item = (name: string, value: number, share: number, growth: number | null) => ({ member: name, name, value, prior: null, share, growth, operatingIncome: null, margin: null });
+    const s = { axis: 'x', heading: 'By product', sum: 100, total: 100, complete: true, coverage: 1, items: [item('Phones', 50, 0.5, 0.02), item('Services', 30, 0.3, 0.13), item('Tablets', 20, 0.2, -0.05)] };
+    expect(segmentWords(s)).toBe('Biggest: Phones, 50% of sales. Fastest growing: Services +13%; shrinking: Tablets −5%.');
+    expect(segmentWords({ ...s, items: [item('Only', 10, 1, null)] })).toBe('Biggest: Only, 100% of sales.');
   });
 });

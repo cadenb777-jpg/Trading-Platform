@@ -11413,9 +11413,13 @@ body {
 }
 .panel-head {
   gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+/* a panel's own first heading becomes its full-width heading bar (later headings inside it stay in the flow) */
+.panel > .panel-head:first-child {
   margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) var(--sp-3);
   padding: 7px var(--sp-3);
-  border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--raised) 55%, transparent);
 }
 .panel-head h3,
@@ -12158,4 +12162,29 @@ body[data-section='business'] { --section-accent: var(--hue-business); }
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* Research → Where the money comes from: the flower beside the rows */
+.seg-split {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: center;
+}
+@media (max-width: 760px) {
+  .seg-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.viz-flower .viz-node-label,
+.viz-flower .viz-node-value {
+  font-size: 12px;
+}
+
+/* Today: shorter index cards (more of the day on the first screen) */
+.idx-chart {
+  height: 112px;
+}
+.idx-card {
+  padding: 10px 12px;
 }
