@@ -8,7 +8,7 @@ const conn = (id: string) => CONNECTIONS.find((c) => c.id === id)!;
 
 describe('Data connections rows', () => {
   it('lists every connection once, each with what it unlocks, an https sign-up link and a free-tier limit', () => {
-    expect(CONNECTIONS.map((c) => c.id).sort()).toEqual(['ai', 'alpaca', 'bea', 'bls', 'census', 'eia', 'finnhub', 'fred', 'sec']);
+    expect(CONNECTIONS.map((c) => c.id).sort()).toEqual(['ai', 'alpaca', 'bea', 'bls', 'census', 'eia', 'finnhub', 'fred', 'github', 'sec']);
     for (const c of CONNECTIONS) {
       expect(c.unlocks.length, c.id).toBeGreaterThan(20);
       expect(c.signup, c.id).toMatch(/^https:\/\//);

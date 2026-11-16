@@ -31,7 +31,14 @@ from splash import RESTART_CODE, clear_pending, copy_files, protected, write_pen
 REPO = 'cadenb777-jpg/Trading-Platform'
 VERSION_URL = f'https://raw.githubusercontent.com/{REPO}/main/helper/schwab_helper.py'
 ZIP_URL = f'https://codeload.github.com/{REPO}/zip/refs/heads/main'
-ALLOWED_HOSTS = {'raw.githubusercontent.com', 'codeload.github.com'}
+ALLOWED_HOSTS = {'raw.githubusercontent.com', 'codeload.github.com', 'api.github.com'}
+# With a GitHub key (Settings > Data connections > GitHub updates; needed while the repository is private): the same
+# file and ZIP through GitHub's API. The key is sent only to api.github.com; the ZIP redirect it answers with
+# (codeload.github.com, a short-lived signed link) is fetched without it.
+API_VERSION_URL = f'https://api.github.com/repos/{REPO}/contents/helper/schwab_helper.py?ref=main'
+API_ZIP_URL = f'https://api.github.com/repos/{REPO}/zipball/main'
+PRIVATE_HINT = ('GitHub won’t share updates without a key (the repository is private). Add a GitHub key in Settings > '
+                'Data connections > GitHub (updates), or download the ZIP from GitHub and replace your helper folder.')
 
 HERE = Path(__file__).resolve().parent
 MIN_ZIP_BYTES = 20_000
@@ -187,15 +194,26 @@ def install(data, expected, current, here=HERE):
 
 # ---------- Downloads (with the helper's httpx client) ----------
 
-async def fetch(http, url, max_bytes, hops=3):
+def auth_headers(url, token):
+    """The GitHub key goes only to api.github.com, never to a redirect target."""
+    if not token or urllib.parse.urlsplit(url).hostname != 'api.github.com':
+        return {}
+    return {'Authorization': f'Bearer {token}', 'Accept': 'application/vnd.github.raw', 'X-GitHub-Api-Version': '2022-11-28'}
+
+
+async def fetch(http, url, max_bytes, hops=3, token=''):
     """Downloads `url` without following redirects to anywhere but the allowed GitHub hosts."""
     for _ in range(hops + 1):
         if not allowed_url(url):
             raise UpdateError(f'Refused to download from {urllib.parse.urlsplit(url).hostname or url}.')
-        async with http.stream('GET', url, follow_redirects=False, timeout=60) as r:
+        async with http.stream('GET', url, follow_redirects=False, timeout=60, headers=auth_headers(url, token)) as r:
             if r.status_code in (301, 302, 303, 307, 308):
                 url = urllib.parse.urljoin(url, r.headers.get('location', ''))
                 continue
+            if r.status_code in (401, 403) and token:
+                raise UpdateError('GitHub refused your GitHub key (expired, or it has no access to this repository). Make a new one and paste it in Settings > Data connections.')
+            if r.status_code == 404 and not token:
+                raise UpdateError(PRIVATE_HINT)
             if r.status_code != 200:
                 raise UpdateError(f'GitHub answered {r.status_code}. Try again later.')
             chunks, size = [], 0
@@ -208,8 +226,9 @@ async def fetch(http, url, max_bytes, hops=3):
     raise UpdateError('GitHub redirected too many times.')
 
 
-async def latest_version(http):
-    version = parse_version((await fetch(http, VERSION_URL, 2_000_000)).decode('utf-8', 'replace'))
+async def latest_version(http, token=''):
+    url = API_VERSION_URL if token else VERSION_URL
+    version = parse_version((await fetch(http, url, 2_000_000, token=token)).decode('utf-8', 'replace'))
     if version is None:
         raise UpdateError("Couldn't read the newest version number from GitHub.")
     return version
@@ -218,8 +237,9 @@ async def latest_version(http):
 class Updater:
     """Knows the newest version and runs one update at a time. `on_change` is called whenever its state changes."""
 
-    def __init__(self, current, on_change=lambda: None, here=HERE):
+    def __init__(self, current, on_change=lambda: None, here=HERE, token=lambda: ''):
         self.current = current
+        self.token = token  # reads the GitHub key from settings each time (never stored here)
         self.latest = None
         self.state = 'idle'  # idle, updating, restarting, failed
         self.message = ''
@@ -242,9 +262,13 @@ class Updater:
         if self.state == 'failed':
             self.state, self.message = 'idle', ''  # each check gives a failed update a fresh start
         try:
-            self.latest = await latest_version(http)
+            self.latest = await latest_version(http, self.token())
             self.checked = time.time()
             log.info('Newest helper on GitHub: version %s (this is %s)', self.latest, self.current)
+        except UpdateError as err:
+            log.warning('Update check failed: %s', err)
+            if 'GitHub key' in str(err):  # needs the owner: show it instead of failing quietly
+                self.state, self.message = 'failed', str(err)
         except Exception as err:
             log.info('Update check failed: %s', err)
         self.on_change()
@@ -255,13 +279,14 @@ class Updater:
             raise UpdateError('An update is already running.')
         self._set('updating', 'Checking GitHub for the newest version...')
         try:
-            latest = await latest_version(http)
+            token = self.token()
+            latest = await latest_version(http, token)
             self.latest = latest
             if not is_newer(latest, self.current):
                 self._set('idle', '')
                 raise UpdateError(f'This helper (version {self.current}) is already the newest.')
             self._set('updating', f'Downloading version {latest}...')
-            data = await fetch(http, ZIP_URL, MAX_ZIP_BYTES)
+            data = await fetch(http, API_ZIP_URL if token else ZIP_URL, MAX_ZIP_BYTES, token=token)
             self._set('updating', f'Installing version {latest}...')
             saved = await asyncio.to_thread(install, data, latest, self.current, self.here)
             log.info('Updated to version %s; backup in %s', latest, saved)

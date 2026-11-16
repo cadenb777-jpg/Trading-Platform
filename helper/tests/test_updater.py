@@ -98,9 +98,10 @@ class HostAllowList(unittest.TestCase):
             def __init__(self, replies):
                 self.replies, self.urls = list(replies), []
 
-            def stream(self, method, url, follow_redirects=True, timeout=None):
+            def stream(self, method, url, follow_redirects=True, timeout=None, headers=None):
                 assert follow_redirects is False
                 self.urls.append(url)
+                self.headers = getattr(self, 'headers', []) + [headers or {}]
                 return self.replies.pop(0)
 
         http = Http([Resp(302, 'https://evil.example/zip')])
@@ -111,6 +112,16 @@ class HostAllowList(unittest.TestCase):
         self.assertEqual(asyncio.run(updater.fetch(http, updater.ZIP_URL, 1000)), b'data')
         with self.assertRaisesRegex(updater.UpdateError, 'Refused'):
             asyncio.run(updater.fetch(Http([]), 'https://evil.example/', 1000))
+        # the GitHub key goes to api.github.com only, never to the ZIP redirect
+        http = Http([Resp(302, 'https://codeload.github.com/x/zip?token=signed'), Resp(200)])
+        self.assertEqual(asyncio.run(updater.fetch(http, updater.API_ZIP_URL, 1000, token='github_pat_abc')), b'data')
+        self.assertEqual(http.headers[0]['Authorization'], 'Bearer github_pat_abc')
+        self.assertEqual(http.headers[1], {})
+        # a private repository without a key says what to do instead of failing quietly
+        with self.assertRaisesRegex(updater.UpdateError, 'GitHub key'):
+            asyncio.run(updater.fetch(Http([Resp(404)]), updater.VERSION_URL, 1000))
+        with self.assertRaisesRegex(updater.UpdateError, 'refused your GitHub key'):
+            asyncio.run(updater.fetch(Http([Resp(401)]), updater.API_VERSION_URL, 1000, token='github_pat_abc'))
 
 
 class VerifyZip(unittest.TestCase):
@@ -277,10 +288,10 @@ class UpdaterFlow(unittest.TestCase):
         seen = []
         up = updater.Updater(29, on_change=lambda: seen.append(up.state))
 
-        async def version(http):
+        async def version(http, token=''):
             return latest
 
-        async def fetch(http, url, max_bytes, hops=3):
+        async def fetch(http, url, max_bytes, hops=3, token=''):
             return b'zip'
 
         def install(data, expected, current, here):
@@ -311,12 +322,40 @@ class UpdaterFlow(unittest.TestCase):
         up = updater.Updater(29)
         up.state, up.message = 'failed', 'GitHub answered 503.'
 
-        async def version(http):
+        async def version(http, token=''):
             return 30
 
         with mock.patch.object(updater, 'latest_version', version):
             asyncio.run(up.check(None))
         self.assertEqual((up.state, up.message, up.available), ('idle', '', True))
+
+    def test_private_repository_is_shown(self):
+        up = updater.Updater(29)
+
+        async def version(http, token=''):
+            raise updater.UpdateError(updater.PRIVATE_HINT)
+
+        with mock.patch.object(updater, 'latest_version', version):
+            asyncio.run(up.check(None))
+        self.assertEqual(up.state, 'failed')
+        self.assertIn('GitHub key', up.message)
+
+    def test_key_is_used_for_version_and_zip(self):
+        calls = []
+        up = updater.Updater(29, token=lambda: 'github_pat_abc')
+
+        async def version(http, token=''):
+            calls.append(('version', token))
+            return 30
+
+        async def fetch(http, url, max_bytes, hops=3, token=''):
+            calls.append((url, token))
+            return b'zip'
+
+        with mock.patch.object(updater, 'latest_version', version), mock.patch.object(updater, 'fetch', fetch), \
+                mock.patch.object(updater, 'install', lambda *a: Path('backup')):
+            asyncio.run(up.update(None))
+        self.assertEqual(calls, [('version', 'github_pat_abc'), (updater.API_ZIP_URL, 'github_pat_abc')])
 
     def test_failure_is_shown(self):
         up, _, result = self.run_update(30, updater.UpdateError('The download is damaged.'))

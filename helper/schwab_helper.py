@@ -51,7 +51,7 @@ from engine.safexml import fromstring as safe_fromstring  # noqa: E402  (refuses
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 77
+HELPER_VERSION = 78
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -703,7 +703,7 @@ class Market:
         self.last_volume = {}
         self.seen = set()
         # Self-update from GitHub (updater.py); `restart` is set once new files are in place.
-        self.updater = updater.Updater(HELPER_VERSION, on_change=self.update_changed)
+        self.updater = updater.Updater(HELPER_VERSION, on_change=self.update_changed, token=github_key)
         self.restart = asyncio.Event()
         self.offered = None
         # Logging in to Schwab again while running (the saved login was refused): see relogin().
@@ -1277,6 +1277,15 @@ class Market:
                 log.warning('Schwab stream problem: %s. Retrying in %ss', err, delay)
                 self.set_status('error', f'Schwab stream disconnected, retrying in {delay}s')
                 await asyncio.sleep(delay)
+
+
+def github_key():
+    """The owner's GitHub key for updates while the repository is private (Settings), or ''. Stays on this computer."""
+    try:
+        from engine import settings
+        return settings.get('github_token')
+    except Exception:
+        return ''
 
 
 def auto_update_on():

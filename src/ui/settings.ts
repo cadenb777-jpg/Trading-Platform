@@ -18,6 +18,7 @@ import { currentTheme, setTheme, type ThemeName } from './theme';
 export interface PlatformSettings {
   aiKeySet: boolean;
   fredKeySet: boolean;
+  githubKeySet?: boolean;
   /** Free data keys (helper 44+; undefined on older helpers). Only whether each is saved; never the key. */
   blsKeySet?: boolean;
   beaKeySet?: boolean;

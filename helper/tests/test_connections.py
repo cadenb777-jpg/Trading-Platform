@@ -18,7 +18,7 @@ from test_worldmacro import Base, fixture  # noqa: E402
 
 KEYS = {'fred_key': 'f' * 32, 'bea_key': 'ABCDEF01-2345-6789-ABCD-EF0123456789', 'bls_key': '0123456789abcdef0123456789abcdef',
         'eia_key': 'e1a' * 13 + 'x', 'census_key': 'c3' * 20, 'finnhub_key': 'finnhubkey1234567890', 'anthropic_key': 'sk-ant-api03-secretsecret',
-        'sec_contact': 'owner@example.com'}
+        'sec_contact': 'owner@example.com', 'github_token': 'github_pat_' + 'k' * 40}
 SECRETS = [v for k, v in KEYS.items() if k != 'sec_contact']
 
 GOOD = {
@@ -31,6 +31,7 @@ GOOD = {
     r'finnhub\.io/api/v1/calendar/earnings': fixture('finnhub_earnings.json'),
     r'api\.anthropic\.com/v1/models': {'data': [{'id': 'claude-opus-5-5'}]},
     r'data\.sec\.gov': {'cik': '320193'},
+    r'api\.github\.com': lambda r: httpx.Response(200, text='HELPER_VERSION = 78\n'),
 }
 BAD = {
     r'stlouisfed\.org': lambda r: httpx.Response(400, json={'error_code': 400, 'error_message': 'Bad Request.  The value for variable api_key is not registered.'}),
@@ -41,6 +42,7 @@ BAD = {
     r'finnhub\.io': lambda r: httpx.Response(401, json={'error': 'Invalid API key'}),
     r'api\.anthropic\.com': lambda r: httpx.Response(401, json={'type': 'error'}),
     r'data\.sec\.gov': 403,
+    r'api\.github\.com': 401,
 }
 
 
@@ -65,7 +67,7 @@ class Connections(Base):
     def test_each_connection_explains_a_bad_key(self):
         self.replies = BAD
         expect = {'fred': 'not registered', 'bea': 'not valid', 'bls': 'invalid', 'eia': 'invalid api_key', 'census': 'not valid',
-                  'finnhub': 'not valid', 'ai': 'not valid', 'sec': 'email'}
+                  'finnhub': 'not valid', 'ai': 'not valid', 'sec': 'email', 'github': 'refused your GitHub key'}
         for name, word in expect.items():
             out = self.run_async(lambda c: connections.test_connection(c, {'connection': name}))
             self.assertFalse(out['ok'], name)

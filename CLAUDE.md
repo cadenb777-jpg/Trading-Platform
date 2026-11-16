@@ -666,6 +666,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   individual search (beta, ShapeError on unknown shape, paced, cached a week, saved as people source 'IAPD registered
   individuals'); src/prospect/people.ts sorts titles into levels (seniority) with chips and search; IAPD rows already
   named in a filing are dropped (mergePeople).
+  Private repository (v78): the updater uses the owner's GitHub key (settings github_token, Settings > Data connections >
+  GitHub) through api.github.com (key sent only there, never to the codeload redirect); without one a 404 shows
+  PRIVATE_HINT as a failed update instead of failing quietly.
   client type x typical fee rates; individuals/HNW by average account on a tiered schedule; performance fees = 20% of
   the year's gain on pooled assets when 5.E says performance-based; headcount cross-check), stored as firms.rev_low/
   rev_likely/rev_high (sort 'revenue', filter revenueMin, CSV). prospect.performance (engine/prospect_perf.py): 13F

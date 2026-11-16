@@ -18,7 +18,7 @@ export interface ConnectionField {
 }
 
 export interface Connection {
-  id: 'fred' | 'bea' | 'bls' | 'eia' | 'census' | 'finnhub' | 'alpaca' | 'ai' | 'sec';
+  id: 'fred' | 'bea' | 'bls' | 'eia' | 'census' | 'finnhub' | 'alpaca' | 'ai' | 'sec' | 'github';
   name: string;
   /** What it switches on, in plain words. */
   unlocks: string;
@@ -90,6 +90,12 @@ export const CONNECTIONS: Connection[] = [
     unlocks: 'Intraday history back to 2016 for charts, the hourly Setups scanner and the AI. Market data only, never trading.',
     signup: 'https://app.alpaca.markets/signup', signupLabel: 'Get free keys', limit: '200 requests a minute (free plan)',
     fields: [key('alpacaKeyId', 'API key ID', 'API key ID'), key('alpacaSecret', 'Secret key', 'Secret key')], isSet: (s) => s.alpacaSet, refreshes: ['alpaca.'],
+  },
+  {
+    id: 'github', name: 'GitHub (helper updates)', optional: false,
+    unlocks: 'Automatic helper updates while your repository is private. Make a fine-grained key: Only select repositories → Trading-Platform, Repository permissions → Contents: Read-only. It stays on this computer.',
+    signup: 'https://github.com/settings/personal-access-tokens/new', signupLabel: 'Make a key', limit: 'Free; set it to expire in a year and paste a new one then',
+    fields: [key('githubKey', 'GitHub key', 'github_pat_…')], isSet: (s) => s.githubKeySet, refreshes: [],
   },
 ];
 

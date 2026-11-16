@@ -116,6 +116,16 @@ async def t_sec(ctx, email):
     raise EngineError(f'The SEC answered HTTP {r.status_code}')
 
 
+async def t_github(ctx, key):
+    # Reads the newest helper version with the key, exactly as the updater will.
+    import updater  # helper/updater.py (on the helper's path)
+    try:
+        version = await updater.latest_version(ctx.http, key)
+    except updater.UpdateError as err:
+        raise EngineError(str(err))
+    return f'Connected. The newest helper on GitHub is version {version}; updates install by themselves within a few minutes.'
+
+
 #: connection id -> (settings key, test, label)
 TESTS = {
     'fred': ('fred_key', t_fred, 'FRED'),
@@ -126,6 +136,7 @@ TESTS = {
     'finnhub': ('finnhub_key', t_finnhub, 'Finnhub'),
     'ai': ('anthropic_key', t_anthropic, 'Anthropic'),
     'sec': ('sec_contact', t_sec, 'SEC'),
+    'github': ('github_token', t_github, 'GitHub'),
 }
 
 
