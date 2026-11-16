@@ -8,6 +8,8 @@ import { barList, compact, createLineChart, dataTable, money, pageFrame, pct, st
 import { formatPrice, h } from '../ui/dom';
 import { withTableTools } from '../ui/tableTools';
 import { optionsAnalyticsBlock } from '../flow/optionsAnalytics';
+import { optionWalls, wallWords } from '../flow/walls';
+import { rangeTrack } from '../ui/viz';
 import { optEdgePanel } from '../edge/optEdge';
 import { navPremiumPanel, offExchangePanel } from '../edge/offExchange';
 import { liveFlowView } from '../edge/liveFlow';
@@ -274,8 +276,9 @@ export function createFlowPage() {
         h(
           'section',
           { class: 'panel' },
-          h('div', { class: 'panel-head' }, h('h3', {}, 'Open interest by strike'), h('span', { class: 'spacer' }), expSelect),
-          h('p', { class: 'muted small' }, 'Puts to the left (red), calls to the right (green). Big clusters often act as support or resistance. Hover a row for exact numbers.'),
+          h('div', { class: 'panel-head' }, h('h3', {}, 'Options walls'), h('span', { class: 'spacer' }), expSelect),
+          wallsBlock(d),
+          h('p', { class: 'muted small' }, 'Open interest by strike: puts to the left (red), calls to the right (green); walls marked. Hover a row for exact numbers.'),
           oiBars(d, nearSpot),
         ),
         h(
@@ -340,15 +343,30 @@ export function createFlowPage() {
     );
   }
 
+  /** The call and put walls on a track around today's price, with what they mean. */
+  function wallsBlock(d: OptionsData) {
+    const w = optionWalls(d.strikes, d.spot);
+    if (!w.call || !w.put || w.put.strike >= w.call.strike) return h('p', { class: 'small' }, wallWords(w, formatPrice));
+    return rangeTrack({
+      title: 'Price between the walls',
+      low: w.put.strike,
+      high: w.call.strike,
+      value: d.spot,
+      format: formatPrice,
+      caption: wallWords(w, formatPrice),
+    });
+  }
+
   function oiBars(d: OptionsData, nearSpot: number) {
     const max = Math.max(1, ...d.strikes.map((r) => Math.max(r.callOi, r.putOi)));
+    const w = optionWalls(d.strikes, d.spot);
     return h(
       'div',
       { class: 'oi-bars' },
       ...[...d.strikes].reverse().map((r) =>
         h(
           'div',
-          { class: `oi-row${r.strike === nearSpot ? ' spot' : ''}${r.strike === d.summary.maxPain ? ' pain' : ''}`, title: `Strike ${formatPrice(r.strike)}: ${r.putOi.toLocaleString('en-US')} puts, ${r.callOi.toLocaleString('en-US')} calls open${r.strike === d.summary.maxPain ? ' · max pain' : ''}` },
+          { class: `oi-row${r.strike === nearSpot ? ' spot' : ''}${r.strike === d.summary.maxPain ? ' pain' : ''}${r.strike === w.call?.strike ? ' callwall' : ''}${r.strike === w.put?.strike ? ' putwall' : ''}`, title: `Strike ${formatPrice(r.strike)}: ${r.putOi.toLocaleString('en-US')} puts, ${r.callOi.toLocaleString('en-US')} calls open${r.strike === d.summary.maxPain ? ' · max pain' : ''}${r.strike === w.call?.strike ? ' · call wall' : ''}${r.strike === w.put?.strike ? ' · put wall' : ''}` },
           h('span', { class: 'oi-side put' }, h('span', { class: 'oi-fill', style: `width:${(r.putOi / max) * 100}%` }), h('span', { class: 'oi-num' }, compact(r.putOi))),
           h('span', { class: 'oi-strike' }, formatPrice(r.strike)),
           h('span', { class: 'oi-side call' }, h('span', { class: 'oi-fill', style: `width:${(r.callOi / max) * 100}%` }), h('span', { class: 'oi-num' }, compact(r.callOi))),

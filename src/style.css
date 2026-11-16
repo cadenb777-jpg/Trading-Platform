@@ -12306,3 +12306,16 @@ body[data-section='business'] { --section-accent: var(--hue-business); }
 .mm-tile-rank {
   grid-area: rank;
 }
+
+/* Flow → options walls marked on the open-interest ladder */
+.oi-row.callwall .oi-strike,
+.oi-row.putwall .oi-strike {
+  font-weight: 700;
+  color: var(--text-strong);
+}
+.oi-row.callwall {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--up) 55%, transparent);
+}
+.oi-row.putwall {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--down) 55%, transparent);
+}
