@@ -11353,3 +11353,11 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .pr-team-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .pr-team-bar .chip-row { flex-wrap: wrap; }
 .pr-team-search { max-width: 220px; min-width: 0; flex: 1 1 160px; }
+
+/* Prospects → Companies */
+.co-filters { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; margin-top: 8px; }
+.co-filters .field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.co-filters .input { max-width: 100%; }
+.co-checks { display: flex; gap: 12px; flex-wrap: wrap; padding-bottom: 6px; }
+.co-pager { display: flex; gap: 8px; margin-top: 8px; }
+.co-results { margin-top: 12px; }

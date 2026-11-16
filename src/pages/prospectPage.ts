@@ -33,6 +33,7 @@ import { renderCompare, saveText } from '../prospect/compare';
 import { publicSourcesPanel } from '../prospect/sourcesPanel';
 import { loadProfile, typeBadge, type ProfileContext } from '../prospect/profile';
 import { createReviewView } from '../prospect/review';
+import { createCompaniesView } from '../prospect/companies';
 import {
   CLIENT_FILTERS,
   DATA_LIMITS,
@@ -64,9 +65,10 @@ import {
   type SortKey,
 } from '../prospect/logic';
 
-type Mode = 'search' | 'map' | 'compare' | 'review' | 'data';
+type Mode = 'search' | 'companies' | 'map' | 'compare' | 'review' | 'data';
 const MODES: { id: Mode; label: string }[] = [
-  { id: 'search', label: 'Search' },
+  { id: 'search', label: 'Advisers' },
+  { id: 'companies', label: 'Companies' },
   { id: 'map', label: 'Map' },
   { id: 'compare', label: 'Compare' },
   { id: 'review', label: 'Review' },
@@ -139,10 +141,10 @@ export function createProspectPage() {
 
   // ---------- frame ----------
   const tabs = h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Prospecting views' });
-  const frame = pageFrame('Prospecting', 'RIAs, exempt advisers and family offices from free SEC filings (Form ADV, 13F, Form D). Every fact shows its source and date; family-office labels are educated guesses, never certain.', [tabs]);
+  const frame = pageFrame('Prospecting', 'RIAs, exempt advisers and family offices from free SEC filings (Form ADV, 13F, Form D), and private companies of every industry from free SBA data. Every fact shows its source and date; family-office labels are educated guesses, never certain.', [tabs]);
   frame.el.classList.add('pr-page');
   const strip = h('div', { class: 'pr-strip', 'aria-label': 'Data freshness' });
-  const views: Record<Mode, HTMLElement> = { search: h('div', { class: 'pr-view' }), map: h('div', { class: 'pr-view' }), compare: h('div', { class: 'pr-view' }), review: h('div', { class: 'pr-view' }), data: h('div', { class: 'pr-view' }) };
+  const views: Record<Mode, HTMLElement> = { search: h('div', { class: 'pr-view' }), map: h('div', { class: 'pr-view' }), compare: h('div', { class: 'pr-view' }), review: h('div', { class: 'pr-view' }), companies: h('div', { class: 'pr-view' }), data: h('div', { class: 'pr-view' }) };
   frame.body.replaceChildren(strip, ...Object.values(views));
 
   // ---------- profile drawer ----------
@@ -195,6 +197,8 @@ export function createProspectPage() {
   // ---------- review queue (website, AI and watcher findings; src/prospect/review.ts) ----------
   const review = createReviewView((id) => openFirm(id));
   views.review.append(review.el);
+  const companiesView = createCompaniesView();
+  views.companies.append(companiesView.el);
 
   function openFirm(id: string) {
     drawerReturn = document.activeElement instanceof HTMLElement && !drawer.contains(document.activeElement) ? document.activeElement : null;
@@ -225,6 +229,7 @@ export function createProspectPage() {
     if (mode === 'map') showMap();
     if (mode === 'compare') drawCompare();
     if (mode === 'review') review.show();
+    if (mode === 'companies') companiesView.show();
     if (mode === 'data') drawData();
   }
 
