@@ -145,14 +145,16 @@ export function rangeTrack(o: { low: number; high: number; value: number | null;
 }
 
 /** The "flower": one centre with curved flows to each item, thicker for bigger values (regions, segments, holders). */
-export function flower(o: { centre: string; items: { label: string; value: number; tone?: Tone; title?: string }[]; title: string; format: (v: number) => string; caption?: Node | string; size?: number }) {
+export function flower(o: { centre: string; items: { label: string; value: number; tone?: Tone; title?: string }[]; title: string; format: (v: number) => string; caption?: Node | string; size?: number; hideTitle?: boolean }) {
   const w = o.size ?? 300;
   const c = w / 2;
   const items = o.items.filter((i) => i.value > 0).slice(0, 12);
   const biggest = Math.max(0, ...items.map((i) => i.value));
-  const pts = petalPoints(items.length, c, c, w * 0.36);
-  const art = svg('svg', { viewBox: `0 0 ${w} ${w}`, role: 'img', 'aria-label': o.title, class: 'viz-art' });
-  art.append(svg('circle', { cx: c, cy: c, r: w * 0.36, class: 'viz-orbit', fill: 'none' }), svg('circle', { cx: c, cy: c, r: w * 0.2, class: 'viz-orbit', fill: 'none' }));
+  const pts = petalPoints(items.length, c, c, w * 0.34);
+  // room either side for the labels, so none is cut off at the edge
+  const pad = w * 0.22;
+  const art = svg('svg', { viewBox: `${-pad} -4 ${w + 2 * pad} ${w + 8}`, role: 'img', 'aria-label': o.title, class: 'viz-art' });
+  art.append(svg('circle', { cx: c, cy: c, r: w * 0.34, class: 'viz-orbit', fill: 'none' }), svg('circle', { cx: c, cy: c, r: w * 0.19, class: 'viz-orbit', fill: 'none' }));
   items.forEach((it, i) => {
     const [x, y] = pts[i];
     // a gentle curve: the control point is pulled sideways from the straight line
@@ -172,7 +174,7 @@ export function flower(o: { centre: string; items: { label: string; value: numbe
     );
   });
   art.append(svg('rect', { x: c - 26, y: c - 13, width: 52, height: 26, class: 'viz-centre' }), svg('text', { x: c, y: c + 5, class: 'viz-centre-text', 'text-anchor': 'middle' }, o.centre));
-  return figure('viz-flower', h('div', {}, h('div', { class: 'viz-title' }, o.title), art), o.caption, o.title);
+  return figure('viz-flower', h('div', {}, o.hideTitle ? '' : h('div', { class: 'viz-title' }, o.title), art), o.caption, o.title);
 }
 
 /** A heat grid: one tile per item, green or red by sign, stronger for bigger moves (sectors, watchlist, factors). */

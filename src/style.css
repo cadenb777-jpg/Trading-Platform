@@ -12159,3 +12159,28 @@ body[data-section='business'] { --section-accent: var(--hue-business); }
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* Research → Where the money comes from: the flower beside the rows */
+.seg-split {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: center;
+}
+@media (max-width: 760px) {
+  .seg-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.viz-flower .viz-node-label,
+.viz-flower .viz-node-value {
+  font-size: 12px;
+}
+
+/* Today: shorter index cards (more of the day on the first screen) */
+.idx-chart {
+  height: 112px;
+}
+.idx-card {
+  padding: 10px 12px;
+}
