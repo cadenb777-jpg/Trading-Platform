@@ -20,3 +20,13 @@ describe('tear sheet words', () => {
     expect(marginTone(null, 0)).toBe('muted');
   });
 });
+
+describe('price periods', () => {
+  it('keeps the bars inside the period and works out the change', async () => {
+    const { periodSlice } = await import('./tearSheet');
+    const day = 86400;
+    const bars = [0, 10, 20, 30, 40].map((d, i) => ({ time: d * day, close: 100 + i * 10 }));
+    expect(periodSlice(bars, 20)).toEqual({ bars: bars.slice(2), change: 140 / 120 - 1 });
+    expect(periodSlice([], 30)).toEqual({ bars: [], change: null });
+  });
+});

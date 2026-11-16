@@ -12188,3 +12188,21 @@ body[data-section='business'] { --section-accent: var(--hue-business); }
 .idx-card {
   padding: 10px 12px;
 }
+
+/* Research tear sheet: price chart with periods */
+.ts-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ts-chart {
+  position: relative;
+  height: 200px;
+}
+.ts-chart-note.up {
+  color: var(--up-text);
+}
+.ts-chart-note.down {
+  color: var(--down-text);
+}

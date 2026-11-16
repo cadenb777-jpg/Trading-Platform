@@ -7,7 +7,11 @@
  * Every picture carries a plain-words line made from the numbers by rules (no AI cost, tested); the page's AI
  * summary button gives the full read.
  */
+import { getProvider } from '../data';
 import { engineRequest, helper } from '../data/schwab';
+import type { Bar } from '../types';
+import { createLineChart } from '../ui/charts';
+import { THEME } from '../ui/theme';
 import { money, pct } from '../ui/charts';
 import { formatPrice, h } from '../ui/dom';
 import { gauge, rangeTrack, ring, type Tone } from '../ui/viz';
@@ -56,7 +60,65 @@ const last = (xs: (number | null)[] | undefined, back = 0) => {
   return vals.length > back ? vals[vals.length - 1 - back] : null;
 };
 
+export const PERIODS = [
+  ['1M', 31],
+  ['3M', 92],
+  ['6M', 183],
+  ['1Y', 366],
+  ['5Y', 1827],
+] as const;
+export type Period = (typeof PERIODS)[number][0];
+
+/** The bars inside the last `days` (by time), and the change over them (pure, tested). */
+export function periodSlice<T extends { time: number; close: number }>(bars: T[], days: number) {
+  if (!bars.length) return { bars, change: null as number | null };
+  const from = bars[bars.length - 1].time - days * 86400;
+  const kept = bars.filter((b) => b.time >= from);
+  const first = kept[0]?.close;
+  const last = kept[kept.length - 1]?.close;
+  return { bars: kept, change: first && last ? last / first - 1 : null };
+}
+
 // ---------- drawing ----------
+
+/** The price over 1M-5Y (daily bars, weekly for 5 years), green when the period is up, red when down. */
+function priceBlock(symbol: string): HTMLElement {
+  const box = h('div', { class: 'ts-chart' });
+  const note = h('div', { class: 'ts-chart-note muted small' }, 'Loading prices…');
+  const buttons = new Map<Period, HTMLButtonElement>();
+  let chart: ReturnType<typeof createLineChart> | null = null;
+  const cache = new Map<'1D' | '1W', Promise<Bar[]>>();
+  const bars = (tf: '1D' | '1W') => {
+    if (!cache.has(tf)) cache.set(tf, getProvider('schwab').loadHistory(symbol, tf, new AbortController().signal, tf === '1W' ? 1900 : 400));
+    return cache.get(tf)!;
+  };
+  const show = async (period: Period) => {
+    for (const [p, b] of buttons) b.classList.toggle('active', p === period);
+    const days = PERIODS.find(([p]) => p === period)![1];
+    try {
+      const all = await bars(period === '5Y' ? '1W' : '1D');
+      const { bars: kept, change } = periodSlice(all, days);
+      if (!kept.length) throw new Error('no prices');
+      chart ??= createLineChart(box, { height: 200, format: (v) => formatPrice(v), title: `${symbol} price` });
+      chart.set([{ name: '', color: change != null && change < 0 ? THEME.down : THEME.up, data: kept.map((b) => ({ time: b.time, value: b.close })) }]);
+      note.textContent = change == null ? '' : `${period}: ${change >= 0 ? '+' : '−'}${Math.abs(change * 100).toFixed(1)}% · ${formatPrice(kept[0].close)} → ${formatPrice(kept[kept.length - 1].close)}`;
+      note.className = `ts-chart-note small ${change == null ? 'muted' : change >= 0 ? 'up' : 'down'}`;
+    } catch (err) {
+      note.textContent = `No price history: ${(err as Error).message}`;
+    }
+  };
+  const row = h(
+    'div',
+    { class: 'segmented small ts-periods', role: 'group', 'aria-label': 'Chart period' },
+    ...PERIODS.map(([p]) => {
+      const b = h('button', { type: 'button', onclick: () => void show(p) }, p) as HTMLButtonElement;
+      buttons.set(p, b);
+      return b;
+    }),
+  );
+  void show('1Y');
+  return h('div', { class: 'ts-price-block' }, h('div', { class: 'ts-chart-head' }, h('span', { class: 'viz-title' }, 'Price'), row), box, note);
+}
 
 function kvList(title: string, rows: [string, string, ('up' | 'down' | '')?][]) {
   return h(
@@ -154,7 +216,7 @@ export function tearSheet(d: CompanyData): HTMLElement {
           ['Debt', money(v.debt)],
         ]),
       ),
-      h('div', { class: 'ts-col ts-centre panel' }, range, qualityGauge, rings),
+      h('div', { class: 'ts-col ts-centre panel' }, priceBlock(d.symbol), range, qualityGauge, rings),
       h(
         'div',
         { class: 'ts-col' },
