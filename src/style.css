@@ -11926,3 +11926,131 @@ button.viz-heat-tile:hover {
   right: 12px;
   z-index: 3;
 }
+
+/* Revamp (navigation): the rail shows the six destinations only; each destination's views are the top row. */
+@media (min-width: 701px) {
+  .rail-tree {
+    display: none;
+  }
+  .rail-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: var(--sp-3);
+  }
+  .rail .nav-btn.rail-sec {
+    padding: 10px 12px;
+    font-size: var(--fs-md);
+    letter-spacing: 0.04em;
+  }
+  .rail .nav-btn.rail-sec.active,
+  .rail .nav-btn.rail-sec[aria-current] {
+    color: var(--text-strong);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    box-shadow: inset 2px 0 0 var(--accent-2), 0 0 18px var(--glow-sky);
+  }
+}
+.sub-tabs[hidden] {
+  display: none !important;
+}
+@media (max-width: 700px) {
+  /* phone bottom bar: the destinations and AI only (Launchpad is in the command bar) */
+  .rail .rail-launch {
+    display: none;
+  }
+  .rail .nav-btn.rail-sec,
+  .rail .ai-nav {
+    min-width: 0;
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+  .rail .nav-label {
+    font-size: 11px;
+    letter-spacing: 0;
+  }
+  .home-hero > .fn-bar {
+    position: static;
+    align-self: flex-start;
+    order: 5;
+    margin-top: var(--sp-2);
+  }
+}
+
+/* Left menu lower half: the live market pulse (src/ui/railPulse.ts). */
+.rail-pulse {
+  display: none;
+}
+@media (min-width: 701px) {
+  .rail-pulse {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    margin: var(--sp-3) 0 var(--sp-2);
+    padding-top: var(--sp-2);
+    border-top: 1px solid var(--line);
+    scrollbar-width: thin;
+  }
+  body.rail-collapsed .rail-pulse {
+    display: none;
+  }
+}
+.rp-head {
+  padding: 6px 10px 4px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.rp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'name last' 'name chg';
+  align-items: center;
+  column-gap: 6px;
+  width: 100%;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  cursor: pointer;
+}
+.rp-row:hover {
+  background: var(--raised);
+  box-shadow: 0 0 12px var(--glow-sky);
+}
+.rp-name {
+  grid-area: name;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+.rp-last {
+  grid-area: last;
+  font-weight: 600;
+  color: var(--text-strong);
+  text-align: right;
+}
+.rp-chg {
+  grid-area: chg;
+  text-align: right;
+  color: var(--faint);
+}
+.rp-chg.up {
+  color: var(--up-text);
+}
+.rp-chg.down {
+  color: var(--down-text);
+}
+.fed-bar i,
+.fed-bar .cut,
+.fed-bar .hold {
+  font-size: 11px;
+}

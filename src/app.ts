@@ -17,6 +17,7 @@ import { h, toast, openPopover } from './ui/dom';
 import { startAutoReload } from './ui/autoReload';
 import { schwabLoginNotice } from './ui/schwabLogin';
 import { icon } from './ui/icons';
+import { railPulse } from './ui/railPulse';
 import { PAGES as NAV_PAGES, SECTIONS, pageOf, sectionPages, sectionTarget, type NavPage, type PageRoute, type SectionId } from './ui/nav';
 import { openLaunchpad } from './ui/launchpad';
 import { createStatusBar } from './ui/statusBar';
@@ -478,6 +479,7 @@ if (isAiWindow) {
     h('div', { class: 'brand', title: 'Trading Platform' }, h('span', { class: 'brand-mark', 'aria-hidden': 'true' }, '◆'), h('span', { class: 'brand-name' }, 'Terminal')),
     h('div', { class: 'rail-sections' }, ...sectionLinks),
     tree,
+    railPulse(),
     aiBtn,
     railBtn('rail-launch', 'Launchpad', 'grid', 'Launchpad: every page and function (Ctrl+Shift+L, g l, or Ctrl+L when not typing)', launch, { 'aria-keyshortcuts': 'Control+Shift+L Meta+Shift+L' }),
     h(
@@ -515,8 +517,11 @@ if (isAiWindow) {
       const sec = SECTIONS.find((s) => s.id === section)!;
       sectionName.textContent = sec.label;
       subTabs.setAttribute('aria-label', `${sec.label} pages`);
+      // one view only (Today): no lone tab, the section name says where you are
+      const views = sectionPages(section);
+      subTabs.hidden = views.length < 2;
       subTabs.replaceChildren(
-        ...sectionPages(section).map((p) => h('a', { class: 'sub-tab', href: `#${p.route}`, 'data-route': p.route, title: `${p.about} (code ${p.code})` }, h('span', {}, p.label), h('span', { class: 'code-hint', 'aria-hidden': 'true' }, p.code))),
+        ...views.map((p) => h('a', { class: 'sub-tab', href: `#${p.route}`, 'data-route': p.route, title: `${p.about} (code ${p.code})` }, h('span', {}, p.label), h('span', { class: 'code-hint', 'aria-hidden': 'true' }, p.code))),
       );
     }
     subTabs.querySelectorAll<HTMLElement>('.sub-tab').forEach((t) => {

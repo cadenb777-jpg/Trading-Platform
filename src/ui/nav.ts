@@ -7,7 +7,7 @@
  */
 import type { IconName } from './icons';
 
-export type SectionId = 'markets' | 'analyze' | 'money' | 'business' | 'ai';
+export type SectionId = 'today' | 'markets' | 'security' | 'ideas' | 'money' | 'business' | 'ai';
 
 export interface Section {
   id: SectionId;
@@ -18,10 +18,12 @@ export interface Section {
 }
 
 export const SECTIONS: readonly Section[] = [
-  { id: 'markets', label: 'Markets', icon: 'macro', about: 'What the market is doing: indexes, investments, futures, the economy and money flows' },
-  { id: 'analyze', label: 'Analyze', icon: 'research', about: 'Charts, company research, trade setups and strategy testing' },
+  { id: 'today', label: 'Today', icon: 'home', about: 'What matters right now: your brief, the market, news, setups and alerts' },
+  { id: 'markets', label: 'Markets', icon: 'macro', about: 'The whole market: boards, the economy and rates, the calendar and futures' },
+  { id: 'security', label: 'Security', icon: 'research', about: 'One ticker in depth: its research, chart and money flows' },
+  { id: 'ideas', label: 'Ideas', icon: 'target', about: 'Trade ideas and testing: setups, backtests and the strategy lab' },
   { id: 'money', label: 'Money', icon: 'account', about: 'Your own accounts, model portfolios, orders and journal' },
-  { id: 'business', label: 'Business', icon: 'clients', about: 'Clients, reports and prospecting for the advisory business' },
+  { id: 'business', label: 'Business', icon: 'clients', about: 'Prospecting, clients and reports for the advisory business' },
   { id: 'ai', label: 'AI', icon: 'spark', about: 'The AI assistant: ask about anything on screen' },
 ];
 
@@ -46,27 +48,27 @@ export interface NavPage {
 
 export const PAGES = [
   // Markets
-  { route: 'home', section: 'markets', label: 'Home', title: 'Trading Platform', code: 'BRF', icon: 'home', keywords: 'dashboard brief widgets indexes news morning', about: 'Your dashboard: brief, indexes, news, setups and accounts' },
+  { route: 'home', section: 'today', label: 'Home', title: 'Trading Platform', code: 'BRF', icon: 'home', keywords: 'dashboard brief widgets indexes news morning', about: 'Your dashboard: brief, indexes, news, setups and accounts' },
   { route: 'invest', section: 'markets', label: 'Investments', title: 'Investments', code: 'INV', icon: 'invest', keywords: 'stocks etfs bonds alternatives private funds boards', about: 'Stocks, ETFs, bonds, alternatives and private funds' },
   { route: 'futures', section: 'markets', label: 'Futures', title: 'Futures', code: 'FUT', icon: 'futures', keywords: 'contracts commodities term structure cot', about: 'The futures market by sector, curves and positioning' },
   { route: 'macro', section: 'markets', label: 'Macro', title: 'Macro', code: 'MACRO', icon: 'macro', keywords: 'economy fred rates inflation yields', about: 'The economy at a glance (FRED, Treasury)' },
   { route: 'calendar', section: 'markets', label: 'Calendar', title: 'Economic calendar', code: 'ECO', icon: 'calendar', keywords: 'economic releases fomc events', about: 'This week’s economic releases and FOMC dates' },
-  { route: 'flow', section: 'markets', label: 'Flow', title: 'Flow', code: 'FLOW', icon: 'flow', keywords: 'short selling options insiders smart money', about: 'Short selling, options and insiders' },
+  { route: 'research', section: 'security', label: 'Research', title: 'Research', code: 'RES', icon: 'research', keywords: 'company financials sec valuation ratios', about: 'Company financials, ratios and valuation' },
   // Analyze
-  { route: 'chart', section: 'analyze', label: 'Chart', title: '', code: 'GP', icon: 'chart', keywords: 'graph price candles indicators drawings', about: 'The full chart with indicators and drawings' },
-  { route: 'research', section: 'analyze', label: 'Research', title: 'Research', code: 'RES', icon: 'research', keywords: 'company financials sec valuation ratios', about: 'Company financials, ratios and valuation' },
-  { route: 'setups', section: 'analyze', label: 'Setups', title: 'Setups', code: 'SET', icon: 'target', keywords: 'scanner signals nasdaq trade ideas', about: 'Nasdaq-100 trade setups, tested after costs' },
-  { route: 'backtest', section: 'analyze', label: 'Backtest', title: 'Backtest', code: 'BTST', icon: 'backtest', keywords: 'strategy test monte carlo sweep', about: 'Test a strategy on history, then stress-test it' },
-  { route: 'strategy', section: 'analyze', label: 'Strategy Lab', title: 'Strategy Lab', code: 'LAB', icon: 'code', keywords: 'strategy lab build rules walk forward', about: 'Build and check your own strategies' },
-  { route: 'sec', section: 'analyze', label: 'Security', title: 'Security', code: '', icon: 'research', keywords: 'security view', about: 'One security in depth', hidden: true },
+  { route: 'chart', section: 'security', label: 'Chart', title: '', code: 'GP', icon: 'chart', keywords: 'graph price candles indicators drawings', about: 'The full chart with indicators and drawings' },
+  { route: 'flow', section: 'security', label: 'Flow', title: 'Flow', code: 'FLOW', icon: 'flow', keywords: 'short selling options insiders smart money', about: 'Short selling, options and insiders' },
+  { route: 'setups', section: 'ideas', label: 'Setups', title: 'Setups', code: 'SET', icon: 'target', keywords: 'scanner signals nasdaq trade ideas', about: 'Nasdaq-100 trade setups, tested after costs' },
+  { route: 'backtest', section: 'ideas', label: 'Backtest', title: 'Backtest', code: 'BTST', icon: 'backtest', keywords: 'strategy test monte carlo sweep', about: 'Test a strategy on history, then stress-test it' },
+  { route: 'strategy', section: 'ideas', label: 'Strategy Lab', title: 'Strategy Lab', code: 'LAB', icon: 'code', keywords: 'strategy lab build rules walk forward', about: 'Build and check your own strategies' },
+  { route: 'sec', section: 'security', label: 'Security', title: 'Security', code: '', icon: 'research', keywords: 'security view', about: 'One security in depth', hidden: true },
   // Money
   { route: 'account', section: 'money', label: 'Account', title: 'Account', code: 'ACCT', icon: 'account', keywords: 'holdings dividends total value my money', about: 'Your real accounts added together' },
   { route: 'portfolio', section: 'money', label: 'Portfolios', title: 'Portfolios', code: 'PORT', icon: 'portfolio', keywords: 'model optimizer what-if', about: 'Model portfolios, what-ifs and the optimizer' },
   { route: 'trade', section: 'money', label: 'Trade', title: 'Trade', code: 'TRADE', icon: 'trade', keywords: 'order ticket webull buy sell positions', about: 'Orders and positions (preview, then confirm)' },
   { route: 'journal', section: 'money', label: 'Journal', title: 'Trading journal', code: 'JRNL', icon: 'journal', keywords: 'trades diary review playbook win rate', about: 'Your trades: statistics, calendar, playbooks' },
   // Business
-  { route: 'clients', section: 'business', label: 'Clients', title: 'Clients & Reports', code: 'CLIENT', icon: 'clients', keywords: 'client report household ria fees', about: 'Client accounts and performance reports' },
   { route: 'prospect', section: 'business', label: 'Prospects', title: 'Prospecting', code: 'PROS', icon: 'prospect', keywords: 'prospecting ria family office form adv 13f lead', about: 'RIAs and family offices from SEC filings' },
+  { route: 'clients', section: 'business', label: 'Clients', title: 'Clients & Reports', code: 'CLIENT', icon: 'clients', keywords: 'client report household ria fees', about: 'Client accounts and performance reports' },
 ] as const satisfies readonly NavPage[];
 
 export type PageRoute = (typeof PAGES)[number]['route'];
@@ -85,10 +87,10 @@ export const FUNCTIONS: readonly NavFunction[] = [
   { code: 'WEI', label: 'World indices', section: 'markets', icon: 'chart', keywords: 'indexes indices markets home', target: 'page:home' },
   { code: 'COT', label: 'COT positioning', section: 'markets', icon: 'positioning', keywords: 'commitment traders hedgers cftc', target: 'page:futures/cot' },
   { code: 'BONDS', label: 'Bonds and yields', section: 'markets', icon: 'invest', keywords: 'treasuries yields auctions cusip', target: 'fn:BONDS' },
-  { code: 'DES', label: 'Security overview', section: 'analyze', icon: 'research', keywords: 'company profile security description add a ticker aapl des', target: 'fn:DES' },
-  { code: 'MULTI', label: 'Workspace', section: 'analyze', icon: 'grid', keywords: 'multi chart grid side by side linked panels', target: 'page:chart/multi' },
-  { code: 'SCRIPT', label: 'Scripts', section: 'analyze', icon: 'code', keywords: 'pine script editor indicator code', target: 'page:chart/scripts' },
-  { code: 'ALRT', label: 'Alerts', section: 'analyze', icon: 'bell', keywords: 'alert notify price', target: 'act:alert' },
+  { code: 'DES', label: 'Security overview', section: 'security', icon: 'research', keywords: 'company profile security description add a ticker aapl des', target: 'fn:DES' },
+  { code: 'MULTI', label: 'Workspace', section: 'ideas', icon: 'grid', keywords: 'multi chart grid side by side linked panels', target: 'page:chart/multi' },
+  { code: 'SCRIPT', label: 'Scripts', section: 'ideas', icon: 'code', keywords: 'pine script editor indicator code', target: 'page:chart/scripts' },
+  { code: 'ALRT', label: 'Alerts', section: 'today', icon: 'bell', keywords: 'alert notify price', target: 'act:alert' },
   { code: 'FO', label: 'Family offices', section: 'business', icon: 'prospect', keywords: 'family office single multi prospect', target: 'fn:FO' },
   { code: 'RIA', label: 'Registered advisers', section: 'business', icon: 'prospect', keywords: 'ria registered investment adviser', target: 'fn:RIA' },
   { code: 'AI', label: 'AI assistant', section: 'ai', icon: 'spark', keywords: 'ask claude chat explain', target: 'act:ai' },

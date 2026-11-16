@@ -57,9 +57,12 @@ everything two clicks away, and a ticker typed anywhere opens one Security page.
 - Attention order on every view: one hero picture top-left, the key numbers beside it, detail below, AI read in
   the header.
 
-- [~] 1b-1. Navigation: done: the numbered function row is one "Actions" header button with a menu (keys 1-9 still
-      work; Home's sits in the greeting banner), so no page shows its buttons twice. To do: six destinations, top row
-      of views, redirects.
+- [x] 1b-1. Navigation: left rail = six destinations only (Today, Markets, Security, Ideas, Money, Business) + AI;
+      top row = that destination's views (hidden when there is one); the numbered function row is one "Actions" header
+      menu (keys 1-9 still work); the rail's lower half is a live Market pulse + watchlist (src/ui/railPulse.ts);
+      phone bottom bar = destinations + AI. Old routes still work (same routes, regrouped).
+- [x] 1b-1b. AI summaries write themselves when a page with data shows (src/ai/insight.ts: once per page + symbol,
+      the same read reused for 30 minutes, only with an AI key; the button writes a fresh one; closing keeps it closed).
 - [ ] 1b-2. Security hub: one ticker, tabs Overview / Chart / Financials / Valuation / Flow / Filings / News.
 - [ ] 1b-3. Markets hub: Overview (boards + heat map) / Macro & rates / Calendar / Futures / Crypto.
 - [ ] 1b-4. Today page re-laid as the attention page (keeps greeting and ticker tape).
@@ -115,4 +118,4 @@ everything two clicks away, and a ticker typed anywhere opens one Security page.
       < 11 px, both themes, phone width; accessibility pass (contrast, focus, labels).
 - [ ] 21. Docs: CLAUDE.md, README, ROADMAP status.
 
-Next: 1b-1 (navigation: six destinations, two layers), then 1b-2 (Security hub), then finish 6 inside it.
+Next: 1b-2 (Security hub: one ticker across Research / Chart / Flow), then finish 6 inside it, then 1b-4 (Today).
