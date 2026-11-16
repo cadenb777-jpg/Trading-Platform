@@ -11343,6 +11343,17 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .qe-bar.neg { background: var(--viz-1); }
 .qe-bar.pos { background: var(--label); }
 .data-table td.ltm { border-left: 1px solid var(--line); font-style: italic; }
+/* Research: Building and stock pay (src/research/buildPayView.ts) */
+.bp-pairs { display: grid; gap: var(--sp-2); }
+.bp-key { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
+.bp-key span { display: inline-flex; align-items: center; gap: 6px; }
+.bp-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.bp-row { display: grid; grid-template-columns: 4.5rem 1fr 3rem; align-items: center; gap: var(--sp-2); padding: 2px 0; }
+.bp-bars { display: grid; gap: 2px; min-width: 0; }
+.bp-bar { display: block; height: 7px; border-radius: 2px; }
+.bp-bar.spend, .bp-swatch.spend { background: var(--viz-1); }
+.bp-bar.dep, .bp-swatch.dep { background: var(--viz-2); }
+.bp-ratio { text-align: right; color: var(--text-strong); }
 /* Prospects → revenue (src/prospect/revenue.ts) */
 .pr-terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--sp-2); margin: var(--sp-2) 0; }
 .pr-terms .input { width: 100%; }

@@ -4,6 +4,7 @@ import { debtDilutionPanel } from '../research/debtDilutionView';
 import { qualityPanel } from '../research/qualityView';
 import { cashHealthPanel } from '../research/cashHealthView';
 import { balanceQualityPanel } from '../research/balanceQualityView';
+import { buildPayPanel } from '../research/buildPayView';
 import { fy, type Maturities } from '../research/debtDilution';
 import type { Obligations } from '../research/obligations';
 import { yearBars } from '../research/yearBars';
@@ -242,6 +243,8 @@ export function createResearchPage() {
       cashHealthPanel(d.annual),
       // billed in advance vs sales, goodwill and write-downs
       balanceQualityPanel(d.annual),
+      // capital spending vs depreciation and free cash flow after stock pay
+      buildPayPanel(d.annual, v.marketCap),
       // futures positioning for the company's market: one line, the full COT table is on Futures
       cotSummary(d.symbol, undefined, { quiet: true }),
       stockNewsCard(d.symbol, 5),

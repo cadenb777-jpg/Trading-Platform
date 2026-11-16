@@ -171,14 +171,20 @@ whenever the owner repeats or adds one.
   derived figure only with a label; never set today's market value against an older year's accounts; check glossary
   keys for clashes (the price z-score already used `zscore`).
 - 2026-11-13 · #22 Cash health (helper 74): dividend cover by free cash flow (newest year and 5 years, with and without
-  buybacks) and the cash conversion cycle, on the Research overview · proposed · backlog A17-A18. Coca-Cola's FY2025 free
+  buybacks) and the cash conversion cycle, on the Research overview · approved (merged) · backlog A17-A18. Coca-Cola's FY2025 free
   cash flow paid only 60% of its dividend (5 years: 1.0x). Lessons: read payables only from their own line (a combined
   payables-and-accrued line would inflate days to pay, so Coca-Cola gets "not worked out" rather than a wrong number);
   "no inventory ever reported" is zero, but one missing year is left out, never zero.
 - 2026-11-14 · #23 Balance-sheet quality (helper 75, stacked on #22): deferred revenue against sales (Microsoft's grew 13.0%
   while sales grew 17.8%) and goodwill with its write-downs (Coca-Cola: 48% of equity; $13M of goodwill and $2.05B of trademarks and other intangibles written down in 5 years) ·
-  proposed · backlog A19-A20. Lessons: Apple stopped tagging goodwill after FY2017, so the panel says so instead of
+  approved (merged) · backlog A19-A20. Lessons: Apple stopped tagging goodwill after FY2017, so the panel says so instead of
   showing an old figure; a reported zero write-down isn't a write-down and a missing tag isn't zero; tangible book was
   dropped because intangibles are tagged too unevenly between companies to subtract honestly. Review caught the share
   "written off" mixing trademark write-downs into a goodwill percentage (12% shown, 0.1% true): keep each figure to
   its own base.
+- 2026-11-16 · #PRNUM Building and stock pay (helper 81): capital spending against depreciation (Microsoft 3.4x, up from
+  1.9x in FY2022; Apple 1.0x) and free cash flow after stock pay (Microsoft 19% of free cash flow; Amazon FY2025 253%) on
+  the Research overview · proposed · backlog A21-A22. Lessons: compare capex with depreciation alone, not D&A (Apple
+  read 0.67x on D&A, 1.04x on depreciation: amortization of bought intangibles isn't what capex buys); a 330-400-day fact
+  in a 10-Q is a trailing twelve months, not a fiscal year (Amazon's Research figures had been built on quarter-end
+  "years"). The independent /code-review couldn't run (weekly usage limit until 2026-11-18): self-reviewed, to be re-run.
