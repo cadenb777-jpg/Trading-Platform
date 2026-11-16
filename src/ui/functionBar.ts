@@ -1,6 +1,7 @@
 /**
- * The function bar: a row of numbered chips under a page's title ("1 Refresh · 2 Export · 3 AI summary"), Bloomberg
- * style. Number keys 1-9 run them when nothing is being typed and no dialog is open. A page opts in with
+ * The function keys: numbered actions for a page ("1 Refresh · 2 Export · 3 AI summary"), Bloomberg style. Since the
+ * revamp they are one "Actions" button in the page header that opens them as a menu (a numbered row repeating the
+ * page's buttons was clutter); number keys 1-9 still run them when nothing is being typed and no dialog is open. A page opts in with
  * `functionBar([...])` (or `pageFrame(...).functions([...])`) and places the returned element under its title; only
  * the bar on the page that is showing answers the keys. The key logic is pure and tested (functionBar.test.ts).
  */
@@ -78,7 +79,11 @@ function listen() {
   document.addEventListener('keydown', (e) => {
     if (e.defaultPrevented || e.repeat) return;
     // the bar on the page that is showing (pages that are hidden have no layout)
-    const bar = [...document.querySelectorAll<HTMLElement>('.views .fn-bar')].find((b) => b.offsetParent !== null);
+    // the actions are a header menu now (revamp); the keys work for the page that is showing, menu open or not
+    const bar = [...document.querySelectorAll<HTMLElement>('.views .fn-bar')].find((b) => {
+      const view = b.closest<HTMLElement>('.views > *');
+      return !!view && !view.hidden && view.getClientRects().length > 0;
+    });
     const run = bar ? triggers.get(bar) : undefined;
     if (!bar || !run) return;
     const active = document.activeElement;
@@ -130,19 +135,44 @@ export function functionBar(actions: FnAction[], opts: FnBarOptions = {}): HTMLE
     ),
   );
   chips.forEach((c, i) => c.addEventListener('click', () => void run[i]()));
-  const bar = h(
+  // one header button that opens the actions as a menu (the numbered row was a second set of the page's buttons)
+  const menu = h(
     'div',
-    { class: 'fn-bar' },
-    h('div', { class: 'fn-chips', role: 'toolbar', 'aria-label': `${opts.label ?? 'Page functions'} (press 1-${list.length})` }, ...chips),
+    { class: 'fn-menu', role: 'menu', hidden: true },
+    h('div', { class: 'fn-chips', role: 'group', 'aria-label': `${opts.label ?? 'Page functions'} (press 1-${list.length})` }, ...chips),
     related.length
       ? h(
           'nav',
           { class: 'fn-related', 'aria-label': 'Related pages' },
-          h('span', { class: 'fn-related-label' }, 'Related'),
+          h('span', { class: 'fn-related-label' }, 'Go to'),
           ...related.map((p) => h('a', { class: 'fn-rel', href: `#${p.route}`, title: p.about }, h('span', { class: 'code-hint' }, p.code), ` ${p.label}`)),
         )
       : null,
   );
+  const toggle = h('button', { type: 'button', class: 'btn fn-toggle', 'aria-haspopup': 'menu', 'aria-expanded': 'false', title: `Page actions (keys 1-${list.length})` }, icon('grid', 14), ' Actions');
+  const close = () => {
+    menu.hidden = true;
+    toggle.setAttribute('aria-expanded', 'false');
+  };
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menu.hidden = !menu.hidden;
+    toggle.setAttribute('aria-expanded', String(!menu.hidden));
+    if (!menu.hidden) chips[0]?.focus();
+  });
+  menu.addEventListener('click', (e) => {
+    if ((e.target as Element).closest('.fn-chip, .fn-rel')) close();
+  });
+  document.addEventListener('click', (e) => {
+    if (!menu.hidden && !bar.contains(e.target as Node)) close();
+  });
+  menu.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      close();
+      toggle.focus();
+    }
+  });
+  const bar = h('div', { class: 'fn-bar' }, toggle, menu);
   triggers.set(bar, run);
   return bar;
 }

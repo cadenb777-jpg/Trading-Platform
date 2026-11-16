@@ -9,11 +9,18 @@ The owner wants each page to answer its main question at a glance, the way Macro
 explaining where the edge is. The design is free to change; these rules are not.
 
 ## Look
+- Fincept Terminal is the reference look (owner's choice): near-black, monospace, small uppercase amber headings with
+  a rule, hairline panels, underlined uppercase tabs, label-value lists. Bloomberg is the feature checklist only.
+  Keep the platform's signature on top: orange/amber accents and the blue glow (greeting banner, background, panel hover).
+  The shared layer is the "Terminal look" block at the end of src/style.css: reuse its classes (.panel/.panel-head,
+  .stat-cards, .data-table, .kv) instead of new one-off styles.
 - Colours only through the CSS variables in `src/style.css` (`:root` and `:root[data-theme='light']`); never hex in
   new CSS. Labels amber/copper (`--accent-2-text`), figures white (`--text-strong`), green/red (`--up*`, `--down*`)
   only for good/bad, sky (`--accent`) for interaction. Both themes must work.
 - Dense but calm: data first, few borders, numbers right-aligned in tables, units always shown, every figure says
   its source and date (hover or a small line).
+- Each destination has its own accent (`--section-accent`, set from body[data-section]): use it for edges, glows and
+  highlights in that section, never for text meaning good/bad. No rainbow: one accent per section plus amber.
 - No decoration that carries no data (glows, emoji, gradient text, pulsing).
 
 ## Each page

@@ -1,5 +1,5 @@
 /** "AI summary" buttons (one label on every page): one-off reads of the data on screen, streamed into a panel. */
-import { engineRequest } from '../data/schwab';
+import { engineRequest, helper } from '../data/schwab';
 import { h } from '../ui/dom';
 import { openSettings } from '../ui/settings';
 import { friendlyAiError } from './assistant';
@@ -17,8 +17,21 @@ export interface InsightRequest {
   timeframe?: string;
 }
 
-/** Streams an AI analysis into `target`. */
-export async function runInsight(target: HTMLElement, req: InsightRequest) {
+/** Recent summaries by page + symbol + title: reopening a page within this time shows the same read (no new AI call). */
+const RECENT = new Map<string, { text: string; conversation: string; at: number }>();
+export const RECENT_MS = 30 * 60_000;
+export const insightKey = (r: Pick<InsightRequest, 'topic' | 'symbol' | 'title'>) => `${r.topic}|${r.symbol}|${r.title}`;
+/** A stored read still fresh at `now` (pure apart from the map; tested). */
+export function recentInsight(key: string, now = Date.now()) {
+  const hit = RECENT.get(key);
+  return hit && now - hit.at < RECENT_MS ? hit : null;
+}
+export function rememberInsight(key: string, text: string, conversation: string, now = Date.now()) {
+  RECENT.set(key, { text, conversation, at: now });
+}
+
+/** Streams an AI analysis into `target` (or shows the recent one for the same page and symbol unless `fresh`). */
+export async function runInsight(target: HTMLElement, req: InsightRequest, fresh = false) {
   const body = h('div', { class: 'md insight-body' }, h('div', { class: 'ai-status' }, h('span', { class: 'ai-dots' }, h('i'), h('i'), h('i')), h('span', {}, 'Analysing…')));
   const actions = h('div', { class: 'insight-actions' });
   const fold = h('button', { class: 'icon-btn', title: 'Minimize', 'aria-label': 'Minimize', 'aria-expanded': 'true' }, '–');
@@ -36,6 +49,20 @@ export async function runInsight(target: HTMLElement, req: InsightRequest) {
     actions,
   );
   target.hidden = false;
+  const key = insightKey(req);
+  const done = (result: { text: string; conversation: string }, at?: number) => {
+    body.innerHTML = renderMarkdown(result.text);
+    markTickers(body);
+    actions.replaceChildren(
+      h('button', { class: 'btn', onclick: () => continueInAssistant(result.conversation, req.title, result.text) }, 'Ask a follow-up'),
+      h('span', { class: 'muted small' }, `AI analysis of the data above${at ? `, written ${new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}. Not financial advice.`),
+    );
+  };
+  const kept = fresh ? null : recentInsight(key);
+  if (kept) {
+    done(kept, kept.at);
+    return;
+  }
   let text = '';
   let frame = 0;
   try {
@@ -46,12 +73,8 @@ export async function runInsight(target: HTMLElement, req: InsightRequest) {
       if (!frame) frame = requestAnimationFrame(() => ((frame = 0), (body.innerHTML = renderMarkdown(text))));
     });
     cancelAnimationFrame(frame);
-    body.innerHTML = renderMarkdown(result.text);
-    markTickers(body);
-    actions.replaceChildren(
-      h('button', { class: 'btn', onclick: () => continueInAssistant(result.conversation, req.title, result.text) }, 'Ask a follow-up'),
-      h('span', { class: 'muted small' }, 'AI analysis of the data above. Not financial advice.'),
-    );
+    rememberInsight(key, result.text, result.conversation);
+    done(result);
   } catch (err) {
     cancelAnimationFrame(frame);
     const { text: message, needsKey } = friendlyAiError(err);
@@ -78,12 +101,31 @@ export function placeUnder(button: HTMLElement, panel: HTMLElement) {
 }
 
 /** A button plus the panel it fills. `getRequest` returns null when there's no data yet. */
+/** Whether summaries may run by themselves: the helper is connected and the AI key is saved (checked once a minute). */
+let aiCheck: { at: number; ok: Promise<boolean> } | null = null;
+function aiReady(): Promise<boolean> {
+  if (helper.version == null) return Promise.resolve(false);
+  if (!aiCheck || Date.now() - aiCheck.at > 60_000) {
+    aiCheck = { at: Date.now(), ok: engineRequest<{ aiKeySet?: boolean }>('settings.get', {}, 10000).then((s) => !!s.aiKeySet, () => false) };
+  }
+  return aiCheck.ok;
+}
+
+/**
+ * The page's AI summary. It writes itself (owner: "don't ask me to click"): once the page is showing and its data has
+ * loaded, the read streams into the panel under the button; a new symbol gets a new read; the same page and symbol
+ * within RECENT_MS show the stored read (no new AI call). The button refreshes it; closing the panel keeps it closed
+ * for that symbol. Without an AI key nothing runs by itself.
+ */
 export function insightButton(getRequest: () => InsightRequest | null, label = 'AI summary') {
   const panel = h('section', { class: 'panel insight-panel', hidden: true });
+  let shownKey = '';
+  let closedKey = '';
   const button = h(
     'button',
     {
       class: 'btn ai-btn',
+      title: 'Write a fresh AI summary of this page',
       onclick: () => {
         const req = getRequest();
         placeUnder(button, panel);
@@ -93,11 +135,36 @@ export function insightButton(getRequest: () => InsightRequest | null, label = '
           panel.replaceChildren(h('p', { class: 'muted small' }, 'Nothing to read yet: the AI summary needs this page’s prices or headlines, which haven’t loaded. Try again in a moment.'));
           return;
         }
-        runInsight(panel, req);
+        shownKey = insightKey(req);
+        closedKey = '';
+        runInsight(panel, req, true);
       },
     },
     h('span', { class: 'ai-spark' }, '✦'),
     ` ${label}`,
   );
+  // remember a close so the read doesn't come back for the same symbol
+  panel.addEventListener('click', (e) => {
+    if ((e.target as Element).closest('.insight-controls .icon-btn[aria-label="Close"]')) closedKey = shownKey;
+  });
+  let gone = 0;
+  const tick = async () => {
+    // a button the page threw away (re-drawn) stops checking after a minute
+    if (!button.isConnected) {
+      if (++gone > 30) clearInterval(timer);
+      return;
+    }
+    gone = 0;
+    if (button.offsetParent === null || document.hidden) return;
+    const req = getRequest();
+    if (!req) return;
+    const key = insightKey(req);
+    if (key === shownKey || key === closedKey) return;
+    if (!(await aiReady())) return;
+    shownKey = key;
+    placeUnder(button, panel);
+    void runInsight(panel, req);
+  };
+  const timer = setInterval(() => void tick(), 2000);
   return { button, panel };
 }

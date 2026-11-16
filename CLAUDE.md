@@ -54,6 +54,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   AI screen context (v23): the browser sends the open page's visible text plus any open pop-up (src/ai/screen.ts,
   capped 8,000 chars) as context.screen; ai.py adds it in a <screen> block only when it changed since the last message;
   PAGE_SUGGESTIONS gives per-page example questions.
+  Navigation (revamp): nav.ts SECTIONS today/markets/security/ideas/money/business/ai; the rail shows only them plus
+  railPulse (live mini board); the top row is the section's pages; the function bar is an Actions menu in the page
+  header (keys 1-9). AI summaries (insightButton) run by themselves when the page shows and has data (RECENT_MS reuse,
+  only with an AI key).
+  Visuals (revamp): src/ui/viz.ts gauge / ring / rangeTrack / flower / heatGrid (SVG, theme colours, pure geometry
+  tested) each with a caption; Research overview = src/research/tearSheet.ts (Fincept layout, rule-made plain words) and
+  research.about {cik} (engine/company_about.py: Wikidata P5531 -> Wikipedia summary, cached 30 days; helper 81).
   AI create_portfolio (v80): UI tool that saves a model portfolio (mine false, note "nothing was bought") on Portfolios
   and opens it (tp:portfolios-changed), Undo deletes it; portfolioFromArgs in src/ai/actions.ts.
   AI (engine/ai.py): official `anthropic` SDK, default model claude-opus-5-5 with server-side fallbacks, tools over
@@ -633,7 +640,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   DeferredRevenueCurrent), goodwill, goodwillImpairment and intangibleImpairment (INCOME; missing = not reported, never
   0); billed in advance = growth vs sales growth and months of sales; goodwill vs equity/assets with 5 years of
   write-downs (share of the starting goodwill); a goodwill line the newest balance sheet lacks = "not shown since FYxxxx".
-- Research → Building and stock pay (helper 81, CAPEX_HELPER_VERSION/capexReady; src/research/buildPay.ts pure +
+- Research → Building and stock pay (helper 82, CAPEX_HELPER_VERSION/capexReady; src/research/buildPay.ts pure +
   buildPayView.ts): statements add `depreciation` (tag Depreciation; Microsoft has no D&A tag); spending vs depreciation
   = capex / depreciation by year (paired bars, 5 consecutive years; D&A only when the newest year has no depreciation
   line, labelled; pace bands ahead >= 1.5, growing > 1.1, replacing 0.9-1.1, shrinking); free cash flow after stock pay

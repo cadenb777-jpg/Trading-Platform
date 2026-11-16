@@ -191,8 +191,8 @@ export function pageFrame(title: string, subtitle: string, controls: Node[]) {
     /** Adds the numbered function bar under the title (src/ui/functionBar.ts); calling it again replaces it. */
     functions(actions: FnAction[], related: string[] = []) {
       const bar = functionBar(actions, { label: `${title} functions`, related });
-      el.querySelector(':scope > .fn-bar')?.remove();
-      el.querySelector(':scope > .ap-header')!.after(bar);
+      el.querySelector('.ap-header .fn-bar')?.remove();
+      el.querySelector(':scope > .ap-header .ap-controls')!.append(bar);
       return bar;
     },
   };

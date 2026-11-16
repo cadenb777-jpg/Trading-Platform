@@ -8,6 +8,7 @@ import { buildPayPanel } from '../research/buildPayView';
 import { fy, type Maturities } from '../research/debtDilution';
 import type { Obligations } from '../research/obligations';
 import { yearBars } from '../research/yearBars';
+import { tearSheet } from '../research/tearSheet';
 import { segmentsPanel } from '../research/segmentsView';
 import { asReportedPanel } from '../research/asReportedView';
 import { segmentHistoryPanel } from '../edge/segmentHistory';
@@ -19,7 +20,7 @@ import { subscribeQuote } from '../data/quotes';
 import { engineRequest } from '../data/schwab';
 import { dcf, impliedGrowth, sensitivity, wacc, type DcfInputs } from '../research/dcf';
 import { compsView, lboView, mergerView } from '../research/valuationTools';
-import { compact, dataTable, money, numberField, pageFrame, pct, rangeBar, statCards } from '../ui/charts';
+import { compact, dataTable, money, numberField, pageFrame, pct, statCards } from '../ui/charts';
 import { formatPrice, h } from '../ui/dom';
 import { termLabel } from '../ui/glossary';
 import { tickerAttr } from '../ui/tickerCard';
@@ -92,7 +93,6 @@ const RATIO_ROWS: [string, string][] = [
 ];
 const RATIO_PLAIN = new Set(['currentRatio', 'debtToEquity']);
 
-const fmtX = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? '—' : `${v.toFixed(1)}×`);
 const periodLabel = (end: string, quarterly: boolean) => {
   const d = new Date(`${end}T00:00:00Z`);
   return quarterly ? `${d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })} ${d.getUTCFullYear()}` : fy(end);
@@ -171,6 +171,8 @@ export function createResearchPage() {
     ai.panel.hidden = true;
     try {
       data = await engineRequest<CompanyData>('research.company', { symbol }, 90000);
+      // the Security destination's top row shows the ticker its views share
+      window.dispatchEvent(new CustomEvent('tp:security', { detail: data.symbol }));
       dcfValue = null;
       livePrice.textContent = formatPrice(data.valuation.price);
       setChange(data.quote.change ?? null);
@@ -214,24 +216,10 @@ export function createResearchPage() {
 
   function overview(d: CompanyData): Node[] {
     const v = d.valuation;
-    const range = d.quote.low52 && d.quote.high52 ? rangeBar(d.quote.low52, d.quote.high52, v.price, formatPrice) : undefined;
     const a = d.annual;
-    const lastRatio = (k: string) => [...(d.ratios[k] ?? [])].reverse().find((x) => x != null) ?? null;
     const nodes: Node[] = [
-      statCards([
-        { label: 'Market cap', value: money(v.marketCap) },
-        { label: 'Enterprise value', value: money(v.enterpriseValue), hint: 'Market cap plus debt minus cash' },
-        { label: 'P/E (trailing)', value: fmtX(v.pe ?? d.quote.peRatio), hint: 'Price divided by the last 12 months of earnings per share' },
-        { label: 'Price / sales', value: fmtX(v.ps) },
-        { label: 'EV / EBITDA', value: fmtX(v.evEbitda), hint: 'A debt-neutral valuation multiple' },
-        { label: 'Beta (5y vs S&P 500)', value: v.beta != null ? v.beta.toFixed(2) : '—', hint: '1 = moves with the market; 2 = twice as much' },
-        { label: '52-week range', value: '—', node: range },
-        { label: 'Dividend yield', value: d.quote.divYield ? `${d.quote.divYield.toFixed(2)}%` : '—' },
-        { label: 'Revenue (TTM)', value: money(d.ttm.revenue) },
-        { label: 'Net income (TTM)', value: money(d.ttm.netIncome), tone: (d.ttm.netIncome ?? 0) >= 0 ? '' : 'down' },
-        { label: 'Net margin', value: pct(lastRatio('netMargin'), 1), tone: (() => { const m = (d.ratios.netMargin ?? []).filter((x): x is number => x != null); return toneVsPrev('netMargin', m[m.length - 1], m[m.length - 2]); })(), hint: 'Green: higher than the year before; red: lower' },
-        { label: 'Free cash flow yield', value: pct(v.fcfYield), tone: v.fcfYield == null ? '' : v.fcfYield < 0 ? 'down' : '' },
-      ]),
+      // the tear sheet: what it does, then valuation | pictures | growth (src/research/tearSheet.ts)
+      tearSheet(d),
       // what the company actually sells and where (its 10-K's product, segment and region breakdowns)
       segmentsPanel(d.symbol),
       segmentHistoryPanel(d.symbol),

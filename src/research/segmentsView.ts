@@ -6,6 +6,7 @@
  */
 import { engineRequest, helper } from '../data/schwab';
 import { h } from '../ui/dom';
+import { flower } from '../ui/viz';
 import { money, pct } from '../ui/charts';
 
 export const SEGMENTS_HELPER_VERSION = 57;
@@ -60,13 +61,38 @@ export function coverageNote(s: SegmentSection): string {
   return `These parts add up to ${Math.round(s.coverage * 100)}% of total sales (the company reports only some parts, or parts that overlap).`;
 }
 
-function section(s: SegmentSection): HTMLElement {
+/** One line under the flower: the biggest part and the fastest grower (pure, tested). */
+export function segmentWords(s: SegmentSection): string {
+  if (!s.items.length) return '';
+  const big = [...s.items].sort((a, b) => b.value - a.value)[0];
+  const grown = s.items.filter((i) => i.growth != null).sort((a, b) => b.growth! - a.growth!);
+  const lead = `Biggest: ${big.name}${big.share != null ? `, ${share(big.share)} of sales` : ''}.`;
+  if (!grown.length) return lead;
+  const fast = grown[0];
+  const slow = grown[grown.length - 1];
+  const sign = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(0)}%`;
+  return `${lead} Fastest growing: ${fast.name} ${sign(fast.growth!)}${grown.length > 1 && slow.growth! < 0 ? `; shrinking: ${slow.name} ${sign(slow.growth!)}` : ''}.`;
+}
+
+const short = (name: string) => (name.length > 14 ? `${name.slice(0, 13)}…` : name);
+
+function section(s: SegmentSection, symbol: string): HTMLElement {
   const anyMargin = s.items.some((i) => i.margin != null);
+  // the picture: one flow per part, thicker for bigger sales, green when it grew and red when it shrank
+  const picture = flower({
+    centre: symbol,
+    title: s.heading,
+    format: money,
+    items: s.items.slice(0, 10).map((i) => ({ label: short(i.name), value: i.value, title: i.name, tone: i.growth == null ? 'accent' : i.growth >= 0 ? 'up' : 'down' })),
+    caption: segmentWords(s),
+    size: 260,
+    hideTitle: true, // the block's own heading names it
+  });
   return h(
     'div',
     { class: 'seg-block' },
     h('h4', { class: 'seg-head' }, s.heading),
-    h(
+    h('div', { class: 'seg-split' }, picture, h(
       'div',
       { class: 'seg-rows', role: 'table', 'aria-label': s.heading },
       ...segmentRows(s).map((r) =>
@@ -81,7 +107,7 @@ function section(s: SegmentSection): HTMLElement {
           anyMargin ? h('span', { class: 'seg-num num', role: 'cell', title: 'Segment operating margin' }, share(r.margin)) : '',
         ),
       ),
-    ),
+    )),
     h('p', { class: 'muted small seg-note' }, coverageNote(s), anyMargin ? ' Last column: segment operating margin.' : ''),
   );
 }
@@ -106,7 +132,7 @@ export function segmentsPanel(symbol: string): HTMLElement {
         return;
       }
       body.replaceChildren(
-        ...d.sections.map(section),
+        ...d.sections.map((sec) => section(sec, d.symbol)),
         h(
           'p',
           { class: 'muted small seg-source' },
