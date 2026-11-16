@@ -14,6 +14,7 @@ import { infoTip, termLabel } from '../ui/glossary';
 import { tickerAttr } from '../ui/tickerCard';
 import { columnChart, shareBar, shareList } from './charts';
 import { contactsSection } from './contacts';
+import { peopleBody } from './people';
 import { revenueSection } from './revenue';
 import { CHANGE_TONE, CHANGE_WORDS, CLIENT_LABELS, confidenceLabel, confidenceTone, countText, dateText, moneyText, quarterText, TYPE_SHORT, TYPE_TERM, weightText } from './logic';
 
@@ -150,22 +151,12 @@ export function renderProfile(p: ProspectProfile, ctx: ProfileContext): HTMLElem
 
   // ----- people
   const people = section(
-    h('span', {}, 'People in filings ', infoTip('prPeople')),
-    p.people.length
-      ? dataTable(
-          ['Name', 'Title', 'Source', 'Filed', 'Ownership'],
-          p.people.map((x) => [
-            h('span', {}, x.name, x.keyTitle ? h('span', { class: 'badge accent pr-key-badge', title: 'CIO or portfolio manager title' }, 'Investment lead') : null),
-            x.title || '—',
-            x.source,
-            dateText(x.filed, true),
-            x.ownership || '—',
-          ]),
-          (i) => (p.people[i].keyTitle ? 'pr-key' : ''),
-          { id: 'prospect:people' },
-        )
-      : null,
-    p.people.length ? srcLine(`${ctx.peopleNote ?? 'People come from Form ADV Schedule A/B, 13F signatures and Form D related persons.'} Names and titles only: filings carry no emails or direct lines.`) : missing(`No people found. ${p.crd ? 'Download "Form ADV full data" in the Data panel for owners and officers.' : 'This firm files no Form ADV; only a 13F signer or Form D related persons would show here.'}`),
+    h('span', {}, 'People ', infoTip('prPeople')),
+    peopleBody(
+      p,
+      () => missing(`No people found yet. ${p.crd ? 'Download "Form ADV full data" in the Data panel for owners and officers; registered advisers load from IAPD.' : 'This firm files no Form ADV; only a 13F signer or Form D related persons would show here.'}`),
+      ctx.peopleNote ?? 'Owners and officers come from Form ADV Schedule A/B, plus 13F signatures and Form D related persons.',
+    ),
   );
 
   // ----- newer Form ADV from IAPD (the SEC bulk data ended Dec 2024)

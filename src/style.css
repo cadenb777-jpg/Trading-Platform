@@ -11348,3 +11348,8 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .pr-terms .input { width: 100%; }
 .pr-reported { margin: 0 0 var(--sp-2); }
 .pr-rev .warn-text { color: var(--warn-text); margin: 4px 0; }
+
+/* Prospects → People: level chips and search */
+.pr-team-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.pr-team-bar .chip-row { flex-wrap: wrap; }
+.pr-team-search { max-width: 220px; min-width: 0; flex: 1 1 160px; }

@@ -662,6 +662,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   all returned in Coinbase candle format) and goes through the helper for 10 minutes; watchlist/Investments crypto
   prices quiet for 20 s are polled via crypto.stats (Alpaca snapshots, then Coinbase stats).
 - Prospects revenue (helper 76): engine/prospect_revenue.py estimates yearly revenue from Form ADV (Item 5.D assets by
+  Prospects people (v77): prospect.individuals {firmId} reads every registered individual at the firm from the IAPD
+  individual search (beta, ShapeError on unknown shape, paced, cached a week, saved as people source 'IAPD registered
+  individuals'); src/prospect/people.ts sorts titles into levels (seniority) with chips and search; IAPD rows already
+  named in a filing are dropped (mergePeople).
   client type x typical fee rates; individuals/HNW by average account on a tiered schedule; performance fees = 20% of
   the year's gain on pooled assets when 5.E says performance-based; headcount cross-check), stored as firms.rev_low/
   rev_likely/rev_high (sort 'revenue', filter revenueMin, CSV). prospect.performance (engine/prospect_perf.py): 13F

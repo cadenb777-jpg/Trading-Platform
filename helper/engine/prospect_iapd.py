@@ -599,3 +599,115 @@ async def ingest_state(ctx, emit, db_path):
 
 
 pr.INGESTERS['state'] = ingest_state
+
+
+# ---------- Registered individuals at a firm (mid-level people; beta) ----------
+# The adviser representatives registered with a firm: the advisers, portfolio managers and associates below the
+# owners and officers Form ADV Schedule A lists. From the IAPD individual search the site itself uses
+# (api.adviserinfo.sec.gov/search/individual, filtered by the firm's CRD). Undocumented: the reply's shape is checked
+# and an unknown shape fails clearly with nothing saved. Names, registrations, branch and years in the industry only
+# (IAPD carries no emails or phone numbers). Read when the owner opens a firm, at most once a week per firm.
+
+IAPD_INDIVIDUALS = 'https://api.adviserinfo.sec.gov/search/individual'
+INDIVIDUALS_SOURCE = 'IAPD registered individuals'
+IAPD_PERSON = 'https://adviserinfo.sec.gov/individual/summary/{crd}'
+MAX_INDIVIDUALS = 500
+
+
+def individual_params(crd, start):
+    return {'query': '*', 'firm': str(crd), 'includePrevious': 'false', 'hl': 'false', 'nrows': PAGE_ROWS, 'start': start,
+            'r': 25, 'sort': 'score desc', 'wt': 'json'}
+
+
+def parse_individuals(data, crd, today=None):
+    """(total or None, people) from one page of the IAPD individual search: name, crd, adviser/broker registration,
+    branch, years in the industry, for people currently employed by firm `crd`. Raises ShapeError on an unknown shape."""
+    hits = (data or {}).get('hits') if isinstance(data, dict) else None
+    if not isinstance(hits, dict) or not isinstance(hits.get('hits'), list):
+        raise ShapeError('The IAPD individual search answered in an unexpected shape (no hits list). Nothing was saved (beta source).')
+    total = hits.get('total')
+    total = total.get('value') if isinstance(total, dict) else total
+    today = today or dt.date.today()
+    out = []
+    for hit in hits['hits']:
+        src = hit.get('_source', hit) if isinstance(hit, dict) else {}
+        name = ' '.join(str(_field(src, k)) for k in ('ind_firstname', 'ind_middlename', 'ind_lastname', 'ind_namesuffix') if _field(src, k)).strip()
+        if not name:
+            name = str(_field(src, 'name', 'ind_name')).strip()
+        if not name:
+            continue
+        jobs = _field(src, 'ind_current_employments', 'currentEmployments') or []
+        if isinstance(jobs, str):
+            try:
+                jobs = json.loads(jobs)
+            except ValueError:
+                jobs = []
+        job = next((j for j in jobs if isinstance(j, dict) and str(j.get('firm_id') or j.get('firmId') or '') == str(crd)), jobs[0] if jobs and isinstance(jobs[0], dict) else {})
+        if jobs and str((job or {}).get('firm_id') or (job or {}).get('firmId') or crd) != str(crd):
+            continue  # not currently at this firm
+        ia = str(_field(src, 'ind_ia_scope', 'iaScope')).upper() == 'ACTIVE'
+        bc = str(_field(src, 'ind_bc_scope', 'bcScope')).upper() == 'ACTIVE'
+        start = str(_field(src, 'ind_industry_cal_date_iapd', 'ind_industry_cal_date', 'industryStartDate'))[:10]
+        years = None
+        try:
+            years = max(0, (today - dt.date.fromisoformat(start)).days // 365) if start else None
+        except ValueError:
+            years = None
+        branch = ', '.join(x for x in ((job or {}).get('branch_city') or (job or {}).get('city') or '', (job or {}).get('branch_state') or (job or {}).get('state') or '') if x)
+        out.append({'name': name, 'crd': pr.integer(_field(src, 'ind_source_id', 'individualId', 'crd')), 'adviser': ia, 'broker': bc,
+                    'branch': branch, 'years': years})
+    return pr.integer(total), out
+
+
+def individual_title(p):
+    role = 'Investment adviser representative' if p['adviser'] else 'Registered representative'
+    extra = [x for x in ('also a registered broker' if p['adviser'] and p['broker'] else '', p['branch'], f"{p['years']} yrs in the industry" if p['years'] is not None else '') if x]
+    return role + (f" ({'; '.join(extra)})" if extra else '')
+
+
+def save_individuals(con, crd, people, when):
+    firm_id = f'crd-{crd}'
+    with con:
+        con.execute('DELETE FROM people WHERE firm_id = ? AND source = ?', (firm_id, INDIVIDUALS_SOURCE))
+        con.executemany('INSERT INTO people VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        [(firm_id, firm_id, p['name'], individual_title(p), INDIVIDUALS_SOURCE, IAPD_PERSON.format(crd=p['crd']) if p['crd'] else '', 0, when, '')
+                         for p in people])
+
+
+async def read_individuals(ctx, db_path, crd):
+    """Every registered individual currently at firm `crd` (paced, cached a week), saved to the people table."""
+    async def load():
+        people, start, total = [], 0, None
+        while start < MAX_INDIVIDUALS:
+            await _pace()
+            resp = await _http(ctx).get(IAPD_INDIVIDUALS, params=individual_params(crd, start), timeout=60)
+            if resp.status_code >= 400:
+                raise EngineError(f'The IAPD individual search answered HTTP {resp.status_code} (its address or parameters may have changed).')
+            try:
+                data = resp.json()
+            except ValueError as err:
+                raise ShapeError('The IAPD individual search did not answer with JSON (beta source).') from err
+            total, page = parse_individuals(data, crd)
+            people += page
+            start += PAGE_ROWS
+            if not page or (total is not None and start >= total):
+                break
+        return {'people': people, 'total': total}
+    data = await ctx.cached(('iapd_individuals', crd), 7 * 86400, load, persist=True)
+    con = pr.connect(db_path)
+    try:
+        save_individuals(con, crd, data['people'], dt.date.today().isoformat())
+    finally:
+        con.close()
+    return data
+
+
+@handler('prospect.individuals')
+async def h_individuals(ctx, msg):
+    """{firmId} -> {people: [{name, title, source, sourceRef}], total} read from IAPD (beta) and saved."""
+    m = re.match(r'crd-(\d+)$', str(msg.get('firmId') or ''))
+    if not m:
+        raise EngineError('Only advisers with a CRD number have registered individuals on IAPD.')
+    data = await read_individuals(ctx, pr.DB_PATH, int(m.group(1)))
+    return {'total': data['total'], 'people': [{'name': p['name'], 'title': individual_title(p), 'source': INDIVIDUALS_SOURCE,
+                                                'sourceRef': IAPD_PERSON.format(crd=p['crd']) if p['crd'] else ''} for p in data['people']]}
