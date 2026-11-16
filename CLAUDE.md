@@ -199,8 +199,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (stop/target/strategy by order id) + orders.log tagging. Maths in src/journal/stats.ts (tested; < 30 trades = "not
   enough trades yet"). AI coach journal.coach shows the cost first; ai.py tool get_my_journal reads only. The journal
   never sends orders (test). Requests need JOURNAL_HELPER_VERSION 43.
-  Quant pack (gated by QUANT_HELPER_VERSION 44 in schwab.ts; ideas from Fincept Terminal, which is AGPL: never copy
-  its code): quant.comps (engine/comps.py: SIC peers via EDGAR browse, ranked by XBRL-frames revenue; display maths
+  Quant pack (gated by QUANT_HELPER_VERSION 44 in schwab.ts; ideas from Fincept Terminal; since 2026-11-16 the
+  owner allows using its AGPL code, see Fincept below): quant.comps (engine/comps.py: SIC peers via EDGAR browse, ranked by XBRL-frames revenue; display maths
   src/research/comps.ts), LBO/merger maths in src/research/lbo.ts / merger.ts (views valuationTools.ts, Research >
   Valuation), quant.tearsheet (engine/tearsheet.py; src/portfolio/tearSheet.ts on Account, Portfolios and the report
   section 'tearsheet'), quant.options (engine/options_math.py: BSM, IV Newton+bisection from mids >= 5c, smile,
@@ -682,6 +682,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 - Scheduled improvement sessions follow docs/improvement/PLAYBOOK.md: propose only (branch + pull request with a
   plain-language report), never merge, never trade, never weaken security; the owner approves every change. Lessons
   (approved / turned down / rejected by experiment) go in docs/improvement/LESSONS.md.
+
+## Fincept Terminal (remember this project)
+
+github.com/Fincept-Corporation/FinceptTerminal (AGPL-3.0, C++/Qt + Python scripts). Owner decision 2026-11-16: use its
+code, interface and layout for a full relook, Prospects first. Conditions (docs/research/fincept-plan.md): once any of
+its code is copied the platform is AGPL-3.0 (LICENSE, keep its notices, list it in THIRD_PARTY_NOTICES.md); the repo
+stays private and the platform runs in private mode (no public Pages site or .exe) unless the source is published.
 
 ## Planned
 

@@ -7,7 +7,32 @@ and analytics wrappers (corporate finance: DCF, LBO, merger models, startup valu
 portfolio optimisation (PyPortfolioOpt, skfolio); QuantStats tear sheets and Monte Carlo; statsmodels; backtesting
 (vectorbt, backtesting.py, zipline, bt); ~400 strategy scripts; AI agents).
 
-## Decision
+## Decision update (owner, 2026-11-16): use Fincept's code and interface
+
+The owner reversed the earlier "ideas only" choice: we may now use Fincept Terminal's code (C++/Qt and its ~1,150
+Python scripts), its layout and its way of organising screens, for a full relook of the platform. Remember this
+project: github.com/Fincept-Corporation/FinceptTerminal (AGPL-3.0, studied again at its 2026-11-13 commit).
+
+What that means (AGPL-3.0, plain words; not legal advice):
+- **Private use is fine.** Copying its code into this platform and using it yourself needs nothing published.
+- **Our whole platform becomes AGPL-3.0** once its code is in it: LICENSE changes to AGPL-3.0, Fincept's copyright
+  notices stay on every copied file, and THIRD_PARTY_NOTICES lists what came from it.
+- **Anyone else who gets it, or uses it over the internet, must be offered the full source code** (ours included).
+  So: keep the GitHub repository private, run it in private mode (the site served from the owner's computer), and
+  turn off the public website (GitHub Pages) and the public .exe download, or publish the source if that changes.
+- Client reports (PDFs, numbers) are output, not the program: sending them to clients is not covered.
+
+Relook order (small, reviewed steps; Prospects first, the owner's priority):
+1. Prospects/CRM: Fincept's relationship map, notes, report builder and screener patterns for advisers and
+   companies; its government data connectors (scripts/*_data.py, GOVERNMENT_DATA_SOURCES.md) for company sources.
+2. Layout: its launchpad, dashboard and screen organisation applied to our pages (our colours: amber labels, white
+   figures, green/red only for good/bad).
+3. Analytics and data connectors page by page, replacing ours only where its version is better and tested.
+Also studied for the CRM side: Twenty (github.com/twentyhq/twenty, AGPL-3.0, the CRM interface model) and Comp AI
+CRM (github.com/trycompai/crm, MIT, an evidence-citing enrichment agent).
+
+## Earlier decision (2026-10, superseded above)
+
 
 Treated as a small decision game (our platform vs. Fincept, choices: merge code / run side by side / port ideas):
 
