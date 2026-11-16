@@ -170,6 +170,8 @@ export function createResearchPage() {
     ai.panel.hidden = true;
     try {
       data = await engineRequest<CompanyData>('research.company', { symbol }, 90000);
+      // the Security destination's top row shows the ticker its views share
+      window.dispatchEvent(new CustomEvent('tp:security', { detail: data.symbol }));
       dcfValue = null;
       livePrice.textContent = formatPrice(data.valuation.price);
       setChange(data.quote.change ?? null);
