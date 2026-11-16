@@ -20,6 +20,7 @@ import { formatPrice, h, timeAgo } from '../ui/dom';
 import { icon, type IconName } from '../ui/icons';
 import { functionBar } from '../ui/functionBar';
 import { panelHeader } from '../ui/panel';
+import { marketMood } from '../home/mood';
 import { LAYOUT_KEY, WIDGETS, addWidget, defaultLayout, hiddenWidgets, moveWidget, nextSpan, parseLayout, removeWidget, updateWidget, type Layout, type WidgetId } from '../home/widgets';
 import type { ReadySetup } from '../home/brief';
 import { greeting, marketStatus } from '../ui/marketClock';
@@ -510,6 +511,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     cls?: string;
   }
   const parts: Record<WidgetId, WidgetParts> = {
+    mood: { icon: 'pulse', body: [marketMood()], open: { label: 'Open Markets', go: () => (location.hash = '#invest') } },
     indexes: {
       icon: 'chart',
       body: [

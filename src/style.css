@@ -12138,3 +12138,24 @@ body[data-section='business'] { --section-accent: var(--hue-business); }
 .sec-ticker-px.down {
   color: var(--down-text);
 }
+
+/* Today → Market mood: gauge beside the sector heat map */
+.mood {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .mood {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.viz-heat {
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+}
+.viz-heat-tile b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

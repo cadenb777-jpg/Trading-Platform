@@ -3,7 +3,7 @@
  * device in localStorage. Pure and tested (widgets.test.ts); homePage.ts draws it.
  */
 
-export type WidgetId = 'indexes' | 'edge' | 'accounts' | 'brief' | 'setups' | 'news' | 'events' | 'watchlist';
+export type WidgetId = 'mood' | 'indexes' | 'edge' | 'accounts' | 'brief' | 'setups' | 'news' | 'events' | 'watchlist';
 
 export interface WidgetDef {
   id: WidgetId;
@@ -19,6 +19,7 @@ export const SPANS = [4, 6, 8, 12] as const;
 export type Span = (typeof SPANS)[number];
 
 export const WIDGETS: readonly WidgetDef[] = [
+  { id: 'mood', title: 'Market mood', span: 12, about: 'The fear gauge (VIX) and a heat map of the 11 S&P 500 sectors today' },
   { id: 'indexes', title: 'Market indexes', span: 12, about: 'S&P 500, Nasdaq, Dow and more, with 1D / 5D / 1M charts and the AI market read' },
   { id: 'edge', title: 'Edge today', span: 12, about: 'Where the market is set to open, futures against fair value and lending through box spreads against T-bills' },
   { id: 'accounts', title: 'My accounts', span: 4, about: 'Total value, today’s change and the biggest movers in your holdings' },

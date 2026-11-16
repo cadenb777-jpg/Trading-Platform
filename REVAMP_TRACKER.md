@@ -68,7 +68,8 @@ everything two clicks away, and a ticker typed anywhere opens one Security page.
 - [x] 1b-2b. Section accents: one quiet colour per destination (sky, teal, violet, gold, cobalt, rose) on its icon,
       the active menu item, panel edges and hover glow; amber stays the brand for headings.
 - [ ] 1b-3. Markets hub: Overview (boards + heat map) / Macro & rates / Calendar / Futures / Crypto.
-- [ ] 1b-4. Today page re-laid as the attention page (keeps greeting and ticker tape).
+- [~] 1b-4. Today: Market mood widget added under the greeting (VIX fear gauge + 11-sector heat map, live, plain-word
+      lines; tiles open the sector). Still to do: compact index strip instead of three tall cards, movers.
 
 ## Phase 2: foundation (shared design system)
 
@@ -121,4 +122,4 @@ everything two clicks away, and a ticker typed anywhere opens one Security page.
       < 11 px, both themes, phone width; accessibility pass (contrast, focus, labels).
 - [ ] 21. Docs: CLAUDE.md, README, ROADMAP status.
 
-Next: 1b-4 (Today: market mood gauge, heat map, compact index strip), then finish 6 (Research chart + segments flower), then 7 (Macro).
+Next: finish 1b-4 (compact index strip, movers), then 6 (Research chart + segments flower), then 7 (Macro).
