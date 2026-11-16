@@ -1,5 +1,8 @@
 # Revamp tracker (launch-quality overhaul)
 
+Look: Fincept Terminal (black, monospace, uppercase amber headings, hairline panels, underlined tabs); Bloomberg
+only as the feature checklist (owner, 2026-11-16).
+
 Goal: launch-ready, on comparable terms with Bloomberg and Fincept Terminal, keeping the mantra (simplicity scales:
 remove before adding) and the finance-ui skill (.claude/skills/finance-ui). Keep the Home ticker tape and the
 "Good morning, <name>" greeting (polish allowed). Colours stay: amber labels, white figures, green/red only for
@@ -33,10 +36,11 @@ Feature gaps vs Bloomberg / Fincept (what they have that this platform lacks or 
 
 ## Phase 2: foundation (shared design system)
 
-- [ ] 1. Terminal density layer: compact type scale (12-13 px body, 11 px minimum), tabular mono numerals for
-      figures, panel header style (small uppercase amber, thin rule), `kv` label-value list component, compact
-      table style, tighter grid gaps; a Comfortable / Compact density switch (default Compact). Fix all text < 11 px.
-- [ ] 2. Page header: smaller title row (title + one-line purpose + actions on one line), freeing ~120 px per page.
+- [x] 1. Terminal look layer (end of src/style.css): near-black tokens, JetBrains Mono everywhere, uppercase amber
+      panel headings with a rule, underlined tabs, compact stat tiles with hairlines, dense tables, square controls,
+      `.kv` label-value list; nothing under 11 px (was up to 99 elements). No density switch (mantra: fewer settings).
+- [ ] 2. Page header: title row now compact (done in 1); still to do: put purpose + actions on the title line on wide
+      screens and move the function bar into it.
 - [ ] 3. Empty and loading states: skeletons sized like the final content (fixes the layout jumps), and every "—"
       explains why (needs the helper, no data for this company, market closed...).
 - [ ] 4. Chart component review: one shared mini-chart (sparkline/area/candles) with fixed height, no layout shift.
@@ -74,4 +78,4 @@ Feature gaps vs Bloomberg / Fincept (what they have that this platform lacks or 
       < 11 px, both themes, phone width; accessibility pass (contrast, focus, labels).
 - [ ] 21. Docs: CLAUDE.md, README, ROADMAP status.
 
-Next: item 1 (terminal density layer).
+Next: item 2 (page header and function bar on one line), then 3 (skeletons, fixes the layout jumps).
