@@ -1,6 +1,6 @@
 @echo off
 rem Trading Terminal in PRIVATE MODE: the whole platform from this copy of the code, on this computer only.
-rem Use it while the GitHub repository is private. It gets the latest changes (git pull, your SSH key), builds the
+rem Use it while the GitHub repository is private. It gets the latest changes (git pull, your saved GitHub sign-in), builds the
 rem website here (Node.js) and opens the Terminal app on it. See PRIVATE-MODE.md.
 cd /d "%~dp0desktop"
 title Trading Terminal (private)
