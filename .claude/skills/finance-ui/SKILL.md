@@ -19,6 +19,8 @@ explaining where the edge is. The design is free to change; these rules are not.
   only for good/bad, sky (`--accent`) for interaction. Both themes must work.
 - Dense but calm: data first, few borders, numbers right-aligned in tables, units always shown, every figure says
   its source and date (hover or a small line).
+- Each destination has its own accent (`--section-accent`, set from body[data-section]): use it for edges, glows and
+  highlights in that section, never for text meaning good/bad. No rainbow: one accent per section plus amber.
 - No decoration that carries no data (glows, emoji, gradient text, pulsing).
 
 ## Each page

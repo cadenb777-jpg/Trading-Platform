@@ -7,7 +7,7 @@ import { confirmationFor, needsConfirmation, runAction as runUiAction, setUndoPr
 import { ACTION_TAB_KEY, addressedTo, groupByOwner } from './ai/tabs';
 import { createActionEnv } from './ai/actionsEnv';
 import { setAssistantHub } from './ai/hub';
-import { guessMarket, type MarketRef } from './data/quotes';
+import { guessMarket, subscribeQuote, type MarketRef } from './data/quotes';
 import { LATEST_HELPER_VERSION, helper } from './data/schwab';
 import { allIndicators } from './indicators/library';
 import { persist, state } from './state';
@@ -17,6 +17,7 @@ import { h, toast, openPopover } from './ui/dom';
 import { startAutoReload } from './ui/autoReload';
 import { schwabLoginNotice } from './ui/schwabLogin';
 import { icon } from './ui/icons';
+import { links } from './ui/linkGroups';
 import { railPulse } from './ui/railPulse';
 import { PAGES as NAV_PAGES, SECTIONS, pageOf, sectionPages, sectionTarget, type NavPage, type PageRoute, type SectionId } from './ui/nav';
 import { openLaunchpad } from './ui/launchpad';
@@ -532,10 +533,32 @@ if (isAiWindow) {
     });
     subTabs.querySelector<HTMLElement>('.sub-tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
+  // Security: the one ticker its views share (the blue link group), with its live price; click to change it
+  const secSym = h('b', {}, '');
+  const secPx = h('span', { class: 'sec-ticker-px' }, '');
+  const secTicker = h('button', { type: 'button', class: 'sec-ticker', hidden: true, title: 'The security shown in Research, Chart and Flow: click to change it', onclick: () => openPalette() }, secSym, secPx);
+  let stopSecQuote: (() => void) | null = null;
+  const showSecTicker = (symbol: string | null) => {
+    secSym.textContent = symbol ?? 'Pick a ticker';
+    secPx.textContent = '';
+    stopSecQuote?.();
+    stopSecQuote = symbol
+      ? subscribeQuote({ provider: 'schwab', symbol }, (q) => {
+          if (q.last == null) return;
+          const chg = q.prevClose ? (q.last / q.prevClose - 1) * 100 : null;
+          secPx.textContent = `${q.last.toFixed(2)}${chg == null ? '' : ` ${chg >= 0 ? '+' : '−'}${Math.abs(chg).toFixed(2)}%`}`;
+          secPx.className = `sec-ticker-px ${chg == null ? '' : chg >= 0 ? 'up' : 'down'}`;
+        })
+      : null;
+  };
+  showSecTicker(links.symbolFor('research'));
+  links.subscribe('research', (sym) => showSecTicker(sym));
+  window.addEventListener('tp:security', (e) => showSecTicker((e as CustomEvent<string>).detail));
   const top = h(
     'div',
     { class: 'shell-top' },
     sectionName,
+    secTicker,
     subTabs,
     h(
       'button',
@@ -549,6 +572,9 @@ if (isAiWindow) {
   // Moving between pages: the rail's active section, its link (to the last page visited there) and the sub-tabs.
   shellRoute = (route: string, hash: string) => {
     const section = pageOf(route)?.section ?? 'markets';
+    // each destination has its own accent (glows, highlights, panel edges): style.css body[data-section]
+    document.body.dataset.section = section;
+    secTicker.hidden = section !== 'security';
     if (pageOf(route) && !pageOf(route)!.hidden) {
       lastBySection = { ...lastBySection, [section]: hash.replace(/^#/, '') };
       writeJson(LAST_KEY, lastBySection);

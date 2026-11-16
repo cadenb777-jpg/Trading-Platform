@@ -12054,3 +12054,87 @@ button.viz-heat-tile:hover {
 .fed-bar .hold {
   font-size: 11px;
 }
+
+/* Section accents (revamp): one quiet colour per destination for glows, highlights and panel edges, so each part of
+   the platform has its own feel without a rainbow. Amber stays the brand for headings and labels. */
+:root {
+  --hue-today: #7ac3ee;
+  --hue-markets: #34c6c0;
+  --hue-security: #a78bfa;
+  --hue-ideas: #f2c14e;
+  --hue-money: #6f8cff;
+  --hue-business: #f07aa8;
+  --section-accent: var(--hue-today);
+}
+:root[data-theme='light'] {
+  --hue-today: #1d5fa8;
+  --hue-markets: #0f7f7a;
+  --hue-security: #6a4bc4;
+  --hue-ideas: #9a6a00;
+  --hue-money: #3550c9;
+  --hue-business: #b23a6c;
+}
+body[data-section='today'] { --section-accent: var(--hue-today); }
+body[data-section='markets'] { --section-accent: var(--hue-markets); }
+body[data-section='security'] { --section-accent: var(--hue-security); }
+body[data-section='ideas'] { --section-accent: var(--hue-ideas); }
+body[data-section='money'] { --section-accent: var(--hue-money); }
+body[data-section='business'] { --section-accent: var(--hue-business); }
+
+/* where the accent shows: the active destination, the top row's name, panel edges and hover glow */
+.rail .nav-btn.rail-sec[data-section='today'] svg { color: var(--hue-today); }
+.rail .nav-btn.rail-sec[data-section='markets'] svg { color: var(--hue-markets); }
+.rail .nav-btn.rail-sec[data-section='security'] svg { color: var(--hue-security); }
+.rail .nav-btn.rail-sec[data-section='ideas'] svg { color: var(--hue-ideas); }
+.rail .nav-btn.rail-sec[data-section='money'] svg { color: var(--hue-money); }
+.rail .nav-btn.rail-sec[data-section='business'] svg { color: var(--hue-business); }
+@media (min-width: 701px) {
+  .rail .nav-btn.rail-sec.active,
+  .rail .nav-btn.rail-sec[aria-current] {
+    background: color-mix(in srgb, var(--section-accent) 12%, transparent);
+    box-shadow: inset 2px 0 0 var(--section-accent), 0 0 20px color-mix(in srgb, var(--section-accent) 22%, transparent);
+  }
+}
+.shell-section {
+  color: var(--section-accent);
+}
+.panel-head {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--section-accent) 70%, transparent);
+}
+.panel:hover {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--section-accent) 40%, transparent), 0 0 24px color-mix(in srgb, var(--section-accent) 16%, transparent);
+}
+.ap-header {
+  border-bottom-color: color-mix(in srgb, var(--section-accent) 35%, var(--line));
+}
+
+/* Security: the shared ticker in the top row */
+.sec-ticker {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-right: var(--sp-2);
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--hue-security) 50%, var(--line));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--hue-security) 10%, transparent);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.sec-ticker[hidden] {
+  display: none;
+}
+.sec-ticker b {
+  letter-spacing: 0.08em;
+}
+.sec-ticker-px {
+  color: var(--muted);
+}
+.sec-ticker-px.up {
+  color: var(--up-text);
+}
+.sec-ticker-px.down {
+  color: var(--down-text);
+}
