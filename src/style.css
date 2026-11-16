@@ -38,18 +38,18 @@
   --grid-line: color-mix(in srgb, var(--accent) 6%, transparent);
   --glow-sky: color-mix(in srgb, var(--accent) 16%, transparent);
   --glow-copper: color-mix(in srgb, var(--accent-2) 16%, transparent);
-  --hero-bg: linear-gradient(180deg, #0c0f13 0%, var(--bg) 100%);
+  --hero-bg: linear-gradient(160deg, var(--bg-deep) 0%, #08142a 50%, #0e2740 100%);
   --glass: color-mix(in srgb, var(--surface) 94%, transparent);
   /* Page atmosphere (one fixed layer behind everything): blueprint grid and soft colour spots.
      Spots are #rrggbbaa so tokens.test.ts can check text contrast where they are strongest. */
-  --grid-minor: color-mix(in srgb, var(--accent) 1.5%, transparent);
-  --grid-major: color-mix(in srgb, var(--accent) 3%, transparent);
+  --grid-minor: color-mix(in srgb, var(--accent) 2.5%, transparent);
+  --grid-major: color-mix(in srgb, var(--accent) 5%, transparent);
   /* the flowing background (atmosphere.ts): dark blue, blue, sky, orange, amber; alphas keep page text readable */
-  --spot-sky: #5fb2ea10;
-  --spot-copper: #ff8a1f14;
-  --spot-deep: #0b3a8a20;
-  --spot-blue: #1f6fc418;
-  --spot-amber: #f0a05a10;
+  --spot-sky: #5fb2ea26;
+  --spot-copper: #ff8a1f22;
+  --spot-deep: #0b3a8a58;
+  --spot-blue: #1f6fc440;
+  --spot-amber: #f0a05a1a;
   /* Type. */
   --font-ui: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
   --font-display: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
@@ -11400,9 +11400,12 @@ body {
   font-size: var(--fs-sm);
 }
 
-/* Panels: flat, hairline border, heading bar. */
+/* Panels: flat, hairline border, heading bar; a faint blue glow on hover keeps the platform's own signature. */
+.panel:hover {
+  box-shadow: 0 0 0 1px var(--accent-border), 0 0 24px var(--glow-sky);
+}
 .panel {
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: none;
@@ -11569,4 +11572,13 @@ select.input {
   font-size: 11px;
   width: 15px;
   height: 15px;
+}
+
+/* The greeting banner keeps the platform's signature: a blue glow top right, copper bottom left. */
+.home > .home-hero {
+  background:
+    radial-gradient(55% 140% at 100% 0, color-mix(in srgb, var(--accent) 26%, transparent), transparent 70%),
+    radial-gradient(40% 110% at 0 100%, color-mix(in srgb, var(--accent-2) 20%, transparent), transparent 70%),
+    var(--hero-bg);
+  border: 1px solid var(--line);
 }

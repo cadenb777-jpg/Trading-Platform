@@ -11,6 +11,7 @@ explaining where the edge is. The design is free to change; these rules are not.
 ## Look
 - Fincept Terminal is the reference look (owner's choice): near-black, monospace, small uppercase amber headings with
   a rule, hairline panels, underlined uppercase tabs, label-value lists. Bloomberg is the feature checklist only.
+  Keep the platform's signature on top: orange/amber accents and the blue glow (greeting banner, background, panel hover).
   The shared layer is the "Terminal look" block at the end of src/style.css: reuse its classes (.panel/.panel-head,
   .stat-cards, .data-table, .kv) instead of new one-off styles.
 - Colours only through the CSS variables in `src/style.css` (`:root` and `:root[data-theme='light']`); never hex in

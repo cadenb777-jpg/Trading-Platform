@@ -1,7 +1,9 @@
 # Revamp tracker (launch-quality overhaul)
 
 Look: Fincept Terminal (black, monospace, uppercase amber headings, hairline panels, underlined tabs); Bloomberg
-only as the feature checklist (owner, 2026-11-16).
+only as the feature checklist (owner, 2026-11-16). Keep the platform's own signature with it: orange/amber accents and
+the blue glow (greeting banner, background, panel hover). Use Fincept's code (github.com/Fincept-Corporation/
+FinceptTerminal, AGPL, see docs/research/fincept-plan.md) wherever it does a page better; keep its notices.
 
 Goal: launch-ready, on comparable terms with Bloomberg and Fincept Terminal, keeping the mantra (simplicity scales:
 remove before adding) and the finance-ui skill (.claude/skills/finance-ui). Keep the Home ticker tape and the
