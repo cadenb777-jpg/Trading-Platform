@@ -47,11 +47,18 @@ Feature gaps vs Bloomberg / Fincept (what they have that this platform lacks or 
       explains why (needs the helper, no data for this company, market closed...).
 - [ ] 4. Chart component review: one shared mini-chart (sparkline/area/candles) with fixed height, no layout shift.
 
+- [x] 4b. Visual building blocks (src/ui/viz.ts): speed gauge, progress ring, range track, flower (flows from one
+      centre), heat grid; each with a plain-words caption. Owner: pictures first, text boxes of good information around
+      them, little descriptors everywhere (rule-made words cost nothing; AI summary one click away).
+
 ## Phase 3: pages (one PR each)
 
 - [ ] 5. Home: keep greeting + ticker tape (typography polish only); compact index strip with sparklines instead of
       three tall cards; market monitor heat map (sectors, watchlist); denser Edge today, accounts, setups, news.
-- [ ] 6. Research: Fincept-style tear sheet (left: trading, valuation, share stats; centre: chart with
+- [~] 6. Research: done so far: company description on open (Wikipedia via SEC CIK, helper 81), tear sheet with
+      valuation / share stats lists, 52-week range track, F-score gauge, margin rings, growth / returns / balance lists,
+      plain-words lines. Still to do: chart with periods in the centre, analyst targets, peers and segments as a flower.
+      Original plan: Fincept-style tear sheet (left: trading, valuation, share stats; centre: chart with
       1M/3M/6M/1Y/5Y; right: analyst targets, 52-week range, profitability, growth; bottom: overview, info) with
       tabs Overview / Financials / Valuation / Peers / Filings / News; AI read of the company on top.
 - [ ] 7. Macro: fix layout shift and the 273 ms block; BTMM-style rates & money-markets board as the hero;
@@ -80,4 +87,4 @@ Feature gaps vs Bloomberg / Fincept (what they have that this platform lacks or 
       < 11 px, both themes, phone width; accessibility pass (contrast, focus, labels).
 - [ ] 21. Docs: CLAUDE.md, README, ROADMAP status.
 
-Next: item 2 (page header and function bar on one line), then 3 (skeletons, fixes the layout jumps).
+Next: finish 6 (Research chart + segments flower), then 5 (Home: heat map, compact index strip), then 7 (Macro).
