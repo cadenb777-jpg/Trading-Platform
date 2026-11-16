@@ -27,7 +27,7 @@ export const PAGE_SUGGESTIONS: Record<string, string[]> = {
   invest: ['Summarize this board: what’s leading and what’s lagging?', 'What stands out in these numbers?', 'Explain this fund’s NAV and fees in plain words'],
   futures: ['Summarize the futures market today in 5 bullets', 'What do the biggest moves in σ tell me?', 'Explain contango and backwardation on this curve', 'Where are commercials at an extreme, and what does that mean?'],
   flow: ['What is options flow saying about this stock?', 'Are insiders buying or selling, and does it matter?', 'Summarize the positioning shown here'],
-  research: ['Is this company cheap or expensive, and why?', 'Summarize the financials on screen', 'What are the biggest risks in these numbers?'],
+  research: ['Is this company cheap or expensive, and why?', 'Summarize the financials on screen', 'What are the biggest risks in these numbers?', 'Is the company spending ahead of depreciation, and what does that mean for future profits?'],
   macro: ['Summarize the macro picture on this page in 5 bullets', 'What do these readings mean for stocks over the next 3 months?', 'Is recession risk rising or falling?', 'Explain the yield curve shown here in plain words'],
   trade: ['Explain the difference between a limit and a stop order', 'Is my position size reasonable for this stop?', 'What does buying power mean, and why did it change?', 'When would I use GTC instead of Day?'],
   account: ['Summarize my account in 5 bullets', 'Which holdings give me the most dividend income?', 'Am I too concentrated in any stock or sector?'],

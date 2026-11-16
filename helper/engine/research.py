@@ -62,6 +62,9 @@ CASH_FLOW = [
     ('operatingCashFlow', 'Operating cash flow', ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations']),
     ('capex', 'Capital expenditures', ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets']),
     ('dna', 'Depreciation & amortization', ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'DepreciationAmortizationAndAccretionNet']),
+    # helper 81: depreciation of property and equipment alone (what wears out what capital spending buys; Microsoft
+    # tags only this, no D&A line)
+    ('depreciation', 'Depreciation', ['Depreciation']),
     ('stockComp', 'Stock-based compensation', ['ShareBasedCompensation', 'AllocatedShareBasedCompensationExpense']),
     ('buybacks', 'Share buybacks', ['PaymentsForRepurchaseOfCommonStock', 'PaymentsForRepurchaseOfEquity']),
     ('dividends', 'Dividends paid', ['PaymentsOfDividends', 'PaymentsOfDividendsCommonStock']),
@@ -119,7 +122,10 @@ def _periods(entries, instant):
             continue
         length = _days(start, end)
         if 330 <= length <= 400:
-            annual[end] = (start, val)
+            # fiscal years only from annual reports: some 10-Qs also report the trailing twelve months (Amazon's cash
+            # flows), which read as a year ending at a quarter end
+            if e.get('form') in ANNUAL_FORMS:
+                annual[end] = (start, val)
         elif 75 <= length <= 105:
             quarterly[end] = (start, val)
     if not instant:
@@ -410,9 +416,9 @@ async def company_core(ctx, cik, with_maturities=False):
 
 LADDER_KEYS = ('maturities', 'obligations')
 #: statement lines added since helper 71 (71: Beneish M-score, Altman Z-score; 74: cash conversion cycle; 75: deferred
-#: revenue, goodwill and write-downs): a saved copy without one of them is read again once
+#: revenue, goodwill and write-downs; 81: depreciation): a saved copy without one of them is read again once
 STATEMENT_KEYS = ('receivables', 'ppe', 'retainedEarnings', 'inventory', 'payables', 'deferredRevenue', 'goodwill',
-                  'goodwillImpairment', 'intangibleImpairment')
+                  'goodwillImpairment', 'intangibleImpairment', 'depreciation')
 
 
 def _ladders(company_facts):

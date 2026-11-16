@@ -640,6 +640,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   DeferredRevenueCurrent), goodwill, goodwillImpairment and intangibleImpairment (INCOME; missing = not reported, never
   0); billed in advance = growth vs sales growth and months of sales; goodwill vs equity/assets with 5 years of
   write-downs (share of the starting goodwill); a goodwill line the newest balance sheet lacks = "not shown since FYxxxx".
+- Research → Building and stock pay (helper 82, CAPEX_HELPER_VERSION/capexReady; src/research/buildPay.ts pure +
+  buildPayView.ts): statements add `depreciation` (tag Depreciation; Microsoft has no D&A tag); spending vs depreciation
+  = capex / depreciation by year (paired bars, 5 consecutive years; D&A only when the newest year has no depreciation
+  line, labelled; pace bands ahead >= 1.5, growing > 1.1, replacing 0.9-1.1, shrinking); free cash flow after stock pay
+  = FCF - stock-based compensation, share of FCF (null when FCF <= 0), 5-year share, yields on today's market value.
+  research._periods reads fiscal years (330-400-day facts) only from ANNUAL_FORMS: 10-Q trailing-twelve-month figures
+  (Amazon's cash flows) had been read as fiscal years ending at quarter ends.
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per
