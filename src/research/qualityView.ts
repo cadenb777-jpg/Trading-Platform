@@ -4,7 +4,7 @@
  */
 import { healthReady } from '../data/schwab';
 import { h } from '../ui/dom';
-import { infoTip } from '../ui/glossary';
+import { block, savedBeforeUpdate } from './panelBlock';
 import { dataTable } from '../ui/charts';
 import { fy, pc, shareCount, type Statements } from './debtDilution';
 import { accruals, accrualWords, fScore, fScoreWord, fScoreWords, type Check } from './quality';
@@ -19,10 +19,6 @@ const show = (v: number | null, unit: Check['unit']) =>
 /** ✓ / ✗ / – in front of the check, with words for screen readers */
 const mark = (p: boolean | null) =>
   h('span', { class: `qe-mark ${p === null ? 'muted' : p ? 'up' : 'down'}`, 'aria-label': p === null ? 'No data: ' : p ? 'Pass: ' : 'Miss: ', role: 'img' }, p === null ? '–' : p ? '✓' : '✗');
-
-function block(title: string, term: string, ...body: (Node | string)[]) {
-  return h('div', { class: 'md-block' }, h('div', { class: 'cf-caption' }, title, infoTip(term)), h('div', { class: 'md-body' }, ...body));
-}
 
 export interface QualityContext {
   /** SEC industry code (helper 71+) */
@@ -116,8 +112,7 @@ export function qualityPanel(a: Statements, c: QualityContext = { marketCap: nul
 
 /** The helper hasn't sent the new lines yet: an older helper (helper 71 re-reads an older saved copy by itself). */
 const notYet = (a: Statements) => NEW_LINES.some((k) => !(k in a.values));
-const waitNote = () =>
-  h('p', { class: 'muted small' }, healthReady() ? 'This company’s saved filings are being read again for the extra lines this needs. Open the stock again in a minute.' : 'Arrives with the next helper update (it installs by itself).');
+const waitNote = () => savedBeforeUpdate(healthReady());
 
 function mScore(a: Statements, labels: Record<string, string>): HTMLElement {
   if (notYet(a)) return block('Beneish M-score', 'mscore', waitNote());

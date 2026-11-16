@@ -4,14 +4,11 @@
  */
 import { cashCycleReady } from '../data/schwab';
 import { h } from '../ui/dom';
-import { infoTip } from '../ui/glossary';
+import { block, savedBeforeUpdate } from './panelBlock';
 import { dataTable, money } from '../ui/charts';
 import { fy, type Statements } from './debtDilution';
 import { cashCycle, coverWord, coverWords, cycleWords, dividendCover } from './cashHealth';
 
-function block(title: string, term: string, ...body: (Node | string)[]) {
-  return h('div', { class: 'md-block' }, h('div', { class: 'cf-caption' }, title, infoTip(term)), h('div', { class: 'md-body' }, ...body));
-}
 const x = (v: number | null) => (v == null ? '—' : v <= 0 ? 'none' : `${v.toFixed(v >= 10 ? 0 : 1)}×`);
 const d = (v: number) => `${v < 0 ? '−' : ''}${Math.round(Math.abs(v))}`;
 
@@ -50,7 +47,7 @@ export function cashHealthPanel(a: Statements): HTMLElement {
     'Cash conversion cycle',
     'ccc',
     ...(y === undefined
-      ? [h('p', { class: 'muted small' }, cashCycleReady() ? 'This page is showing data saved before your helper update. It fills in when the company’s data next refreshes (Refresh, or within 5 minutes).' : 'Arrives with the next helper update (it installs by itself).')]
+      ? [savedBeforeUpdate(cashCycleReady())]
       : y === null
         ? [h('p', { class: 'muted small' }, 'The filings don’t give sales, cost of sales, receivables and payables for the same year.')]
         : 'missing' in y

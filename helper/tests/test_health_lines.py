@@ -29,9 +29,16 @@ class Lines(unittest.TestCase):
 
     def test_shown_in_the_balance_sheet(self):
         keys = [k for k, _, _ in r.BALANCE]
-        for k in ('receivables', 'ppe', 'retainedEarnings', 'inventory', 'payables'):
+        for k in ('receivables', 'ppe', 'retainedEarnings', 'inventory', 'payables', 'deferredRevenue', 'goodwill'):
             self.assertIn(k, keys)
+        flows = [k for k, _, _ in r.INCOME]
+        self.assertIn('goodwillImpairment', flows)
+        self.assertIn('intangibleImpairment', flows)
+        for k in ('deferredRevenue', 'goodwill', 'goodwillImpairment', 'intangibleImpairment'):
+            self.assertIn(k, r.STATEMENT_KEYS)  # older saved copies are read again for them
         tags = dict((k, t) for k, _, t in r.BALANCE)
+        # ASC 606 renamed the current deferred revenue tag in 2018: both are the same current concept
+        self.assertEqual(tags['deferredRevenue'], ['ContractWithCustomerLiabilityCurrent', 'DeferredRevenueCurrent'])
         self.assertIn('ReceivablesNetCurrent', tags['receivables'])
         # payables only on their own line (a combined payables-and-accrued line would overstate days to pay)
         self.assertEqual(tags['payables'], ['AccountsPayableCurrent', 'AccountsPayableTradeCurrent'])

@@ -5,16 +5,12 @@
  */
 import { debtLadderReady, engineRequest, obligationsReady } from '../data/schwab';
 import { h } from '../ui/dom';
-import { infoTip } from '../ui/glossary';
+import { block } from './panelBlock';
 import { fact } from '../invest/moneyDeskView';
 import { money } from '../ui/charts';
 import { leases, leaseWords, purchaseWords, refinancing, refinancingWords, taxWords, type CorpYields, type Obligations } from './obligations';
 import { BUCKETS, coverWords, day, fy, interestCover, ladder, ladderWords, pc, payouts, payoutWords, shareChange, shareCount, sharesWords, type Maturities, type Statements } from './debtDilution';
 
-
-function block(title: string, term: string, ...body: (Node | string)[]) {
-  return h('div', { class: 'md-block' }, h('div', { class: 'cf-caption' }, title, infoTip(term)), h('div', { class: 'md-body' }, ...body));
-}
 
 /** Horizontal bars, one per year bucket, on one scale; a bucket the filing leaves out says so. */
 function ladderBars(buckets: Partial<Record<string, number | null>>, label: string): HTMLElement {
