@@ -36,6 +36,32 @@ Feature gaps vs Bloomberg / Fincept (what they have that this platform lacks or 
 - Report builder and notes (Fincept), richer CRM for prospects (Twenty-style pipeline board).
 - Command bar with function codes exists (BRF, GP, ...); add more codes and "<code> <ticker>" jumps.
 
+## Phase 1b: information architecture (owner, 2026-11-16: "too many tabs; think of it like a website")
+
+Today there are four navigation layers: the rail (17 pages), a top row repeating the section's pages, a numbered
+function bar on each page and the page's own tabs. New shape: two layers only (rail = where, top row = which view),
+everything two clicks away, and a ticker typed anywhere opens one Security page.
+
+| Rail | Views (top row) | Replaces |
+|---|---|---|
+| Today | one page: greeting, ticker tape, market mood gauge, heat map, movers, today's calendar, news, setups, alerts | Home (+ calendar/macro teasers) |
+| Markets | Overview · Macro & rates · Calendar · Futures · Crypto | Investments, Macro, Calendar, Futures |
+| Security (any ticker) | Overview (tear sheet) · Chart · Financials · Valuation · Flow · Filings · News | Research, Chart, Flow (per stock), Security view |
+| Ideas | Setups · Backtest · Strategy Lab · Workspace & scripts | Setups, Backtest, Strategy Lab, Chart modes |
+| My money | Account · Portfolios · Trade · Journal | same |
+| Business | Prospects · Clients | same |
+
+- The numbered function bar goes (its actions move into each view's header; codes stay in the command bar).
+- Command bar is the front door: a ticker opens Security, a code or page name opens that view.
+- Old links redirect (src/routes.ts REDIRECTS), so bookmarks keep working.
+- Attention order on every view: one hero picture top-left, the key numbers beside it, detail below, AI read in
+  the header.
+
+- [ ] 1b-1. Navigation registry and rail: six destinations, top row of views, redirects, remove the function bar.
+- [ ] 1b-2. Security hub: one ticker, tabs Overview / Chart / Financials / Valuation / Flow / Filings / News.
+- [ ] 1b-3. Markets hub: Overview (boards + heat map) / Macro & rates / Calendar / Futures / Crypto.
+- [ ] 1b-4. Today page re-laid as the attention page (keeps greeting and ticker tape).
+
 ## Phase 2: foundation (shared design system)
 
 - [x] 1. Terminal look layer (end of src/style.css): near-black tokens, JetBrains Mono everywhere, uppercase amber
@@ -87,4 +113,4 @@ Feature gaps vs Bloomberg / Fincept (what they have that this platform lacks or 
       < 11 px, both themes, phone width; accessibility pass (contrast, focus, labels).
 - [ ] 21. Docs: CLAUDE.md, README, ROADMAP status.
 
-Next: finish 6 (Research chart + segments flower), then 5 (Home: heat map, compact index strip), then 7 (Macro).
+Next: 1b-1 (navigation: six destinations, two layers), then 1b-2 (Security hub), then finish 6 inside it.
