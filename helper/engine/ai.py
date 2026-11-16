@@ -426,6 +426,21 @@ UI_TOOLS = [
         'input_schema': {'type': 'object', 'properties': {'theme': {'type': 'string', 'enum': ['dark', 'light']}}, 'required': ['theme']},
     },
     {
+        'name': 'create_portfolio',
+        'description': ('Build and save a model (test) portfolio on the Portfolios page, then open it there. It is a model '
+                        'only: nothing is bought or ordered. Holdings: tickers with optional weights in percent (missing '
+                        'weights share what is left, equal weights when none are given) or dollar amounts for every holding; '
+                        'CASH for cash. The Portfolios page then shows its backtest, risk and optimizer.'),
+        'input_schema': {'type': 'object', 'properties': {
+            'name': {'type': 'string'},
+            'holdings': {'type': 'array', 'items': {'type': 'object', 'properties': {
+                'symbol': {'type': 'string'}, 'weight': {'type': 'number', 'description': 'percent'},
+                'amount': {'type': 'number', 'description': 'dollars'}}, 'required': ['symbol']}},
+            'benchmark': {'type': 'string', 'description': 'default SPY'},
+            'rebalance': {'type': 'string', 'enum': ['none', 'monthly', 'quarterly', 'yearly']},
+            'notes': {'type': 'string'}}, 'required': ['name', 'holdings']},
+    },
+    {
         'name': 'open_settings',
         'description': 'Open the Settings window, optionally at a section ("ai", "alerts", "connection", or a heading such as "Trading").',
         'input_schema': {'type': 'object', 'properties': {'section': {'type': 'string'}}},
@@ -440,7 +455,7 @@ UI_ACTION_TIMEOUT = 60
 UI_PROMPT = """
 
 You can operate the platform for the owner with the platform tools (open_chart, set_timeframe, find_indicators, \
-add_indicator, edit_indicator, remove_indicator, create_alert, draw_level and more). The platform window carries out \
+add_indicator, edit_indicator, remove_indicator, create_alert, draw_level, create_portfolio and more). The platform window carries out \
 each one and tells you the result; chain several in a row when a request needs it. "My chart" means the chart in the \
 platform context (its symbol and timeframe); list_chart_indicators shows what is on it. For indicator requests: switch \
 the timeframe first if the owner named one, then find_indicators (with that timeframe) to get a real id, then \

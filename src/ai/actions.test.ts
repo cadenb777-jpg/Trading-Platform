@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { Drawing } from '../chart/drawings';
 import type { MarketRef } from '../data/quotes';
 import { allIndicators, defaultColors, defaultParams, getIndicator } from '../indicators/library';
-import { ACTIONS, ACTION_NAMES, canUndo, checkParams, confirmationFor, needsConfirmation, parseTimeframe, resetUndo, runAction, searchIndicators, undoActions, type ActionEnv, type ActionState } from './actions';
+import { ACTIONS, ACTION_NAMES, canUndo, portfolioFromArgs, checkParams, confirmationFor, needsConfirmation, parseTimeframe, resetUndo, runAction, searchIndicators, undoActions, type ActionEnv, type ActionState } from './actions';
 
 function fakeEnv() {
   let uid = 0;
@@ -210,5 +210,30 @@ describe('review fixes', () => {
     await runAction(env, 'create_alert', { symbol: 'AAPL', condition: 'below', price: 200 });
     await undoActions([first.undoId!]);
     expect(alerts).toEqual(['AAPLbelow200']);
+  });
+});
+
+describe('create_portfolio', () => {
+  it('builds a model portfolio, never an order, and Undo deletes it', async () => {
+    const { env, route } = fakeEnv();
+    const saved: Record<string, unknown> = {};
+    env.savePortfolio = async (p) => ((saved.p1 = p), 'p1');
+    env.deletePortfolio = async (id) => void delete saved[id];
+    const r = await runAction(env, 'create_portfolio', { name: 'Tech test', holdings: [{ symbol: 'aapl', weight: 50 }, { symbol: 'MSFT' }, { symbol: 'NVDA' }] });
+    expect(r.ok).toBe(true);
+    const p = saved.p1 as { holdings: { symbol: string; weight: number }[]; mine: boolean; notes: string };
+    expect(p.holdings).toEqual([expect.objectContaining({ symbol: 'AAPL', weight: 50 }), expect.objectContaining({ symbol: 'MSFT', weight: 25 }), expect.objectContaining({ symbol: 'NVDA', weight: 25 })]);
+    expect(p.mine).toBe(false);
+    expect(p.notes).toContain('nothing was bought');
+    expect(route()).toBe('portfolio');
+    await undoActions([r.undoId!]);
+    expect(saved.p1).toBeUndefined();
+  });
+  it('scales weights to 100, takes dollar amounts and refuses junk', () => {
+    expect(portfolioFromArgs({ name: 'x', holdings: [{ symbol: 'SPY', weight: 60 }, { symbol: 'AGG', weight: 60 }] })).toMatchObject({ scaled: true, portfolio: { holdings: [{ weight: 50 }, { weight: 50 }] } });
+    expect(portfolioFromArgs({ name: 'x', holdings: [{ symbol: 'SPY', amount: 7500 }, { symbol: 'CASH', amount: 2500 }] }).portfolio).toMatchObject({ mode: 'dollars', holdings: [{ weight: 75, amount: 7500 }, { symbol: 'CASH', kind: 'cash', assetClass: 'Cash' }] });
+    expect(() => portfolioFromArgs({ name: 'x', holdings: [] })).toThrow();
+    expect(() => portfolioFromArgs({ name: 'x', holdings: [{ symbol: 'drop table' }] })).toThrow();
+    expect(() => portfolioFromArgs({ name: 'x', holdings: [{ symbol: 'SPY' }, { symbol: 'spy' }] })).toThrow();
   });
 });
