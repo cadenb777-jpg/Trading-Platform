@@ -54,7 +54,7 @@ class Companies(unittest.TestCase):
         grill = co.search(self.con, {'group': 'restaurants'})
         self.assertEqual(grill['total'], 1)
         g = grill['rows'][0]
-        self.assertEqual((g['draws'], g['jobs'], g['city'], g['zip'], g['approved']), (2, 45, 'Austin', '78701', '2020-04-15'))
+        self.assertEqual((g['draws'], g['jobs'], g['city'], g['zip'], g['approved']), (2, 45, 'Austin', '78701', '2021-02-01'))
         self.assertEqual(co.search(self.con, {'group': 'construction', 'state': 'tx'})['rows'][0]['name'], 'Acme Builders Inc')
         self.assertEqual(co.search(self.con, {'noNonprofits': True})['total'], 2)
         self.assertEqual(co.search(self.con, {'revenueMin': 10_000_000})['rows'][0]['name'], 'Acme Builders Inc')  # 4.8M / 0.22
@@ -71,7 +71,33 @@ class Companies(unittest.TestCase):
             co.build(self.con, [bad])
         self.assertEqual(co.status(self.con)['count'], 3)
 
+    def test_newest_loan_updates_the_company(self):
+        ppp, sba = os.path.join(self.tmp, 'ppp.csv'), os.path.join(self.tmp, 'sba.csv')
+        write(ppp)
+        write(sba, head=['AsOfDate', 'Program', 'BorrName', 'BorrStreet', 'BorrCity', 'BorrState', 'BorrZip', 'BankName', 'GrossApproval',
+                         'ApprovalDate', 'NaicsCode', 'FranchiseName', 'BusinessType', 'BusinessAge', 'JobsSupported'],
+              rows=[['20260630', '7A', 'Acme Builders, Inc.', '100 New Rd', 'FRISCO', 'TX', '75201', 'Bank Z', '2000000', '03/02/2026', '236220', '', 'CORPORATION', 'Existing', '120'],
+                    ['20260630', '7A', 'Brand New Tacos LLC', '5 Pine', 'AUSTIN', 'TX', '78702', 'Bank Y', '350000', '01/15/2026', '722513', '', 'LLC', 'New Business', '12'],
+                    ['20260630', '7A', 'Old Shop', '1 A', 'X', 'TX', '75000', 'Bank', '50000', '10/01/2015', '445110', '', '', '', '3']])
+        self.assertEqual(co.build(self.con, [ppp, sba]), 4)  # Acme joined, new tacos added, the 2015 loan left out
+        acme = co.search(self.con, {'text': 'acme'})['rows'][0]
+        self.assertEqual((acme['address'], acme['city'], acme['jobs'], acme['lastSeen'], acme['firstSeen']), ('100 New Rd', 'Frisco', 120, '2026-03-02', '2020-05-01'))
+        self.assertEqual(sorted(acme['sources']), ['PPP', 'SBA 7(a)'])
+        self.assertIn('scaled to the newest headcount', acme['basis'])
+        self.assertAlmostEqual(acme['revenue']['likely'], 4_800_000 * 120 / 80 / 0.22)
+        tacos = co.search(self.con, {'text': 'tacos'})['rows'][0]
+        self.assertEqual((tacos['jobs'], tacos['basis']), (12, 'employees × industry revenue per employee'))
+        self.assertAlmostEqual(tacos['revenue']['likely'], 12 * 70_000)
+        self.assertEqual(co.search(self.con, {'seenSince': '2026'})['total'], 2)
+        self.assertEqual(co.search(self.con, {'sort': 'newest'})['rows'][0]['name'], 'Acme Builders, Inc.')
+        self.assertEqual(co.status(self.con)['newest'], '2026-03-02')
+
     def test_catalog(self):
+        sba = {'result': {'resources': [{'name': 'FOIA - 7(a) (FY2020-Present) asof 260630.csv', 'url': 'https://data.sba.gov/a/foia-7afy2020-present.csv'},
+                                        {'name': 'FOIA - 7(a)(FY1991-FY1999) asof 260630.csv', 'url': 'https://data.sba.gov/a/old.csv'},
+                                        {'name': 'FOIA - 504 (FY2010-Present) asof 260630.csv', 'url': 'https://data.sba.gov/a/foia-504-fy2010-present.csv'},
+                                        {'name': '7a_504_FOIA Data Dictionary.xlsx', 'url': 'https://data.sba.gov/a/dict.xlsx'}]}}
+        self.assertEqual(co.pick_files(sba, 'sba7a504'), ['https://data.sba.gov/a/foia-7afy2020-present.csv', 'https://data.sba.gov/a/foia-504-fy2010-present.csv'])
         cat = {'result': {'resources': [{'url': 'https://data.sba.gov/x/public_150k_plus_240930.csv'}, {'url': 'https://data.sba.gov/x/public_up_to_150k_1_240930.csv'}, {'url': 'https://data.sba.gov/x/dict.xlsx'}]}}
         self.assertEqual(co.pick_files(cat), ['https://data.sba.gov/x/public_150k_plus_240930.csv'])
         with self.assertRaises(EngineError):

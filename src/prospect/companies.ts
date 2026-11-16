@@ -1,6 +1,6 @@
 /**
  * Prospects → Companies: US private businesses of every industry (restaurants, construction, medical practices...)
- * from the SBA's free PPP loan list (helper engine/companies.py), with an estimated revenue range. Filters: industry,
+ * from the SBA's free loan lists, newest first (7(a)/504 quarterly, PPP 2020-21; helper engine/companies.py), with an estimated revenue range. Filters: industry,
  * state, city, ZIP, employees, revenue, name; sortable; links out to a web search and OpenCorporates for each company.
  */
 import { engineRequest, helper } from '../data/schwab';
@@ -15,15 +15,16 @@ export interface Company {
   jobs: number | null; loan: number | null; draws: number; payroll: number | null;
   revenue: { low: number; likely: number; high: number } | null;
   businessType: string; age: string; franchise: string; nonprofit: boolean; approved: string; lender: string; forgiven: number | null;
+  sources: string[]; firstSeen: string; lastSeen: string; basis: string;
 }
 export interface CompaniesStatus {
-  count: number; built: string | null; source: string; method: string;
+  count: number; recent?: number; newest?: string | null; problems?: string[]; built: string | null; source: string; method: string;
   byGroup: Record<string, number>; groups: { id: string; label: string }[];
   job: { running: boolean; text: string; error: string; done: number };
 }
 export interface CompanyQuery {
   text?: string; group?: string; naics?: string; state?: string; city?: string; zip?: string;
-  jobsMin?: string; revenueMin?: string; revenueMax?: string; franchise?: boolean; noNonprofits?: boolean; sort?: string; offset?: number;
+  jobsMin?: string; seenSince?: string; revenueMin?: string; revenueMax?: string; franchise?: boolean; noNonprofits?: boolean; sort?: string; offset?: number;
 }
 
 const STATES = 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR'.split(' ');
@@ -46,7 +47,7 @@ export function toQuery(f: CompanyQuery): Record<string, unknown> {
     return m ? Number(m[1]) * ({ k: 1e3, m: 1e6, b: 1e9 }[m[2]] ?? 1) : undefined;
   };
   const q: Record<string, unknown> = { sort: f.sort || 'revenue', offset: f.offset ?? 0, limit: PAGE };
-  for (const k of ['text', 'group', 'naics', 'state', 'city', 'zip'] as const) if (f[k]?.trim()) q[k] = f[k]!.trim();
+  for (const k of ['text', 'group', 'naics', 'state', 'city', 'zip', 'seenSince'] as const) if (f[k]?.trim()) q[k] = f[k]!.trim();
   if (f.jobsMin && Number(f.jobsMin) > 0) q.jobsMin = Number(f.jobsMin);
   if (money(f.revenueMin)) q.revenueMin = money(f.revenueMin);
   if (money(f.revenueMax)) q.revenueMax = money(f.revenueMax);
@@ -84,7 +85,7 @@ export function createCompaniesView() {
     i.addEventListener('input', () => ((form as Record<string, unknown>)[key] = i.value, (form.offset = 0), later()));
     return h('label', { class: 'field' }, h('span', { class: 'muted small' }, label), i);
   };
-  const select = (key: 'group' | 'state' | 'sort', label: string, options: [string, string][]) => {
+  const select = (key: 'group' | 'state' | 'sort' | 'seenSince', label: string, options: [string, string][]) => {
     const s = h('select', { class: 'input', 'aria-label': label }, ...options.map(([v, t]) => h('option', { value: v, selected: (form[key] ?? '') === v }, t))) as HTMLSelectElement;
     s.addEventListener('change', () => ((form[key] = s.value), (form.offset = 0), run()));
     return h('label', { class: 'field' }, h('span', { class: 'muted small' }, label), s);
@@ -111,7 +112,8 @@ export function createCompaniesView() {
       input('jobsMin', 'Employees from', '', '90px'),
       input('revenueMin', 'Est. revenue from', 'e.g. 5m', '110px'),
       input('revenueMax', 'to', 'e.g. 50m', '110px'),
-      select('sort', 'Sort', [['revenue', 'Estimated revenue'], ['jobs', 'Employees'], ['loan', 'PPP loan'], ['name', 'Name A-Z']]),
+      select('seenSince', 'Active since', [['', 'Any time'], ...[0, 1, 2, 3].map((k) => { const y = String(new Date().getFullYear() - k); return [y, `${y} or later`] as [string, string]; })]),
+      select('sort', 'Sort', [['revenue', 'Estimated revenue'], ['newest', 'Newest activity'], ['jobs', 'Employees'], ['loan', 'Latest loan'], ['name', 'Name A-Z']]),
       h('div', { class: 'co-checks' }, check('noNonprofits', 'Hide nonprofits'), check('franchise', 'Franchises only')),
     );
   }
@@ -121,11 +123,14 @@ export function createCompaniesView() {
     const busy = s?.job.running;
     head.replaceChildren(
       h('p', { class: 'muted small' },
-        s?.count ? `${s.count.toLocaleString()} private companies · ${s.source}${s.built ? ` · loaded ${s.built.slice(0, 10)}` : ''}. ` : 'No company list on this computer yet. ',
+        s?.count
+          ? `${s.count.toLocaleString()} private companies${s.recent ? ` (${s.recent.toLocaleString()} active since last year)` : ''} · newest record ${s.newest ?? '—'} · ${s.source}${s.built ? ` · loaded ${s.built.slice(0, 10)}` : ''}. `
+          : 'No company list on this computer yet. ',
         infoTip('coRevenue'),
       ),
       busy ? h('p', { class: 'small' }, h('b', {}, s!.job.text || 'Downloading…')) : s?.job.error ? h('p', { class: 'small warn-text' }, `Last download failed: ${s.job.error}`) : '',
-      h('button', { class: `btn small ${s?.count ? 'ghost' : 'primary'}`, disabled: !!busy, onclick: download }, s?.count ? 'Refresh the list' : 'Download the company list (free, ~200 MB, a few minutes)'),
+      !busy && s?.problems?.length ? h('p', { class: 'small warn-text' }, `Some sources didn’t download last time: ${s.problems.join('; ')}`) : '',
+      h('button', { class: `btn small ${s?.count ? 'ghost' : 'primary'}`, disabled: !!busy, onclick: download }, s?.count ? 'Refresh the list' : 'Download the company lists (free SBA data, ~700 MB, 10-20 minutes)'),
     );
   }
 
@@ -171,14 +176,15 @@ export function createCompaniesView() {
         { v: c.sector || '—', title: `NAICS ${c.naics}` },
         `${c.city}, ${c.state} ${c.zip}`,
         c.jobs != null ? c.jobs.toLocaleString() : '—',
-        c.revenue ? { v: `~${moneyText(c.revenue.likely)}`, title: `Range ${moneyText(c.revenue.low)} – ${moneyText(c.revenue.high)} (estimate from payroll)` } : '—',
-        { v: moneyText(c.loan, '—'), title: `${c.draws} PPP loan${c.draws > 1 ? 's' : ''}${c.lender ? ` · ${c.lender}` : ''}${c.approved ? ` · approved ${c.approved}` : ''}` },
+        c.revenue ? { v: `~${moneyText(c.revenue.likely)}`, title: `Range ${moneyText(c.revenue.low)} – ${moneyText(c.revenue.high)}. Estimate: ${c.basis}` } : '—',
+        { v: c.lastSeen || '—', title: `Sources: ${(c.sources ?? []).join(', ')} · ${c.draws} loan${c.draws > 1 ? 's' : ''} since ${c.firstSeen}${c.lender ? ` · latest lender ${c.lender}` : ''}` },
+        { v: moneyText(c.loan, '—'), title: `Latest loan${c.approved ? `, approved ${c.approved}` : ''}` },
         c.businessType || '—',
       ];
     });
     results.replaceChildren(
-      h('p', { class: 'muted small' }, `${r.total.toLocaleString()} companies${r.total > PAGE ? ` · showing ${off + 1}–${Math.min(off + PAGE, r.total)}` : ''}. Employees and loans are from 2020-2021.`),
-      rows.length ? dataTable(['Company', 'Industry', 'Location', 'Employees', 'Est. revenue / yr', 'PPP loan', 'Type'], rows, undefined, { id: 'prospect:companies' }) : h('p', { class: 'muted small' }, 'No company matches these filters. Try a wider area or a lower revenue.'),
+      h('p', { class: 'muted small' }, `${r.total.toLocaleString()} companies${r.total > PAGE ? ` · showing ${off + 1}–${Math.min(off + PAGE, r.total)}` : ''}. Employees come from each company’s newest loan record (see Last seen).`),
+      rows.length ? dataTable(['Company', 'Industry', 'Location', 'Employees', 'Est. revenue / yr', 'Last seen', 'Loan', 'Type'], rows, undefined, { id: 'prospect:companies' }) : h('p', { class: 'muted small' }, 'No company matches these filters. Try a wider area or a lower revenue.'),
       r.total > PAGE
         ? h('div', { class: 'co-pager' },
             h('button', { class: 'btn small ghost', disabled: off === 0, onclick: () => ((form.offset = Math.max(0, off - PAGE)), run()) }, 'Previous'),

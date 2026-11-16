@@ -670,8 +670,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   GitHub) through api.github.com (key sent only there, never to the codeload redirect); without one a 404 shows
   PRIVATE_HINT as a failed update instead of failing quietly.
   Companies (v79, engine/companies.py, src/prospect/companies.ts, Prospects > Companies): US private businesses from the
-  SBA PPP $150k+ list (found via the data.sba.gov CKAN catalog; staged in SQLite and combined per name+ZIP), own DB
-  ~/.trading-platform/companies.db; revenue = PPP payroll (loan x 12 / 2.5, 3.5 for NAICS 72 second draws) / PAYROLL_SHARE.
+  SBA 7(a)/504 loans since 2020 (quarterly) and PPP $150k+ (found via the data.sba.gov CKAN catalog; staged in SQLite,
+  combined per cleaned name+ZIP, newest record wins, sources/first/last seen kept), DB ~/.trading-platform/companies.db;
+  revenue = PPP payroll (loan x 12 / 2.5, 3.5 NAICS 72 2nd draws) scaled to newest jobs / PAYROLL_SHARE, else jobs x
+  REVENUE_PER_EMPLOYEE.
   Plan for fresher data and people: docs/research/companies-plan.md.
   client type x typical fee rates; individuals/HNW by average account on a tiered schedule; performance fees = 20% of
   the year's gain on pooled assets when 5.E says performance-based; headcount cross-check), stored as firms.rev_low/

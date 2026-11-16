@@ -1,24 +1,29 @@
 """
 Private companies (Prospects → Companies): US private businesses of every industry (restaurants, construction,
-medical practices, manufacturers...) from free government data, with an estimated revenue. A free stand-in for the
-"company" side of PitchBook-type databases; every figure says where it came from and when.
+medical practices, manufacturers...) from free government data, combined across sources, with an estimated revenue.
+Every figure says where it came from and when.
 
-Stage 1 source: the SBA's Paycheck Protection Program loan list (data.sba.gov, public domain), the loans of $150,000
-or more: about a million businesses with name, address, NAICS industry code, jobs reported, loan size, business type
-and age, franchise name and lender. The loans date from 2020-2021, so headcounts and sizes are from then; the file
-itself is found through the SBA's open-data catalog (CKAN API) so a new release is picked up by itself.
+Sources (all public domain, found through the SBA open-data catalog, CKAN API, so new releases are picked up):
+  - SBA 7(a) and 504 loans (FOIA files, updated each quarter, about a month after it ends): businesses that borrowed
+    since 2020, with name, address, NAICS, jobs supported, loan, business type and age. The freshest free list.
+  - SBA Paycheck Protection Program loans of $150,000+ (2020-2021): about a million businesses with payroll implied
+    by the loan, the best free size measure.
+Loans of one business (same cleaned name and ZIP) are combined: the newest record gives the address, industry and
+headcount; first and last seen dates and the list of sources are kept.
 
-Size and revenue (an ESTIMATE, always a range with its method):
-  payroll a year ≈ loan × 12 / 2.5 (the PPP rule: 2.5 months of payroll; 3.5 months for restaurants and hotels on a
-  second-draw loan), which undercounts pay above $100,000 a person (the program's cap);
-  revenue ≈ payroll ÷ the typical payroll share of sales in that industry (PAYROLL_SHARE: rounded from the Census
-  Economic Census; low / likely / high).
+Revenue (an ESTIMATE, always a range with its basis):
+  - with PPP payroll: payroll ≈ loan × 12 / 2.5 (3.5 for NAICS 72 second draws), scaled to the newest headcount when a
+    later loan reports one, ÷ the industry's typical payroll share of sales (PAYROLL_SHARE, rounded from the Census
+    Economic Census); pay above $100,000 a person was not counted by PPP, so high earners read low;
+  - otherwise: newest headcount × the industry's typical revenue per employee (REVENUE_PER_EMPLOYEE, rounded from
+    Census Statistics of US Businesses).
 
-Requests: companies.status, companies.download {wait?}, companies.search {...}, companies.get {id}.
+Requests: companies.status, companies.download {wait?}, companies.search {...}, companies.get {companyId}.
 """
 import asyncio
 import csv
 import datetime as dt
+import json
 import logging
 import re
 import sqlite3
@@ -30,10 +35,14 @@ log = logging.getLogger('engine.companies')
 
 DB_PATH = Path.home() / '.trading-platform' / 'companies.db'
 DATA_DIR = Path.home() / '.trading-platform' / 'companies'
-CATALOG = 'https://data.sba.gov/api/3/action/package_show?id=ppp-foia'
-SOURCE = 'SBA Paycheck Protection Program loans of $150,000+ (data.sba.gov)'
-REQUIRED = ('LoanNumber', 'BorrowerName', 'BorrowerCity', 'BorrowerState', 'BorrowerZip', 'NAICSCode', 'JobsReported',
-            'CurrentApprovalAmount')
+CATALOG = 'https://data.sba.gov/api/3/action/package_show?id={}'
+#: source id -> (catalog dataset, label)
+SOURCES = {'sba7a504': ('7a-504-foia', 'SBA 7(a) and 504 loans since 2020 (quarterly)'),
+           'ppp': ('ppp-foia', 'SBA PPP loans of $150,000+ (2020-2021)')}
+SOURCE = 'SBA loan lists (data.sba.gov): 7(a) and 504 since 2020, PPP $150k+'
+REQUIRED = {'ppp': ('BorrowerName', 'BorrowerCity', 'BorrowerState', 'BorrowerZip', 'NAICSCode', 'JobsReported', 'CurrentApprovalAmount'),
+            'sba': ('BorrName', 'BorrCity', 'BorrState', 'BorrZip', 'NaicsCode', 'GrossApproval', 'ApprovalDate')}
+SINCE = '2020-01-01'
 BATCH = 5000
 
 #: typical annual payroll as a share of sales by 2-digit NAICS sector: (low, likely, high); rounded from the Census
@@ -47,6 +56,14 @@ PAYROLL_SHARE = {
     '71': (0.22, 0.30, 0.40), '72': (0.25, 0.31, 0.38), '81': (0.25, 0.35, 0.45), '92': (0.30, 0.40, 0.50),
 }
 GENERIC_SHARE = (0.15, 0.25, 0.40)
+#: typical yearly revenue per employee by sector, likely value (rounded from Census Statistics of US Businesses;
+#: an assumption shown on screen); the range is 0.6x to 1.6x
+REVENUE_PER_EMPLOYEE = {
+    '11': 250_000, '21': 900_000, '22': 1_500_000, '23': 300_000, '31': 450_000, '32': 450_000, '33': 450_000, '42': 1_200_000,
+    '44': 350_000, '45': 350_000, '48': 200_000, '49': 200_000, '51': 450_000, '52': 500_000, '53': 350_000, '54': 190_000,
+    '55': 250_000, '56': 90_000, '61': 80_000, '62': 120_000, '71': 100_000, '72': 70_000, '81': 100_000, '92': 150_000,
+}
+GENERIC_RPE = 200_000
 #: industry groups for the filter (NAICS prefixes)
 GROUPS = {
     'restaurants': ('Restaurants and bars', ('7225', '7224')),
@@ -75,7 +92,9 @@ SECTORS = {'11': 'Agriculture', '21': 'Mining, oil and gas', '22': 'Utilities', 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS companies (id TEXT PRIMARY KEY, name TEXT, address TEXT, city TEXT, state TEXT, zip TEXT,
   naics TEXT, sector TEXT, jobs INTEGER, loan REAL, draws INTEGER, payroll REAL, rev_low REAL, rev_likely REAL, rev_high REAL,
-  business_type TEXT, age TEXT, franchise TEXT, nonprofit INTEGER, approved TEXT, lender TEXT, forgiven REAL);
+  business_type TEXT, age TEXT, franchise TEXT, nonprofit INTEGER, approved TEXT, lender TEXT, forgiven REAL,
+  sources TEXT, first_seen TEXT, last_seen TEXT, basis TEXT);
+CREATE INDEX IF NOT EXISTS companies_seen ON companies (last_seen);
 CREATE INDEX IF NOT EXISTS companies_state ON companies (state, city);
 CREATE INDEX IF NOT EXISTS companies_naics ON companies (naics);
 CREATE INDEX IF NOT EXISTS companies_rev ON companies (rev_likely);
@@ -111,30 +130,73 @@ def revenue_range(payroll, naics):
     return (payroll / hi, payroll / mid, payroll / lo)
 
 
+def revenue_from_jobs(jobs, naics):
+    """(low, likely, high) yearly revenue from headcount and the sector's typical revenue per employee."""
+    if not jobs or jobs <= 0:
+        return (None, None, None)
+    rpe = REVENUE_PER_EMPLOYEE.get(str(naics or '')[:2], GENERIC_RPE)
+    return (jobs * rpe * 0.6, jobs * rpe, jobs * rpe * 1.6)
+
+
+def estimate(payroll, ppp_jobs, newest_jobs, naics):
+    """((low, likely, high), basis, payroll used) for one company."""
+    if payroll:
+        if newest_jobs and ppp_jobs and newest_jobs != ppp_jobs:
+            payroll = payroll * newest_jobs / ppp_jobs
+            return revenue_range(payroll, naics), 'PPP payroll scaled to the newest headcount ÷ industry payroll share', payroll
+        return revenue_range(payroll, naics), 'PPP payroll ÷ industry payroll share', payroll
+    if newest_jobs:
+        return revenue_from_jobs(newest_jobs, naics), 'employees × industry revenue per employee', None
+    return (None, None, None), '', None
+
+
 def norm_name(name):
     n = re.sub(r'[^a-z0-9 ]', ' ', re.sub(r"['’.]", '', (name or '').lower()))
     n = re.sub(r'\b(inc|llc|l l c|corp|corporation|co|company|ltd|pllc|pc|pa|lp|llp)\b', ' ', n)
     return ' '.join(n.split())
 
 
+def _key(name, zip5):
+    return f"{norm_name(name)}|{zip5}"
+
+
 def parse_row(r):
-    """One PPP CSV row -> a company dict (or None without a name)."""
+    """One PPP CSV row -> a company record (or None without a name)."""
     name = (r.get('BorrowerName') or '').strip()
     if not name:
         return None
     naics = re.sub(r'\D', '', r.get('NAICSCode') or '')[:6]
     loan = _num(r.get('CurrentApprovalAmount')) or _num(r.get('InitialApprovalAmount'))
     second = (r.get('ProcessingMethod') or '').strip().upper() == 'PPS'
-    payroll = payroll_from_loan(loan, naics, second)
     jobs = _num(r.get('JobsReported'))
     zip5 = re.sub(r'\D', '', r.get('BorrowerZip') or '')[:5]
-    return {'key': f"{norm_name(name)}|{zip5}", 'name': name, 'address': (r.get('BorrowerAddress') or '').strip(),
+    approved = _date(r.get('DateApproved'))
+    return {'key': _key(name, zip5), 'name': name, 'address': (r.get('BorrowerAddress') or '').strip(),
             'city': (r.get('BorrowerCity') or '').strip().title(), 'state': (r.get('BorrowerState') or '').strip().upper(), 'zip': zip5,
-            'naics': naics, 'jobs': int(jobs) if jobs is not None else None, 'loan': loan, 'payroll': payroll, 'second': second,
+            'naics': naics, 'jobs': int(jobs) if jobs else None, 'loan': loan, 'payroll': payroll_from_loan(loan, naics, second),
             'business_type': (r.get('BusinessType') or '').strip(), 'age': (r.get('BusinessAgeDescription') or '').strip(),
-            'franchise': (r.get('FranchiseName') or '').strip(), 'nonprofit': (r.get('NonProfit') or '').strip().upper() == 'Y',
-            'approved': _date(r.get('DateApproved')), 'lender': (r.get('ServicingLenderName') or r.get('OriginatingLender') or '').strip(),
-            'forgiven': _num(r.get('ForgivenessAmount'))}
+            'franchise': (r.get('FranchiseName') or '').strip(), 'nonprofit': int((r.get('NonProfit') or '').strip().upper() == 'Y'),
+            'approved': approved, 'lender': (r.get('ServicingLenderName') or r.get('OriginatingLender') or '').strip(),
+            'forgiven': _num(r.get('ForgivenessAmount')), 'source': 'PPP', 'seen': approved}
+
+
+def parse_sba_row(r):
+    """One SBA 7(a) or 504 FOIA row -> a company record (None without a name or before SINCE)."""
+    name = (r.get('BorrName') or '').strip()
+    approved = _date(r.get('ApprovalDate'))
+    if not name or not approved or approved < SINCE:
+        return None
+    program = (r.get('Program') or '').strip().upper()
+    source = 'SBA 504' if '504' in program or r.get('CDC_Name') is not None else 'SBA 7(a)'
+    jobs = _num(r.get('JobsSupported'))
+    zip5 = re.sub(r'\D', '', r.get('BorrZip') or '')[:5]
+    return {'key': _key(name, zip5), 'name': name, 'address': (r.get('BorrStreet') or '').strip(),
+            'city': (r.get('BorrCity') or '').strip().title(), 'state': (r.get('BorrState') or '').strip().upper(), 'zip': zip5,
+            'naics': re.sub(r'\D', '', r.get('NaicsCode') or '')[:6], 'jobs': int(jobs) if jobs else None,
+            'loan': _num(r.get('GrossApproval')), 'payroll': None, 'business_type': (r.get('BusinessType') or '').strip().title(),
+            'age': (r.get('BusinessAge') or '').strip(), 'franchise': (r.get('FranchiseName') or '').strip(), 'nonprofit': 0,
+            'approved': approved, 'lender': (r.get('BankName') or r.get('CDC_Name') or r.get('ThirdPartyLender_Name') or '').strip(),
+            'forgiven': None, 'source': source, 'seen': approved}
 
 
 def _date(text):
@@ -148,21 +210,37 @@ def _date(text):
 
 
 def check_header(header):
-    missing = [c for c in REQUIRED if c not in (header or [])]
-    if missing:
-        raise EngineError(f'The SBA file has a different layout (missing {", ".join(missing)}). Nothing was changed.')
+    """Which parser reads this file ('ppp' or 'sba'); EngineError on an unknown layout."""
+    header = header or []
+    for kind in ('ppp', 'sba'):
+        if REQUIRED[kind][0] in header:
+            missing = [c for c in REQUIRED[kind] if c not in header]
+            if missing:
+                raise EngineError(f'An SBA file has a different layout (missing {", ".join(missing)}). Nothing was changed.')
+            return kind
+    raise EngineError('An SBA file has an unknown layout. Nothing was changed.')
 
 
-def pick_files(catalog):
-    """The CSV resources of the $150k+ list from the SBA catalog reply."""
+def pick_files(catalog, source='ppp'):
+    """The CSV files to read from one SBA catalog reply: the PPP $150k+ list, or the 7(a) since FY2020 and 504 since
+    FY2010 lists (the older 7(a) files are left out)."""
     try:
         resources = catalog['result']['resources']
     except (KeyError, TypeError):
         raise EngineError('The SBA data catalog answered in an unexpected shape. Nothing was changed.')
-    urls = [r.get('url', '') for r in resources if isinstance(r, dict)]
-    picked = [u for u in urls if re.search(r'150k_?plus', u, re.I) and u.lower().endswith('.csv')]
+    picked = []
+    for r in resources:
+        if not isinstance(r, dict):
+            continue
+        url, label = r.get('url', ''), f"{r.get('name', '')} {r.get('url', '')}".lower()
+        if not url.lower().endswith('.csv'):
+            continue
+        if source == 'ppp' and re.search(r'150k_?plus', label):
+            picked.append(url)
+        elif source == 'sba7a504' and (re.search(r'7\(?a\)?.*fy ?2020', label) or re.search(r'504.*fy ?2010', label)):
+            picked.append(url)
     if not picked:
-        raise EngineError('The SBA catalog lists no $150k+ PPP file right now.')
+        raise EngineError(f'The SBA catalog lists no {SOURCES[source][1]} file right now.')
     return picked
 
 
@@ -177,45 +255,60 @@ def connect(path=None):
     return con
 
 
+COLS = ('key', 'name', 'address', 'city', 'state', 'zip', 'naics', 'jobs', 'loan', 'payroll', 'business_type', 'age',
+        'franchise', 'nonprofit', 'approved', 'lender', 'forgiven', 'source', 'seen')
+COMBINE = """
+WITH agg AS (SELECT key, GROUP_CONCAT(DISTINCT source) AS srcs, MIN(seen) AS first_seen, MAX(seen) AS last_seen,
+                    MAX(payroll) AS ppp_payroll, MAX(CASE WHEN payroll IS NOT NULL THEN jobs END) AS ppp_jobs,
+                    COUNT(*) AS n, MAX(nonprofit) AS np, MAX(forgiven) AS forgiven_max FROM loans GROUP BY key),
+     newest AS (SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY key ORDER BY seen DESC) AS rn FROM loans) WHERE rn = 1),
+     staff AS (SELECT key, jobs AS newest_jobs FROM (SELECT key, jobs, ROW_NUMBER() OVER (PARTITION BY key ORDER BY seen DESC) AS rn
+               FROM loans WHERE jobs > 0) WHERE rn = 1)
+SELECT newest.*, agg.srcs, agg.first_seen, agg.last_seen, agg.ppp_payroll, agg.ppp_jobs, agg.n, agg.np, agg.forgiven_max, staff.newest_jobs
+FROM newest JOIN agg USING (key) LEFT JOIN staff USING (key)
+"""
+
+
 def build(con, csv_paths, progress=lambda n: None):
-    """Reads the CSV files into a fresh companies table. Loans go into a staging table first and are combined per
-    business in SQL (a million rows never sit in memory); one transaction, so a failure leaves the old list."""
+    """Reads the CSV files (any mix of PPP, 7(a) and 504) into a fresh companies table. Loans go into a staging table
+    and are combined per business in SQL (a million rows never sit in memory); one transaction, so a failure leaves
+    the old list."""
     n = 0
-    cols = ('key', 'name', 'address', 'city', 'state', 'zip', 'naics', 'jobs', 'loan', 'payroll', 'business_type', 'age',
-            'franchise', 'nonprofit', 'approved', 'lender', 'forgiven')
+    insert = f"INSERT INTO loans VALUES ({','.join('?' * len(COLS))})"
     with con:
         con.execute('DROP TABLE IF EXISTS loans')
-        con.execute(f"CREATE TEMP TABLE loans ({', '.join(cols)})")
+        con.execute(f"CREATE TEMP TABLE loans ({', '.join(COLS)})")
         batch = []
         for path in csv_paths:
-            with open(path, newline='', encoding='utf-8', errors='replace') as fh:
+            with open(path, newline='', encoding='utf-8-sig', errors='replace') as fh:
                 reader = csv.DictReader(fh)
-                check_header(reader.fieldnames)
+                parse = parse_row if check_header(reader.fieldnames) == 'ppp' else parse_sba_row
                 for r in reader:
-                    c = parse_row(r)
+                    c = parse(r)
                     n += 1
                     if c:
-                        c['nonprofit'] = int(c['nonprofit'])
-                        batch.append(tuple(c[k] for k in cols))
+                        batch.append(tuple(c[k] for k in COLS))
                     if len(batch) >= BATCH:
-                        con.executemany(f"INSERT INTO loans VALUES ({','.join('?' * len(cols))})", batch)
+                        con.executemany(insert, batch)
                         batch = []
                     if n % 100000 == 0:
                         progress(n)
         if batch:
-            con.executemany(f"INSERT INTO loans VALUES ({','.join('?' * len(cols))})", batch)
+            con.executemany(insert, batch)
+        con.execute('CREATE INDEX temp.loans_key ON loans (key, seen)')
         con.execute('DELETE FROM companies')
-        rows = con.execute(
-            'SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY key ORDER BY COALESCE(payroll, 0) DESC) AS rn, '
-            'COUNT(*) OVER (PARTITION BY key) AS draws, MAX(jobs) OVER (PARTITION BY key) AS most_jobs FROM loans) WHERE rn = 1')
+        rows = con.execute(COMBINE)
         while True:
             chunk = rows.fetchmany(BATCH)
             if not chunk:
                 break
-            con.executemany('INSERT OR REPLACE INTO companies VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [
-                (c['key'], c['name'], c['address'], c['city'], c['state'], c['zip'], c['naics'], SECTORS.get((c['naics'] or '')[:2], ''),
-                 c['most_jobs'], c['loan'], c['draws'], c['payroll'], *revenue_range(c['payroll'], c['naics']), c['business_type'],
-                 c['age'], c['franchise'], c['nonprofit'], c['approved'], c['lender'], c['forgiven']) for c in chunk])
+            out = []
+            for c in chunk:
+                (low, likely, high), basis, payroll = estimate(c['ppp_payroll'], c['ppp_jobs'], c['newest_jobs'], c['naics'])
+                out.append((c['key'], c['name'], c['address'], c['city'], c['state'], c['zip'], c['naics'], SECTORS.get((c['naics'] or '')[:2], ''),
+                            c['newest_jobs'], c['loan'], c['n'], payroll, low, likely, high, c['business_type'], c['age'], c['franchise'],
+                            c['np'], c['approved'], c['lender'], c['forgiven_max'], c['srcs'], c['first_seen'], c['last_seen'], basis))
+            con.executemany(f"INSERT OR REPLACE INTO companies VALUES ({','.join('?' * 26)})", out)
         con.execute('DROP TABLE loans')
         con.execute("INSERT OR REPLACE INTO meta VALUES ('built', ?)", (dt.datetime.now().isoformat(timespec='seconds'),))
         con.execute("INSERT OR REPLACE INTO meta VALUES ('source', ?)", (SOURCE,))
@@ -223,7 +316,7 @@ def build(con, csv_paths, progress=lambda n: None):
 
 
 SORTS = {'revenue': 'COALESCE(rev_likely, 0) DESC', 'jobs': 'COALESCE(jobs, 0) DESC', 'name': 'name COLLATE NOCASE',
-         'loan': 'COALESCE(loan, 0) DESC', 'approved': 'approved DESC'}
+         'loan': 'COALESCE(loan, 0) DESC', 'newest': 'last_seen DESC'}
 
 
 def search(con, q):
@@ -258,6 +351,10 @@ def search(con, q):
         where.append("franchise <> ''")
     if q.get('noNonprofits'):
         where.append('nonprofit = 0')
+    since = str(q.get('seenSince') or '').strip()
+    if re.fullmatch(r'\d{4}', since):
+        where.append('last_seen >= ?')
+        args.append(f'{since}-01-01')
     sql_where = f"WHERE {' AND '.join(where)}" if where else ''
     limit = max(1, min(int(q.get('limit') or 100), 500))
     offset = max(0, int(q.get('offset') or 0))
@@ -273,7 +370,8 @@ def public_row(r):
             'naics': d['naics'], 'sector': d['sector'], 'jobs': d['jobs'], 'loan': d['loan'], 'draws': d['draws'], 'payroll': d['payroll'],
             'revenue': {'low': d['rev_low'], 'likely': d['rev_likely'], 'high': d['rev_high']} if d['rev_likely'] else None,
             'businessType': d['business_type'], 'age': d['age'], 'franchise': d['franchise'], 'nonprofit': bool(d['nonprofit']),
-            'approved': d['approved'], 'lender': d['lender'], 'forgiven': d['forgiven']}
+            'approved': d['approved'], 'lender': d['lender'], 'forgiven': d['forgiven'], 'sources': (d['sources'] or '').split(','),
+            'firstSeen': d['first_seen'], 'lastSeen': d['last_seen'], 'basis': d['basis']}
 
 
 def status(con):
@@ -284,36 +382,49 @@ def status(con):
         for gid, (_, prefixes) in GROUPS.items():
             by_group[gid] = con.execute('SELECT COUNT(*) FROM companies WHERE ' + ' OR '.join('naics LIKE ?' for _ in prefixes),
                                         [p + '%' for p in prefixes]).fetchone()[0]
-    return {'count': count, 'built': meta.get('built'), 'source': meta.get('source') or SOURCE, 'byGroup': by_group,
+    recent = con.execute("SELECT COUNT(*) FROM companies WHERE last_seen >= ?", (f'{dt.date.today().year - 1}-01-01',)).fetchone()[0] if count else 0
+    newest = con.execute('SELECT MAX(last_seen) FROM companies').fetchone()[0] if count else None
+    return {'count': count, 'recent': recent, 'newest': newest, 'built': meta.get('built'), 'source': meta.get('source') or SOURCE,
+            'problems': json.loads(meta.get('problems') or '[]'), 'byGroup': by_group,
             'groups': [{'id': k, 'label': v[0]} for k, v in GROUPS.items()], 'job': dict(JOB),
-            'method': 'Revenue ≈ PPP payroll (loan × 12 ÷ 2.5) ÷ the industry’s typical payroll share of sales (Census Economic '
-                      'Census, rounded). Loans are from 2020-2021; pay above $100,000 a person is not counted, so big earners read low.'}
+            'method': 'Revenue is estimated: PPP payroll (loan × 12 ÷ 2.5, scaled to the newest headcount) ÷ the industry’s payroll '
+                      'share of sales, or newest headcount × the industry’s revenue per employee (Census, rounded).'}
 
 
 # ---------- download ----------
 
 async def run_download(ctx, emit=None):
+    """Downloads every source (one failing doesn't stop the others) and rebuilds the list from what arrived."""
     from . import prospect
-    JOB.update(running=True, text='Finding the newest SBA file...', error='', done=0)
+    JOB.update(running=True, text='Finding the newest SBA files...', error='', done=0)
+    paths, problems = [], []
     try:
-        resp = await ctx.http.get(CATALOG, timeout=60)
-        if resp.status_code != 200:
-            raise EngineError(f'The SBA data catalog answered HTTP {resp.status_code}. Try again later.')
-        urls = pick_files(resp.json())
-        paths = []
-        for url in urls:
-            JOB['text'] = f'Downloading {url.rsplit("/", 1)[-1]}...'
-            paths.append(await prospect.download(ctx, url, DATA_DIR / prospect._file_name(url), emit=emit, label='the SBA company list'))
-        JOB['text'] = 'Reading about a million companies (a few minutes)...'
+        for source, (dataset, label) in SOURCES.items():
+            try:
+                resp = await ctx.http.get(CATALOG.format(dataset), timeout=60)
+                if resp.status_code != 200:
+                    raise EngineError(f'the SBA data catalog answered HTTP {resp.status_code}')
+                for url in pick_files(resp.json(), source):
+                    JOB['text'] = f'Downloading {label}: {url.rsplit("/", 1)[-1]}...'
+                    paths.append(await prospect.download(ctx, url, DATA_DIR / prospect._file_name(url), emit=emit, label=label))
+            except Exception as err:
+                problems.append(f'{label}: {err}')
+                log.warning('Company source %s failed: %s', source, err)
+        if not paths:
+            raise EngineError('No SBA file could be downloaded. ' + ' '.join(problems))
+        JOB['text'] = 'Combining the lists (a few minutes)...'
 
         def work():
             con = connect()
             try:
-                return build(con, paths, progress=lambda n: JOB.update(text=f'Read {n:,} loans...'))
+                n = build(con, paths, progress=lambda k: JOB.update(text=f'Read {k:,} loans...'))
+                with con:
+                    con.execute("INSERT OR REPLACE INTO meta VALUES ('problems', ?)", (json.dumps(problems),))
+                return n
             finally:
                 con.close()
         n = await asyncio.to_thread(work)
-        JOB.update(text=f'Done: {n:,} companies.', done=n)
+        JOB.update(text=f'Done: {n:,} companies.' + (f' Problems: {"; ".join(problems)}' if problems else ''), done=n)
         return n
     except Exception as err:
         JOB['error'] = str(err)
