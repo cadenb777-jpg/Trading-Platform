@@ -101,7 +101,8 @@ everything two clicks away, and a ticker typed anywhere opens one Security page.
       Original plan: Fincept-style tear sheet (left: trading, valuation, share stats; centre: chart with
       1M/3M/6M/1Y/5Y; right: analyst targets, 52-week range, profitability, growth; bottom: overview, info) with
       tabs Overview / Financials / Valuation / Peers / Filings / News; AI read of the company on top.
-- [ ] 7. Macro: fix layout shift and the 273 ms block; BTMM-style rates & money-markets board as the hero;
+- [~] 7. Macro: Rates & markets board added under Today's read (four rows: Rates, Credit & inflation, Markets, Jobs
+      & growth; value, 1-month change, 1-year sparkline, rank since 2006; tiles open the history). Original plan: fix layout shift and the 273 ms block; BTMM-style rates & money-markets board as the hero;
       Fed odds and liquidity kept; compact series grid.
 - [ ] 8. Investments: compact boards (tables with sparklines), heat-map view, fund cards to kv lists.
 - [ ] 9. Flow: dense options/dark-pool panels, live flow tape.
