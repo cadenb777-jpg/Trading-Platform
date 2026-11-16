@@ -9,6 +9,7 @@ import { formAlert } from '../ui/alertsLogic';
 import { openChartWindow } from '../ui/chartWindow';
 import { openSettings } from '../ui/settings';
 import { currentTheme, setTheme } from '../ui/theme';
+import { deleteDoc, saveDoc } from '../data/store';
 import type { ActionEnv } from './actions';
 
 export interface EnvDeps {
@@ -91,5 +92,14 @@ export function createActionEnv(deps: EnvDeps): ActionEnv {
     theme: currentTheme,
     setTheme,
     openSettings: (section) => void openSettings(section),
+    savePortfolio: async (p) => {
+      const saved = await saveDoc('portfolios', p as typeof p & { id?: string });
+      window.dispatchEvent(new CustomEvent('tp:portfolios-changed', { detail: { id: saved.id } }));
+      return saved.id;
+    },
+    deletePortfolio: async (id) => {
+      await deleteDoc('portfolios', id);
+      window.dispatchEvent(new CustomEvent('tp:portfolios-changed'));
+    },
   };
 }

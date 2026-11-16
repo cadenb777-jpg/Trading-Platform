@@ -50,6 +50,67 @@ export interface ActionEnv {
   theme(): 'dark' | 'light';
   setTheme(name: 'dark' | 'light'): void;
   openSettings(section?: string): void;
+  /** Saves a new portfolio (Portfolios page) and returns its id; deletes one (Undo). Optional: older wiring lacks it. */
+  savePortfolio?(p: TestPortfolio): Promise<string>;
+  deletePortfolio?(id: string): Promise<void>;
+}
+
+/** A model portfolio the assistant builds on request (never an order: it is only saved on the Portfolios page). */
+export interface TestPortfolio {
+  name: string;
+  benchmark: string;
+  rebalance: 'none' | 'monthly' | 'quarterly' | 'yearly';
+  mode: 'weight' | 'dollars';
+  holdings: { symbol: string; weight: number; amount?: number; assetClass: string; kind: 'security' | 'cash' }[];
+  notes: string;
+  mine: false;
+}
+
+/** Holdings from the assistant's list: weights in percent (missing = equal), or dollar amounts; CASH is cash.
+ * Weights that don't add to 100 are scaled to 100 (pure, tested). */
+export function portfolioFromArgs(args: Record<string, unknown>): { portfolio: TestPortfolio; scaled: boolean } {
+  const name = String(args.name ?? '').trim() || 'Test portfolio';
+  const raw = Array.isArray(args.holdings) ? args.holdings : [];
+  if (!raw.length || raw.length > 60) throw new ActionError('Give 1 to 60 holdings, each with a symbol and an optional weight (%) or amount ($).');
+  const seen = new Set<string>();
+  const rows = raw.map((r) => {
+    const o = (typeof r === 'string' ? { symbol: r } : r) as Record<string, unknown>;
+    const symbol = String(o.symbol ?? '').trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9.\-]{0,9}$/.test(symbol)) throw new ActionError(`"${o.symbol}" is not a ticker symbol.`);
+    if (seen.has(symbol)) throw new ActionError(`${symbol} is listed twice.`);
+    seen.add(symbol);
+    const weight = o.weight == null ? null : Number(o.weight);
+    const amount = o.amount == null ? null : Number(o.amount);
+    if ((weight != null && !(weight > 0)) || (amount != null && !(amount > 0))) throw new ActionError(`${symbol}: weights and amounts must be above zero.`);
+    return { symbol, weight, amount };
+  });
+  const dollars = rows.every((r) => r.amount != null);
+  const total = dollars ? rows.reduce((a, r) => a + r.amount!, 0) : rows.reduce((a, r) => a + (r.weight ?? 0), 0);
+  const given = rows.filter((r) => r.weight != null).length;
+  let weights: number[];
+  if (dollars) weights = rows.map((r) => (r.amount! / total) * 100);
+  else if (!given) weights = rows.map(() => 100 / rows.length);
+  else {
+    const rest = rows.length - given;
+    const left = Math.max(0, 100 - total);
+    weights = rows.map((r) => r.weight ?? (rest ? left / rest : 0));
+  }
+  const sum = weights.reduce((a, b) => a + b, 0);
+  const scaled = !dollars && Math.abs(sum - 100) > 0.01;
+  if (scaled) weights = weights.map((w) => (w / sum) * 100);
+  const rebalance = ['none', 'monthly', 'quarterly', 'yearly'].includes(String(args.rebalance)) ? (String(args.rebalance) as TestPortfolio['rebalance']) : 'quarterly';
+  const benchmark = String(args.benchmark ?? '').trim().toUpperCase() || 'SPY';
+  return {
+    scaled,
+    portfolio: {
+      name, benchmark, rebalance, mode: dollars ? 'dollars' : 'weight', mine: false,
+      notes: `Built by the AI assistant${args.notes ? `: ${String(args.notes).slice(0, 300)}` : ''}. A model only: nothing was bought.`,
+      holdings: rows.map((r, i) => ({
+        symbol: r.symbol, weight: Math.round(weights[i] * 100) / 100, ...(dollars ? { amount: r.amount! } : {}),
+        assetClass: r.symbol === 'CASH' ? 'Cash' : 'Other', kind: r.symbol === 'CASH' ? 'cash' : 'security',
+      })),
+    },
+  };
 }
 
 export class ActionError extends Error {}
@@ -539,6 +600,25 @@ export const ACTIONS: Record<string, ActionSpec> = {
       const section = str(args, 'section', false);
       env.openSettings(section || undefined);
       return { message: `Opened Settings${section ? ` (${section})` : ''}` };
+    },
+  },
+
+  create_portfolio: {
+    async run(env, args) {
+      if (!env.savePortfolio) throw new ActionError('Portfolios need the helper (it saves them on this computer).');
+      const { portfolio, scaled } = portfolioFromArgs(args);
+      const id = await env.savePortfolio(portfolio);
+      const before = env.currentRoute();
+      env.navigate('portfolio');
+      const list = portfolio.holdings.map((x) => `${x.symbol} ${x.weight}%`).join(', ');
+      return {
+        message: `Created the model portfolio "${portfolio.name}" (${list})${scaled ? '; weights scaled to add up to 100%' : ''}. Nothing was bought.`,
+        data: { id, ...portfolio },
+        undo: async () => {
+          await env.deletePortfolio?.(id);
+          env.navigate(before);
+        },
+      };
     },
   },
 

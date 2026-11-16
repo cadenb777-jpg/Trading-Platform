@@ -54,6 +54,8 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   AI screen context (v23): the browser sends the open page's visible text plus any open pop-up (src/ai/screen.ts,
   capped 8,000 chars) as context.screen; ai.py adds it in a <screen> block only when it changed since the last message;
   PAGE_SUGGESTIONS gives per-page example questions.
+  AI create_portfolio (v80): UI tool that saves a model portfolio (mine false, note "nothing was bought") on Portfolios
+  and opens it (tp:portfolios-changed), Undo deletes it; portfolioFromArgs in src/ai/actions.ts.
   AI (engine/ai.py): official `anthropic` SDK, default model claude-opus-5-5 with server-side fallbacks, tools over
   engine data plus `ui_action` (browser carries out open_chart/add_indicator/create_alert). It must never trade.
   AI actions (helper v42, AI_ACTIONS_HELPER_VERSION; browser sends ai.chat `ui_actions: 1`): one tool per action

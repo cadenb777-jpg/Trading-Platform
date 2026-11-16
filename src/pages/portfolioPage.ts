@@ -1028,6 +1028,14 @@ export function createPortfolioPage() {
   }
 
   window.addEventListener('tp:data-changed', () => started && refreshList());
+  // the AI assistant built or removed a model portfolio: show the list again and open the new one
+  window.addEventListener('tp:portfolios-changed', (e) => {
+    const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+    void refreshList().then(() => {
+      const made = id ? saved.find((p) => p.id === id) : undefined;
+      if (made && started) select(structuredClone(made));
+    });
+  });
 
   let started = false;
   return {
