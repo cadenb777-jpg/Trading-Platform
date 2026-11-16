@@ -182,7 +182,7 @@ whenever the owner repeats or adds one.
   dropped because intangibles are tagged too unevenly between companies to subtract honestly. Review caught the share
   "written off" mixing trademark write-downs into a goodwill percentage (12% shown, 0.1% true): keep each figure to
   its own base.
-- 2026-11-16 · #PRNUM Building and stock pay (helper 81): capital spending against depreciation (Microsoft 3.4x, up from
+- 2026-11-16 · #34 Building and stock pay (helper 81): capital spending against depreciation (Microsoft 3.4x, up from
   1.9x in FY2022; Apple 1.0x) and free cash flow after stock pay (Microsoft 19% of free cash flow; Amazon FY2025 253%) on
   the Research overview · proposed · backlog A21-A22. Lessons: compare capex with depreciation alone, not D&A (Apple
   read 0.67x on D&A, 1.04x on depreciation: amortization of bought intangibles isn't what capex buys); a 330-400-day fact
