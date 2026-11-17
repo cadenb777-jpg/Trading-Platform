@@ -22,7 +22,7 @@ const overlaps = () => p.evaluate(() => {
   }
   // text cut off without an ellipsis
   for (const e of document.querySelectorAll('.app-main *')) {
-    if (!vis(e) || e.childElementCount) continue;
+    if (!vis(e) || e.childElementCount || e.closest('.sr-only, .visually-hidden')) continue;
     const s = getComputedStyle(e);
     if (e.scrollWidth > e.clientWidth + 2 && s.overflow === 'hidden' && s.textOverflow !== 'ellipsis' && e.textContent.trim()) out.push(`CLIPPED ${e.tagName}.${String(e.className).slice(0, 30)} "${e.textContent.trim().slice(0, 30)}"`);
   }
