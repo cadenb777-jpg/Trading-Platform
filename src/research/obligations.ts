@@ -34,6 +34,8 @@ export interface Yield {
 export interface CorpYields {
   ig: Yield | null;
   hy: Yield | null;
+  /** helper 83: Moody's Baa corporate yield (FRED BAA, monthly), for Research's return on capital */
+  baa?: Yield | null;
 }
 
 const days = (a: string, b: string) => Math.abs(Date.parse(`${a.slice(0, 10)}T00:00:00Z`) - Date.parse(`${b.slice(0, 10)}T00:00:00Z`)) / 86_400_000;

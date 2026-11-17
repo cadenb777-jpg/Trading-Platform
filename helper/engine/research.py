@@ -37,13 +37,16 @@ INCOME = [
 ]
 BALANCE = [
     ('cash', 'Cash & equivalents', ['CashAndCashEquivalentsAtCarryingValue', 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', 'Cash']),
-    ('shortInvestments', 'Short-term investments', ['MarketableSecuritiesCurrent', 'ShortTermInvestments', 'AvailableForSaleSecuritiesDebtSecuritiesCurrent']),
+    ('shortInvestments', 'Short-term investments', ['MarketableSecuritiesCurrent', 'ShortTermInvestments', 'AvailableForSaleSecuritiesDebtSecuritiesCurrent',
+                                                          'OtherShortTermInvestments']),  # Coca-Cola's since 2021 (helper 83)
     # helper 71: for the Beneish M-score and Altman Z-score on Research (Earnings quality)
     ('receivables', 'Accounts receivable', ['AccountsReceivableNetCurrent', 'ReceivablesNetCurrent']),
     # helper 74: for the cash conversion cycle (payables only on their own line: a combined payables-and-accrued
     # line would overstate days to pay)
     ('inventory', 'Inventory', ['InventoryNet', 'RetailRelatedInventoryMerchandise']),
     ('currentAssets', 'Current assets', ['AssetsCurrent']),
+    # helper 83: securities held for more than a year (Apple's $80B+), left out of invested capital like cash
+    ('longInvestments', 'Long-term marketable securities', ['MarketableSecuritiesNoncurrent', 'AvailableForSaleSecuritiesDebtSecuritiesNoncurrent']),
     ('ppe', 'Property, plant & equipment', ['PropertyPlantAndEquipmentNet',
                                             'PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulatedDepreciationAndAmortization']),
     ('goodwill', 'Goodwill', ['Goodwill']),  # helper 75
@@ -52,17 +55,28 @@ BALANCE = [
     # helper 75: billed in advance (ASC 606 renamed DeferredRevenueCurrent to ContractWithCustomerLiabilityCurrent in 2018:
     # the same current concept), for Research's balance-sheet quality panel
     ('deferredRevenue', 'Deferred revenue (current)', ['ContractWithCustomerLiabilityCurrent', 'DeferredRevenueCurrent']),
+    # helper 83: debt due within a year (the total; filled from its parts in statements() when only they are tagged),
+    # so invested capital counts it as financing, not as an operating liability
+    ('currentDebt', 'Current debt', ['DebtCurrent']),
     ('currentLiabilities', 'Current liabilities', ['LiabilitiesCurrent']),
     ('longTermDebt', 'Long-term debt', ['LongTermDebtNoncurrent', 'LongTermDebt', 'LongTermDebtAndCapitalLeaseObligations']),
     ('totalLiabilities', 'Total liabilities', ['Liabilities']),
     ('retainedEarnings', 'Retained earnings', ['RetainedEarningsAccumulatedDeficit']),
     ('equity', "Shareholders' equity", ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest']),
 ]
+#: the parts of current debt some filers tag instead of the DebtCurrent total (used only when the total is missing, so
+#: nothing counts twice): the current part of long-term debt plus short-term borrowings, else commercial paper
+#: (ShortTermBorrowings is a total that usually already includes commercial paper)
+CURRENT_DEBT_PARTS = [
+    ('_ltdCurrent', ['LongTermDebtCurrent', 'LongTermDebtAndCapitalLeaseObligationsCurrent']),
+    ('_commercialPaper', ['CommercialPaper']),
+    ('_shortBorrowings', ['ShortTermBorrowings']),
+]
 CASH_FLOW = [
     ('operatingCashFlow', 'Operating cash flow', ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations']),
     ('capex', 'Capital expenditures', ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets']),
     ('dna', 'Depreciation & amortization', ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'DepreciationAmortizationAndAccretionNet']),
-    # helper 81: depreciation of property and equipment alone (what wears out what capital spending buys; Microsoft
+    # helper 82: depreciation of property and equipment alone (what wears out what capital spending buys; Microsoft
     # tags only this, no D&A line)
     ('depreciation', 'Depreciation', ['Depreciation']),
     ('stockComp', 'Stock-based compensation', ['ShareBasedCompensation', 'AllocatedShareBasedCompensationExpense']),
@@ -98,7 +112,9 @@ LEASE_TAGS = [
 PURCHASE_TAGS = ['UnrecordedUnconditionalPurchaseObligationBalanceSheetAmount', 'PurchaseObligation']
 #: today's corporate bond yields (ICE BofA effective yield indexes via FRED), for the refinancing wall; the same
 #: cached series the Bond market page reads (macro.fred), so no extra download
-CORP_YIELDS = [('ig', 'BAMLC0A0CMEY'), ('hy', 'BAMLH0A0HYM2EY')]
+#: helper 83 adds Moody's Baa corporate yield (monthly, since 1919): what a medium-grade company pays to borrow, the
+#: free floor Research sets return on capital against
+CORP_YIELDS = [('ig', 'BAMLC0A0CMEY'), ('hy', 'BAMLH0A0HYM2EY'), ('baa', 'BAA')]
 
 
 def _days(start, end):
@@ -244,6 +260,13 @@ def _ladder(company_facts, tags):
     return {'asOf': end, 'filed': filed, 'accession': accn, 'form': form, 'buckets': buckets}
 
 
+def _current_debt(ltd, cp, stb):
+    short = stb if stb is not None else cp
+    if ltd is None and short is None:
+        return None
+    return (ltd or 0) + (short or 0)
+
+
 def statements(company_facts):
     gaap = company_facts.get('facts', {}).get('us-gaap', {})
     if not gaap:
@@ -254,12 +277,16 @@ def statements(company_facts):
     for key, _, tags in INCOME + BALANCE + CASH_FLOW:
         a, q = _merge(gaap, tags, UNITS.get(key, 'USD'), key in INSTANT)
         annual_series[key], quarterly_series[key] = a, q
+    for key, tags in CURRENT_DEBT_PARTS:
+        annual_series[key], quarterly_series[key] = _merge(gaap, tags, 'USD', True)
     out = {}
     for name, series, count in (('annual', annual_series, YEARS), ('quarterly', quarterly_series, QUARTERS)):
         ends, table = _align(series, count)
         rev, cost = table['revenue'], table['costOfRevenue']
         table['grossProfit'] = [g if g is not None else (r - c if r is not None and c is not None else None) for g, r, c in zip(table['grossProfit'], rev, cost)]
         table['freeCashFlow'] = [o - (c or 0) if o is not None else None for o, c in zip(table['operatingCashFlow'], table['capex'])]
+        parts = [table.pop(key) for key, _ in CURRENT_DEBT_PARTS]
+        table['currentDebt'] = [t if t is not None else _current_debt(ltd, cp, stb) for t, ltd, cp, stb in zip(table['currentDebt'], *parts)]
         out[name] = {'periods': ends, 'values': table}
     ltm = last_twelve_months(out['quarterly'], out['annual'])
     if ltm:
@@ -416,9 +443,9 @@ async def company_core(ctx, cik, with_maturities=False):
 
 LADDER_KEYS = ('maturities', 'obligations')
 #: statement lines added since helper 71 (71: Beneish M-score, Altman Z-score; 74: cash conversion cycle; 75: deferred
-#: revenue, goodwill and write-downs; 81: depreciation): a saved copy without one of them is read again once
+#: revenue, goodwill and write-downs; 82: depreciation; 83: current debt and long-term securities, for return on capital): a saved copy without one of them is read again once
 STATEMENT_KEYS = ('receivables', 'ppe', 'retainedEarnings', 'inventory', 'payables', 'deferredRevenue', 'goodwill',
-                  'goodwillImpairment', 'intangibleImpairment', 'depreciation')
+                  'goodwillImpairment', 'intangibleImpairment', 'depreciation', 'currentDebt', 'longInvestments')
 
 
 def _ladders(company_facts):
