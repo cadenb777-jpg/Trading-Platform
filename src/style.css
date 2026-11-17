@@ -12540,3 +12540,52 @@ body {
   text-transform: none;
   letter-spacing: 0;
 }
+
+/* Simplicity pass (owner: "think like Steve Jobs"): fewer lines and boxes, more air, the key number large.
+   Panels lose their heavy frames and heading bars; space separates things instead of borders. */
+.panel {
+  border-color: color-mix(in srgb, var(--line) 55%, transparent);
+  border-radius: 10px;
+  padding: var(--sp-4);
+}
+.panel > .panel-head:first-child {
+  margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) var(--sp-3);
+  padding: 12px var(--sp-4) 8px;
+  background: none;
+  border-bottom: 0;
+  box-shadow: none;
+}
+.panel-head h3,
+.pr-sec h3 {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+}
+.ap-body {
+  gap: var(--sp-4);
+}
+.stat-card {
+  padding: 12px 14px;
+}
+.stat-value {
+  font-size: 20px;
+  font-weight: 600;
+}
+.kv {
+  gap: 7px 16px;
+}
+.kv dt {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--fs-sm);
+}
+.data-table td {
+  border-bottom-color: color-mix(in srgb, var(--line) 50%, transparent);
+}
+.ap-header {
+  border-bottom: 0;
+  padding-bottom: 0;
+  margin-bottom: var(--sp-4);
+}
+.viz-title {
+  margin-bottom: 4px;
+}
