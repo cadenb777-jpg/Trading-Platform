@@ -12007,7 +12007,9 @@ button.viz-heat-tile:hover {
     border-top: 1px solid var(--line);
     scrollbar-width: thin;
   }
-  body.rail-collapsed .rail-pulse {
+  body.rail-collapsed .rail-pulse,
+  body[data-section='today'] .rail-pulse {
+    /* Today already shows these (ticker tape, market mood, watchlist): additive, not duplicated (owner, 2026-11-17) */
     display: none;
   }
 }
@@ -12703,4 +12705,107 @@ select.input,
 .ticker-tape {
   font-family: var(--font-ui);
   font-variant-numeric: tabular-nums;
+}
+
+/* Prospects → Pipeline board */
+.pl-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-3);
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .pl-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 520px) {
+  .pl-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.pl-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 140px;
+  padding: 12px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  border: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
+}
+.pl-col-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 2px 4px 6px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.pl-col-head b {
+  font-size: var(--fs-lg);
+  letter-spacing: 0;
+  color: var(--text-strong);
+}
+.pl-meeting .pl-col-head span {
+  color: var(--section-accent);
+}
+.pl-client .pl-col-head span {
+  color: var(--up-text);
+}
+.pl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--raised) 85%, transparent);
+  border: 1px solid color-mix(in srgb, #ffffff 6%, transparent);
+  cursor: pointer;
+  transition: transform var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+}
+.pl-card:hover,
+.pl-card:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px -10px #000000a0, 0 0 0 1px color-mix(in srgb, var(--section-accent) 40%, transparent);
+}
+.pl-name {
+  font-size: var(--fs-md);
+  color: var(--text-strong);
+}
+.pl-note {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.pl-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--fs-xs);
+  color: var(--faint);
+}
+.pl-move {
+  display: inline-flex;
+  gap: 2px;
+}
+.pl-empty {
+  margin: 4px;
+  font-size: var(--fs-sm);
+  color: var(--faint);
+}
+.pl-dnc {
+  margin-top: var(--sp-3);
+}
+.pl-dnc-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
 }

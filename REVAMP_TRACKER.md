@@ -10,6 +10,9 @@ with even digits, frosted glass on the chrome (menu, top bar, pop-ups; never on 
 scrolling), glassy rounded panels, far less reading (explanations in hover tips, deep dives folded), AI summaries only
 when clicked. Keep the amber headings, section accents and blue glow.
 
+Owner, 2026-11-17: additive, not duplicative. Nothing appears twice on one screen (the rail's Market pulse is hidden
+on Today, which already has the tape, market mood and watchlist). Check every page for repeats before ticking it.
+
 Goal: launch-ready, on comparable terms with Bloomberg and Fincept Terminal, keeping the mantra (simplicity scales:
 remove before adding) and the finance-ui skill (.claude/skills/finance-ui). Keep the Home ticker tape and the
 "Good morning, <name>" greeting (polish allowed). Colours stay: amber labels, white figures, green/red only for
@@ -123,8 +126,9 @@ everything two clicks away, and a ticker typed anywhere opens one Security page.
 - [ ] 12. Chart: fix layout shift; GP-style header (range, period, upper/lower studies) compacted.
 - [ ] 13. Setups and Backtest: compact cards to table + detail pane.
 - [ ] 14. Account, Portfolios, Trade, Journal: kv lists, compact tables, consistent panels.
-- [ ] 15. Prospects (advisers + companies): CRM pipeline board (not contacted / contacted / meeting / client),
-      relationship map, notes; company tear sheet.
+- [~] 15. Prospects: Pipeline tab done (columns Not contacted / Contacted / Meeting / Client with counts, cards with
+      the last note and date, ← → move a stage, click opens the firm, "Do not contact" folded; src/prospect/pipeline.ts).
+      Still to do: relationship map, company tear sheet.
 - [ ] 16. Clients and reports.
 - [ ] 17. Strategy Lab and Scripts.
 
@@ -140,4 +144,4 @@ everything two clicks away, and a ticker typed anywhere opens one Security page.
       < 11 px, both themes, phone width; accessibility pass (contrast, focus, labels).
 - [ ] 21. Docs: CLAUDE.md, README, ROADMAP status.
 
-Next: finish 1b-4 (compact index strip, movers), then 6 (Research chart + segments flower), then 7 (Macro).
+Next: 14 (Account, Portfolios), then finish 1b-4 (compact index strip that also removes the tape/index-card overlap, movers), then 6 (Research chart + segments flower), then 7 (Macro).

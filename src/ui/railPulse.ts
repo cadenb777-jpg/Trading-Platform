@@ -2,7 +2,8 @@
  * Market pulse: the left menu's lower half (it was empty space) as a live mini board, Bloomberg-monitor style:
  * the big indexes, rates, gold, oil, bitcoin and the first names of the owner's watchlist, each with its last price
  * and day change, green/red only for up/down. Clicking a line opens that security. Quotes come from the same live
- * feed as the ticker tape (subscribeQuote); updates change text in place (no layout work on scroll).
+ * feed as the ticker tape (subscribeQuote); updates change text in place (no layout work on scroll). Hidden on Today,
+ * which already shows all of it (tape, market mood, watchlist): the rail only adds what the page doesn't show.
  */
 import { subscribeQuote, type MarketRef } from '../data/quotes';
 import { state } from '../state';
