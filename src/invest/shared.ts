@@ -5,6 +5,7 @@ import type { MarketRef } from '../data/quotes';
 import { engineRequest } from '../data/schwab';
 import { createLineChart, pct, rangeBar, statCards } from '../ui/charts';
 import { activatable, formatPrice, h, openModal } from '../ui/dom';
+import { heatGrid } from '../ui/viz';
 import { termLabel } from '../ui/glossary';
 import { openSettings } from '../ui/settings';
 import { sparkline } from '../ui/sparkline';
@@ -165,12 +166,69 @@ export function boardTable(group: BoardGroup, rows: Map<string, BoardRow>, onPic
     ),
   ), { id, columns: { '3 months': 'none' } });
   interactive(table, entries, { boardId: id, expandable: true, defaultRange: () => rangeForColumn(loadState(id).sort?.col) });
+  // Table or heat map (owner: pictures first): one choice for every board, remembered in this browser
+  const tableView = h('div', { class: 'table-wrap' }, table);
+  const mapView = h(
+    'div',
+    { class: 'inv-heat' },
+    heatGrid({
+      title: '',
+      items: items.map(([symbol, label]) => {
+        const r = rows.get(symbol);
+        return { label, value: r?.change == null ? null : r.change * 100, sub: showSymbol(symbol), title: `${label} (${showSymbol(symbol)}): open it`, onClick: () => onPick(symbol, label) };
+      }),
+      format: (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%`,
+    }),
+  );
+  const views = h('div', {}, boardView() === 'map' ? mapView : tableView);
+  const toggle = h(
+    'div',
+    { class: 'segmented small inv-viewtoggle', role: 'group', 'aria-label': 'Show as' },
+    ...(['table', 'map'] as const).map((v) =>
+      h('button', {
+        type: 'button',
+        class: boardView() === v ? 'active' : '',
+        'aria-pressed': String(boardView() === v),
+        onclick: () => {
+          setBoardView(v);
+          // every board on the page follows
+          document.querySelectorAll<HTMLElement>('.inv-viewtoggle').forEach((t) => t.dispatchEvent(new CustomEvent('tp:inv-view')));
+        },
+      }, v === 'table' ? 'Table' : 'Heat map'),
+    ),
+  );
+  toggle.addEventListener('tp:inv-view', () => {
+    const v = boardView();
+    views.replaceChildren(v === 'map' ? mapView : tableView);
+    toggle.querySelectorAll('button').forEach((b, i) => {
+      const on = (i === 0 ? 'table' : 'map') === v;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+  });
   return h(
     'section',
     { class: 'panel inv-board' },
-    h('div', { class: 'panel-head' }, h('h3', {}, group.title), group.note ? h('span', { class: 'muted small' }, group.note) : null, boardStamp(items.map(([s]) => rows.get(s)))),
-    h('div', { class: 'table-wrap' }, table),
+    h('div', { class: 'panel-head' }, h('h3', {}, group.title), group.note ? h('span', { class: 'muted small' }, group.note) : null, h('span', { class: 'spacer' }), toggle, boardStamp(items.map(([s]) => rows.get(s)))),
+    views,
   );
+}
+
+const VIEW_KEY = 'tp.inv.view';
+/** Boards as a table (default) or a heat map of today's moves. */
+export function boardView(): 'table' | 'map' {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'map' ? 'map' : 'table';
+  } catch {
+    return 'table';
+  }
+}
+function setBoardView(v: 'table' | 'map') {
+  try {
+    localStorage.setItem(VIEW_KEY, v);
+  } catch {
+    // private window: lasts for this visit only
+  }
 }
 
 /** "as of 10:42 · Schwab", or the session's close when the market is shut. */

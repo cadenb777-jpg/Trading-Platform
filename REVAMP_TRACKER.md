@@ -104,7 +104,8 @@ everything two clicks away, and a ticker typed anywhere opens one Security page.
 - [~] 7. Macro: Rates & markets board added under Today's read (four rows: Rates, Credit & inflation, Markets, Jobs
       & growth; value, 1-month change, 1-year sparkline, rank since 2006; tiles open the history). Original plan: fix layout shift and the 273 ms block; BTMM-style rates & money-markets board as the hero;
       Fed odds and liquidity kept; compact series grid.
-- [ ] 8. Investments: compact boards (tables with sparklines), heat-map view, fund cards to kv lists.
+- [~] 8. Investments: every board has a Table | Heat map switch (one choice for all boards, remembered); tiles open
+      the security. Original plan: compact boards (tables with sparklines), heat-map view, fund cards to kv lists.
 - [~] 9. Flow: options walls (call wall / put wall with a track and plain words, marked on the open-interest ladder).
       Original plan: dense options/dark-pool panels, live flow tape.
 - [ ] 10. Futures: fix layout shift; curve and COT panels compact.

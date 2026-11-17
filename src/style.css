@@ -12319,3 +12319,21 @@ body[data-section='business'] { --section-accent: var(--hue-business); }
 .oi-row.putwall {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--down) 55%, transparent);
 }
+.viz-title:empty {
+  display: none;
+}
+.inv-viewtoggle {
+  margin-left: auto;
+}
+.inv-board .panel-head {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.inv-viewtoggle {
+  display: inline-flex;
+  flex: none;
+  flex-direction: row;
+}
+.inv-viewtoggle button {
+  white-space: nowrap;
+}
