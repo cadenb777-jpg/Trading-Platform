@@ -12337,3 +12337,84 @@ body[data-section='business'] { --section-accent: var(--hue-business); }
 .inv-viewtoggle button {
   white-space: nowrap;
 }
+
+/* Calendar: the week at a glance and the actual-vs-forecast bar */
+.cal-week {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 4px;
+  margin-bottom: var(--sp-3);
+}
+.cal-week-day {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--raised) 60%, transparent);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cal-week-day.busy {
+  border-color: color-mix(in srgb, var(--down) 45%, var(--line));
+}
+.cal-week-day:hover {
+  box-shadow: 0 0 14px color-mix(in srgb, var(--section-accent) 18%, transparent);
+}
+.cal-week-name {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.cal-week-dots {
+  display: flex;
+  gap: 3px;
+  min-height: 8px;
+}
+.cal-week-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.cal-week-dots i.h {
+  background: var(--down);
+}
+.cal-week-dots i.m {
+  background: var(--warn);
+}
+.cal-week-count {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.cal-surprise {
+  position: relative;
+  display: block;
+  width: 44px;
+  height: 4px;
+  margin: 3px 0 0 auto;
+  border-radius: 2px;
+  background: var(--line);
+}
+.cal-surprise::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  width: 1px;
+  height: 8px;
+  background: var(--muted);
+}
+.cal-surprise i {
+  position: absolute;
+  top: -2px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
