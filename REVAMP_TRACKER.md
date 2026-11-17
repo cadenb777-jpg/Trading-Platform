@@ -5,6 +5,11 @@ only as the feature checklist (owner, 2026-11-16). Keep the platform's own signa
 the blue glow (greeting banner, background, panel hover). Use Fincept's code (github.com/Fincept-Corporation/
 FinceptTerminal, AGPL, see docs/research/fincept-plan.md) wherever it does a page better; keep its notices.
 
+Owner, 2026-11-17: Apple-quality finish ("like Steve Jobs built it"): San Francisco / Inter, numbers in the same font
+with even digits, frosted glass on the chrome (menu, top bar, pop-ups; never on scrolling panels, it costs smooth
+scrolling), glassy rounded panels, far less reading (explanations in hover tips, deep dives folded), AI summaries only
+when clicked. Keep the amber headings, section accents and blue glow.
+
 Goal: launch-ready, on comparable terms with Bloomberg and Fincept Terminal, keeping the mantra (simplicity scales:
 remove before adding) and the finance-ui skill (.claude/skills/finance-ui). Keep the Home ticker tape and the
 "Good morning, <name>" greeting (polish allowed). Colours stay: amber labels, white figures, green/red only for
@@ -90,6 +95,11 @@ everything two clicks away, and a ticker typed anywhere opens one Security page.
       375 px, Actions menus, command bar, adding and removing a chart indicator; checks overlapping boxes, clipped text,
       slow clicks and console errors. Result 2026-11-16: 0 problems, 0 errors. Fixed on the way: one Escape now closes
       the command bar; only a panel's first heading spans the panel (later ones overlapped the content above).
+
+- [x] Calm reading + Apple finish: Inter/SF, tabular numbers, glass chrome, rounded glassy panels, hover tips for
+      explanations (src/ui/quiet.ts), Research deep dives in "More on <ticker>", summaries only on click. Scrolling
+      re-measured at 60 fps.
+- [x] 11. Calendar: week at a glance (big events per day) and an actual-vs-forecast bar on released numbers.
 
 ## Phase 3: pages (one PR each)
 
