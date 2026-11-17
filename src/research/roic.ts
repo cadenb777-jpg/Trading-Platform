@@ -22,6 +22,9 @@
  */
 import { fy, ok, pc, usd, type Statements } from './debtDilution';
 import { at } from './quality';
+import { newestYear, yearsBefore, type Stale } from './years';
+
+export { yearsBefore, type Stale };
 import { median } from '../indicators/catalog/c-math';
 import { monthYear } from '../portfolio/optimiserText';
 
@@ -38,14 +41,6 @@ export interface Capital {
   value: number;
   /** lines the company tagged in other years but not this one, counted as zero (the return may read low or high) */
   missing: string[];
-}
-
-/** Period j ends about k fiscal years before period i (within a month): a missing year or a short transition
- * period never passes for one year. */
-export function yearsBefore(a: Statements, i: number, j: number, k: number): boolean {
-  if (j < 0 || i >= a.periods.length) return false;
-  const days = (Date.parse(`${a.periods[i]}T00:00:00Z`) - Date.parse(`${a.periods[j]}T00:00:00Z`)) / 86_400_000;
-  return Math.abs(days - 365.25 * k) <= 31;
 }
 
 /** Invested capital at year-end i: total assets - cash-like lines - (current liabilities - current debt). */
@@ -111,14 +106,6 @@ export interface Roic {
   latest: RoicYear;
   /** median of the history, 5+ years */
   median: number | null;
-}
-export type Stale = { lastShown: string };
-
-/** Newest fiscal year the filings show (revenue or total assets), or -1. */
-function newestYear(a: Statements): number {
-  let n = a.periods.length - 1;
-  while (n >= 0 && at(a, 'revenue', n) == null && at(a, 'totalAssets', n) == null) n--;
-  return n;
 }
 
 export function returnOnCapital(a: Statements): Roic | Stale | null {

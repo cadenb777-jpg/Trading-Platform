@@ -19,6 +19,7 @@
  */
 import { fy, pc, usd, type Statements } from './debtDilution';
 import { at, div } from './quality';
+import { lastRun } from './years';
 
 /** Newest year with operating cash flow (the newest cash-flow statement), or -1. */
 function newestCashFlow(a: Statements): number {
@@ -27,18 +28,8 @@ function newestCashFlow(a: Statements): number {
   return i;
 }
 
-/** The newest run of consecutive years (at most `span`), oldest first. */
-function window<T extends { end: string }>(a: Statements, rows: T[], span: number): T[] {
-  const idx = (end: string) => a.periods.indexOf(end);
-  const win = [rows[rows.length - 1]];
-  for (let k = rows.length - 2; k >= 0 && win.length < span; k--) {
-    if (idx(rows[k].end) !== idx(win[win.length - 1].end) - 1) break;
-    win.push(rows[k]);
-  }
-  return win.reverse();
-}
-
-export type Stale = { lastShown: string };
+export type { Stale } from './years';
+import type { Stale } from './years';
 const times = (x: number) => `${x.toFixed(1)}×`;
 
 // ---------- spending vs depreciation ----------
@@ -91,7 +82,7 @@ export function buildRate(a: Statements, span = 5): Build | Stale | null {
   // never an old year as today's: the newest cash-flow statement doesn't show both lines
   if (a.periods.indexOf(latest.end) < n) return { lastShown: latest.end };
   const i = a.periods.indexOf(latest.end);
-  return { history: window(a, rows, span), latest, basis, ofSales: div(latest.capex, at(a, 'revenue', i)), net: latest.capex - latest.dep };
+  return { history: lastRun(a, rows, span), latest, basis, ofSales: div(latest.capex, at(a, 'revenue', i)), net: latest.capex - latest.dep };
 }
 
 export function buildWords(b: Build): string {
@@ -153,7 +144,7 @@ export function stockPay(a: Statements, marketCap: number | null, span = 5): Sto
   if (!rows.length) return null;
   const latest = rows[rows.length - 1];
   if (a.periods.indexOf(latest.end) < n) return { lastShown: latest.end };
-  const win = window(a, rows, span);
+  const win = lastRun(a, rows, span);
   const sumF = win.reduce((s, r) => s + r.fcf, 0);
   const sumS = win.reduce((s, r) => s + r.sbc, 0);
   const after = latest.fcf - latest.sbc;
