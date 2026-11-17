@@ -56,8 +56,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   PAGE_SUGGESTIONS gives per-page example questions.
   Navigation (revamp): nav.ts SECTIONS today/markets/security/ideas/money/business/ai; the rail shows only them plus
   railPulse (live mini board); the top row is the section's pages; the function bar is an Actions menu in the page
-  header (keys 1-9). AI summaries (insightButton) run by themselves when the page shows and has data (RECENT_MS reuse,
-  only with an AI key).
+  header (keys 1-9). AI summaries (insightButton) run when clicked (auto-run removed at the owner's request); a recent read is reused
+  (RECENT_MS). Calm reading: src/ui/quiet.ts turns long page/panel explanations into hover tips; Inter for words,
+  JetBrains Mono for numbers.
   Visuals (revamp): src/ui/viz.ts gauge / ring / rangeTrack / flower / heatGrid (SVG, theme colours, pure geometry
   tested) each with a caption; Research overview = src/research/tearSheet.ts (Fincept layout, rule-made plain words) and
   research.about {cik} (engine/company_about.py: Wikidata P5531 -> Wikipedia summary, cached 30 days; helper 81).

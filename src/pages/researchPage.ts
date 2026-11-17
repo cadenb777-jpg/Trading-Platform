@@ -222,6 +222,8 @@ export function createResearchPage() {
       tearSheet(d),
       // what the company actually sells and where (its 10-K's product, segment and region breakdowns)
       segmentsPanel(d.symbol),
+      // the deep dives fold under one heading (owner: "less reading"); open state remembered
+      moreAnalysis(d.symbol, [
       segmentHistoryPanel(d.symbol),
       // debt maturities (10-K), interest cover, share count and buybacks after stock pay
       debtDilutionPanel({ annual: d.annual, marketCap: v.marketCap, cash: v.cash, maturities: d.maturities, obligations: d.obligations }),
@@ -251,8 +253,34 @@ export function createResearchPage() {
           RATIO_ROWS.map(([k, label]) => [{ v: label, cls: 'label' }, ...(d.ratios[k] ?? []).map((x, i, all) => ({ v: RATIO_PLAIN.has(k) ? (x == null ? '—' : x.toFixed(2)) : pct(x, 1), cls: x == null ? '' : k.endsWith('Growth') ? (x >= 0 ? 'up' : 'down') : toneVsPrev(k, x, all[i - 1]) }))]),
         ),
       ),
+      ]),
     ];
     return nodes;
+  }
+
+  /** "More analysis": history, debt, quality, cash, balance sheet, positioning, news and yearly tables in one fold. */
+  function moreAnalysis(symbol: string, panels: Node[]): HTMLElement {
+    const KEY = 'tp.research.more';
+    let open = false;
+    try {
+      open = localStorage.getItem(KEY) === '1';
+    } catch {
+      /* closed */
+    }
+    const el = h(
+      'details',
+      { class: 'ts-more', open },
+      h('summary', {}, h('b', {}, `More on ${symbol}`), h('span', { class: 'muted small' }, 'Segment history · debt · earnings quality · cash · balance sheet · building & stock pay · positioning · news · yearly tables')),
+      h('div', { class: 'ts-more-body' }, ...panels),
+    ) as HTMLDetailsElement;
+    el.addEventListener('toggle', () => {
+      try {
+        localStorage.setItem(KEY, el.open ? '1' : '0');
+      } catch {
+        /* not remembered */
+      }
+    });
+    return el;
   }
 
   function financials(d: CompanyData): Node[] {

@@ -9,6 +9,10 @@ The owner wants each page to answer its main question at a glance, the way Macro
 explaining where the edge is. The design is free to change; these rules are not.
 
 ## Look
+- Apple-quality finish (owner, 2026-11-17): San Francisco on Apple devices, Inter elsewhere (--font-ui); numbers in
+  the same font with tabular digits; frosted glass (backdrop-filter) only on fixed chrome and pop-ups, never on
+  scrolling panels (it drops frames); rounded glassy panels; space instead of borders. Less reading: explanations go
+  in hover tips (src/ui/quiet.ts does long panel and page notes automatically), detail folds away.
 - Fincept Terminal is the reference look (owner's choice): near-black, monospace, small uppercase amber headings with
   a rule, hairline panels, underlined uppercase tabs, label-value lists. Bloomberg is the feature checklist only.
   Keep the platform's signature on top: orange/amber accents and the blue glow (greeting banner, background, panel hover).

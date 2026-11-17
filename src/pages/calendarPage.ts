@@ -41,6 +41,30 @@ export function parseValue(text: string): number | null {
   return Number(m[1]) * (scale[m[2].toUpperCase()] ?? 1);
 }
 
+/** How far the actual came in from the forecast, -1..1 for the little bar (pure, tested): 0 = in line, ±1 = a miss
+ * of a quarter of the forecast or more (or of the forecast's own size when it is near zero). */
+export function surprise(e: CalendarEvent): number | null {
+  const a = parseValue(e.actual);
+  const f = parseValue(e.forecast);
+  if (a === null || f === null) return null;
+  const scale = Math.max(Math.abs(f) * 0.25, Math.abs(f) < 1 ? 0.2 : 0);
+  return scale ? Math.max(-1, Math.min(1, (a - f) / scale)) : 0;
+}
+
+/** The week at a glance (pure, tested): each day with its high- and medium-impact counts, in order. */
+export function weekDays(list: CalendarEvent[], key: (t: number) => string) {
+  const days = new Map<string, { day: string; high: number; medium: number; total: number }>();
+  for (const e of list) {
+    const k = key(e.time);
+    const d = days.get(k) ?? { day: k, high: 0, medium: 0, total: 0 };
+    if (e.impact === 'high') d.high++;
+    else if (e.impact === 'medium') d.medium++;
+    d.total++;
+    days.set(k, d);
+  }
+  return [...days.values()];
+}
+
 export function compareActual(e: CalendarEvent): 'above' | 'below' | 'inline' | null {
   const actual = parseValue(e.actual);
   const forecast = parseValue(e.forecast);
@@ -80,7 +104,10 @@ const impactDots = (impact: CalendarEvent['impact']) =>
 
 function valueCell(e: CalendarEvent) {
   const cmp = compareActual(e);
-  return h('span', { class: `cal-actual ${cmp ?? ''}`, 'data-label': 'Actual', title: [cmp ? `Actual came in ${cmp === 'inline' ? 'in line with' : cmp === 'above' ? 'higher than' : 'lower than'} the forecast.` : '', e.actualSource ? `Official figure from ${e.actualSource}.` : ''].join(' ').trim() }, e.actual || '—');
+  const sp = surprise(e);
+  // a tiny bar: the forecast in the middle, the actual's dot left (came in lower) or right (higher)
+  const bar = sp == null ? '' : h('span', { class: 'cal-surprise', 'aria-hidden': 'true' }, h('i', { style: `left:${(50 + sp * 46).toFixed(1)}%` }));
+  return h('span', { class: `cal-actual ${cmp ?? ''}`, 'data-label': 'Actual', title: [cmp ? `Actual came in ${cmp === 'inline' ? 'in line with' : cmp === 'above' ? 'higher than' : 'lower than'} the forecast.` : '', e.actualSource ? `Official figure from ${e.actualSource}.` : ''].join(' ').trim() }, e.actual || '—', bar);
 }
 
 export function openEventDetails(e: CalendarEvent, odds: EventOdds = null) {
@@ -270,11 +297,26 @@ export function createCalendarPage() {
     const days = new Map<string, CalendarEvent[]>();
     for (const e of shown) days.set(dayKey(e.time), [...(days.get(dayKey(e.time)) ?? []), e]);
     const nextEvent = shown.find((e) => e.time > now);
+    // the week at a glance: one chip per day with its big events; clicking jumps to that day
+    const strip = h(
+      'div',
+      { class: 'cal-week', role: 'list', 'aria-label': 'Days this week' },
+      ...weekDays(shown, dayKey).map((d) =>
+        h(
+          'button',
+          { type: 'button', class: `cal-week-day${d.high >= 2 ? ' busy' : ''}`, role: 'listitem', title: `${d.day}: ${d.high} high-impact, ${d.medium} medium, ${d.total} in all`, onclick: () => body.querySelector(`[data-day="${CSS.escape(d.day)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }) },
+          h('span', { class: 'cal-week-name' }, d.day),
+          h('span', { class: 'cal-week-dots' }, ...Array.from({ length: Math.min(d.high, 5) }, () => h('i', { class: 'h' })), ...Array.from({ length: Math.min(d.medium, 5) }, () => h('i', { class: 'm' }))),
+          h('span', { class: 'cal-week-count' }, d.high ? `${d.high} high` : `${d.total} events`),
+        ),
+      ),
+    );
     body.replaceChildren(
+      ...(shown.length ? [strip] : []),
       ...[...days].map(([day, list]) =>
         h(
           'div',
-          { class: 'cal-day-group' },
+          { class: 'cal-day-group', 'data-day': day },
           h('div', { class: 'cal-day-head' }, day),
           ...list.map((e) => {
             const row = eventRow(e);

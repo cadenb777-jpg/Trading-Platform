@@ -51,8 +51,8 @@
   --spot-blue: #1f6fc440;
   --spot-amber: #f0a05a1a;
   /* Type. */
-  --font-ui: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
-  --font-display: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI Variable Text', 'Segoe UI', Roboto, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI Variable Display', 'Segoe UI', Roboto, sans-serif;
   /* Motion: short and eased; prefers-reduced-motion turns it off (Accessibility block). */
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --dur-1: 120ms;
@@ -12336,4 +12336,371 @@ body[data-section='business'] { --section-accent: var(--hue-business); }
 }
 .inv-viewtoggle button {
   white-space: nowrap;
+}
+
+/* Calendar: the week at a glance and the actual-vs-forecast bar */
+.cal-week {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 4px;
+  margin-bottom: var(--sp-3);
+}
+.cal-week-day {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--raised) 60%, transparent);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cal-week-day.busy {
+  border-color: color-mix(in srgb, var(--down) 45%, var(--line));
+}
+.cal-week-day:hover {
+  box-shadow: 0 0 14px color-mix(in srgb, var(--section-accent) 18%, transparent);
+}
+.cal-week-name {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.cal-week-dots {
+  display: flex;
+  gap: 3px;
+  min-height: 8px;
+}
+.cal-week-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.cal-week-dots i.h {
+  background: var(--down);
+}
+.cal-week-dots i.m {
+  background: var(--warn);
+}
+.cal-week-count {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.cal-surprise {
+  position: relative;
+  display: block;
+  width: 44px;
+  height: 4px;
+  margin: 3px 0 0 auto;
+  border-radius: 2px;
+  background: var(--line);
+}
+.cal-surprise::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  width: 1px;
+  height: 8px;
+  background: var(--muted);
+}
+.cal-surprise i {
+  position: absolute;
+  top: -2px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Calm reading (owner, 2026-11-17: "less reading, easy on the eyes"): a soft sans for words, monospace only for numbers;
+   explanations live in hover tips; captions show two lines until hovered. */
+body {
+  font-size: 14px;
+  line-height: 1.55;
+}
+.kv dd,
+.stat-value,
+.data-table td,
+.mm-tile-value,
+.viz-reading,
+.viz-ring-text,
+.viz-heat-tile span,
+.rp-last,
+.rp-chg,
+.ts-price,
+.sec-ticker,
+.idx-quote,
+.ticker-tape,
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.ap-header h1,
+.panel-head h3,
+.pr-sec h3,
+.viz-title,
+.stat-label,
+.mm-group-title,
+.rp-head,
+.cal-week-name,
+.tabs .tab,
+.tab {
+  letter-spacing: 0.09em;
+}
+.viz-cap {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.viz:hover .viz-cap,
+.viz:focus-within .viz-cap {
+  -webkit-line-clamp: unset;
+}
+.ts-about {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ts-about:hover {
+  -webkit-line-clamp: unset;
+}
+/* the small "i" that holds a panel's or page's explanation */
+.quiet-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 700;
+  cursor: help;
+  flex: none;
+}
+.quiet-tip:hover,
+.quiet-tip:focus-visible {
+  color: var(--text-strong);
+  border-color: var(--accent);
+}
+/* Research: the deep-dive panels folded under one heading */
+.ts-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  cursor: pointer;
+  list-style: none;
+}
+.ts-more > summary::-webkit-details-marker {
+  display: none;
+}
+.ts-more > summary b {
+  font-size: var(--fs-sm);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.ts-more > summary::after {
+  content: '▾';
+  margin-left: auto;
+  color: var(--muted);
+}
+.ts-more[open] > summary::after {
+  content: '▴';
+}
+.ts-more[open] > summary {
+  margin-bottom: var(--sp-3);
+}
+.ts-more > .ts-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.quiet-hidden {
+  display: none !important;
+}
+.ap-header h1 .quiet-tip {
+  vertical-align: middle;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Simplicity pass (owner: "think like Steve Jobs"): fewer lines and boxes, more air, the key number large.
+   Panels lose their heavy frames and heading bars; space separates things instead of borders. */
+.panel {
+  border-color: color-mix(in srgb, var(--line) 55%, transparent);
+  border-radius: 10px;
+  padding: var(--sp-4);
+}
+.panel > .panel-head:first-child {
+  margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) var(--sp-3);
+  padding: 12px var(--sp-4) 8px;
+  background: none;
+  border-bottom: 0;
+  box-shadow: none;
+}
+.panel-head h3,
+.pr-sec h3 {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+}
+.ap-body {
+  gap: var(--sp-4);
+}
+.stat-card {
+  padding: 12px 14px;
+}
+.stat-value {
+  font-size: 20px;
+  font-weight: 600;
+}
+.kv {
+  gap: 7px 16px;
+}
+.kv dt {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--fs-sm);
+}
+.data-table td {
+  border-bottom-color: color-mix(in srgb, var(--line) 50%, transparent);
+}
+.ap-header {
+  border-bottom: 0;
+  padding-bottom: 0;
+  margin-bottom: var(--sp-4);
+}
+.viz-title {
+  margin-bottom: 4px;
+}
+
+/* Apple-style finish (owner, 2026-11-17): San Francisco on Apple devices (Inter elsewhere), numbers in the same font
+   with even digits, frosted glass on the chrome (menu, top bar, pop-ups, greeting), glassy panels with soft rounded
+   corners, a hairline top highlight and gentle depth. Real blur only on the chrome: blurring every panel would cost
+   smooth scrolling. */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.005em;
+}
+.kv dd,
+.stat-value,
+.data-table td,
+.mm-tile-value,
+.viz-reading,
+.viz-ring-text,
+.viz-heat-tile span,
+.rp-last,
+.rp-chg,
+.ts-price,
+.sec-ticker,
+.idx-quote,
+.num {
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+.ap-header h1,
+.panel-head h3,
+.pr-sec h3,
+.viz-title,
+.stat-label,
+.mm-group-title,
+.rp-head,
+.cal-week-name {
+  font-weight: 600;
+}
+.panel,
+.stat-cards .stat-card,
+.mm-tile,
+.cal-week-day,
+.ts-more > summary {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 4%, transparent), transparent 40%),
+    color-mix(in srgb, var(--surface) 78%, transparent);
+  border: 1px solid color-mix(in srgb, #ffffff 7%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 6%, transparent), 0 8px 30px -12px #00000080;
+}
+.panel {
+  border-radius: 16px;
+}
+.mm-tile,
+.cal-week-day {
+  border-radius: 12px;
+}
+.panel:hover {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 8%, transparent), 0 12px 36px -12px #000000a0, 0 0 0 1px color-mix(in srgb, var(--section-accent) 30%, transparent);
+}
+/* frosted chrome */
+.rail,
+.shell-top,
+.fn-menu,
+.cmd-palette,
+.popover,
+.modal {
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  -webkit-backdrop-filter: saturate(160%) blur(22px);
+  backdrop-filter: saturate(160%) blur(22px);
+}
+.home > .home-hero {
+  border-radius: 20px;
+}
+.btn,
+.input,
+select.input,
+.segmented,
+.tab {
+  border-radius: 10px;
+}
+.btn {
+  transition: transform var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.btn:active {
+  transform: scale(0.97);
+}
+:root[data-theme='light'] .panel,
+:root[data-theme='light'] .stat-cards .stat-card,
+:root[data-theme='light'] .mm-tile,
+:root[data-theme='light'] .cal-week-day,
+:root[data-theme='light'] .ts-more > summary {
+  background: color-mix(in srgb, #ffffff 82%, transparent);
+  border-color: color-mix(in srgb, #000000 7%, transparent);
+  box-shadow: 0 1px 2px #0b1b2e0f, 0 8px 28px -14px #0b1b2e33;
+}
+:root[data-theme='light'] .rail,
+:root[data-theme='light'] .shell-top {
+  background: color-mix(in srgb, #ffffff 70%, transparent);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .rail,
+  .shell-top,
+  .fn-menu,
+  .cmd-palette,
+  .popover,
+  .modal,
+  .home > .home-hero {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--surface);
+  }
+}
+.ticker-tape {
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
 }

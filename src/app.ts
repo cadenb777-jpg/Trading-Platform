@@ -19,6 +19,7 @@ import { schwabLoginNotice } from './ui/schwabLogin';
 import { icon } from './ui/icons';
 import { links } from './ui/linkGroups';
 import { railPulse } from './ui/railPulse';
+import { watchQuiet } from './ui/quiet';
 import { PAGES as NAV_PAGES, SECTIONS, pageOf, sectionPages, sectionTarget, type NavPage, type PageRoute, type SectionId } from './ui/nav';
 import { openLaunchpad } from './ui/launchpad';
 import { createStatusBar } from './ui/statusBar';
@@ -608,6 +609,7 @@ if (isAiWindow) {
   // new site versions load by themselves at a quiet moment (also when the helper is newer than this page)
   startAutoReload(() => ((helper.version ?? 0) > LATEST_HELPER_VERSION ? (helper.version ?? 0) : 0));
 
+  watchQuiet(views); // long explanations become hover tips (calm reading)
   window.addEventListener('hashchange', route);
   window.addEventListener('hashchange', () => { if (!drawer.hidden) assistant.reload(); }); // page-specific example questions
   route();
