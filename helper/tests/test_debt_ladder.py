@@ -177,7 +177,9 @@ class Yields(unittest.TestCase):
             return [['2026-11-09', 5.73], ['2026-11-10', None], ['2026-11-11', 5.84]]
         with mock.patch('engine.macro.fred', fred):
             y = asyncio.run(r.corp_yields(None))
-        self.assertEqual(y, {'ig': {'value': 5.84, 'date': '2026-11-11', 'series': 'BAMLC0A0CMEY'}, 'hy': None})
+        self.assertEqual(y, {'ig': {'value': 5.84, 'date': '2026-11-11', 'series': 'BAMLC0A0CMEY'}, 'hy': None,
+                             # helper 83: Moody's Baa yield, the floor Research sets return on capital against
+                             'baa': {'value': 5.84, 'date': '2026-11-11', 'series': 'BAA'}})
 
 
 if __name__ == '__main__':

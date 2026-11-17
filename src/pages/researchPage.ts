@@ -5,6 +5,7 @@ import { qualityPanel } from '../research/qualityView';
 import { cashHealthPanel } from '../research/cashHealthView';
 import { balanceQualityPanel } from '../research/balanceQualityView';
 import { buildPayPanel } from '../research/buildPayView';
+import { roicPanel } from '../research/roicView';
 import { fy, type Maturities } from '../research/debtDilution';
 import type { Obligations } from '../research/obligations';
 import { yearBars } from '../research/yearBars';
@@ -233,6 +234,8 @@ export function createResearchPage() {
       balanceQualityPanel(d.annual),
       // capital spending vs depreciation and free cash flow after stock pay
       buildPayPanel(d.annual, v.marketCap),
+      // return on invested capital vs Moody's Baa yield, and R&D counted as an investment
+      roicPanel(d.annual),
       // futures positioning for the company's market: one line, the full COT table is on Futures
       cotSummary(d.symbol, undefined, { quiet: true }),
       stockNewsCard(d.symbol, 5),

@@ -647,6 +647,14 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   = FCF - stock-based compensation, share of FCF (null when FCF <= 0), 5-year share, yields on today's market value.
   research._periods reads fiscal years (330-400-day facts) only from ANNUAL_FORMS: 10-Q trailing-twelve-month figures
   (Amazon's cash flows) had been read as fiscal years ending at quarter ends.
+- Research → Return on capital (helper 83, ROIC_HELPER_VERSION/roicReady; src/research/roic.ts pure + roicView.ts, classes
+  roc-*): statements add currentDebt (DebtCurrent, else current LTD + ShortTermBorrowings or else CommercialPaper, never
+  both) and longInvestments; shortInvestments also reads OtherShortTermInvestments. Invested capital = total assets - cash
+  - short/long-term investments - (current liabilities - current debt); ROIC = operating income x (1 - effective tax,
+  0-50%, else 21% labelled) / average capital of two year-ends a fiscal year apart (yearsBefore); a cash-like line
+  tagged before but not this year counts as zero and is named; untagged current debt = none. research.corpyields adds
+  baa (FRED BAA, monthly) for the floor line (a floor, not the cost of capital). R&D capitalised over RD_LIFE 5 years
+  straight-line (Lev-Sougiannis 1996, Damodaran 1999) needs 6 whole years of R&D; missing = 'history' or 'capital'.
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per
