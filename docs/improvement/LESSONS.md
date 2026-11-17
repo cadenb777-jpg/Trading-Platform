@@ -188,7 +188,7 @@ whenever the owner repeats or adds one.
   read 0.67x on D&A, 1.04x on depreciation: amortization of bought intangibles isn't what capex buys); a 330-400-day fact
   in a 10-Q is a trailing twelve months, not a fiscal year (Amazon's Research figures had been built on quarter-end
   "years"). The independent /code-review couldn't run (weekly usage limit until 2026-11-18): self-reviewed, to be re-run.
-- 2026-11-17 · #PRNUM Return on capital (helper 83): ROIC by year against Moody's Baa yield (Microsoft 27.6%, 21.0 points
+- 2026-11-17 · #39 Return on capital (helper 83): ROIC by year against Moody's Baa yield (Microsoft 27.6%, 21.0 points
   above the 6.59% Baa yield, below its own median of 36.5%) and R&D counted as an investment (Microsoft 24.3%; Apple
   137% -> 74%) on the Research overview · proposed · backlog A23-A24. Lessons: measure invested capital on operating
   assets (equity plus debt makes buybacks look like better returns); current debt is tagged as a total (DebtCurrent) or
