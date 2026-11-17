@@ -11,6 +11,7 @@ wrong. Standard library only.
 """
 import json
 import os
+import time
 from pathlib import Path
 
 STATES = ('working', 'ready', 'restart', 'failed')
@@ -19,11 +20,32 @@ RESTART_APP = 76
 
 
 def write(path, **fields):
-    """Replaces the file in one step (the reader never sees half of it)."""
+    """Replaces the file in one step (the reader never sees half of it).
+
+    On Windows the swap is refused (Access is denied) while the start screen has the file open for its read, which it
+    does many times a second, so a refused swap is tried again a few times and then the file is written in place (a
+    reader that catches it half written shows "Starting..." for one tick). A progress line never stops the start-up:
+    a 'working' update that still can't be saved is skipped; ready/restart/failed must arrive, so their error is raised.
+    """
     path = Path(path)
+    text = json.dumps(fields)
     tmp = path.with_suffix(path.suffix + '.tmp')
-    tmp.write_text(json.dumps(fields), encoding='utf-8')
-    os.replace(tmp, path)
+    try:
+        tmp.write_text(text, encoding='utf-8')
+        for attempt in range(10):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                time.sleep(0.03 * (attempt + 1))
+        path.write_text(text, encoding='utf-8')
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    except OSError:
+        if fields.get('state', 'working') != 'working':
+            raise
 
 
 def read(path):

@@ -96,6 +96,27 @@ class NoConsole(unittest.TestCase):
             f.write_text('{"state": "nonsense"}')
             self.assertEqual(progress.read(f)['state'], 'working')
 
+    def test_progress_write_survives_windows_lock(self):
+        """Windows refuses the swap while the start screen is reading the file (owner's crash, 2026-11-17)."""
+        from unittest import mock
+        from tp_desktop import progress
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / 'p.json'
+            denied = PermissionError(5, 'Access is denied')
+            with mock.patch.object(progress.os, 'replace', side_effect=denied), mock.patch.object(progress.time, 'sleep'):
+                progress.write(f, pct=100, label='Ready', state='ready')
+            self.assertEqual(progress.read(f)['state'], 'ready')
+            self.assertFalse((Path(d) / 'p.json.tmp').exists())
+            # locked for a moment, then free: the swap is used
+            with mock.patch.object(progress.os, 'replace', side_effect=[denied, denied, None]) as rep, mock.patch.object(progress.time, 'sleep'):
+                progress.write(f, pct=50, label='Half', state='working')
+            self.assertEqual(rep.call_count, 3)
+            # nothing writable at all: a working update is skipped, a final one raises
+            with mock.patch.object(Path, 'write_text', side_effect=denied):
+                progress.write(f, pct=10, label='x', state='working')
+                with self.assertRaises(OSError):
+                    progress.write(f, pct=100, label='Ready', state='ready')
+
     def test_file_bar_writes_the_progress(self):
         from tp_desktop import progress
         with tempfile.TemporaryDirectory() as d:
