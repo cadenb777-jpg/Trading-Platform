@@ -34,6 +34,7 @@ import { publicSourcesPanel } from '../prospect/sourcesPanel';
 import { loadProfile, typeBadge, type ProfileContext } from '../prospect/profile';
 import { createReviewView } from '../prospect/review';
 import { createCompaniesView } from '../prospect/companies';
+import { pipelineBoard } from '../prospect/pipeline';
 import {
   CLIENT_FILTERS,
   DATA_LIMITS,
@@ -65,10 +66,11 @@ import {
   type SortKey,
 } from '../prospect/logic';
 
-type Mode = 'search' | 'companies' | 'map' | 'compare' | 'review' | 'data';
+type Mode = 'pipeline' | 'search' | 'companies' | 'map' | 'compare' | 'review' | 'data';
 const MODES: { id: Mode; label: string }[] = [
   { id: 'search', label: 'Advisers' },
   { id: 'companies', label: 'Companies' },
+  { id: 'pipeline', label: 'Pipeline' },
   { id: 'map', label: 'Map' },
   { id: 'compare', label: 'Compare' },
   { id: 'review', label: 'Review' },
@@ -144,7 +146,7 @@ export function createProspectPage() {
   const frame = pageFrame('Prospecting', 'RIAs, exempt advisers and family offices from free SEC filings (Form ADV, 13F, Form D), and private companies of every industry from free SBA data. Every fact shows its source and date; family-office labels are educated guesses, never certain.', [tabs]);
   frame.el.classList.add('pr-page');
   const strip = h('div', { class: 'pr-strip', 'aria-label': 'Data freshness' });
-  const views: Record<Mode, HTMLElement> = { search: h('div', { class: 'pr-view' }), map: h('div', { class: 'pr-view' }), compare: h('div', { class: 'pr-view' }), review: h('div', { class: 'pr-view' }), companies: h('div', { class: 'pr-view' }), data: h('div', { class: 'pr-view' }) };
+  const views: Record<Mode, HTMLElement> = { pipeline: h('div', { class: 'pr-view' }), search: h('div', { class: 'pr-view' }), map: h('div', { class: 'pr-view' }), compare: h('div', { class: 'pr-view' }), review: h('div', { class: 'pr-view' }), companies: h('div', { class: 'pr-view' }), data: h('div', { class: 'pr-view' }) };
   frame.body.replaceChildren(strip, ...Object.values(views));
 
   // ---------- profile drawer ----------
@@ -230,6 +232,7 @@ export function createProspectPage() {
     if (mode === 'compare') drawCompare();
     if (mode === 'review') review.show();
     if (mode === 'companies') companiesView.show();
+    if (mode === 'pipeline') drawPipeline();
     if (mode === 'data') drawData();
   }
 
@@ -492,7 +495,21 @@ export function createProspectPage() {
     const n = notes.get(id);
     return h('td', { 'data-col': 'outreach', 'data-value': n?.status ?? '' }, n && n.status !== 'not contacted' ? h('span', { class: `badge ${n.status === 'client' ? 'up' : n.status === 'do not contact' ? 'down' : 'accent'}` }, n.status) : '');
   }
+  // the pipeline board: every firm with a status, by stage (src/prospect/pipeline.ts)
+  function drawPipeline() {
+    views.pipeline.replaceChildren(
+      pipelineBoard({
+        notes: [...notes.values()],
+        open: (id) => openFirm(id),
+        save: async (n) => {
+          await profileCtx.saveNote({ ...n, updated: Math.floor(Date.now() / 1000) });
+        },
+      }),
+    );
+  }
+
   function refreshOutreachCells() {
+    if (mode === 'pipeline') drawPipeline();
     resultBody.querySelectorAll<HTMLTableRowElement>('tbody tr[data-firm]').forEach((tr) => {
       const old = tr.querySelector('td[data-col=outreach]');
       if (old) old.replaceWith(outreachCell(tr.dataset.firm!));
