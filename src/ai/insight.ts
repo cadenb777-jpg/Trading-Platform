@@ -1,5 +1,5 @@
 /** "AI summary" buttons (one label on every page): one-off reads of the data on screen, streamed into a panel. */
-import { engineRequest, helper } from '../data/schwab';
+import { engineRequest } from '../data/schwab';
 import { h } from '../ui/dom';
 import { openSettings } from '../ui/settings';
 import { friendlyAiError } from './assistant';
@@ -101,26 +101,14 @@ export function placeUnder(button: HTMLElement, panel: HTMLElement) {
 }
 
 /** A button plus the panel it fills. `getRequest` returns null when there's no data yet. */
-/** Whether summaries may run by themselves: the helper is connected and the AI key is saved (checked once a minute). */
-let aiCheck: { at: number; ok: Promise<boolean> } | null = null;
-function aiReady(): Promise<boolean> {
-  if (helper.version == null) return Promise.resolve(false);
-  if (!aiCheck || Date.now() - aiCheck.at > 60_000) {
-    aiCheck = { at: Date.now(), ok: engineRequest<{ aiKeySet?: boolean }>('settings.get', {}, 10000).then((s) => !!s.aiKeySet, () => false) };
-  }
-  return aiCheck.ok;
-}
-
 /**
- * The page's AI summary. It writes itself (owner: "don't ask me to click"): once the page is showing and its data has
- * loaded, the read streams into the panel under the button; a new symbol gets a new read; the same page and symbol
- * within RECENT_MS show the stored read (no new AI call). The button refreshes it; closing the panel keeps it closed
- * for that symbol. Without an AI key nothing runs by itself.
+ * The page's AI summary, written when the owner clicks the button (2026-11-17: summaries popping up by themselves
+ * was too much). The same page and symbol within RECENT_MS show the stored read instead of a new AI call... unless the
+ * button is clicked again, which writes a fresh one.
  */
 export function insightButton(getRequest: () => InsightRequest | null, label = 'AI summary') {
   const panel = h('section', { class: 'panel insight-panel', hidden: true });
   let shownKey = '';
-  let closedKey = '';
   const button = h(
     'button',
     {
@@ -135,36 +123,15 @@ export function insightButton(getRequest: () => InsightRequest | null, label = '
           panel.replaceChildren(h('p', { class: 'muted small' }, 'Nothing to read yet: the AI summary needs this page’s prices or headlines, which haven’t loaded. Try again in a moment.'));
           return;
         }
-        shownKey = insightKey(req);
-        closedKey = '';
-        runInsight(panel, req, true);
+        const key = insightKey(req);
+        // first click shows a recent read if there is one; clicking again while it shows writes a fresh one
+        const fresh = key === shownKey && !panel.hidden;
+        shownKey = key;
+        runInsight(panel, req, fresh);
       },
     },
     h('span', { class: 'ai-spark' }, '✦'),
     ` ${label}`,
   );
-  // remember a close so the read doesn't come back for the same symbol
-  panel.addEventListener('click', (e) => {
-    if ((e.target as Element).closest('.insight-controls .icon-btn[aria-label="Close"]')) closedKey = shownKey;
-  });
-  let gone = 0;
-  const tick = async () => {
-    // a button the page threw away (re-drawn) stops checking after a minute
-    if (!button.isConnected) {
-      if (++gone > 30) clearInterval(timer);
-      return;
-    }
-    gone = 0;
-    if (button.offsetParent === null || document.hidden) return;
-    const req = getRequest();
-    if (!req) return;
-    const key = insightKey(req);
-    if (key === shownKey || key === closedKey) return;
-    if (!(await aiReady())) return;
-    shownKey = key;
-    placeUnder(button, panel);
-    void runInsight(panel, req);
-  };
-  const timer = setInterval(() => void tick(), 2000);
   return { button, panel };
 }

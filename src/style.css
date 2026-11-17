@@ -51,8 +51,8 @@
   --spot-blue: #1f6fc440;
   --spot-amber: #f0a05a1a;
   /* Type. */
-  --font-ui: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
-  --font-display: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   /* Motion: short and eased; prefers-reduced-motion turns it off (Accessibility block). */
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --dur-1: 120ms;
@@ -12417,4 +12417,126 @@ body[data-section='business'] { --section-accent: var(--hue-business); }
   margin-left: -4px;
   border-radius: 50%;
   background: var(--accent);
+}
+
+/* Calm reading (owner, 2026-11-17: "less reading, easy on the eyes"): a soft sans for words, monospace only for numbers;
+   explanations live in hover tips; captions show two lines until hovered. */
+body {
+  font-size: 14px;
+  line-height: 1.55;
+}
+.kv dd,
+.stat-value,
+.data-table td,
+.mm-tile-value,
+.viz-reading,
+.viz-ring-text,
+.viz-heat-tile span,
+.rp-last,
+.rp-chg,
+.ts-price,
+.sec-ticker,
+.idx-quote,
+.ticker-tape,
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.ap-header h1,
+.panel-head h3,
+.pr-sec h3,
+.viz-title,
+.stat-label,
+.mm-group-title,
+.rp-head,
+.cal-week-name,
+.tabs .tab,
+.tab {
+  letter-spacing: 0.09em;
+}
+.viz-cap {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.viz:hover .viz-cap,
+.viz:focus-within .viz-cap {
+  -webkit-line-clamp: unset;
+}
+.ts-about {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ts-about:hover {
+  -webkit-line-clamp: unset;
+}
+/* the small "i" that holds a panel's or page's explanation */
+.quiet-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 700;
+  cursor: help;
+  flex: none;
+}
+.quiet-tip:hover,
+.quiet-tip:focus-visible {
+  color: var(--text-strong);
+  border-color: var(--accent);
+}
+/* Research: the deep-dive panels folded under one heading */
+.ts-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  cursor: pointer;
+  list-style: none;
+}
+.ts-more > summary::-webkit-details-marker {
+  display: none;
+}
+.ts-more > summary b {
+  font-size: var(--fs-sm);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.ts-more > summary::after {
+  content: '▾';
+  margin-left: auto;
+  color: var(--muted);
+}
+.ts-more[open] > summary::after {
+  content: '▴';
+}
+.ts-more[open] > summary {
+  margin-bottom: var(--sp-3);
+}
+.ts-more > .ts-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.quiet-hidden {
+  display: none !important;
+}
+.ap-header h1 .quiet-tip {
+  vertical-align: middle;
+  text-transform: none;
+  letter-spacing: 0;
 }
