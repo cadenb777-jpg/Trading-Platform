@@ -656,6 +656,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   tagged before but not this year counts as zero and is named; untagged current debt = none. research.corpyields adds
   baa (FRED BAA, monthly) for the floor line (a floor, not the cost of capital). R&D capitalised over RD_LIFE 5 years
   straight-line (Lev-Sougiannis 1996, Damodaran 1999) needs 6 whole years of R&D; missing = 'history' or 'capital'.
+- Research → Profitability and asset growth (no helper change; src/research/assetQuality.ts pure + assetQualityView.ts,
+  class aq-panel): gross profit / total assets with the company's own range (viz rangeTrack, lower/middle/upper third
+  from 5 years; Novy-Marx 2013) and total-asset growth vs sales growth (amber when more than a point above, one test
+  `ahead` for table and words; Cooper-Gulen-Schill 2008). Readings, not signals. Shared year rules for every Research
+  reading panel: src/research/years.ts (newestYear, yearsBefore = whole fiscal years apart, lastRun, Stale).
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per

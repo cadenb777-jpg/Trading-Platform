@@ -196,3 +196,11 @@ whenever the owner repeats or adds one.
   drops (NVIDIA's marketable securities in FY2026 under its own tag) is named on the page, not silently zero. Review
   caught: borrowings + commercial paper double count, the words using a stale yield, a missing-Baa reply showing
   nothing, a CSS class clash (rc-) with the risk charts, empty bars for loss years, years compared across gaps.
+- 2026-11-17 · #41 Profitability and asset growth (no helper change, stacked on #39): gross profit per dollar of assets
+  on the company's own range (Microsoft $0.30, middle third since FY2017; NVIDIA $0.74, upper third) and total-asset
+  growth against sales growth (Microsoft +22.5% vs +17.8%) on the Research overview · proposed · backlog A25-A26.
+  Lessons: say "above/below sales growth", never "faster" next to "shrank"; one shared year rule (src/research/years.ts:
+  newest year, whole fiscal years apart, newest run) so panels on one page pick the same years. Review caught: a
+  stale note naming the wrong missing line, "$-0.05" for a gross loss, a dead red class on a reading where shrinking
+  isn't bad, two float tests of one line that could disagree, duplicated helpers.
+
