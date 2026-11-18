@@ -14,8 +14,8 @@ describe('launchpad search', () => {
   });
 
   it('ranks an exact code first, in any case', () => {
-    expect(top('WEI').code).toBe('WEI');
-    expect(top('wei').code).toBe('WEI');
+    expect(top('MON').code).toBe('MON');
+    expect(top('mon').code).toBe('MON');
     expect(top('JRNL').id).toBe('page:journal');
     expect(top('des').code).toBe('DES');
   });

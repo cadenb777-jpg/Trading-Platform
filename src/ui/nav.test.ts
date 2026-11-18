@@ -17,7 +17,7 @@ describe('nav registry', () => {
     expect(sectionPages('today').map((p) => p.label)).toEqual(['Home']);
     expect(sectionPages('markets').map((p) => p.label)).toEqual(['Monitor', 'Investments', 'Futures', 'Macro', 'Calendar']);
     expect(sectionPages('security').map((p) => p.label)).toEqual(['Research', 'Chart', 'Flow']);
-    expect(sectionPages('ideas').map((p) => p.label)).toEqual(['Setups', 'Backtest', 'Strategy Lab']);
+    expect(sectionPages('ideas').map((p) => p.label)).toEqual(['Setups', 'Screener', 'Backtest', 'Strategy Lab']);
     expect(sectionPages('money').map((p) => p.label)).toEqual(['Account', 'Portfolios', 'Trade', 'Journal']);
     expect(sectionPages('business').map((p) => p.label)).toEqual(['Prospects', 'Clients']);
   });

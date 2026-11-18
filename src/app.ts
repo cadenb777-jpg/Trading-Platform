@@ -122,6 +122,7 @@ const LOADERS: Record<PageRoute, () => Page | Promise<Page>> = {
   chart: async () => (await import('./pages/chartWorkspace')).createChartWorkspace(getChartPage(), openChart, openResearch),
   research: async () => (await import('./pages/researchPage')).createResearchPage(),
   setups: async () => (await import('./pages/setupsPage')).createSetupsPage(openChart),
+  screener: async () => (await import('./pages/screenerPage')).createScreenerPage(),
   backtest: async () => (await import('./pages/backtestPage')).createBacktestPage(),
   // the Strategy Lab (game theory + Equilibrium-Prime)
   strategy: STRATEGY_PAGE.load,

@@ -92,7 +92,7 @@ export function openLaunchpad(run: (id: string) => void) {
   const items = launchItems();
   let favs = readList(FAV_KEY);
   const byId = new Map(items.map((i) => [i.id, i]));
-  const input = h('input', { class: 'input lp-search', type: 'search', placeholder: 'Search pages and functions, or type a code like WEI', 'aria-label': 'Search the launchpad', spellcheck: false });
+  const input = h('input', { class: 'input lp-search', type: 'search', placeholder: 'Search, type a code like WEI, or a number and Enter', 'aria-label': 'Search the launchpad', spellcheck: false });
   const body = h('div', { class: 'lp-body' });
 
   const launch = (item: LaunchItem) => {
@@ -100,7 +100,9 @@ export function openLaunchpad(run: (id: string) => void) {
     close();
     run(item.id);
   };
-  const tile = (item: LaunchItem) => {
+  // Bloomberg-style numbered menu: every function in the sections has a number; typing it + Enter opens it
+  let numbered: LaunchItem[] = [];
+  const tile = (item: LaunchItem, n?: number) => {
     const fav = favs.includes(item.id);
     return h(
       'div',
@@ -108,6 +110,7 @@ export function openLaunchpad(run: (id: string) => void) {
       h(
         'button',
         { type: 'button', class: 'lp-go', 'data-id': item.id, title: item.about ?? item.label, onclick: () => launch(item) },
+        n ? h('span', { class: 'lp-num' }, `${n})`) : '',
         h('span', { class: 'lp-icon' }, icon(item.icon, 18)),
         h('span', { class: 'lp-code' }, item.code),
         h('span', { class: 'lp-label' }, item.label),
@@ -130,7 +133,10 @@ export function openLaunchpad(run: (id: string) => void) {
       ),
     );
   };
-  const group = (label: string, list: LaunchItem[]) => (list.length ? h('section', { class: 'lp-group' }, h('h3', { class: 'section-label' }, label), h('div', { class: 'lp-grid' }, ...list.map(tile))) : null);
+  const group = (label: string, list: LaunchItem[], numbers = false) =>
+    list.length
+      ? h('section', { class: 'lp-group' }, h('h3', { class: 'section-label' }, label), h('div', { class: 'lp-grid' }, ...list.map((it) => (numbers ? (numbered.push(it), tile(it, numbered.length)) : tile(it)))))
+      : null;
 
   function draw() {
     const q = input.value;
@@ -140,14 +146,17 @@ export function openLaunchpad(run: (id: string) => void) {
       return;
     }
     const pick = (ids: string[]) => ids.map((id) => byId.get(id)).filter((x): x is LaunchItem => !!x);
+    numbered = [];
     body.replaceChildren(
       ...[group('Favourites', pick(favs)), group('Recent', pick(readList(RECENT_KEY)))].filter(Boolean) as HTMLElement[],
-      ...(['today', 'markets', 'security', 'ideas', 'money', 'business', 'ai', 'system'] as const).map((s) => group(SECTION_LABEL[s], items.filter((i) => i.section === s))).filter((x): x is HTMLElement => !!x),
+      ...(['today', 'markets', 'security', 'ideas', 'money', 'business', 'ai', 'system'] as const).map((s) => group(SECTION_LABEL[s], items.filter((i) => i.section === s), true)).filter((x): x is HTMLElement => !!x),
     );
   }
   input.addEventListener('input', draw);
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
+      const num = /^\s*(\d{1,3})\s*$/.exec(input.value);
+      if (num && numbered[Number(num[1]) - 1]) return launch(numbered[Number(num[1]) - 1]);
       const first = searchLaunch(input.value, items, favs)[0];
       if (first) launch(first);
     } else if (e.key === 'ArrowDown') {
