@@ -11200,8 +11200,8 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .cf-range-head, .cf-range-cell { width: 260px; }
 .cf-range-head > span { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2); white-space: nowrap; }
 .cf-range-head small { color: var(--muted); font-weight: 400; letter-spacing: 0; text-transform: none; }
-.cf-range { position: relative; display: block; height: 14px; min-width: 160px; }
-.cf-range i { position: absolute; display: block; }
+.cf-range-cell .cf-range { position: relative; display: block; height: 14px; min-width: 160px; }
+.cf-range-cell .cf-range i { position: absolute; display: block; }
 .cf-zero { left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line); }
 .cf-band { top: 4px; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--viz-1) 30%, transparent); }
 .cf-usual { top: 2px; height: 10px; width: 2px; margin-left: -1px; background: var(--viz-1); }
@@ -11227,7 +11227,7 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .cf-sources a { color: inherit; }
 @media (max-width: 560px) {
   .cf-range-head, .cf-range-cell { width: 96px; }
-  .cf-range { min-width: 88px; }
+  .cf-range-cell .cf-range { min-width: 88px; }
   .cf-table th, .cf-table td, .cf-small-table th, .cf-small-table td { padding-left: 6px; padding-right: 6px; }
   .cf-rec-value { font-size: 1.8rem; }
   /* the phone keeps what answers the question: yield, distance from the curve, today vs usual, the breakeven */
@@ -11343,6 +11343,15 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .qe-bar.neg { background: var(--viz-1); }
 .qe-bar.pos { background: var(--label); }
 .data-table td.ltm { border-left: 1px solid var(--line); font-style: italic; }
+/* Research: Taxes and operating leverage (src/research/taxLeverageView.ts) */
+.tl-bars { display: grid; gap: 4px; }
+.tl-row { display: grid; grid-template-columns: 7.5rem 1fr 3.5rem; align-items: center; gap: var(--sp-2); }
+.tl-track { height: 10px; background: color-mix(in srgb, var(--muted) 14%, transparent); border-radius: 2px; min-width: 0; }
+.tl-bar { display: block; height: 100%; border-radius: 2px; }
+.tl-bar.cash { background: var(--viz-1); }
+.tl-bar.book { background: var(--viz-2); }
+.tl-bar.federal { background: color-mix(in srgb, var(--muted) 60%, transparent); }
+.tl-val { text-align: right; color: var(--text-strong); }
 /* Research: Return on capital (src/research/roicView.ts) */
 .roc-bars { display: grid; gap: var(--sp-2); }
 .roc-row { display: grid; grid-template-columns: 4.5rem 1fr 3rem; align-items: center; gap: var(--sp-2); padding: 2px 0; }

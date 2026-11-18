@@ -661,6 +661,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   from 5 years; Novy-Marx 2013) and total-asset growth vs sales growth (amber when more than a point above, one test
   `ahead` for table and words; Cooper-Gulen-Schill 2008). Readings, not signals. Shared year rules for every Research
   reading panel: src/research/years.ts (newestYear, yearsBefore = whole fiscal years apart, lastRun, Stale).
+- Research → Taxes and operating leverage (helper 84, TAX_HELPER_VERSION/taxReady; src/research/taxLeverage.ts pure +
+  taxLeverageView.ts, class tl-panel, in the More fold): statements add taxesPaid (IncomeTaxesPaidNet only); cash rate =
+  paid / pre-tax, long run = sums over up to 5 consecutive years (Dyreng-Hanlon-Maydew 2008; none when losses cancel more
+  than half the profitable years), against the book rate and 21%; a net refund is said as one. Operating leverage =
+  slope of ln operating income on ln sales over up to 10 consecutive profitable years (Mandelker-Rhee 1984; slopeOf from
+  c-math), yearly ratio only when sales moved 2%+; words follow the rounded multiple shown.
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per

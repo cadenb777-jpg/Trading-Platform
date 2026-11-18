@@ -190,7 +190,7 @@ whenever the owner repeats or adds one.
   "years"). The independent /code-review couldn't run (weekly usage limit until 2026-11-18): self-reviewed, to be re-run.
 - 2026-11-17 · #39 Return on capital (helper 83): ROIC by year against Moody's Baa yield (Microsoft 27.6%, 21.0 points
   above the 6.59% Baa yield, below its own median of 36.5%) and R&D counted as an investment (Microsoft 24.3%; Apple
-  137% -> 74%) on the Research overview · proposed · backlog A23-A24. Lessons: measure invested capital on operating
+  137% -> 74%) on the Research overview · approved (merged) · backlog A23-A24. Lessons: measure invested capital on operating
   assets (equity plus debt makes buybacks look like better returns); current debt is tagged as a total (DebtCurrent) or
   as parts, and short-term borrowings usually already include commercial paper (never add both); a line a company
   drops (NVIDIA's marketable securities in FY2026 under its own tag) is named on the page, not silently zero. Review
@@ -198,9 +198,16 @@ whenever the owner repeats or adds one.
   nothing, a CSS class clash (rc-) with the risk charts, empty bars for loss years, years compared across gaps.
 - 2026-11-17 · #41 Profitability and asset growth (no helper change, stacked on #39): gross profit per dollar of assets
   on the company's own range (Microsoft $0.30, middle third since FY2017; NVIDIA $0.74, upper third) and total-asset
-  growth against sales growth (Microsoft +22.5% vs +17.8%) on the Research overview · proposed · backlog A25-A26.
+  growth against sales growth (Microsoft +22.5% vs +17.8%) on the Research overview · approved (merged) · backlog A25-A26.
   Lessons: say "above/below sales growth", never "faster" next to "shrank"; one shared year rule (src/research/years.ts:
   newest year, whole fiscal years apart, newest run) so panels on one page pick the same years. Review caught: a
   stale note naming the wrong missing line, "$-0.05" for a gross loss, a dead red class on a reading where shrinking
   isn't bad, two float tests of one line that could disagree, duplicated helpers.
+- 2026-11-18 · #PRNUM Taxes and operating leverage (helper 84): cash tax rate against the book and federal rates (Microsoft
+  FY2026 12.8% in cash vs 19.4% charged; 19.7% vs 17.8% over 5 years) and operating leverage as the slope of log
+  operating profit on log sales (Microsoft 1.4 over 10 years, Amazon 1.6), in the More fold of the Research overview ·
+  proposed · backlog A27-A28. Also fixed a failing release audit on main: the bond curve's .cf-range rule (height 14px)
+  squashed the Chart page's range buttons (same class) into the toolbar on phones; rules are now scoped to their cell.
+  Lessons: never mix net and gross taxes-paid tags in one sum; a long-run rate is meaningless when losses cancel most of
+  the profit; words must follow the rounded figure the page shows; generic class names collide across pages.
 
