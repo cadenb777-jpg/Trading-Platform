@@ -173,10 +173,16 @@ export const compact = (v: number | null | undefined) => {
 /** Shared frame for analysis pages: title, controls, and a body that shows loading/errors. */
 export function pageFrame(title: string, subtitle: string, controls: Node[]) {
   const body = h('div', { class: 'ap-body' });
+  // Bloomberg's screen grammar (docs/research/bloomberg-patterns.md): the title line carries the actions, and a page's
+  // view tabs always get their own full-width row right under it, whatever else the page puts in its header
+  const isTabs = (n: Node) => n instanceof HTMLElement && n.getAttribute('role') === 'tablist' && n.classList.contains('tabs');
+  const tabs = controls.filter(isTabs);
+  const rest = controls.filter((n) => !isTabs(n));
   const el = h(
     'div',
     { class: 'analysis-page' },
-    h('header', { class: 'ap-header' }, h('div', {}, h('h1', {}, title), h('p', { class: 'muted' }, subtitle)), h('div', { class: 'ap-controls' }, ...controls)),
+    h('header', { class: 'ap-header' }, h('div', {}, h('h1', {}, title), h('p', { class: 'muted' }, subtitle)), h('div', { class: 'ap-controls' }, ...rest)),
+    tabs.length ? h('nav', { class: 'ap-tabrow', 'aria-label': `${title} views` }, ...tabs) : '',
     body,
   );
   return {

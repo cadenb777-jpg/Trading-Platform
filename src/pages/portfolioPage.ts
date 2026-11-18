@@ -76,13 +76,13 @@ export function createPortfolioPage() {
     const models = saved.filter((p) => !isMine(p));
     list.replaceChildren(
       h('button', { class: 'btn primary', onclick: () => select(blank()) }, '+ New portfolio'),
-      h('div', { class: 'muted small' }, 'My accounts'),
+      h('div', { class: 'list-band' }, 'My accounts'),
       ...(mine.length
         ? mine.map((p) => item(p, () => select(structuredClone(p)), p.id === current.id))
         : [h('div', { class: 'muted small' }, 'None yet. Import a statement or sync Webull on ', h('a', { href: '#account' }, 'Account'), '.')]),
-      h('div', { class: 'muted small' }, 'Saved models'),
+      h('div', { class: 'list-band' }, 'Saved models'),
       ...(models.length ? models.map((p) => item(p, () => select(structuredClone(p)), p.id === current.id)) : [h('div', { class: 'muted small' }, 'None yet. Saved portfolios are stored by the helper on your computer.')]),
-      h('div', { class: 'muted small' }, 'Templates'),
+      h('div', { class: 'list-band' }, 'Templates'),
       ...TEMPLATES.map((t) => item(t, () => select(structuredClone(t)), false)),
       mine.length ? h('p', { class: 'muted small pf-accounts-link' }, 'Live totals, dividends, risk and taxes for your accounts are on ', h('a', { href: '#account' }, 'Account →')) : '',
     );

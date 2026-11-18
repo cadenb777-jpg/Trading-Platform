@@ -38,6 +38,10 @@ function and build order are in docs/research/bloomberg-parity.md (phases B1-B4)
       edit tickers, remove; saved on this computer). Portfolios already had the PORT layout (KPI strip, returns vs
       benchmark, drawdowns, stress tests, risk table).
 
+- [x] Patterns pass (owner, 2026-11-18: "find Bloomberg's commonalities and replicate them across the tabs"):
+      docs/research/bloomberg-patterns.md; view tabs always on their own row under the title (pageFrame), one title
+      style (Trade matched), list groups as bands (Portfolios), Charts as its own destination (rail, coral accent).
+
 Resume rule: on "continue" or "go", read this file and do the first unticked item.
 
 ## Phase 1: audit (done 2026-11-16)

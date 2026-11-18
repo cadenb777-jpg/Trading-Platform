@@ -7,7 +7,7 @@
  */
 import type { IconName } from './icons';
 
-export type SectionId = 'today' | 'markets' | 'security' | 'ideas' | 'money' | 'business' | 'ai';
+export type SectionId = 'today' | 'markets' | 'charts' | 'security' | 'ideas' | 'money' | 'business' | 'ai';
 
 export interface Section {
   id: SectionId;
@@ -20,6 +20,7 @@ export interface Section {
 export const SECTIONS: readonly Section[] = [
   { id: 'today', label: 'Today', icon: 'home', about: 'What matters right now: your brief, the market, news, setups and alerts' },
   { id: 'markets', label: 'Markets', icon: 'macro', about: 'The whole market: boards, the economy and rates, the calendar and futures' },
+  { id: 'charts', label: 'Charts', icon: 'chart', about: 'The full chart: any ticker, indicators, drawings, linked layouts and your scripts' },
   { id: 'security', label: 'Security', icon: 'research', about: 'One ticker in depth: its research, chart and money flows' },
   { id: 'ideas', label: 'Ideas', icon: 'target', about: 'Trade ideas and testing: setups, backtests and the strategy lab' },
   { id: 'money', label: 'Money', icon: 'account', about: 'Your own accounts, model portfolios, orders and journal' },
@@ -57,7 +58,7 @@ export const PAGES = [
   { route: 'calendar', section: 'markets', label: 'Calendar', title: 'Economic calendar', code: 'ECO', icon: 'calendar', keywords: 'economic releases fomc events', about: 'This week’s economic releases and FOMC dates' },
   { route: 'research', section: 'security', label: 'Research', title: 'Research', code: 'RES', icon: 'research', keywords: 'company financials sec valuation ratios', about: 'Company financials, ratios and valuation' },
   // Analyze
-  { route: 'chart', section: 'security', label: 'Chart', title: '', code: 'GP', icon: 'chart', keywords: 'graph price candles indicators drawings', about: 'The full chart with indicators and drawings' },
+  { route: 'chart', section: 'charts', label: 'Chart', title: '', code: 'GP', icon: 'chart', keywords: 'graph price candles indicators drawings', about: 'The full chart with indicators and drawings' },
   { route: 'flow', section: 'security', label: 'Flow', title: 'Flow', code: 'FLOW', icon: 'flow', keywords: 'short selling options insiders smart money', about: 'Short selling, options and insiders' },
   { route: 'setups', section: 'ideas', label: 'Setups', title: 'Setups', code: 'SET', icon: 'target', keywords: 'scanner signals nasdaq trade ideas', about: 'Nasdaq-100 trade setups, tested after costs' },
   { route: 'screener', section: 'ideas', label: 'Screener', title: 'Screener', code: 'EQS', icon: 'target', keywords: 'screen screener filter stocks criteria find', about: 'Find stocks by performance, valuation and dividends' },
@@ -90,8 +91,8 @@ export const FUNCTIONS: readonly NavFunction[] = [
   { code: 'COT', label: 'COT positioning', section: 'markets', icon: 'positioning', keywords: 'commitment traders hedgers cftc', target: 'page:futures/cot' },
   { code: 'BONDS', label: 'Bonds and yields', section: 'markets', icon: 'invest', keywords: 'treasuries yields auctions cusip', target: 'fn:BONDS' },
   { code: 'DES', label: 'Security overview', section: 'security', icon: 'research', keywords: 'company profile security description add a ticker aapl des', target: 'fn:DES' },
-  { code: 'MULTI', label: 'Workspace', section: 'ideas', icon: 'grid', keywords: 'multi chart grid side by side linked panels', target: 'page:chart/multi' },
-  { code: 'SCRIPT', label: 'Scripts', section: 'ideas', icon: 'code', keywords: 'pine script editor indicator code', target: 'page:chart/scripts' },
+  { code: 'MULTI', label: 'Workspace', section: 'charts', icon: 'grid', keywords: 'multi chart grid side by side linked panels', target: 'page:chart/multi' },
+  { code: 'SCRIPT', label: 'Scripts', section: 'charts', icon: 'code', keywords: 'pine script editor indicator code', target: 'page:chart/scripts' },
   { code: 'ALRT', label: 'Alerts', section: 'today', icon: 'bell', keywords: 'alert notify price', target: 'act:alert' },
   { code: 'FO', label: 'Family offices', section: 'business', icon: 'prospect', keywords: 'family office single multi prospect', target: 'fn:FO' },
   { code: 'RIA', label: 'Registered advisers', section: 'business', icon: 'prospect', keywords: 'ria registered investment adviser', target: 'fn:RIA' },
