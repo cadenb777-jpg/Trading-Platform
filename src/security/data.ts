@@ -15,6 +15,25 @@ import type { Bar } from '../types';
 
 export type { CompanyData, BoardRow, NewsItem, Setup };
 
+/** One strike of the chosen expiry; the bid/ask/last/delta fields come from helper 87 on. */
+export interface ChainStrike {
+  strike: number;
+  callVolume: number;
+  putVolume: number;
+  callOi: number;
+  putOi: number;
+  callIv?: number | null;
+  putIv?: number | null;
+  callBid?: number;
+  callAsk?: number;
+  callLast?: number;
+  callDelta?: number | null;
+  putBid?: number;
+  putAsk?: number;
+  putLast?: number;
+  putDelta?: number | null;
+}
+
 export interface OptionsReply {
   symbol: string;
   spot: number;
@@ -33,7 +52,7 @@ export interface OptionsReply {
     expectedMove?: { strike: number; amount: number; percent: number | null } | null;
   };
   byExpiration?: { expiration: string; dte: number; callVolume: number; putVolume: number; putCallVolume: number | null; putCallOi: number | null; maxPain: number | null; atmIv: number | null; expectedMove: { amount: number; percent: number | null } | null }[];
-  strikes: { strike: number; callVolume: number; putVolume: number; callOi: number; putOi: number }[];
+  strikes: ChainStrike[];
   unusual: { type: 'call' | 'put'; expiration: string; dte: number; strike: number; last: number; volume: number; oi: number; iv: number | null; ratio: number | null; premium: number; side: string }[];
 }
 

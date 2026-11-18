@@ -40,6 +40,30 @@ export function meetingRead(m: FedMeeting): { range: string; sentence: string } 
   return { range, sentence };
 }
 
+/** Cuts (negative) or hikes priced in by each meeting, in 25 bp steps (pure, tested). */
+export const movesPriced = (m: FedMeeting) => Math.round((m.expectedChange / 0.25) * 10) / 10;
+
+/** The implied rate path: one bar per meeting at the rate the futures expect after it, today's rate as the first bar. */
+export function ratePath(d: FedOdds): HTMLElement {
+  const pts = [{ label: 'Now', rate: d.effr, moves: 0 }, ...d.meetings.map((m) => ({ label: new Date(`${m.date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }), rate: m.after, moves: movesPriced(m) }))];
+  const lo = Math.min(...pts.map((p) => p.rate)) - 0.25;
+  const hi = Math.max(...pts.map((p) => p.rate)) + 0.05;
+  return h(
+    'div',
+    { class: 'fed-path', role: 'img', 'aria-label': `Implied rate path: ${pts.map((p) => `${p.label} ${p.rate.toFixed(2)}%`).join(', ')}` },
+    ...pts.map((p, i) =>
+      h(
+        'div',
+        { class: `fed-path-col ${i === 0 ? 'now' : ''}`, title: `${p.label}: ${p.rate.toFixed(2)}%${i ? ` (${p.moves > 0 ? '+' : ''}${p.moves.toFixed(1)} moves of 25 bp from today)` : ''}` },
+        h('span', { class: 'fed-path-val' }, p.rate.toFixed(2)),
+        h('span', { class: 'fed-path-bar', style: `height:${(((p.rate - lo) / (hi - lo || 1)) * 100).toFixed(1)}%` }),
+        h('small', {}, p.label),
+        i ? h('small', { class: `fed-path-moves ${p.moves < 0 ? 'cut' : p.moves > 0 ? 'hike' : ''}` }, `${p.moves > 0 ? '+' : ''}${p.moves.toFixed(1)}`) : h('small', { class: 'fed-path-moves' }, 'moves'),
+      ),
+    ),
+  );
+}
+
 function bar(m: FedMeeting) {
   const seg = (cls: string, p: number, label: string) => (p > 0.005 ? h('i', { class: cls, style: `width:${(p * 100).toFixed(1)}%`, title: `${label} ${p0(p)}` }, p >= 0.12 ? p0(p) : '') : '');
   return h('div', { class: 'fed-bar', role: 'img', 'aria-label': `Cut ${p0(m.pCut)}, hold ${p0(m.pHold)}, hike ${p0(m.pHike)}` }, seg('cut', m.pCut, 'Lower than today'), seg('hold', m.pHold, 'Same as today'), seg('hike', m.pHike, 'Higher than today'));
@@ -70,7 +94,7 @@ export function fedOddsPanel(): HTMLElement {
             );
           }),
         ),
-        d.meetings.length ? '' : h('p', { class: 'muted small' }, 'Schwab didn’t price enough fed funds futures months to work out the meetings.'),
+        d.meetings.length ? ratePath(d) : h('p', { class: 'muted small' }, 'Schwab didn’t price enough fed funds futures months to work out the meetings.'),
         sourceLine(`${d.method} Futures from Schwab (${d.futures.length} months), rates from FRED · ${new Date(d.asOf).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`),
       );
     },

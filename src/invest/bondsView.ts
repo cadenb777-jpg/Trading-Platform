@@ -8,7 +8,7 @@ import { dataTable, money, numberField, pct, statCards, pctU } from '../ui/chart
 import { activatable, h } from '../ui/dom';
 import { sparkline } from '../ui/sparkline';
 import { openFredWindow } from '../ui/fredWindow';
-import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
+import { yieldCurve, curveTable, type CurvePoint } from '../ui/yieldCurve';
 import { bondPortfolioPanel } from './bondPortfolioView';
 import { analyze, buildLadder, calculatorProblems, isRealisticYield, ladderProblem, labelYears, priceChangeEstimate, priceFromYield, taxEquivalentYield, yearsUntil, yieldFromPrice, type BondInputs } from './bonds';
 import { BOARDS } from './catalog';
@@ -189,7 +189,7 @@ export function createBondsView(ctx: InvestContext) {
       })
       .catch((err) => rates.replaceChildren(errorBox(err, renderMarket)));
     curve()
-      .then((points) => curvePanel.replaceChildren(curvePanel.firstChild!, yieldCurve(points)))
+      .then((points) => curvePanel.replaceChildren(curvePanel.firstChild!, yieldCurve(points), curveTable(points)))
       .catch((err) => curvePanel.replaceChildren(curvePanel.firstChild!, errorBox(err)));
     loadBoard(BOARDS.bonds)
       .then((rows) => (seen.etfs = [...rows.values()], boards.replaceChildren(...BOARDS.bonds.map((g) => boardTable(g, rows, (s, l) => openSymbol(s, l, rows.get(s), ctx), ctx)))))
