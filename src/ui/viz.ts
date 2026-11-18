@@ -233,3 +233,133 @@ export function mixBar(o: { items: { label: string; value: number }[]; title: st
     o.caption ? h('p', { class: 'viz-caption' }, o.caption) : '',
   );
 }
+
+// ---------- sunburst ----------
+
+/** SVG path of a ring slice between radii r0 < r1 from a0 to a1 degrees (pure, tested). */
+export function ringSlice(cx: number, cy: number, r0: number, r1: number, a0: number, a1: number): string {
+  const span = Math.min(359.99, a1 - a0);
+  const b = a0 + span;
+  const [ox0, oy0] = polar(cx, cy, r1, a0);
+  const [ox1, oy1] = polar(cx, cy, r1, b);
+  const [ix1, iy1] = polar(cx, cy, r0, b);
+  const [ix0, iy0] = polar(cx, cy, r0, a0);
+  const large = span > 180 ? 1 : 0;
+  const f = (n: number) => n.toFixed(2);
+  return `M ${f(ox0)} ${f(oy0)} A ${r1} ${r1} 0 ${large} 1 ${f(ox1)} ${f(oy1)} L ${f(ix1)} ${f(iy1)} A ${r0} ${r0} 0 ${large} 0 ${f(ix0)} ${f(iy0)} Z`;
+}
+
+/** Short ring labels for long group names (the full name is in the slice's hover). */
+const SHORT: Record<string, string> = { Semiconductors: 'Chips', 'Hardware & IT services': 'Hardware', Communication: 'Comms', 'Health care': 'Health', 'Utilities, energy & materials': 'Utilities', 'Financials & real estate': 'Financials' };
+
+export interface SunGroup {
+  label: string;
+  items: string[];
+}
+
+/** Equal-weight sunburst layout: every member gets the same angle, a group spans its members (pure, tested). */
+export function sunburstLayout(groups: SunGroup[], gap = 0.6): { groups: { label: string; a0: number; a1: number }[]; items: { label: string; group: string; a0: number; a1: number }[] } {
+  const n = groups.reduce((s, g) => s + g.items.length, 0);
+  if (!n) return { groups: [], items: [] };
+  const step = 360 / n;
+  let a = 0;
+  const outG: { label: string; a0: number; a1: number }[] = [];
+  const outI: { label: string; group: string; a0: number; a1: number }[] = [];
+  for (const g of groups) {
+    if (!g.items.length) continue;
+    const g0 = a;
+    for (const it of g.items) {
+      outI.push({ label: it, group: g.label, a0: a + gap / 2, a1: a + step - gap / 2 });
+      a += step;
+    }
+    outG.push({ label: g.label, a0: g0 + gap / 2, a1: a - gap / 2 });
+  }
+  return { groups: outG, items: outI };
+}
+
+const heatFill = (v: number | null | undefined, maxAbs: number) =>
+  v == null || !Number.isFinite(v) ? 'var(--raised)' : `color-mix(in srgb, ${v >= 0 ? 'var(--up-fill)' : 'var(--down-fill)'} ${heatShare(v, maxAbs)}%, var(--surface))`;
+
+/**
+ * A sunburst: groups on the inner ring, their members on the outer ring, each slice coloured green/red by its value
+ * (deeper = bigger move, scaled to the biggest move shown). Equal weight per member. `update` recolours in place
+ * (live quotes), so nothing is rebuilt while the page is open.
+ */
+export function sunburst(o: {
+  groups: SunGroup[];
+  title: string;
+  centre: string;
+  format: (v: number) => string;
+  onItem?: (label: string) => void;
+  onGroup?: (label: string) => void;
+  caption?: Node | string;
+  size?: number;
+  hideTitle?: boolean;
+}) {
+  const S = o.size ?? 340;
+  const c = S / 2;
+  const R = c - 4;
+  const r1 = R * 0.6;
+  const r0 = R * 0.3;
+  const lay = sunburstLayout(o.groups);
+  const groupPaths = new Map<string, SVGElement>();
+  const itemPaths = new Map<string, SVGElement>();
+  const itemTitles = new Map<string, SVGElement>();
+  const groupTitles = new Map<string, SVGElement>();
+  const centreValue = svg('text', { x: c, y: c + 16, 'text-anchor': 'middle', class: 'sb-centre-value' }, '—');
+  const art = svg('svg', { viewBox: `0 0 ${S} ${S}`, class: 'sb-svg', role: 'img', 'aria-label': o.title });
+  for (const g of lay.groups) {
+    const t = svg('title', {}, g.label);
+    const p = svg('path', { d: ringSlice(c, c, r0, r1 - 2, g.a0, g.a1), class: 'sb-group', fill: 'var(--raised)' }, t);
+    if (o.onGroup) p.addEventListener('click', () => o.onGroup!(g.label));
+    groupPaths.set(g.label, p);
+    groupTitles.set(g.label, t);
+    art.append(p);
+    // label the bigger groups along the ring's middle
+    if (g.a1 - g.a0 > 34) {
+      const [x, y] = polar(c, c, (r0 + r1) / 2, (g.a0 + g.a1) / 2);
+      art.append(svg('text', { x: x.toFixed(1), y: (y + 4).toFixed(1), 'text-anchor': 'middle', class: 'sb-group-label' }, SHORT[g.label] ?? g.label.split(/[ ,&]/)[0]));
+    }
+  }
+  for (const it of lay.items) {
+    const t = svg('title', {}, it.label);
+    const p = svg('path', { d: ringSlice(c, c, r1, R, it.a0, it.a1), class: 'sb-item', fill: 'var(--raised)' }, t);
+    if (o.onItem) p.addEventListener('click', () => o.onItem!(it.label));
+    itemPaths.set(it.label, p);
+    itemTitles.set(it.label, t);
+    art.append(p);
+    if (it.a1 - it.a0 > 6) {
+      const mid = (it.a0 + it.a1) / 2;
+      const [x, y] = polar(c, c, (r1 + R) / 2, mid);
+      const rot = mid > 180 ? mid + 90 : mid - 90;
+      art.append(svg('text', { x: x.toFixed(1), y: y.toFixed(1), class: 'sb-item-label', 'text-anchor': 'middle', 'dominant-baseline': 'middle', transform: `rotate(${rot.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})` }, it.label));
+    }
+  }
+  art.append(svg('text', { x: c, y: c - 6, 'text-anchor': 'middle', class: 'sb-centre-label' }, o.centre), centreValue);
+  const el = figure('viz-sunburst', h('div', {}, o.hideTitle ? '' : h('div', { class: 'viz-title' }, o.title), art), o.caption, o.title);
+  return {
+    el,
+    /** Recolours every slice from the members' values; groups and the centre show equal-weight averages. */
+    update(value: (label: string) => number | null | undefined) {
+      const vals = lay.items.map((it) => value(it.label));
+      const maxAbs = Math.max(0.005, ...vals.map((v) => Math.abs(v ?? 0)));
+      const sums = new Map<string, number[]>();
+      lay.items.forEach((it, i) => {
+        const v = vals[i];
+        itemPaths.get(it.label)!.setAttribute('fill', heatFill(v, maxAbs));
+        itemTitles.get(it.label)!.textContent = `${it.label} (${it.group}): ${v == null ? 'no price yet' : o.format(v)}`;
+        if (v != null && Number.isFinite(v)) sums.set(it.group, [...(sums.get(it.group) ?? []), v]);
+      });
+      const all: number[] = [];
+      for (const g of lay.groups) {
+        const xs = sums.get(g.label) ?? [];
+        all.push(...xs);
+        const avg = xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+        groupPaths.get(g.label)!.setAttribute('fill', heatFill(avg, maxAbs));
+        groupTitles.get(g.label)!.textContent = `${g.label}: ${avg == null ? 'no prices yet' : `${o.format(avg)} on average`}`;
+      }
+      centreValue.textContent = all.length ? o.format(all.reduce((a, b) => a + b, 0) / all.length) : '—';
+      centreValue.setAttribute('class', `sb-centre-value ${all.length ? (all.reduce((a, b) => a + b, 0) >= 0 ? 'up' : 'down') : ''}`);
+    },
+  };
+}

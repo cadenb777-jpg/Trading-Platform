@@ -299,3 +299,13 @@ describe('lists', () => {
     expect(NASDAQ_100).toEqual([...block.matchAll(/'([A-Z.]+)'/g)].map((m) => m[1]));
   });
 });
+
+describe('numbered rows (5 <GO>)', () => {
+  const src = { symbols: [], pages: [], portfolios: [], clients: [], actions: [], numbered: [{ n: 5, label: 'Germany' }] };
+  it('a bare number opens that row of the page in view', () => {
+    const g = buildResults('5', src);
+    expect(g[0].label).toBe('On this page');
+    expect(g[0].items[0]).toMatchObject({ id: 'num:5', title: '5) Germany' });
+    expect(buildResults('6', src)[0]?.label).not.toBe('On this page');
+  });
+});

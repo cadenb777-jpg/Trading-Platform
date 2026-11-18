@@ -112,6 +112,7 @@ interface PageEntry extends NavPage {
 
 const LOADERS: Record<PageRoute, () => Page | Promise<Page>> = {
   home: () => createHomePage(openChart, () => (location.hash = '#calendar'), openPageWith),
+  monitor: async () => (await import('./pages/monitorPage')).createMonitorPage(),
   invest: async () => (await import('./pages/investmentsPage')).createInvestmentsPage({ openChart, openResearch, openPage: openPageWith }),
   futures: async () => (await import('./pages/futuresPage')).createFuturesPage(),
   macro: async () => (await import('./pages/macroPage')).createMacroPage(),
@@ -575,6 +576,7 @@ if (isAiWindow) {
     const section = pageOf(route)?.section ?? 'markets';
     // each destination has its own accent (glows, highlights, panel edges): style.css body[data-section]
     document.body.dataset.section = section;
+    document.body.dataset.page = route;
     secTicker.hidden = section !== 'security';
     if (pageOf(route) && !pageOf(route)!.hidden) {
       lastBySection = { ...lastBySection, [section]: hash.replace(/^#/, '') };

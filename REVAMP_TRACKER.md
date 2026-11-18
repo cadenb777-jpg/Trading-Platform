@@ -19,6 +19,16 @@ remove before adding) and the finance-ui skill (.claude/skills/finance-ui). Keep
 good/bad. One pull request per item group; every item is tested (vitest / helper unittest) and browser-checked at
 1280 and 375 px in dark and light before it is ticked.
 
+Owner, 2026-11-18: Bloomberg depth and organisation (not its command lines): the full function map, free data per
+function and build order are in docs/research/bloomberg-parity.md (phases B1-B4). Skip ESG, compliance and chat.
+
+- [x] B1. Function tiles (src/ui/fnTile.ts: title bar + plain-words link, numbered rows, source/time footer) and the
+      Markets Monitor (#monitor): world clocks, world equities by region, Nasdaq-100 sector sunburst (live), S&P 500
+      movers, currencies / commodities / rates, numbered top news. Typing a row's number in the search bar opens it.
+- [ ] B2. Security: historical prices table, analyst consensus, earnings surprises, peer comparison table + scatter.
+- [ ] B3. Financial statement grid with bar-chart mode, mirrored option chain, calendar table, curve chart, rate path.
+- [ ] B4. Screener, numbered directory, workspace of tiles, portfolio KPI layout.
+
 Resume rule: on "continue" or "go", read this file and do the first unticked item.
 
 ## Phase 1: audit (done 2026-11-16)
@@ -75,7 +85,7 @@ everything two clicks away, and a ticker typed anywhere opens one Security page.
       that ticker with its live price (click to change it). Merging the three into one page is not needed.
 - [x] 1b-2b. Section accents: one quiet colour per destination (sky, teal, violet, gold, cobalt, rose) on its icon,
       the active menu item, panel edges and hover glow; amber stays the brand for headings.
-- [ ] 1b-3. Markets hub: Overview (boards + heat map) / Macro & rates / Calendar / Futures / Crypto.
+- [x] 1b-3. Markets hub: Monitor (one-screen cockpit) / Investments / Futures / Macro / Calendar.
 - [~] 1b-4. Today: Market mood widget added under the greeting (VIX fear gauge + 11-sector heat map, live, plain-word
       lines; tiles open the sector). Still to do: compact index strip instead of three tall cards, movers.
 
@@ -125,7 +135,7 @@ everything two clicks away, and a ticker typed anywhere opens one Security page.
 - [ ] 11. Calendar: Bloomberg ECO-style table (time, event, period, survey, actual, prior, surprise colour).
 - [ ] 12. Chart: fix layout shift; GP-style header (range, period, upper/lower studies) compacted.
 - [ ] 13. Setups and Backtest: compact cards to table + detail pane.
-- [ ] 14. Account, Portfolios, Trade, Journal: kv lists, compact tables, consistent panels.
+- [~] 14. Account done (hero: value, today, figures list, what-it's-in bar; a lone account isn't repeated). Still: Portfolios, Trade, Journal.
 - [~] 15. Prospects: Pipeline tab done (columns Not contacted / Contacted / Meeting / Client with counts, cards with
       the last note and date, ← → move a stage, click opens the firm, "Do not contact" folded; src/prospect/pipeline.ts).
       Still to do: relationship map, company tear sheet.

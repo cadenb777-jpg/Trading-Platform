@@ -15,6 +15,7 @@ import { BOARDS } from '../invest/catalog';
 import { combineHoldings, myPortfolios } from '../portfolio/account';
 import type { Portfolio } from '../portfolio/types';
 import { persist, state } from '../state';
+import { numberedOnPage, runNumbered } from './fnTile';
 import { h, openModal, toast } from './dom';
 import { icon } from './icons';
 import { LINK_LABELS, focusPanel, focusedPanel, links, visiblePanels } from './linkGroups';
@@ -53,7 +54,7 @@ export const CODES: FnCode[] = [
   { code: 'TRADE', aliases: ['TRD'], label: 'Order ticket (pre-fills only)', ticker: true, keywords: 'buy sell order ticket webull' },
   { code: 'ALRT', label: 'Alerts', ticker: true, keywords: 'alert notify price' },
   { code: 'WL', label: 'Add to watchlist', ticker: true, tickerOnly: true, keywords: 'watchlist favourite' },
-  { code: 'WEI', label: 'World equity indices (Home)', keywords: 'indexes indices markets home' },
+  { code: 'WEI', aliases: ['MON', 'IMAP', 'MOV'], label: 'Market monitor (world indices, sectors, movers)', keywords: 'indexes indices markets world monitor' },
   { code: 'ECO', label: 'Economic calendar', keywords: 'calendar economic releases fomc' },
   { code: 'FUT', aliases: ['CTM'], label: 'Futures', keywords: 'futures contracts commodities' },
   { code: 'PORT', label: 'Portfolios (models, what-ifs, optimizer)', keywords: 'portfolio model optimizer what-if' },
@@ -76,7 +77,7 @@ export const CODES: FnCode[] = [
 
 /** Where a code without a ticker goes. */
 const CODE_ROUTE: Record<string, string> = {
-  GP: 'chart', DES: 'research', FA: 'research', HDS: 'flow', CN: 'home', OMON: 'flow', DVD: 'account', BETA: 'account', TRADE: 'trade', WEI: 'home', ECO: 'calendar', FUT: 'futures',
+  GP: 'chart', DES: 'research', FA: 'research', HDS: 'flow', CN: 'home', OMON: 'flow', DVD: 'account', BETA: 'account', TRADE: 'trade', WEI: 'monitor', ECO: 'calendar', FUT: 'futures',
   PORT: 'portfolio', ACCT: 'account', JRNL: 'journal', CLIENT: 'clients', PROS: 'prospect', MULTI: 'chart/multi', SCRIPT: 'chart/scripts', COT: 'futures/cot', BTST: 'backtest', SET: 'setups', MACRO: 'macro', INV: 'invest',
 };
 
@@ -186,6 +187,8 @@ export interface Sources {
   portfolios: { id: string; name: string; mine: boolean }[];
   clients: { id: string; name: string }[];
   actions: ActionEntry[];
+  /** Numbered rows on the page in view (Bloomberg's "5 <GO>"); see fnTile.ts. */
+  numbered?: { n: number; label: string }[];
 }
 
 export interface ResultItem {
@@ -267,6 +270,11 @@ export function buildResults(input: string, src: Sources, recents: RecentEntry[]
     const code = pros[1].toUpperCase() === 'PROSPECT' ? 'PROS' : pros[1].toUpperCase();
     const what = code === 'FO' ? 'family offices' : code === 'RIA' ? 'registered advisers' : 'prospects';
     return [{ label: 'Prospecting', items: [{ id: `pr:${code}:${pros[2].trim()}`, title: `Search ${what} for "${pros[2].trim()}"`, subtitle: 'Prospecting', hint: code, complete: input.trim(), score: 2000 }] }];
+  }
+  // "5": row 5 of the page in view (numbered monitor rows), above everything else
+  if (/^\d{1,3}$/.test(q)) {
+    const row = src.numbered?.find((r) => r.n === Number(q));
+    if (row) return [{ label: 'On this page', items: [{ id: `num:${row.n}`, title: `${row.n}) ${row.label}`, subtitle: 'Open this row', hint: 'GO', complete: q, score: 3000 }] }];
   }
   const symbols = mergeSymbols(src.symbols);
   const groups: ResultGroup[] = [];
@@ -701,6 +709,7 @@ function sources(search: SymbolEntry[]): Sources {
     portfolios: accountData?.portfolios ?? [],
     clients: accountData?.clients ?? [],
     actions: ACTIONS,
+    numbered: numberedOnPage(),
   };
 }
 
@@ -729,6 +738,7 @@ export async function runId(id: string) {
   }
   else if (kind === 'set') (await import('./settings')).openSettings(arg);
   else if (kind === 'act') runAction(arg);
+  else if (kind === 'num') runNumbered(Number(arg));
 }
 
 function chartRef(): MarketRef | null {

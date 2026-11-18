@@ -49,6 +49,7 @@ export interface NavPage {
 export const PAGES = [
   // Markets
   { route: 'home', section: 'today', label: 'Home', title: 'Trading Platform', code: 'BRF', icon: 'home', keywords: 'dashboard brief widgets indexes news morning', about: 'Your dashboard: brief, indexes, news, setups and accounts' },
+  { route: 'monitor', section: 'markets', label: 'Monitor', title: 'Market monitor', code: 'MON', icon: 'macro', keywords: 'world equities indices wei imap sunburst movers currencies commodities clocks cockpit', about: 'The whole market on one screen: world indices, sectors, movers, FX, commodities, news' },
   { route: 'invest', section: 'markets', label: 'Investments', title: 'Investments', code: 'INV', icon: 'invest', keywords: 'stocks etfs bonds alternatives private funds boards', about: 'Stocks, ETFs, bonds, alternatives and private funds' },
   { route: 'futures', section: 'markets', label: 'Futures', title: 'Futures', code: 'FUT', icon: 'futures', keywords: 'contracts commodities term structure cot', about: 'The futures market by sector, curves and positioning' },
   { route: 'macro', section: 'markets', label: 'Macro', title: 'Macro', code: 'MACRO', icon: 'macro', keywords: 'economy fred rates inflation yields', about: 'The economy at a glance (FRED, Treasury)' },
@@ -84,7 +85,8 @@ export interface NavFunction {
 }
 
 export const FUNCTIONS: readonly NavFunction[] = [
-  { code: 'WEI', label: 'World indices', section: 'markets', icon: 'chart', keywords: 'indexes indices markets home', target: 'page:home' },
+  { code: 'WEI', label: 'World indices', section: 'markets', icon: 'chart', keywords: 'indexes indices markets world regions', target: 'page:monitor' },
+  { code: 'IMAP', label: 'Sector map (sunburst)', section: 'markets', icon: 'chart', keywords: 'heat map sectors sunburst', target: 'page:monitor' },
   { code: 'COT', label: 'COT positioning', section: 'markets', icon: 'positioning', keywords: 'commitment traders hedgers cftc', target: 'page:futures/cot' },
   { code: 'BONDS', label: 'Bonds and yields', section: 'markets', icon: 'invest', keywords: 'treasuries yields auctions cusip', target: 'fn:BONDS' },
   { code: 'DES', label: 'Security overview', section: 'security', icon: 'research', keywords: 'company profile security description add a ticker aapl des', target: 'fn:DES' },
