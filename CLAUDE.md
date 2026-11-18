@@ -662,11 +662,16 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   `ahead` for table and words; Cooper-Gulen-Schill 2008). Readings, not signals. Shared year rules for every Research
   reading panel: src/research/years.ts (newestYear, yearsBefore = whole fiscal years apart, lastRun, Stale).
 - Research → Taxes and operating leverage (helper 84, TAX_HELPER_VERSION/taxReady; src/research/taxLeverage.ts pure +
-  taxLeverageView.ts, class tl-panel, in the More fold): statements add taxesPaid (IncomeTaxesPaidNet only); cash rate =
+  taxLeverageView.ts, class tl-panel, in the More fold; bars via panelBlock.rateBars): statements add taxesPaid (IncomeTaxesPaidNet only); cash rate =
   paid / pre-tax, long run = sums over up to 5 consecutive years (Dyreng-Hanlon-Maydew 2008; none when losses cancel more
   than half the profitable years), against the book rate and 21%; a net refund is said as one. Operating leverage =
   slope of ln operating income on ln sales over up to 10 consecutive profitable years (Mandelker-Rhee 1984; slopeOf from
   c-math), yearly ratio only when sales moved 2%+; words follow the rounded multiple shown.
+- Research → Against bonds (helper 85, REAL_YIELD_HELPER_VERSION/realYieldReady; src/research/againstBonds.ts pure +
+  againstBondsView.ts, class ab-panel, in the More fold): earnings yield = 1 / P/E (the tear sheet's v.pe ?? quote
+  peRatio) vs research.corpyields real10 = FRED DFII10 read in full from 2003 (FULL_FROM, ratesdesk._full) with its
+  percentile (ratesdesk.percentile_rank); gap rounded to 0.1 point before words/sign (Asness 2003). Rates side by side
+  use panelBlock.rateBars (classes rb-*), shared with Taxes and operating leverage.
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per

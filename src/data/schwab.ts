@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 85;
+export const LATEST_HELPER_VERSION = 86;
 /** The "Log in to Schwab" request (schwab_login) and the in-place re-login need this version. */
 export const SCHWAB_LOGIN_HELPER_VERSION = 47;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
@@ -113,6 +113,9 @@ export const roicReady = () => !helper.tooOld && (helper.version ?? 0) >= ROIC_H
 /** Research → Taxes and operating leverage: statements add income taxes paid in cash. */
 export const TAX_HELPER_VERSION = 84;
 export const taxReady = () => !helper.tooOld && (helper.version ?? 0) >= TAX_HELPER_VERSION;
+/** Research → Against bonds: research.corpyields adds the 10-year real Treasury yield (DFII10) with its percentile. */
+export const REAL_YIELD_HELPER_VERSION = 85;
+export const realYieldReady = () => !helper.tooOld && (helper.version ?? 0) >= REAL_YIELD_HELPER_VERSION;
 export const healthReady = () => !helper.tooOld && (helper.version ?? 0) >= HEALTH_HELPER_VERSION;
 /** The Strategy Lab's game.* requests and the Equilibrium-Prime assistant mode (ai.chat with `mode`) need this version. */
 export const GAME_HELPER_VERSION = 44;

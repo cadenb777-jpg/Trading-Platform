@@ -5,27 +5,10 @@
  */
 import { taxReady } from '../data/schwab';
 import { h } from '../ui/dom';
-import { block, savedBeforeUpdate } from './panelBlock';
+import { block, rateBars, savedBeforeUpdate } from './panelBlock';
 import { dataTable, money } from '../ui/charts';
 import { fy, pc, type Statements } from './debtDilution';
 import { cashTax, FEDERAL_RATE, leverageWords, operatingLeverage, taxWords } from './taxLeverage';
-
-function rateBars(rows: { label: string; rate: number; kind: string }[]): HTMLElement {
-  const max = Math.max(...rows.map((r) => r.rate), 0.01);
-  return h(
-    'div',
-    { class: 'tl-bars', role: 'list', 'aria-label': 'Tax rates compared' },
-    ...rows.map((r) =>
-      h(
-        'div',
-        { class: 'tl-row', role: 'listitem', 'aria-label': `${r.label}: ${pc(r.rate, 1)}` },
-        h('span', { class: 'tl-label small muted' }, r.label),
-        h('span', { class: 'tl-track' }, h('span', { class: `tl-bar ${r.kind}`, style: `width:${Math.max(0, Math.min(100, (r.rate / max) * 100)).toFixed(1)}%` })),
-        h('span', { class: 'tl-val num small' }, pc(r.rate, 1)),
-      ),
-    ),
-  );
-}
 
 export function taxLeveragePanel(a: Statements): HTMLElement {
   const fresh = 'taxesPaid' in a.values;
@@ -48,10 +31,10 @@ export function taxLeveragePanel(a: Statements): HTMLElement {
               ...(t.longCash != null && t.longCash >= 0
                 ? [
                     rateBars([
-                      { label: 'Paid in cash', rate: t.longCash, kind: 'cash' },
-                      ...(t.longBook != null && t.longBook >= 0 ? [{ label: 'In the accounts', rate: t.longBook, kind: 'book' }] : []),
-                      { label: 'Federal rate', rate: FEDERAL_RATE, kind: 'federal' },
-                    ]),
+                      { label: 'Paid in cash', rate: t.longCash, kind: 'one' as const },
+                      ...(t.longBook != null && t.longBook >= 0 ? [{ label: 'In the accounts', rate: t.longBook, kind: 'two' as const }] : []),
+                      { label: 'Federal rate', rate: FEDERAL_RATE, kind: 'base' as const },
+                    ], 'Tax rates compared'),
                   ]
                 : []),
               h('p', { class: 'small' }, taxWords(t)),
