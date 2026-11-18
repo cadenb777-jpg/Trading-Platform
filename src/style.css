@@ -12819,3 +12819,123 @@ select.input,
   gap: 8px;
   margin-top: 8px;
 }
+
+/* Account hero: the value first, the figures as one list, the mix as one bar (no repeated cards) */
+.acct-hero {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.1fr) minmax(240px, 1fr) minmax(240px, 1.2fr);
+  gap: var(--sp-4);
+  align-items: center;
+  padding: 20px 24px;
+  border-radius: 18px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--section-accent) 14%, transparent), transparent 60%),
+    color-mix(in srgb, var(--surface) 70%, transparent);
+  border: 1px solid color-mix(in srgb, #ffffff 7%, transparent);
+  margin-bottom: var(--sp-3);
+}
+@media (max-width: 1000px) {
+  .acct-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .acct-hero .viz-mix {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 600px) {
+  .acct-hero {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px;
+  }
+}
+.acct-hero-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.acct-hero-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.acct-hero-value {
+  font-size: clamp(30px, 3.4vw, 42px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text-strong);
+}
+.acct-hero-today {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.acct-hero-today.up {
+  color: var(--up-text);
+}
+.acct-hero-today.down {
+  color: var(--down-text);
+}
+.acct-hero-sub {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.acct-hero-kv {
+  gap: 7px 16px;
+}
+.acct-hero-kv dt {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.viz-mix {
+  margin: 0;
+  min-width: 0;
+}
+.mix-bar {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+  margin: 8px 0 10px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.mix-seg {
+  min-width: 3px;
+}
+.mix-legend {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+.mix-legend li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.mix-legend i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.mix-legend span {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.mix-legend b {
+  color: var(--text-strong);
+}
+.acct-hero-main {
+  align-items: flex-start;
+  text-align: left;
+}

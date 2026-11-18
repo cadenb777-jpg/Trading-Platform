@@ -24,6 +24,7 @@ import { notice19aLink, periods, rocText, splitPeriod, yieldCheck, type YieldChe
 import { loadSnapshot } from '../trade/webull';
 import { workingOrdersCard } from '../portfolio/workingOrders';
 import { pct, pctU, statCards, pageFrame, dataTable } from '../ui/charts';
+import { mixBar } from '../ui/viz';
 import { h, openModal, openPopover, timeAgo, toast } from '../ui/dom';
 import { infoTip, termLabel } from '../ui/glossary';
 import { openNewsSummary } from '../ui/newsSummary';
@@ -210,7 +211,8 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     // Thumb through: every account combined, or one account's own makeup. Every figure below follows the choice.
     const picked = pickAccounts(mine, view);
     const chosen = picked.chosen;
-    const single = picked.choice === ALL_ACCOUNTS ? null : chosen[0];
+    // one account on screen (picked, or the only one you have): the page talks about it alone and says nothing twice
+    const single = picked.choice === ALL_ACCOUNTS && chosen.length > 1 ? null : chosen[0];
     const rows = combineHoldings(chosen);
     const symbols = rows.filter((r) => r.shares > 0).map((r) => r.symbol);
     const payload = dividendPayload(rows);
@@ -421,7 +423,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
       (err) => run === loading && showTax(taxSection(null, (err as Error).message, accountsForTax(null), setType, report, {})),
     );
     // Webull accounts that aren't one of the cards above (futures, not synced yet): combined view only
-    if (!single) renderWebullCard(webull, synced, openTrade, undefined, chosen.map((p) => p.webullAccount ?? '').filter(Boolean));
+    if (picked.choice === ALL_ACCOUNTS) renderWebullCard(webull, synced, openTrade, undefined, chosen.map((p) => p.webullAccount ?? '').filter(Boolean));
 
     // ---------- pieces that use this load's data ----------
 
@@ -557,24 +559,36 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
           : est === methods.length
             ? `Estimated: Yahoo dividends × your shares${firstSeen ? ` since ${day(firstSeen)} (first seen)` : ''}${methods.some((m) => m === 'purchase') ? ' or your purchase dates' : ''}`
             : `${methods.length - est} from your records, ${est} estimated`;
+      // Hero (owner, 2026-11-17: the important number first, nothing said twice): the value and today's move big,
+      // the rest as one label/value list, and what the money is in as a single bar. Explanations live in hover tips.
+      const row = (label: string | Node, value: string, cls = '', tip = '') => [h('dt', { title: tip }, label), h('dd', { class: cls, title: tip }, value)];
+      const dividendsKnown = g.dividends != null && g.dividends !== 0;
+      const mix = allocation(list, (x) => x.r.assetClass, (x) => x.value);
       return h(
-        'div',
-        { class: 'acct-stats' },
-        statCards([
-          { label: one ? `${one.name} value` : 'Total value (all accounts)', value: usd(sum), hint: `${one ? `Only ${one.name}` : 'All your accounts added together'}${cash ? `; includes ${usd(cash)} cash and other amounts` : ''}` },
-          { label: 'Cost basis', value: usd(g.cost), hint: `What you paid for the holdings that have a cost basis${withCost < securities ? ` (${withCost} of ${securities})` : ''}; value − cost basis = price gain` },
-          { label: one ? 'Today' : 'Today (all accounts)', value: fmtDay(d.usd, d.pct), tone: tone(d.usd), hint: 'Change since yesterday’s close on your shares' },
-          { label: 'Price gain', value: fmtGain(g.priceGain, g.priceGainPct), tone: tone(g.priceGain), hint: `Value − cost basis ${usd(g.cost)} (unrealized)${withCost < securities ? `, on ${withCost} of ${securities} holdings with a cost basis` : ''}` },
-          { label: 'Dividends received', value: usd(g.dividends), hint: divHint },
-          {
-            label: termLabel('Total return', 'totalreturn'),
-            value: fmtGain(g.total, g.totalPct),
-            tone: tone(g.total),
-            hint: `Price gain + dividends received, on holdings with a cost basis${r?.totalReturn?.tr1y != null ? ` · today’s holdings over the last year: ${pct(r.totalReturn.tr1y, 1)} (price only ${pct(r.totalReturn.price1y, 1)})` : ''}`,
-          },
-          { label: 'Yearly dividend income', value: usd(r?.annualIncome), hint: r ? `About ${usd(r.monthly)} a month over the next 12 months` : '' },
-          { label: h('span', {}, termLabel('Yield', 'divyield'), ' · ', termLabel('on cost', 'yoc')), value: `${pctU(r?.yield)} · ${pctU(r?.yieldOnCost)}`, hint: 'Yearly income ÷ market value · on cost: income ÷ what you paid, only holdings with a cost basis' },
-        ]),
+        'section',
+        { class: 'acct-hero', 'aria-label': 'Account summary' },
+        h(
+          'div',
+          { class: 'acct-hero-main' },
+          h('span', { class: 'acct-hero-label' }, one ? one.name : list.length ? 'All accounts' : 'Account'),
+          h('b', { class: 'acct-hero-value num', title: `${one ? `Only ${one.name}` : 'All your accounts added together'}${cash ? `; includes ${usd(cash)} cash and other amounts` : ''}` }, usd(sum)),
+          h('span', { class: `acct-hero-today num ${tone(d.usd)}`, title: 'Change since yesterday’s close on your shares' }, `${fmtDay(d.usd, d.pct)} today`),
+          cash ? h('span', { class: 'acct-hero-sub' }, `${usd(cash)} in cash`) : '',
+        ),
+        h(
+          'dl',
+          { class: 'kv acct-hero-kv' },
+          ...row('Price gain', fmtGain(g.priceGain, g.priceGainPct), tone(g.priceGain), `Value − cost basis ${usd(g.cost)} (unrealized)${withCost < securities ? `, on ${withCost} of ${securities} holdings with a cost basis` : ''}`),
+          ...row('Cost basis', usd(g.cost), '', `What you paid for the holdings that have a cost basis${withCost < securities ? ` (${withCost} of ${securities})` : ''}`),
+          ...row('Dividends received', usd(g.dividends), '', divHint),
+          // total return = price gain + dividends: only worth a line once dividends are known (else it repeats price gain)
+          ...(dividendsKnown
+            ? row(termLabel('Total return', 'totalreturn'), fmtGain(g.total, g.totalPct), tone(g.total), `Price gain + dividends received, on holdings with a cost basis${r?.totalReturn?.tr1y != null ? ` · today’s holdings over the last year: ${pct(r.totalReturn.tr1y, 1)} (price only ${pct(r.totalReturn.price1y, 1)})` : ''}`)
+            : []),
+          ...row('Yearly income', usd(r?.annualIncome), '', r ? `Dividends over the next 12 months: about ${usd(r.monthly)} a month` : ''),
+          ...row(h('span', {}, termLabel('Yield', 'divyield'), ' · ', termLabel('on cost', 'yoc')), `${pctU(r?.yield)} · ${pctU(r?.yieldOnCost)}`, '', 'Yearly income ÷ market value · on cost: income ÷ what you paid'),
+        ),
+        mix.length ? mixBar({ items: mix, title: 'What it’s in', format: usd }) : '',
       );
     }
 
@@ -600,15 +614,16 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
           typeName ? h('span', { class: `badge ${type === 'taxable' ? '' : 'accent'}`, title: 'How this account is taxed (change it in the Taxes section)' }, typeName) : null,
           p.webullAccount ? h('span', { class: 'badge' }, 'Webull') : null,
         ),
-        h('div', { class: 'acct-card-value' }, usd(value)),
+        // one account: the hero above already shows these figures, so the card keeps only what it adds
+        combined ? h('div', { class: 'acct-card-value' }, usd(value)) : null,
         h(
           'div',
           { class: 'acct-lines' },
-          line('Today', fmtDay(d.usd, d.pct), tone(d.usd)),
-          line('Price gain', fmtGain(g.priceGain, g.priceGainPct), tone(g.priceGain)),
-          line('Dividends received', usd(g.dividends)),
-          line(termLabel('Total return', 'totalreturn'), fmtGain(g.total, g.totalPct), tone(g.total)),
-          line('Cash', usd(cash)),
+          combined ? line('Today', fmtDay(d.usd, d.pct), tone(d.usd)) : null,
+          combined ? line('Price gain', fmtGain(g.priceGain, g.priceGainPct), tone(g.priceGain)) : null,
+          combined && g.dividends ? line('Dividends received', usd(g.dividends)) : null,
+          combined && g.dividends ? line(termLabel('Total return', 'totalreturn'), fmtGain(g.total, g.totalPct), tone(g.total)) : null,
+          combined ? line('Cash', usd(cash)) : null,
           p.webullAccount ? line('Buying power', bp) : null,
         ),
         h('div', { class: 'muted small' }, `${n} holding${n === 1 ? '' : 's'}${syncedAt ? ` · synced ${timeAgo(syncedAt)}` : ''}`),
@@ -892,7 +907,6 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     const top = byHolding.slice(0, 10);
     const rest = byHolding.slice(10);
     if (rest.length) top.push({ label: `Other (${rest.length})`, value: rest.reduce((s, x) => s + x.value, 0), weight: rest.reduce((s, x) => s + x.weight, 0) });
-    const byClass = allocation(valued, (x) => x.r.assetClass, (x) => x.value);
     const list = (items: { label: string; value: number; weight: number }[]) => {
       const max = Math.max(1e-9, ...items.map((x) => x.weight));
       return h(
@@ -910,10 +924,10 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
       );
     };
     return panel(
-      'Allocation',
+      'By holding',
       'Share of your total value',
-      h('div', { class: 'acct-alloc' }, h('div', {}, h('h4', {}, 'By holding'), list(top)), h('div', {}, h('h4', {}, 'By asset class'), list(byClass))),
-      h('p', { class: 'ap-note' }, 'Sectors are in the Risk card. Asset classes come from your portfolios (imports start as US stocks; change one in Portfolios).'),
+      list(top),
+      h('p', { class: 'ap-note' }, 'By asset class is at the top of the page; sectors are in the Risk card.'),
     );
   }
 

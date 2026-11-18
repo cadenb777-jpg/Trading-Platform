@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arcPath, flowWidth, gaugeAngle, heatShare, petalPoints, polar, trackPos } from './viz';
+import { arcPath, flowWidth, gaugeAngle, heatShare, mixSegments, petalPoints, polar, trackPos } from './viz';
 
 describe('viz geometry', () => {
   it('places points clockwise from the top', () => {
@@ -32,5 +32,16 @@ describe('viz geometry', () => {
     expect(heatShare(-2, 4)).toBe(39);
     expect(heatShare(4, 4)).toBe(70);
     expect(heatShare(1, 0)).toBe(0);
+  });
+});
+
+describe('mix bar', () => {
+  it('keeps the biggest parts and folds the rest into Other', () => {
+    const s = mixSegments([{ label: 'a', value: 50 }, { label: 'b', value: 20 }, { label: 'c', value: 10 }, { label: 'd', value: 10 }, { label: 'e', value: 5 }, { label: 'f', value: 5 }, { label: 'z', value: 0 }]);
+    expect(s.map((x) => x.label)).toEqual(['a', 'b', 'c', 'd', 'Other']);
+    expect(s[4].value).toBe(10);
+    expect(s.reduce((t, x) => t + x.weight, 0)).toBeCloseTo(1);
+    expect(mixSegments([])).toEqual([]);
+    expect(mixSegments([{ label: 'a', value: 1 }, { label: 'b', value: 1 }], 5).map((x) => x.weight)).toEqual([0.5, 0.5]);
   });
 });

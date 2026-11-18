@@ -197,3 +197,39 @@ export function heatGrid(o: { items: { label: string; value: number | null; sub?
   );
   return figure('viz-heatgrid', h('div', {}, h('div', { class: 'viz-title' }, o.title), grid), o.caption, o.title);
 }
+
+// ---------- mix bar ----------
+
+/** The biggest parts as they are, the rest folded into "Other" (pure, tested). Weights are shares of the total. */
+export function mixSegments(items: { label: string; value: number }[], max = 5): { label: string; value: number; weight: number }[] {
+  const pos = items.filter((x) => x.value > 0).sort((a, b) => b.value - a.value);
+  const total = pos.reduce((s, x) => s + x.value, 0);
+  if (!total) return [];
+  const top = pos.length > max ? pos.slice(0, max - 1) : pos;
+  const rest = pos.slice(top.length);
+  const out = top.map((x) => ({ ...x }));
+  if (rest.length) out.push({ label: 'Other', value: rest.reduce((s, x) => s + x.value, 0) });
+  return out.map((x) => ({ ...x, weight: x.value / total }));
+}
+
+/** Calm categorical colours (the destination hues; green/red stay for good/bad). */
+const MIX_COLORS = ['var(--hue-money)', 'var(--accent-2)', 'var(--hue-security)', 'var(--hue-markets)', 'var(--hue-ideas)', 'var(--line-strong)'];
+
+/** One bar split into what the money is in, with a legend underneath (share and amount on hover). */
+export function mixBar(o: { items: { label: string; value: number }[]; title: string; format: (v: number) => string; caption?: Node | string }) {
+  const segs = mixSegments(o.items);
+  const color = (i: number, label: string) => (label === 'Other' ? MIX_COLORS[5] : MIX_COLORS[i % 5]);
+  const tip = (x: { label: string; value: number; weight: number }) => `${x.label}: ${(x.weight * 100).toFixed(1)}% (${o.format(x.value)})`;
+  return h(
+    'figure',
+    { class: 'viz viz-mix' },
+    h('figcaption', { class: 'viz-title' }, o.title),
+    h('div', { class: 'mix-bar', role: 'img', 'aria-label': segs.map(tip).join('; ') }, ...segs.map((x, i) => h('span', { class: 'mix-seg', title: tip(x), style: `flex:${x.weight} 1 0;background:${color(i, x.label)}` }))),
+    h(
+      'ul',
+      { class: 'mix-legend' },
+      ...segs.map((x, i) => h('li', { title: tip(x) }, h('i', { style: `background:${color(i, x.label)}` }), h('span', {}, x.label), h('b', { class: 'num' }, `${Math.round(x.weight * 100)}%`))),
+    ),
+    o.caption ? h('p', { class: 'viz-caption' }, o.caption) : '',
+  );
+}
