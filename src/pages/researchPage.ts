@@ -8,6 +8,7 @@ import { buildPayPanel } from '../research/buildPayView';
 import { roicPanel } from '../research/roicView';
 import { assetQualityPanel } from '../research/assetQualityView';
 import { taxLeveragePanel } from '../research/taxLeverageView';
+import { againstBondsPanel } from '../research/againstBondsView';
 import { fy, type Maturities } from '../research/debtDilution';
 import type { Obligations } from '../research/obligations';
 import { yearBars } from '../research/yearBars';
@@ -244,6 +245,8 @@ export function createResearchPage() {
       assetQualityPanel(d.annual),
       // cash tax rate vs the book and federal rates, and operating leverage (readings)
       taxLeveragePanel(d.annual),
+      // the stock's earnings yield against the 10-year real Treasury yield (reading)
+      againstBondsPanel(v.pe ?? d.quote?.peRatio),
       // futures positioning for the company's market: one line, the full COT table is on Futures
       cotSummary(d.symbol, undefined, { quiet: true }),
       stockNewsCard(d.symbol, 5),
@@ -279,7 +282,7 @@ export function createResearchPage() {
     const el = h(
       'details',
       { class: 'ts-more', open },
-      h('summary', {}, h('b', {}, `More on ${symbol}`), h('span', { class: 'muted small' }, 'Segment history · debt · earnings quality · cash · balance sheet · building & stock pay · return on capital · profitability · taxes · positioning · news · yearly tables')),
+      h('summary', {}, h('b', {}, `More on ${symbol}`), h('span', { class: 'muted small' }, 'Segment history · debt · earnings quality · cash · balance sheet · building & stock pay · return on capital · profitability · taxes · against bonds · positioning · news · yearly tables')),
       h('div', { class: 'ts-more-body' }, ...panels),
     ) as HTMLDetailsElement;
     el.addEventListener('toggle', () => {

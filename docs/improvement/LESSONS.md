@@ -210,4 +210,12 @@ whenever the owner repeats or adds one.
   squashed the Chart page's range buttons (same class) into the toolbar on phones; rules are now scoped to their cell.
   Lessons: never mix net and gross taxes-paid tags in one sum; a long-run rate is meaningless when losses cancel most of
   the profit; words must follow the rounded figure the page shows; generic class names collide across pages.
+- 2026-11-18 · #PRNUM Against bonds (helper 85, stacked on #49): the stock's earnings yield (1 / P/E) beside the 10-year
+  real Treasury yield (FRED DFII10, 2.92% on 2026-11-16, higher than on 99% of days since 2003), with the gap as the
+  headline, in the More fold · proposed · backlog A29. Lessons: macro.fred starts in 2006, so a "since 2003" history needs
+  ratesdesk._full; use the platform's one percentile rule (ratesdesk.percentile_rank) and never say "higher than on
+  100% of days"; round the gap before choosing its sign and words; a reply's provenance.fetchedAt is its oldest source,
+  not the price time, so the page says when the figures were loaded instead of inventing a time. Review also caught: the
+  P/E differing from the tear sheet's, a negative real yield worded as "above inflation", a pre-update cached reply
+  shown as a FRED failure, duplicated bar code (now panelBlock.rateBars).
 

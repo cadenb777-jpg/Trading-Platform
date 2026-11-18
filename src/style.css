@@ -11343,15 +11343,15 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .qe-bar.neg { background: var(--viz-1); }
 .qe-bar.pos { background: var(--label); }
 .data-table td.ltm { border-left: 1px solid var(--line); font-style: italic; }
-/* Research: Taxes and operating leverage (src/research/taxLeverageView.ts) */
-.tl-bars { display: grid; gap: 4px; }
-.tl-row { display: grid; grid-template-columns: 7.5rem 1fr 3.5rem; align-items: center; gap: var(--sp-2); }
-.tl-track { height: 10px; background: color-mix(in srgb, var(--muted) 14%, transparent); border-radius: 2px; min-width: 0; }
-.tl-bar { display: block; height: 100%; border-radius: 2px; }
-.tl-bar.cash { background: var(--viz-1); }
-.tl-bar.book { background: var(--viz-2); }
-.tl-bar.federal { background: color-mix(in srgb, var(--muted) 60%, transparent); }
-.tl-val { text-align: right; color: var(--text-strong); }
+/* Research: rates side by side (src/research/panelBlock.ts rateBars: Taxes and operating leverage, Against bonds) */
+.rb-bars { display: grid; gap: 4px; }
+.rb-row { display: grid; grid-template-columns: 7.5rem 1fr 3.5rem; align-items: center; gap: var(--sp-2); }
+.rb-track { height: 10px; background: color-mix(in srgb, var(--muted) 14%, transparent); border-radius: 2px; min-width: 0; }
+.rb-bar { display: block; height: 100%; border-radius: 2px; }
+.rb-bar.one { background: var(--viz-1); }
+.rb-bar.two { background: var(--viz-2); }
+.rb-bar.base { background: color-mix(in srgb, var(--muted) 60%, transparent); }
+.rb-val { text-align: right; color: var(--text-strong); }
 /* Research: Return on capital (src/research/roicView.ts) */
 .roc-bars { display: grid; gap: var(--sp-2); }
 .roc-row { display: grid; grid-template-columns: 4.5rem 1fr 3rem; align-items: center; gap: var(--sp-2); padding: 2px 0; }

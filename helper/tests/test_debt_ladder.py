@@ -175,11 +175,18 @@ class Yields(unittest.TestCase):
             if sid == 'BAMLH0A0HYM2EY':
                 raise RuntimeError('FRED down')
             return [['2026-11-09', 5.73], ['2026-11-10', None], ['2026-11-11', 5.84]]
-        with mock.patch('engine.macro.fred', fred):
+
+        async def full(ctx, sid, start):
+            # helper 85: the real 10-year yield is read in full from 2003 (macro.fred starts in 2006)
+            self.assertEqual((sid, start), ('DFII10', '2003-01-01'))
+            return [['2003-01-02', 2.43], ['2020-12-31', -1.06], ['2024-05-01', 2.92], ['2026-11-16', 2.92]]
+        with mock.patch('engine.macro.fred', fred), mock.patch('engine.ratesdesk._full', full):
             y = asyncio.run(r.corp_yields(None))
-        self.assertEqual(y, {'ig': {'value': 5.84, 'date': '2026-11-11', 'series': 'BAMLC0A0CMEY'}, 'hy': None,
-                             # helper 83: Moody's Baa yield, the floor Research sets return on capital against
-                             'baa': {'value': 5.84, 'date': '2026-11-11', 'series': 'BAA'}})
+        self.assertEqual(y['ig'], {'value': 5.84, 'date': '2026-11-11', 'series': 'BAMLC0A0CMEY'})
+        self.assertIsNone(y['hy'])
+        self.assertEqual(y['baa'], {'value': 5.84, 'date': '2026-11-11', 'series': 'BAA'})
+        # 2 of 4 days below 2.92 plus half of the 2 ties = 3 of 4 = 75%
+        self.assertEqual(y['real10'], {'value': 2.92, 'date': '2026-11-16', 'series': 'DFII10', 'since': '2003-01-02', 'percentile': 75.0})
 
 
 if __name__ == '__main__':

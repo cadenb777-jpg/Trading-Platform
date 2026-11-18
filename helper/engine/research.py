@@ -116,7 +116,20 @@ PURCHASE_TAGS = ['UnrecordedUnconditionalPurchaseObligationBalanceSheetAmount', 
 #: cached series the Bond market page reads (macro.fred), so no extra download
 #: helper 83 adds Moody's Baa corporate yield (monthly, since 1919): what a medium-grade company pays to borrow, the
 #: free floor Research sets return on capital against
-CORP_YIELDS = [('ig', 'BAMLC0A0CMEY'), ('hy', 'BAMLH0A0HYM2EY'), ('baa', 'BAA')]
+CORP_YIELDS = [('ig', 'BAMLC0A0CMEY'), ('hy', 'BAMLH0A0HYM2EY'), ('baa', 'BAA'),
+               # helper 85: the 10-year inflation-protected Treasury yield (daily since 2003), for Research's earnings
+               # yield against bonds; its percentile says how high real yields are against their own history
+               ('real10', 'DFII10')]
+#: series read in full from this date (macro.fred starts in 2006), whose reply also carries where today's value sits
+#: in that history (ratesdesk.percentile_rank: share of days below today plus half the ties, the Bonds pages' rule)
+FULL_FROM = {'real10': '2003-01-01'}
+
+
+async def _yield_series(ctx, key, sid):
+    from . import macro, ratesdesk
+    if key in FULL_FROM:
+        return await ratesdesk._full(ctx, sid, FULL_FROM[key])
+    return await macro.fred(ctx, sid)
 
 
 def _days(start, end):
@@ -463,12 +476,14 @@ async def corp_yields_request(ctx, msg):
 async def corp_yields(ctx):
     """Today's investment-grade and high-yield effective yields (%, with their date), or None for a series FRED
     couldn't give."""
-    from . import macro
-    rows = await asyncio.gather(*(macro.fred(ctx, sid) for _, sid in CORP_YIELDS), return_exceptions=True)
+    from . import ratesdesk
+    rows = await asyncio.gather(*(_yield_series(ctx, key, sid) for key, sid in CORP_YIELDS), return_exceptions=True)
     out = {}
     for (key, sid), r in zip(CORP_YIELDS, rows):
         good = [] if isinstance(r, BaseException) else [x for x in r if x and x[1] is not None]
         out[key] = {'value': good[-1][1], 'date': good[-1][0], 'series': sid} if good else None
+        if good and key in FULL_FROM:
+            out[key] |= {'since': good[0][0], 'percentile': ratesdesk.percentile_rank([v for _, v in good], good[-1][1])}
     return out
 
 
