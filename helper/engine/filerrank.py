@@ -47,6 +47,9 @@ YEAR_DAYS = 31
 
 DURATION = {'gp': 'GrossProfit', 'op': 'OperatingIncomeLoss', 'ni': 'NetIncomeLoss', 'cfo': 'NetCashProvidedByUsedInOperatingActivities'}
 REVENUE_TAGS = ('RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues')
+#: the second revenue tag replaces the first only when more than this many times it (the first is then a part only;
+#: a gross-of-excise 'Revenues' rarely reaches twice net sales)
+PARTIAL_REVENUE = 2.0
 INSTANT = {'assets': 'Assets', 'inventory': 'InventoryNet'}
 
 METRICS = ('grossProfitability', 'operatingMargin', 'returnOnAssets', 'salesGrowth', 'assetGrowth', 'accruals', 'inventoryVsSales')
@@ -88,7 +91,7 @@ def company_rows(dur, rev, rev_prev, instants):
 
     dur: {key: {cik: [val, end, accn]}} for the DURATION keys in the year;
     rev / rev_prev: {tag: {cik: [...]}}; instants: {concept: {frame label: {cik: [...]}}}.
-    Returns {cik: {end, accn, gp, op, ni, cfo, rev, revTag, growthRev, revPrev, assets, assetsPrev, inventory, inventoryPrev}}.
+    Returns {cik: {end, accn, gp, op, ni, cfo, rev, revTag, revPrev, assets, assetsPrev, inventory, inventoryPrev}}.
     """
     out = {}
     anchors = set(dur.get('ni', {})) | set(dur.get('cfo', {}))
@@ -99,21 +102,24 @@ def company_rows(dur, rev, rev_prev, instants):
         for k in DURATION:
             v = dur.get(k, {}).get(cik)
             row[k] = v[0] if v and _near(v[1], end, BALANCE_DAYS) else None
-        # revenue: the bigger figure of the two tags (a filer tagging only part of its revenue, fees say, under one
-        # and the total under the other uses the total); growth from the bigger tag that has both years, so it never
-        # mixes two definitions
-        row['rev'] = row['revTag'] = row['growthRev'] = row['revPrev'] = None
-        options = []
+        # revenue: the first tag (contract revenue net of sales taxes, the line Research shows), unless the other is
+        # more than PARTIAL_REVENUE times it: then the first holds only part of revenue (a bank's fees, say); growth
+        # only from that same tag, so it never mixes two definitions
+        row['rev'] = row['revTag'] = row['revPrev'] = None
+        options = {}
         for tag in REVENUE_TAGS:
             v = rev.get(tag, {}).get(cik)
             if v and _near(v[1], end, BALANCE_DAYS):
                 p = rev_prev.get(tag, {}).get(cik)
-                options.append((v[0], tag, p[0] if p and _near(p[1], year_before(end), YEAR_DAYS) else None))
+                options[tag] = (v[0], p[0] if p and _near(p[1], year_before(end), YEAR_DAYS) else None)
         if options:
-            row['rev'], row['revTag'], _ = max(options, key=lambda o: o[0])
-            both = [o for o in options if o[2] is not None]
-            if both:
-                row['growthRev'], _, row['revPrev'] = max(both, key=lambda o: o[0])
+            first, *rest = [t for t in REVENUE_TAGS if t in options]
+            tag = first
+            for other in rest:
+                if options[first][0] > 0 and options[other][0] > PARTIAL_REVENUE * options[first][0]:
+                    tag = other
+            row['revTag'] = tag
+            row['rev'], row['revPrev'] = options[tag]
         prev_end = year_before(end)
         for key, concept in (('assets', 'assets'), ('inventory', 'inventory')):
             frames = instants.get(concept, {})
@@ -133,9 +139,8 @@ def readings(r):
     """The seven readings for one company's row (None where an input is missing or a denominator isn't positive)."""
     assets, prev = r.get('assets'), r.get('assetsPrev')
     avg = _avg(assets, prev)
-    rev = r.get('rev')
-    now, rev0 = r.get('growthRev'), r.get('revPrev')
-    sales_growth = now / rev0 - 1 if now is not None and rev0 and rev0 > 0 else None
+    rev, rev0 = r.get('rev'), r.get('revPrev')
+    sales_growth = rev / rev0 - 1 if rev is not None and rev0 and rev0 > 0 else None
     inv, inv0 = r.get('inventory'), r.get('inventoryPrev')
     inv_growth = inv / inv0 - 1 if inv is not None and inv0 and inv0 > 0 else None
     return {
@@ -262,7 +267,7 @@ async def _field(ctx, year):
         by_metric, per = field(rows)
         companies = {str(k): {'end': r['end'], 'accn': r['accn'], 'assets': r.get('assets'), 'readings': per[k]} for k, r in rows.items()}
         return {'byMetric': by_metric, 'companies': companies, 'quarters': quarters}
-    return await ctx.cached(('sec-filerrank2', year), 24 * 3600, load, persist=True, stale_ok=True)
+    return await ctx.cached(('sec-filerrank', year), 24 * 3600, load, persist=True, stale_ok=True)
 
 
 @handler('research.filerrank')
@@ -281,7 +286,10 @@ async def filer_rank(ctx, msg):
             break
     year = pick_year(today, counts)
     if year is None:
-        raise EngineError('The SEC’s yearly files for every company couldn’t be loaded right now.')
+        log.info('filerrank: no filled-up year, net income rows %s', counts)
+        if not any(counts.values()):
+            raise EngineError('The SEC’s yearly files for every company couldn’t be loaded right now.')
+        raise EngineError('The SEC’s yearly files for every company are still filling up (fewer companies than usual have reported), so the ranking isn’t ready yet.')
     data = await _field(ctx, year)
     me = data['companies'].get(str(cik))
     if me is None:
@@ -290,6 +298,8 @@ async def filer_rank(ctx, msg):
         before = ni.get(year - 1)
         if before is None:
             before = await _frame(ctx, DURATION['ni'], f'CY{year - 1}')
+        if cik not in before:
+            before = await _frame(ctx, DURATION['cfo'], f'CY{year - 1}')
         if cik in before:
             older = await _field(ctx, year - 1)
             if str(cik) in older['companies']:

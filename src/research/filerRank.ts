@@ -8,8 +8,7 @@
  * company sits, never whether that is good: a high asset growth or high accruals have come before LOWER returns
  * (Cooper, Gulen and Schill 2008; Sloan 1996), so "higher" is not "better". Readings, not signals.
  */
-import { pc } from './debtDilution';
-import { signedPoints } from './inventory';
+import { pc, signedPoints } from './debtDilution';
 
 export type MetricKey = 'grossProfitability' | 'operatingMargin' | 'returnOnAssets' | 'salesGrowth' | 'assetGrowth' | 'accruals' | 'inventoryVsSales';
 

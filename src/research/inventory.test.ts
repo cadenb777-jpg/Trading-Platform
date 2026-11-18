@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { inventorySales, inventoryWords, pilingUp, type InventorySales } from './inventory';
-import type { Statements } from './debtDilution';
+import { signedPoints, type Statements } from './debtDilution';
 
 // Apple's 10-K figures (SEC company facts, checked 2026-11-18): InventoryNet and
 // RevenueFromContractWithCustomerExcludingAssessedTax at each fiscal year-end
@@ -49,6 +49,10 @@ describe('Inventory against sales', () => {
     const fall = inventorySales({ periods: ['2024-12-31', '2025-12-31'], values: { inventory: [100, 95], revenue: [1000, 800] } }) as InventorySales;
     // -5% against -20%: 15 points above
     expect(inventoryWords(fall)).toMatch(/^Inventory fell 5\.0% in FY2025 to \$95 while sales fell 20\.0%: inventory growth was 15\.0 points above sales growth/);
+  });
+
+  it('points sign follows the rounded figure', () => {
+    expect([signedPoints(0.311), signedPoints(-0.39653), signedPoints(0.0004), signedPoints(-0.0003)]).toEqual(['+31.1', '−39.7', '0.0', '0.0']);
   });
 
   it('no inventory, a gap year, a stale newest year', () => {

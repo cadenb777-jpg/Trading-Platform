@@ -84,7 +84,13 @@ class CocaCola(unittest.TestCase):
         x = fr.readings(row)
         self.assertEqual(row['revTag'], 'Revenues')
         self.assertAlmostEqual(x['operatingMargin'], 0.287061, 6)  # on the total, not on fees
-        self.assertAlmostEqual(x['salesGrowth'], 0.25)  # 2,000 / 1,600 - 1, the one tag with both years
+        self.assertIsNone(x['salesGrowth'])  # the total has no last year: never the fees' growth instead
+        # gross of excise taxes (under twice net sales): the net contract line stays, with its growth
+        rev = {'RevenueFromContractWithCustomerExcludingAssessedTax': {KO: [35_000e6, END, 'x']}, 'Revenues': {KO: [60_000e6, END, 'x']}}
+        rev_prev = {'RevenueFromContractWithCustomerExcludingAssessedTax': {KO: [33_000e6, '2024-12-31', 'x']}}
+        x = fr.readings(fr.company_rows(dur, rev, rev_prev, instants)[KO])
+        self.assertAlmostEqual(x['operatingMargin'], 13_762 / 35_000, 6)
+        self.assertAlmostEqual(x['salesGrowth'], 35_000 / 33_000 - 1, 6)
 
     def test_no_gross_profit_tag_no_reading(self):
         dur, rev, rev_prev, instants = frames()

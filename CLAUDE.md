@@ -678,7 +678,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   ranked among every filer with total assets >= $100M from SEC XBRL frames (one file per concept and calendar period,
   cached a week as 'sec-frame'; field cached a day as 'sec-filerrank'). Fiscal year = the company's row in the CY duration
   frame (net income, else operating cash flow); balances from the quarter frame nearest that year-end, dated within 10
-  days; revenue growth only with the same tag both years; a CY frame under 4,000 net-income rows is skipped for the year
+  days; revenue = the contract-revenue tag unless Revenues is > 2x it, growth only from that tag; a CY frame under 4,000 net-income rows is skipped for the year
   before. Percentile = ratesdesk.percentile_rank against the others. Inventory against sales (src/research/inventory.ts,
   no helper change) is the third block of Cash health: flagged > 10 points ahead of sales and >= 1% of sales.
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/

@@ -8,8 +8,8 @@ import { block, savedBeforeUpdate } from './panelBlock';
 import { dataTable, money } from '../ui/charts';
 import { fy, type Statements } from './debtDilution';
 import { cashCycle, coverWord, coverWords, cycleWords, dividendCover } from './cashHealth';
-import { inventorySales, inventoryStaleWords, inventoryWords, pilingUp, signedPoints } from './inventory';
-import { pc } from './debtDilution';
+import { inventorySales, inventoryStaleWords, inventoryWords, pilingUp } from './inventory';
+import { pc, signedPoints } from './debtDilution';
 
 const x = (v: number | null) => (v == null ? '—' : v <= 0 ? 'none' : `${v.toFixed(v >= 10 ? 0 : 1)}×`);
 const d = (v: number) => `${v < 0 ? '−' : ''}${Math.round(Math.abs(v))}`;

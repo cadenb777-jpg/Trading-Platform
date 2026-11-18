@@ -220,7 +220,7 @@ whenever the owner repeats or adds one.
   shown as a FRED failure, duplicated bar code (now panelBlock.rateBars).
 - 2026-11-18 · #PRNUM Among US companies + inventory against sales (helper 88): seven Research readings ranked against
   every US SEC filer with $100M+ of assets from the SEC's free XBRL frames (Coca-Cola's gross profit per dollar of assets
-  $0.28 = 54.7th percentile of 1,474; Microsoft's operating margin 45.6% higher than 96% of 2,540), and inventory growth
+  $0.28 = 54.7th percentile of 1,474; Microsoft's operating margin 45.6% higher than 96% of 2,539), and inventory growth
   against sales growth on Cash health (Apple FY2026 +154.3% vs +15.1%) · proposed · backlog A31-A32. Lessons: frames
   calendarise fiscal years loosely (Microsoft's July-June year sits in CY2025), so balances are read from the quarter frame
   nearest each company's own year-end and must be dated within 10 days of it; growth only when both years use the same

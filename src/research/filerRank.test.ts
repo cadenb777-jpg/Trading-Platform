@@ -8,20 +8,20 @@ const ko: FilerRank = {
   company: { end: '2025-12-31', accn: '0001628280-26-010047', assets: 104_816e6, small: false },
   metrics: {
     grossProfitability: r(0.281865, 54.7, 1474),
-    operatingMargin: r(0.287061, 90.8, 2540),
+    operatingMargin: r(0.287061, 90.6, 2539),
     returnOnAssets: r(0.127646, 91.4, 3861),
-    salesGrowth: r(0.018699, 34.1, 3030),
+    salesGrowth: r(0.018699, 34.2, 3028),
     assetGrowth: r(0.042437, 46.9, 4055),
     accruals: r(0.055501, 91.3, 3768),
-    inventoryVsSales: r(-0.082785, 31.3, 1610),
+    inventoryVsSales: r(-0.082785, 31.4, 1610),
   },
   minAssets: 100e6,
 };
 
 describe('Among US companies', () => {
   it('places in plain words', () => {
-    expect(placeWords(ko.metrics.operatingMargin!)).toBe('higher than 90% of 2,540');
-    expect(placeWords(ko.metrics.salesGrowth!)).toBe('lower than 65% of 3,030');
+    expect(placeWords(ko.metrics.operatingMargin!)).toBe('higher than 90% of 2,539');
+    expect(placeWords(ko.metrics.salesGrowth!)).toBe('lower than 65% of 3,028');
     expect(placeWords(ko.metrics.grossProfitability!)).toBe('about the middle of 1,474');
     // never "higher than 100%"
     expect(placeWords(r(1, 100, 10))).toBe('higher than 99% of 10');
