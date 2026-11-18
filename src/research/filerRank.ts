@@ -9,6 +9,7 @@
  * (Cooper, Gulen and Schill 2008; Sloan 1996), so "higher" is not "better". Readings, not signals.
  */
 import { pc } from './debtDilution';
+import { signedPoints } from './inventory';
 
 export type MetricKey = 'grossProfitability' | 'operatingMargin' | 'returnOnAssets' | 'salesGrowth' | 'assetGrowth' | 'accruals' | 'inventoryVsSales';
 
@@ -26,7 +27,8 @@ export interface Ranked {
 export interface FilerRank {
   /** the calendar year of the SEC frames (a fiscal year that best fits it) */
   year: number;
-  company: { end: string; accn: string; assets: number | null; small: boolean } | null;
+  /** small = assets under minAssets; noAssets = no balance dated at its year-end (both ranked, neither in the field) */
+  company: { end: string; accn: string; assets: number | null; small: boolean; noAssets?: boolean } | null;
   metrics: Partial<Record<MetricKey, Ranked | null>>;
   minAssets: number;
   frames?: string[];
@@ -43,7 +45,7 @@ export interface MetricInfo {
 }
 
 /** Points for a difference of two growth rates: +139.2 pts. */
-const pts = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v * 100).toFixed(1)} pts`;
+const pts = (v: number) => `${signedPoints(v)} pts`;
 const dollars = (v: number) => `${v < 0 ? '−' : ''}$${Math.abs(v).toFixed(2)}`;
 
 export const METRICS: MetricInfo[] = [

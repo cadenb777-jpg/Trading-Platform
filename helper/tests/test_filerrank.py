@@ -37,6 +37,8 @@ class QuarterFrames(unittest.TestCase):
         # live counts on 2026-11-18: CY2026 net income had 353 companies, CY2025 5,720
         self.assertEqual(fr.pick_year(dt.date(2026, 11, 18), {2025: 5720}), 2025)
         self.assertEqual(fr.pick_year(dt.date(2027, 2, 1), {2026: 900, 2025: 5720}), 2025)
+        # only years that were counted, never a fall-through to an uncounted one
+        self.assertIsNone(fr.pick_year(dt.date(2026, 11, 18), {2025: 0, 2024: 0, 2023: 0}))
 
 
 class CocaCola(unittest.TestCase):
@@ -73,6 +75,17 @@ class CocaCola(unittest.TestCase):
         self.assertIsNone(x['inventoryVsSales'])
         self.assertAlmostEqual(x['assetGrowth'], 0.042437, 6)
 
+    def test_revenue_uses_the_total_and_growth_one_definition(self):
+        dur, rev, rev_prev, instants = frames()
+        # fee income alone under one tag ($2B, both years), the total under the other (this year only)
+        rev = {'RevenueFromContractWithCustomerExcludingAssessedTax': {KO: [2_000e6, END, 'x']}, 'Revenues': {KO: [47_941e6, END, 'x']}}
+        rev_prev = {'RevenueFromContractWithCustomerExcludingAssessedTax': {KO: [1_600e6, '2024-12-31', 'x']}}
+        row = fr.company_rows(dur, rev, rev_prev, instants)[KO]
+        x = fr.readings(row)
+        self.assertEqual(row['revTag'], 'Revenues')
+        self.assertAlmostEqual(x['operatingMargin'], 0.287061, 6)  # on the total, not on fees
+        self.assertAlmostEqual(x['salesGrowth'], 0.25)  # 2,000 / 1,600 - 1, the one tag with both years
+
     def test_no_gross_profit_tag_no_reading(self):
         dur, rev, rev_prev, instants = frames()
         del dur['gp']  # Amazon and GE don't tag gross profit
@@ -83,22 +96,28 @@ class CocaCola(unittest.TestCase):
 
 class Ranking(unittest.TestCase):
     def test_field_leaves_out_small_companies(self):
-        rows = {1: {'end': END, 'gp': 30.0, 'assets': 150e6}, 2: {'end': END, 'gp': 5.0, 'assets': 50e6}}
+        rows = {1: {'end': END, 'gp': 30.0, 'assets': 150e6}, 2: {'end': END, 'gp': 5.0, 'assets': 50e6}, 3: {'end': END, 'gp': 5.0, 'assets': None}}
         by_metric, per = fr.field(rows)
-        self.assertEqual(list(per), [1])
-        self.assertEqual(len(by_metric['grossProfitability']), 1)
+        # every company keeps its readings (a small one is still ranked), only the field leaves them out
+        self.assertEqual(sorted(per), [1, 2, 3])
+        self.assertEqual(by_metric['grossProfitability'], [30.0 / 150e6])
+        self.assertIsNone(per[3]['grossProfitability'])
 
     def test_percentile_against_the_others(self):
         field = {m: [] for m in fr.METRICS}
         field['assetGrowth'] = [0.01, 0.02, 0.02, 0.03, 0.04]
-        r = fr.rank(field, {'assetGrowth': 0.02})['assetGrowth']
+        r = fr.rank(field, {'assetGrowth': 0.02}, True)['assetGrowth']
         # itself taken out once: others 0.01, 0.02, 0.03, 0.04 -> one below, one tie -> (1 + 0.5) / 4
         self.assertEqual(r['n'], 4)
         self.assertAlmostEqual(r['percentile'], 37.5)
         self.assertAlmostEqual(r['median'], 0.025)
         self.assertAlmostEqual(r['p25'], 0.0175)  # position 0.75 between 0.01 and 0.02
-        self.assertIsNone(fr.rank(field, {'assetGrowth': None})['assetGrowth'])
-        self.assertIsNone(fr.rank(field, {'accruals': 0.1})['accruals'])
+        # a company outside the field never takes another company's tied value out: all five, two below, two ties
+        outside = fr.rank(field, {'assetGrowth': 0.02}, False)['assetGrowth']
+        self.assertEqual(outside['n'], 5)
+        self.assertAlmostEqual(outside['percentile'], 40.0)
+        self.assertIsNone(fr.rank(field, {'assetGrowth': None}, True)['assetGrowth'])
+        self.assertIsNone(fr.rank(field, {'accruals': 0.1}, True)['accruals'])
 
     def test_quantile(self):
         self.assertEqual(fr.quantile([], 0.5), None)

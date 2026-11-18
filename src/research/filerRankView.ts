@@ -56,7 +56,7 @@ export function filerRankPanel(cik: number | string | null | undefined): HTMLEle
   const failed = () => body.replaceChildren(h('p', { class: 'muted small' }, 'The SEC’s yearly files for every company couldn’t be loaded right now. Refresh to try again.'));
   engineRequest<FilerRank>('research.filerrank', { cik: Number(cik) }, 90_000).then((f) => {
     if (!f.company) {
-      body.replaceChildren(h('p', { class: 'muted small' }, `This company isn’t in the SEC’s files for ${f.year} or ${f.year - 1} yet (no net income or operating cash flow for a fiscal year that fits either), so it can’t be ranked.`));
+      body.replaceChildren(h('p', { class: 'muted small' }, `This company isn’t in the SEC’s US accounting (US GAAP) files for ${f.year} or ${f.year - 1}, so it can’t be ranked: it may file late, or report under international rules (IFRS), as many foreign companies do.`));
       return;
     }
     const sources = h(
@@ -68,7 +68,11 @@ export function filerRankPanel(cik: number | string | null | undefined): HTMLEle
     );
     body.replaceChildren(
       h('p', { class: 'small' }, summaryWords(f)),
-      ...(f.company.small ? [h('p', { class: 'muted small' }, `This company has less than $${Math.round(f.minAssets / 1e6)} million of assets, so it is ranked against a field of bigger companies.`)] : []),
+      ...(f.company.small
+        ? [h('p', { class: 'muted small' }, `This company has less than $${Math.round(f.minAssets / 1e6)} million of assets, so it is ranked against a field of bigger companies.`)]
+        : f.company.noAssets
+          ? [h('p', { class: 'muted small' }, 'The SEC’s files have no total assets dated at this company’s year-end, so readings that need assets are left out and it is not counted in the field.')]
+          : []),
       h('div', { class: 'fr-list', role: 'list', 'aria-label': 'Readings ranked among US companies' }, h('div', { class: 'fr-axis small muted', 'aria-hidden': 'true' }, h('span', {}), h('span', {}), h('span', { class: 'fr-axis-scale' }, h('span', {}, 'lowest'), h('span', {}, 'middle half'), h('span', {}, 'highest')), h('span', {})), ...METRICS.map((m) => row(m, f.metrics[m.key]))),
       sources,
     );

@@ -88,7 +88,7 @@ def company_rows(dur, rev, rev_prev, instants):
 
     dur: {key: {cik: [val, end, accn]}} for the DURATION keys in the year;
     rev / rev_prev: {tag: {cik: [...]}}; instants: {concept: {frame label: {cik: [...]}}}.
-    Returns {cik: {end, accn, gp, op, ni, cfo, rev, revPrev, revTag, assets, assetsPrev, inventory, inventoryPrev}}.
+    Returns {cik: {end, accn, gp, op, ni, cfo, rev, revTag, growthRev, revPrev, assets, assetsPrev, inventory, inventoryPrev}}.
     """
     out = {}
     anchors = set(dur.get('ni', {})) | set(dur.get('cfo', {}))
@@ -99,16 +99,21 @@ def company_rows(dur, rev, rev_prev, instants):
         for k in DURATION:
             v = dur.get(k, {}).get(cik)
             row[k] = v[0] if v and _near(v[1], end, BALANCE_DAYS) else None
-        # revenue: the first tag with this year's figure; growth only when last year used the same tag
-        row['rev'] = row['revPrev'] = row['revTag'] = None
+        # revenue: the bigger figure of the two tags (a filer tagging only part of its revenue, fees say, under one
+        # and the total under the other uses the total); growth from the bigger tag that has both years, so it never
+        # mixes two definitions
+        row['rev'] = row['revTag'] = row['growthRev'] = row['revPrev'] = None
+        options = []
         for tag in REVENUE_TAGS:
             v = rev.get(tag, {}).get(cik)
             if v and _near(v[1], end, BALANCE_DAYS):
-                row['rev'], row['revTag'] = v[0], tag
                 p = rev_prev.get(tag, {}).get(cik)
-                if p and _near(p[1], year_before(end), YEAR_DAYS):
-                    row['revPrev'] = p[0]
-                break
+                options.append((v[0], tag, p[0] if p and _near(p[1], year_before(end), YEAR_DAYS) else None))
+        if options:
+            row['rev'], row['revTag'], _ = max(options, key=lambda o: o[0])
+            both = [o for o in options if o[2] is not None]
+            if both:
+                row['growthRev'], _, row['revPrev'] = max(both, key=lambda o: o[0])
         prev_end = year_before(end)
         for key, concept in (('assets', 'assets'), ('inventory', 'inventory')):
             frames = instants.get(concept, {})
@@ -128,8 +133,9 @@ def readings(r):
     """The seven readings for one company's row (None where an input is missing or a denominator isn't positive)."""
     assets, prev = r.get('assets'), r.get('assetsPrev')
     avg = _avg(assets, prev)
-    rev, rev0 = r.get('rev'), r.get('revPrev')
-    sales_growth = rev / rev0 - 1 if rev is not None and rev0 and rev0 > 0 else None
+    rev = r.get('rev')
+    now, rev0 = r.get('growthRev'), r.get('revPrev')
+    sales_growth = now / rev0 - 1 if now is not None and rev0 and rev0 > 0 else None
     inv, inv0 = r.get('inventory'), r.get('inventoryPrev')
     inv_growth = inv / inv0 - 1 if inv is not None and inv0 and inv0 > 0 else None
     return {
@@ -153,15 +159,20 @@ def quantile(values, q):
     return values[lo] + (values[hi] - values[lo]) * (pos - lo)
 
 
+def in_field(r):
+    """Total assets of at least MIN_ASSETS at the year-end (a company without a dated balance is out)."""
+    return r.get('assets') is not None and r['assets'] >= MIN_ASSETS
+
+
 def field(rows):
-    """{metric: sorted values} over the companies with total assets >= MIN_ASSETS, plus {cik: readings}."""
+    """{metric: sorted values} over the companies in the field, plus every company's readings ({cik: readings})."""
     per = {}
     by_metric = {m: [] for m in METRICS}
     for cik, r in rows.items():
-        if r.get('assets') is None or r['assets'] < MIN_ASSETS:
-            continue
         x = readings(r)
         per[cik] = x
+        if not in_field(r):
+            continue
         for m, v in x.items():
             if v is not None:
                 by_metric[m].append(v)
@@ -170,9 +181,9 @@ def field(rows):
     return by_metric, per
 
 
-def rank(by_metric, mine):
+def rank(by_metric, mine, member):
     """Where `mine` ({metric: value}) sits among the field: percentile against the others, their count and quartiles.
-    `mine` is in the field when the company is large enough; it is taken out once so it isn't ranked against itself."""
+    member: the company is itself in the field, so its own value is taken out once (never another company's)."""
     import bisect
     out = {}
     for m in METRICS:
@@ -183,7 +194,7 @@ def rank(by_metric, mine):
             continue
         others = values
         i = bisect.bisect_left(values, v)
-        if i < len(values) and values[i] == v:
+        if member and i < len(values) and values[i] == v:
             others = values[:i] + values[i + 1:]
         if not others:
             out[m] = None
@@ -193,12 +204,17 @@ def rank(by_metric, mine):
     return out
 
 
+#: calendar years tried, newest first: last year, then up to two before it
+YEARS_TRIED = 3
+
+
 def pick_year(today, ni_rows):
-    """The newest calendar year whose net-income frame has filled up (ni_rows: {year: row count})."""
-    y = today.year - 1
-    while y > today.year - 4 and ni_rows.get(y, 0) < MIN_FRAME_ROWS:
-        y -= 1
-    return y
+    """The newest calendar year whose net-income frame has filled up (ni_rows: {year: row count}), only among the
+    years counted; None when none has."""
+    for y in range(today.year - 1, today.year - 1 - YEARS_TRIED, -1):
+        if ni_rows.get(y, 0) >= MIN_FRAME_ROWS:
+            return y
+    return None
 
 
 # ---------- downloads ----------
@@ -240,11 +256,13 @@ async def _year_rows(ctx, year):
 
 
 async def _field(ctx, year):
+    """The year's field, saved for a day: sorted values per reading, and per company only what the reply needs."""
     async def load():
         rows, quarters = await _year_rows(ctx, year)
         by_metric, per = field(rows)
-        return {'byMetric': by_metric, 'rows': {str(k): v for k, v in rows.items()}, 'quarters': quarters}
-    return await ctx.cached(('sec-filerrank', year), 24 * 3600, load, persist=True, stale_ok=True)
+        companies = {str(k): {'end': r['end'], 'accn': r['accn'], 'assets': r.get('assets'), 'readings': per[k]} for k, r in rows.items()}
+        return {'byMetric': by_metric, 'companies': companies, 'quarters': quarters}
+    return await ctx.cached(('sec-filerrank2', year), 24 * 3600, load, persist=True, stale_ok=True)
 
 
 @handler('research.filerrank')
@@ -255,26 +273,35 @@ async def filer_rank(ctx, msg):
     except (TypeError, ValueError):
         raise EngineError('research.filerrank needs the company’s SEC number (cik)')
     today = dt.date.today()
-    counts = {}
-    for y in range(today.year - 1, today.year - 4, -1):
-        counts[y] = len(await _frame(ctx, DURATION['ni'], f'CY{y}'))
+    counts, ni = {}, {}
+    for y in range(today.year - 1, today.year - 1 - YEARS_TRIED, -1):
+        ni[y] = await _frame(ctx, DURATION['ni'], f'CY{y}')
+        counts[y] = len(ni[y])
         if counts[y] >= MIN_FRAME_ROWS:
             break
     year = pick_year(today, counts)
+    if year is None:
+        raise EngineError('The SEC’s yearly files for every company couldn’t be loaded right now.')
     data = await _field(ctx, year)
-    row = data['rows'].get(str(cik))
-    if row is None:
-        # the company's newest year isn't in this frame yet (a late filer): the year before
-        older = await _field(ctx, year - 1)
-        if older['rows'].get(str(cik)):
-            year, data, row = year - 1, older, older['rows'][str(cik)]
-    if row is None:
+    me = data['companies'].get(str(cik))
+    if me is None:
+        # a late filer's newest year isn't in this frame yet: the year before, but only when the company is in last
+        # year's net-income frame at all (a company filing under IFRS, as many foreign ones do, is in neither)
+        before = ni.get(year - 1)
+        if before is None:
+            before = await _frame(ctx, DURATION['ni'], f'CY{year - 1}')
+        if cik in before:
+            older = await _field(ctx, year - 1)
+            if str(cik) in older['companies']:
+                year, data, me = year - 1, older, older['companies'][str(cik)]
+    if me is None:
         return {'year': year, 'company': None, 'metrics': {m: None for m in METRICS}, 'minAssets': MIN_ASSETS}
-    mine = readings(row)
+    member = in_field(me)
     return {
         'year': year,
-        'company': {'end': row['end'], 'accn': row['accn'], 'assets': row.get('assets'), 'small': row.get('assets') is None or row['assets'] < MIN_ASSETS},
-        'metrics': rank(data['byMetric'], mine),
+        'company': {'end': me['end'], 'accn': me['accn'], 'assets': me['assets'], 'small': me['assets'] is not None and me['assets'] < MIN_ASSETS,
+                    'noAssets': me['assets'] is None},
+        'metrics': rank(data['byMetric'], me['readings'], member),
         'minAssets': MIN_ASSETS,
         'frames': [FRAME_URL.format(tag=t, period=f'CY{year}') for t in (DURATION['ni'], DURATION['gp'])],
     }

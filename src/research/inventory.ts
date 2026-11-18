@@ -37,6 +37,9 @@ export const MATERIAL = 0.01;
 
 export const pilingUp = (y: InventoryYear) => y.gap > PILING_UP && y.share >= MATERIAL;
 
+/** A difference of two growth rates in percentage points, signed, one decimal: +31.1, −39.7, 0.0 (table, rank row, words). */
+export const signedPoints = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v * 100).toFixed(1)}`;
+
 /** Null when the filings show no inventory for two year-ends a fiscal year apart, with sales for both years. */
 export function inventorySales(a: Statements, span = 5): InventorySales | InventoryStale | null {
   const n = newestYear(a);
@@ -61,13 +64,13 @@ const grew = (g: number) => `${g >= 0 ? 'grew' : 'fell'} ${pc(Math.abs(g), 1)}`;
 
 export function inventoryWords(x: InventorySales): string {
   const y = x.latest;
-  const pts = Math.abs(y.gap * 100).toFixed(1);
+  const pts = signedPoints(Math.abs(y.gap)).replace('+', '');
   let t = `Inventory ${grew(y.inventoryGrowth)} in ${fy(y.end)} to ${usd(y.inventory)} while sales ${grew(y.salesGrowth)}`;
   if (y.share < MATERIAL) return `${t}. Inventory is only ${pc(y.share, 1)} of a year’s sales, too small for the gap to matter.`;
   t += pilingUp(y)
-    ? `: stock grew ${pts} points faster than sales, so goods are piling up. Bernard and Noel (1991) and Thomas and Zhang (2002) found that companies whose inventory jumped ahead of sales went on to weaker profits and returns. A planned build-up (for a launch, or against a supply shortage) can explain it too.`
+    ? `: inventory growth was ${pts} points above sales growth, so goods are piling up. Bernard and Noel (1991) and Thomas and Zhang (2002) found that companies whose inventory jumped ahead of sales went on to weaker profits and returns. A planned build-up (for a launch, or against a supply shortage) can explain it too.`
     : y.gap < -PILING_UP
-      ? `: stock ${y.inventoryGrowth < 0 ? 'shrank' : 'grew'} ${pts} points slower than sales, so goods are selling faster than they are being stocked.`
+      ? `: inventory growth was ${pts} points below sales growth, so goods are selling faster than they are being stocked.`
       : ': about in step (within 10 points).';
   return t;
 }

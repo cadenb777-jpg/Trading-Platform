@@ -8,7 +8,7 @@ import { block, savedBeforeUpdate } from './panelBlock';
 import { dataTable, money } from '../ui/charts';
 import { fy, type Statements } from './debtDilution';
 import { cashCycle, coverWord, coverWords, cycleWords, dividendCover } from './cashHealth';
-import { inventorySales, inventoryStaleWords, inventoryWords, pilingUp } from './inventory';
+import { inventorySales, inventoryStaleWords, inventoryWords, pilingUp, signedPoints } from './inventory';
 import { pc } from './debtDilution';
 
 const x = (v: number | null) => (v == null ? '—' : v <= 0 ? 'none' : `${v.toFixed(v >= 10 ? 0 : 1)}×`);
@@ -79,7 +79,6 @@ export function cashHealthPanel(a: Statements): HTMLElement {
   );
 
   const inv = 'inventory' in a.values ? inventorySales(a) : undefined;
-  const pts = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v * 100).toFixed(1)}`;
   const stock = block(
     'Inventory against sales',
     'inventoryVsSales',
@@ -90,7 +89,7 @@ export function cashHealthPanel(a: Statements): HTMLElement {
         : 'lastShown' in inv
           ? [h('p', { class: 'muted small' }, inventoryStaleWords(inv))]
           : [
-              h('div', { class: 'md-head' }, h('b', { class: 'md-value num' }, `${pts(inv.latest.gap)} pts`), ...(pilingUp(inv.latest) ? [h('span', { class: 'md-read tight' }, 'Piling up')] : []), h('span', { class: 'muted small' }, `inventory growth over sales growth, ${fy(inv.latest.end)}`)),
+              h('div', { class: 'md-head' }, h('b', { class: 'md-value num' }, `${signedPoints(inv.latest.gap)} pts`), ...(pilingUp(inv.latest) ? [h('span', { class: 'md-read tight' }, 'Piling up')] : []), h('span', { class: 'muted small' }, `inventory growth over sales growth, ${fy(inv.latest.end)}`)),
               h(
                 'div',
                 { class: 'qe-table' },
@@ -100,7 +99,7 @@ export function cashHealthPanel(a: Statements): HTMLElement {
                     { v: fy(y.end), cls: 'label' },
                     { v: pc(y.inventoryGrowth, 1, true), cls: 'num' },
                     { v: pc(y.salesGrowth, 1, true), cls: 'num' },
-                    { v: pts(y.gap), cls: `num${pilingUp(y) ? ' warn' : ''}`, ...(pilingUp(y) ? { title: 'Inventory grew more than 10 points faster than sales' } : {}) },
+                    { v: signedPoints(y.gap), cls: `num${pilingUp(y) ? ' warn' : ''}`, ...(pilingUp(y) ? { title: 'Inventory grew more than 10 points faster than sales' } : {}) },
                   ]),
                   undefined,
                   false,

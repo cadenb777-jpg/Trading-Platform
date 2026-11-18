@@ -635,6 +635,8 @@ export const ENGINE_CACHE_MS: Record<string, number> = {
   'prospect.holders_by_symbol': 60 * 60_000,
   'research.company': 5 * 60_000,
   'research.corpyields': 30 * 60_000,
+  // yearly figures for every filer: the helper keeps them a day
+  'research.filerrank': 60 * 60_000,
   'alts.fund': 15 * 60_000,
   'crosscheck.value': 60_000,
   'data.identifiers': 60 * 60_000,
