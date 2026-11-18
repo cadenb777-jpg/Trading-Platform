@@ -101,7 +101,14 @@ function buildDrawer() {
   return built;
 }
 
+let closesOnNavigate = false;
+
 async function openDrawer(symbol: string, tab?: SecTab) {
+  // going to another page closes the slide-over (on a phone it would otherwise cover the next page)
+  if (!closesOnNavigate) {
+    closesOnNavigate = true;
+    window.addEventListener('hashchange', () => closeDrawer());
+  }
   if (drawer) return drawer.view.load(symbol, tab, true);
   const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const { el, view } = await buildDrawer();

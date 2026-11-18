@@ -157,7 +157,7 @@ describe('header trader figures', () => {
 describe('crosshair label', () => {
   it('carries the full date, trader style', () => {
     expect(crosshairLabel(utc('2025-11-10T05:00:00'), { daily: true })).toBe('Mon 10 Nov 2025');
-    expect(crosshairLabel(utc('2026-11-05T19:35:00'), { daily: false, timeZone: 'America/New_York' })).toBe('Thu 05 Nov 2:35 PM');
+    expect(crosshairLabel(utc('2026-11-05T19:35:00'), { daily: false, timeZone: 'America/New_York' })).toBe('Thu 05 Nov 2:35 PM ET');
   });
 });
 

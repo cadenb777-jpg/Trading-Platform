@@ -5,7 +5,7 @@
  * own indicator rows (with hide/settings/remove buttons) in `rows`; the security GP tab lets the box build simple ones.
  */
 import { indicatorLabel } from '../indicators/library';
-import { clockText } from './clock';
+import { chartTimeZone, zoneTag, zonedClock } from './clock';
 import { THEME } from '../ui/theme';
 import { h } from '../ui/dom';
 import type { ChartView } from './ChartView';
@@ -19,7 +19,8 @@ const dailyFmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeri
 /** "Nov 5 '26": Bloomberg's "High on 12/16/14", in words. */
 const dailyDate = { format: (ms: number) => `${dailyFmt.format(ms)} '${String(new Date(ms).getUTCFullYear()).slice(2)}` };
 const monthDay = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
-const intradayDate = { format: (ms: number) => { const d = new Date(ms); return `${monthDay.format(ms)}, ${clockText(d.getHours(), d.getMinutes())}`; } };
+const nyMonthDay = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+const intradayDate = { format: (ms: number, tz?: string) => `${(tz ? nyMonthDay : monthDay).format(ms)}, ${zonedClock(ms, tz)}${zoneTag(tz)}` };
 
 export interface ExtraRow {
   label: string;
@@ -121,7 +122,7 @@ export class LegendBox {
     this.stats.hidden = !s;
     if (s) {
       const daily = TIMEFRAME_SECONDS[this.view.currentTimeframe] >= 86400;
-      const when = (t: number) => (daily ? dailyDate : intradayDate).format(t * 1000);
+      const when = (t: number) => (daily ? dailyDate.format(t * 1000) : intradayDate.format(t * 1000, chartTimeZone(this.view.market)));
       const f = (v: number) => this.view.formatPrice(v);
       const set = (el: HTMLElement, text: string) => el.textContent !== text && (el.textContent = text);
       const atEnd = range!.to >= bars.length - 1;

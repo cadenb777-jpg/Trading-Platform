@@ -8,7 +8,7 @@
  * - our own time-axis labels at those vertical lines, with the year on a second row under the first label of each year.
  * One controller per chart (attachSquareGrid, called by followTheme for every chart); pure parts are tested.
  */
-import { clockText } from './clock';
+import { MARKET_ZONE, clockText, zonedParts } from './clock';
 import type { IChartApi, IPaneApi, IPanePrimitive, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, SeriesType, Time } from 'lightweight-charts';
 
 // ---------- Pure maths ----------
@@ -48,13 +48,14 @@ function ladder(base: number, integral: number[], high: number, low: number, max
   return span;
 }
 
-export type Zone = 'utc' | 'local';
+export type Zone = 'utc' | 'local' | 'ny';
 export type Level = 'year' | 'quarter' | 'month' | 'week' | 'day' | 'h4' | 'h1' | 'm30' | 'm15' | 'm5' | 'm1';
 
 export const DAILY_LEVELS: Level[] = ['year', 'quarter', 'month', 'week', 'day'];
 export const INTRADAY_LEVELS: Level[] = ['year', 'month', 'week', 'day', 'h4', 'h1', 'm30', 'm15', 'm5', 'm1'];
 
 function parts(t: number, zone: Zone) {
+  if (zone === 'ny') return zonedParts(t * 1000, MARKET_ZONE);
   const d = new Date(t * 1000);
   return zone === 'utc'
     ? { y: d.getUTCFullYear(), mo: d.getUTCMonth(), d: d.getUTCDate(), h: d.getUTCHours(), mi: d.getUTCMinutes(), wd: d.getUTCDay() }
@@ -123,7 +124,7 @@ const fmtMonth = new Map<Zone, Intl.DateTimeFormat>();
 const fmtMonthDay = new Map<Zone, Intl.DateTimeFormat>();
 const fmt = (cache: Map<Zone, Intl.DateTimeFormat>, zone: Zone, o: Intl.DateTimeFormatOptions) => {
   let f = cache.get(zone);
-  if (!f) cache.set(zone, (f = new Intl.DateTimeFormat('en-US', { ...o, ...(zone === 'utc' ? { timeZone: 'UTC' } : {}) })));
+  if (!f) cache.set(zone, (f = new Intl.DateTimeFormat('en-US', { ...o, ...(zone === 'utc' ? { timeZone: 'UTC' } : zone === 'ny' ? { timeZone: MARKET_ZONE } : {}) })));
   return f;
 };
 
@@ -229,6 +230,9 @@ export interface SquareGridOptions {
 }
 
 const panesWithGrid = new WeakSet<HTMLElement>();
+/** Which clock a chart's intraday grid labels use (ChartView registers New York for US stocks). */
+const gridZones = new WeakMap<IChartApi, () => Zone>();
+export const setGridZone = (chart: IChartApi, zone: () => Zone) => gridZones.set(chart, zone);
 
 class SquareGrid {
   private times: number[] = [];
@@ -360,7 +364,7 @@ class SquareGrid {
     if (this.layout?.key === key) return this.layout;
     const from = Math.max(0, Math.ceil(range.from));
     const to = Math.min(times.length - 1, Math.floor(range.to));
-    const zone: Zone = this.daily ? 'utc' : 'local';
+    const zone: Zone = this.daily ? 'utc' : (gridZones.get(this.chart)?.() ?? 'local');
     const pxPerBar = to > from ? ((ts.logicalToCoordinate(to as never) ?? 0) - (ts.logicalToCoordinate(from as never) ?? 0)) / (to - from) : ts.options().barSpacing;
     // Uniform columns: a line every `step` bars (a natural count for the timeframe), spaced like the rows, carried on
     // past the data on both sides. Anchored to bar index multiples so the lines move with the candles, never swim.
@@ -444,7 +448,7 @@ class SquareGrid {
       // intraday: the clock time, or the date at the first line of a new day
       const t = layout.labelTimes[i];
       const day = levelKey(t, 'day', layout.zone);
-      const text = layout.zone === 'local' && day !== lastDay ? gridLabel(t, 'day', layout.zone) : gridLabel(t, layout.level, layout.zone);
+      const text = layout.zone !== 'utc' && day !== lastDay ? gridLabel(t, 'day', layout.zone) : gridLabel(t, layout.level, layout.zone);
       lastDay = day;
       const w = ctx.measureText(text).width;
       const left = Math.round(x - w / 2);

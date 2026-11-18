@@ -7,7 +7,7 @@ const p = await ctx.newPage();
 const errs = [];
 p.on('pageerror', (e) => errs.push(`[${p.url().split('#')[1]}] PAGEERR ${e.message.slice(0, 160)}`));
 p.on('console', (m) => m.type() === 'error' && !/WebSocket|ERR_|Failed to load resource|fonts/.test(m.text()) && errs.push(`[${p.url().split('#')[1]}] ${m.text().slice(0, 160)}`));
-await p.route(/coinbase\.com/, (r) => r.abort());
+await p.route((u) => u.hostname === 'coinbase.com' || u.hostname.endsWith('.coinbase.com'), (r) => r.abort());
 // overlapping siblings: visible elements in the same parent whose boxes intersect (layout bugs), ignoring overlays
 const overlaps = () => p.evaluate(() => {
   const out = [];

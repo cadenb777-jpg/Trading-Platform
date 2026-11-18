@@ -14544,3 +14544,32 @@ select.input,
 .list-band:first-child {
   margin-top: 4px;
 }
+
+/* Phone scrolling (review, 2026-11-18): no list that scrolls inside the page on a phone (the finger gets stuck in it);
+   the page scrolls instead. The Strategy Lab assistant grows with its content and keeps one scroll area for the chat. */
+@media (max-width: 700px) {
+  .news-list,
+  .news-list.acct-news {
+    max-height: none;
+    overflow: visible;
+  }
+  .sl-prime {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+  .sl-prime .ai-panel.window {
+    height: 75vh;
+  }
+}
+/* chart legends: a number never shrinks or gets cut; a narrow chart wraps the open/high/low/close row instead */
+.legend-num {
+  flex-shrink: 0;
+}
+.legend-ohlc {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+.legend-ohlc .legend-num {
+  overflow: visible;
+}
