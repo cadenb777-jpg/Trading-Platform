@@ -3,6 +3,9 @@
  * draws into the tab body from the shared loaders (data.ts), degrades panel by panel when a request fails ("—" with
  * the reason), and says where every figure comes from and when.
  */
+import { hpTab } from './hpTab';
+import { rvTab } from './rvTab';
+import { ratingChart, ratingWords, surpriseChart, surpriseWords, type Surprise } from './analysts';
 import { combineHoldings, myPortfolios } from '../portfolio/account';
 import { engineRequest, helper, worldReady, worldAvailable } from '../data/schwab';
 import { optionsAnalyticsBlock } from '../flow/optionsAnalytics';
@@ -131,6 +134,7 @@ export function desTab(ctx: TabCtx) {
           })
         : null,
       company ? slot(ctx, 'analyst views', () => analystPanel(s)) : null,
+      company ? slot(ctx, 'earnings vs estimates', () => earningsPanel(s)) : null,
       company
         ? slot(ctx, 'company description', async () => {
             const d = await loadCompany(s);
@@ -205,7 +209,7 @@ export function desTab(ctx: TabCtx) {
 interface AnalystReply {
   needsKey?: boolean;
   note?: string;
-  trends?: { period: string; strongBuy: number; buy: number; hold: number; sell: number; strongSell: number; total: number; consensus: string }[];
+  trends?: { period: string; strongBuy: number; buy: number; hold: number; sell: number; strongSell: number; total: number; consensus: string; score?: number }[];
   fetched?: number;
 }
 
@@ -220,20 +224,54 @@ async function analystPanel(s: string): Promise<HTMLElement> {
   const t = r.trends?.[0];
   if (!t) return panel('Analyst views', 'Finnhub', r.fetched ?? null, note('No analyst ratings published for this company.'));
   const prev = r.trends?.[1];
-  const share = (n: number) => fmtPct(n / t.total, 0);
+  const buys = t.strongBuy + t.buy;
+  const sells = t.sell + t.strongSell;
   return panel(
     'Analyst views',
-    `Finnhub (${t.total} analysts, month of ${t.period.slice(0, 7)})`,
+    `Finnhub · ${t.total} analysts, month of ${t.period.slice(0, 7)}`,
     r.fetched ?? null,
-    h('div', { class: 'sv-anr-bar', role: 'img', 'aria-label': `Strong buy ${t.strongBuy}, buy ${t.buy}, hold ${t.hold}, sell ${t.sell}, strong sell ${t.strongSell}` },
-      ...(['strongBuy', 'buy', 'hold', 'sell', 'strongSell'] as const).map((k) => h('span', { class: `sv-anr-${k}`, style: `width:${((t[k] / t.total) * 100).toFixed(1)}%` }))),
-    kvGrid([
-      ['Consensus', fig(t.consensus, { strong: true })],
-      ['Buy (incl. strong buy)', `${t.strongBuy + t.buy} · ${share(t.strongBuy + t.buy)}`],
-      ['Hold', `${t.hold} · ${share(t.hold)}`],
-      ['Sell (incl. strong sell)', `${t.sell + t.strongSell} · ${share(t.sell + t.strongSell)}`],
-      ['Month before', prev ? `${prev.consensus} (${prev.total} analysts)` : DASH],
-    ]),
+    h(
+      'div',
+      { class: 'anr' },
+      h(
+        'div',
+        { class: 'anr-box' },
+        h('span', { class: 'anr-label' }, 'Consensus'),
+        h('b', { class: `anr-word ${(t.score ?? 0) >= 0.5 ? 'up' : (t.score ?? 0) <= -0.5 ? 'down' : ''}` }, t.consensus),
+        h('dl', { class: 'kv' }, h('dt', {}, 'Buy'), h('dd', { class: 'up' }, String(buys)), h('dt', {}, 'Hold'), h('dd', {}, String(t.hold)), h('dt', {}, 'Sell'), h('dd', { class: 'down' }, String(sells)), h('dt', {}, 'Month before'), h('dd', {}, prev ? prev.consensus : DASH)),
+      ),
+      ratingChart(r.trends ?? []),
+    ),
+    h('p', { class: 'anr-words' }, ratingWords(r.trends ?? [])),
+  );
+}
+
+interface SurpriseReply {
+  needsKey?: boolean;
+  note?: string;
+  quarters?: Surprise[];
+  fetched?: number;
+}
+
+/** Earnings per share reported vs the analysts' estimate, last quarters (EE / SURP), Finnhub free tier. */
+async function earningsPanel(s: string): Promise<HTMLElement> {
+  if (!(await worldAvailable())) return panel('Earnings vs estimates', 'Finnhub', null, note('Appears when the helper is running.'));
+  let r: SurpriseReply;
+  try {
+    r = await engineRequest<SurpriseReply>('finnhub.surprises', { symbol: s }, 30000);
+  } catch (err) {
+    if (/unknown request|not in test/i.test(reasonOf(err))) return panel('Earnings vs estimates', 'Finnhub', null, note('Needs the updated helper (version 84 or newer).'));
+    throw err;
+  }
+  if (r.needsKey) return panel('Earnings vs estimates', 'Finnhub (free key)', null, note(r.note ?? 'Add a free Finnhub key in Settings > Data connections.'));
+  const q = r.quarters ?? [];
+  if (!q.length) return panel('Earnings vs estimates', 'Finnhub', r.fetched ?? null, note('No reported quarters with an estimate for this company.'));
+  return panel(
+    'Earnings vs estimates',
+    'Finnhub · earnings per share, reported vs expected',
+    r.fetched ?? null,
+    surpriseChart(q),
+    h('p', { class: 'anr-words' }, surpriseWords(q)),
   );
 }
 
@@ -618,7 +656,9 @@ export function setTab(ctx: TabCtx) {
 
 export const TAB_RENDER: Record<Exclude<SecTab, 'gp'>, (ctx: TabCtx) => void> = {
   des: desTab,
+  hp: hpTab,
   fa: faTab,
+  rv: rvTab,
   hds: hdsTab,
   cn: cnTab,
   omon: omonTab,

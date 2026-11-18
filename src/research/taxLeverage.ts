@@ -1,7 +1,7 @@
 /**
- * Taxes and operating leverage (Research overview, helper 84): the tax a company actually pays in cash against the
+ * Taxes and operating leverage (Research overview, helper 85): the tax a company actually pays in cash against the
  * rate its income statement shows, and how hard operating profit swings when sales move. From the annual statements
- * research.company returns (helper 84 adds income taxes paid). Pure and tested (taxLeverage.test.ts, hand-worked on
+ * research.company returns (helper 85 adds income taxes paid). Pure and tested (taxLeverage.test.ts, hand-worked on
  * Microsoft's, Apple's, Coca-Cola's and Amazon's 10-K figures); drawn in taxLeverageView.ts.
  *
  * Cash tax rate = income taxes paid (the 10-K's supplemental cash-flow line) / pre-tax income. The long-run rate sums

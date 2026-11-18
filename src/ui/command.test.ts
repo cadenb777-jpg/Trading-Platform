@@ -93,10 +93,10 @@ describe('ranking', () => {
   it('exact ticker first, with the security view (DES) as the Enter default and its tabs and actions after', () => {
     const groups = buildResults('aapl', src());
     expect(groups[0].label).toBe('AAPL · Apple Inc');
-    expect(groups[0].items.map((i) => i.hint)).toEqual(['DES', 'GP', 'FA', 'HDS', 'CN', 'OMON', 'DVD', 'BETA', 'TRADE', 'ALRT', 'WL', 'SET']);
+    expect(groups[0].items.map((i) => i.hint)).toEqual(['DES', 'GP', 'FA', 'RV', 'HDS', 'CN', 'OMON', 'DVD', 'HP', 'BETA', 'TRADE', 'ALRT', 'WL', 'SET']);
     expect(groups[0].items[0].id).toBe('tk:AAPL:DES');
     // AAPL isn't listed twice
-    expect(flatten(groups).filter((i) => i.symbol === 'AAPL')).toHaveLength(12);
+    expect(flatten(groups).filter((i) => i.symbol === 'AAPL')).toHaveLength(14);
   });
   it('ticker prefix beats a code prefix and a fuzzy name', () => {
     const items = flatten(buildResults('aa', src()));
@@ -112,7 +112,8 @@ describe('ranking', () => {
     expect(top('MSFT GP').id).toBe('tk:MSFT:GP'); // unknown to the lists still works
     expect(top('ES GP').id).toBe('tk:/ES:GP'); // futures root without the slash
     for (const code of ['HDS', 'DVD', 'BETA', 'OMON', 'CN']) expect(top(`nvda ${code}`).id).toBe(`tk:NVDA:${code}`);
-    expect(top('aapl hp').id).toBe('tk:AAPL:BETA'); // HP is an alias of the Risk tab
+    expect(top('aapl hp').id).toBe('tk:AAPL:HP'); // HP is the Prices tab (historical price table)
+    expect(top('aapl hra').id).toBe('tk:AAPL:BETA');
   });
   it('codes alone map to pages', () => {
     expect(top('wei').id).toBe('fn:WEI');
@@ -297,5 +298,15 @@ describe('lists', () => {
   it('the Nasdaq-100 matches the helper scanner’s list', () => {
     const block = /NASDAQ_100 = \[([\s\S]*?)\]/.exec(scannerPy)![1];
     expect(NASDAQ_100).toEqual([...block.matchAll(/'([A-Z.]+)'/g)].map((m) => m[1]));
+  });
+});
+
+describe('numbered rows (5 <GO>)', () => {
+  const src = { symbols: [], pages: [], portfolios: [], clients: [], actions: [], numbered: [{ n: 5, label: 'Germany' }] };
+  it('a bare number opens that row of the page in view', () => {
+    const g = buildResults('5', src);
+    expect(g[0].label).toBe('On this page');
+    expect(g[0].items[0]).toMatchObject({ id: 'num:5', title: '5) Germany' });
+    expect(buildResults('6', src)[0]?.label).not.toBe('On this page');
   });
 });

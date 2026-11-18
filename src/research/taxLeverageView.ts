@@ -1,7 +1,7 @@
 /**
  * Research overview: Taxes and operating leverage = the cash tax rate against the book rate and the federal rate (three
  * bars on one scale) and how operating profit has moved with sales. Reads only the annual statements research.company
- * returned (helper 84 adds income taxes paid); maths in taxLeverage.ts.
+ * returned (helper 85 adds income taxes paid); maths in taxLeverage.ts.
  */
 import { taxReady } from '../data/schwab';
 import { h } from '../ui/dom';

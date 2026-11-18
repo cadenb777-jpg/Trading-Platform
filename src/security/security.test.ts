@@ -144,7 +144,8 @@ describe('number formatting', () => {
 describe('routes, codes and history', () => {
   it('maps mnemonics to tabs', () => {
     expect(tabForCode('FA')).toBe('fa');
-    expect(tabForCode('hp')).toBe('beta');
+    expect(tabForCode('hp')).toBe('hp');
+    expect(tabForCode('hra')).toBe('beta');
     expect(tabForCode('omst')).toBe('omon');
     expect(tabForCode('GIP')).toBe('gp');
     expect(tabForCode('XYZ')).toBeNull();

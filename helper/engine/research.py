@@ -79,7 +79,7 @@ CASH_FLOW = [
     # helper 82: depreciation of property and equipment alone (what wears out what capital spending buys; Microsoft
     # tags only this, no D&A line)
     ('depreciation', 'Depreciation', ['Depreciation']),
-    # helper 84: tax actually paid in cash (supplemental cash-flow disclosure), for Research's cash tax rate
+    # helper 85: tax actually paid in cash (supplemental cash-flow disclosure), for Research's cash tax rate
     ('taxesPaid', 'Income taxes paid', ['IncomeTaxesPaidNet']),  # net of refunds only: never mixed with the gross tag
     ('stockComp', 'Stock-based compensation', ['ShareBasedCompensation', 'AllocatedShareBasedCompensationExpense']),
     ('buybacks', 'Share buybacks', ['PaymentsForRepurchaseOfCommonStock', 'PaymentsForRepurchaseOfEquity']),

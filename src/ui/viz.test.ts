@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arcPath, flowWidth, gaugeAngle, heatShare, petalPoints, polar, trackPos } from './viz';
+import { arcPath, flowWidth, gaugeAngle, heatShare, mixSegments, petalPoints, polar, ringSlice, sunburstLayout, trackPos } from './viz';
 
 describe('viz geometry', () => {
   it('places points clockwise from the top', () => {
@@ -32,5 +32,30 @@ describe('viz geometry', () => {
     expect(heatShare(-2, 4)).toBe(39);
     expect(heatShare(4, 4)).toBe(70);
     expect(heatShare(1, 0)).toBe(0);
+  });
+});
+
+describe('mix bar', () => {
+  it('keeps the biggest parts and folds the rest into Other', () => {
+    const s = mixSegments([{ label: 'a', value: 50 }, { label: 'b', value: 20 }, { label: 'c', value: 10 }, { label: 'd', value: 10 }, { label: 'e', value: 5 }, { label: 'f', value: 5 }, { label: 'z', value: 0 }]);
+    expect(s.map((x) => x.label)).toEqual(['a', 'b', 'c', 'd', 'Other']);
+    expect(s[4].value).toBe(10);
+    expect(s.reduce((t, x) => t + x.weight, 0)).toBeCloseTo(1);
+    expect(mixSegments([])).toEqual([]);
+    expect(mixSegments([{ label: 'a', value: 1 }, { label: 'b', value: 1 }], 5).map((x) => x.weight)).toEqual([0.5, 0.5]);
+  });
+});
+
+describe('sunburst', () => {
+  it('gives every member the same angle and groups span their members', () => {
+    const l = sunburstLayout([{ label: 'A', items: ['a1', 'a2', 'a3'] }, { label: 'B', items: [] }, { label: 'C', items: ['c1'] }], 0);
+    expect(l.items.map((i) => [i.label, i.a0, i.a1])).toEqual([['a1', 0, 90], ['a2', 90, 180], ['a3', 180, 270], ['c1', 270, 360]]);
+    expect(l.groups).toEqual([{ label: 'A', a0: 0, a1: 270 }, { label: 'C', a0: 270, a1: 360 }]);
+    expect(sunburstLayout([])).toEqual({ groups: [], items: [] });
+  });
+  it('draws a closed ring slice', () => {
+    const d = ringSlice(100, 100, 50, 90, 0, 90);
+    expect(d.startsWith('M 100.00 10.00 A 90 90 0 0 1 190.00 100.00 L 150.00 100.00 A 50 50 0 0 0 100.00 50.00')).toBe(true);
+    expect(d.endsWith('Z')).toBe(true);
   });
 });
