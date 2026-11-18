@@ -12,7 +12,7 @@ p.on('dialog', (d) => d.dismiss().catch(() => {}));
 let errs = [];
 p.on('pageerror', (e) => errs.push(`PAGEERR ${e.message.slice(0, 140)}`));
 p.on('console', (m) => m.type() === 'error' && !/WebSocket|ERR_|Failed to load resource|fonts|not in test/.test(m.text()) && errs.push(m.text().slice(0, 140)));
-await p.route(/coinbase\.com/, (r) => r.abort());
+await p.route((u) => u.hostname === 'coinbase.com' || u.hostname.endsWith('.coinbase.com'), (r) => r.abort());
 
 const overlaps = () => p.evaluate(() => {
   const out = [];
