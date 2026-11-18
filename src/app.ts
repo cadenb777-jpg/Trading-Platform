@@ -112,6 +112,7 @@ interface PageEntry extends NavPage {
 
 const LOADERS: Record<PageRoute, () => Page | Promise<Page>> = {
   home: () => createHomePage(openChart, () => (location.hash = '#calendar'), openPageWith),
+  desk: async () => (await import('./pages/deskPage')).createDeskPage(),
   monitor: async () => (await import('./pages/monitorPage')).createMonitorPage(),
   invest: async () => (await import('./pages/investmentsPage')).createInvestmentsPage({ openChart, openResearch, openPage: openPageWith }),
   futures: async () => (await import('./pages/futuresPage')).createFuturesPage(),

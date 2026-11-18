@@ -14,7 +14,7 @@ describe('nav registry', () => {
 
   it('keeps the destinations in order (revamp: Today, Markets, Security, Ideas, My money, Business), with their views', () => {
     expect(SECTIONS.map((s) => s.label)).toEqual(['Today', 'Markets', 'Security', 'Ideas', 'Money', 'Business', 'AI']);
-    expect(sectionPages('today').map((p) => p.label)).toEqual(['Home']);
+    expect(sectionPages('today').map((p) => p.label)).toEqual(['Home', 'Desk']);
     expect(sectionPages('markets').map((p) => p.label)).toEqual(['Monitor', 'Investments', 'Futures', 'Macro', 'Calendar']);
     expect(sectionPages('security').map((p) => p.label)).toEqual(['Research', 'Chart', 'Flow']);
     expect(sectionPages('ideas').map((p) => p.label)).toEqual(['Setups', 'Screener', 'Backtest', 'Strategy Lab']);

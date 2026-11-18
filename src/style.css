@@ -14262,3 +14262,198 @@ select.input,
 .lp-num {
   min-width: 0;
 }
+
+/* ===== Today → Desk (Launchpad): view tabs + 12-column grid of tiles ===== */
+.desk-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.desk-tab {
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.desk-tab:hover {
+  color: var(--text-strong);
+}
+.desk-tab.active {
+  color: var(--text-strong);
+  border-color: var(--line);
+  border-bottom-color: var(--surface);
+  background: var(--bb-band);
+  box-shadow: inset 0 2px 0 var(--section-accent);
+}
+.desk-tab-new {
+  font-weight: 500;
+  color: var(--faint);
+}
+.desk-tabs .spacer {
+  flex: 1 1 auto;
+}
+.desk-grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+.desk-tile {
+  grid-column: span var(--span, 4);
+}
+@media (max-width: 1100px) {
+  .desk-tile {
+    grid-column: span max(6, var(--span, 4));
+  }
+}
+@media (max-width: 760px) {
+  .desk-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .desk-tile {
+    grid-column: 1 / -1;
+  }
+}
+.desk-actions {
+  display: inline-flex;
+  gap: 2px;
+  opacity: 0.55;
+  transition: opacity var(--dur-1) var(--ease);
+}
+.desk-tile:hover .desk-actions,
+.desk-tile:focus-within .desk-actions {
+  opacity: 1;
+}
+.desk-act {
+  width: 26px;
+  height: 24px;
+  font-size: 13px;
+}
+/* tiles that reuse a whole panel: the tile's title bar replaces the panel's own */
+.desk-tile .fn-tile-body > .panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.desk-tile .fn-tile-body > .panel > .panel-head {
+  display: none;
+}
+.desk-chart-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+.desk-sym {
+  font-size: var(--fs-md);
+  color: var(--text-strong);
+}
+.desk-last {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.desk-chart-head .up { color: var(--up-text); }
+.desk-chart-head .down { color: var(--down-text); }
+.desk-chart {
+  display: block;
+  width: 100%;
+  height: 190px;
+}
+.desk-line {
+  fill: none;
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+}
+.desk-line.up { stroke: var(--up); }
+.desk-line.down { stroke: var(--down); }
+.desk-area.up { fill: color-mix(in srgb, var(--up) 12%, transparent); }
+.desk-area.down { fill: color-mix(in srgb, var(--down) 12%, transparent); }
+.desk-range {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+.desk-world-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 4px 14px;
+}
+.desk-notes {
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
+  font: inherit;
+}
+.desk-empty {
+  grid-column: 1 / -1;
+  padding: 40px;
+  text-align: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--bb-radius);
+  color: var(--muted);
+}
+.desk-add,
+.desk-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.desk-add-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+.desk-add-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--bb-radius);
+  background: var(--surface);
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+.desk-add-btn:hover,
+.desk-add-btn:focus-visible {
+  border-color: var(--section-accent);
+  background: var(--bb-band);
+}
+.input.invalid {
+  border-color: var(--down);
+}
+.desk-actions {
+  display: none;
+}
+.desk-tile:hover .desk-actions,
+.desk-tile:focus-within .desk-actions {
+  display: inline-flex;
+  opacity: 1;
+}
+@media (hover: none) {
+  .desk-actions {
+    display: inline-flex;
+  }
+}
+.desk-quotes {
+  table-layout: auto;
+}
+.desk-tile .fn-tile-body {
+  overflow-x: auto;
+}

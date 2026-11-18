@@ -66,6 +66,7 @@ export const CODES: FnCode[] = [
   { code: 'MULTI', aliases: ['WS'], label: 'Workspace: linked panels (Chart mode)', keywords: 'multi chart grid side by side workspace panels linked layout launchpad' },
   { code: 'SCRIPT', aliases: ['PINE'], label: 'Scripts (Chart mode)', keywords: 'script pine editor indicator code' },
   { code: 'COT', label: 'Futures positioning (COT)', keywords: 'cot commitment traders positioning hedgers cftc' },
+  { code: 'BLP', aliases: ['DESK', 'LP'], label: 'Desk (your tiled screens)', keywords: 'launchpad desk workspace tiles views' },
   { code: 'EQS', aliases: ['SCREEN'], label: 'Stock screener', keywords: 'screen screener filter criteria' },
   { code: 'BTST', label: 'Backtest', keywords: 'backtest strategy test' },
   { code: 'SET', label: 'Setups', ticker: true, keywords: 'setups scanner signals' },
@@ -80,7 +81,7 @@ export const CODES: FnCode[] = [
 
 /** Where a code without a ticker goes. */
 const CODE_ROUTE: Record<string, string> = {
-  GP: 'chart', DES: 'research', FA: 'research', HDS: 'flow', CN: 'home', OMON: 'flow', DVD: 'account', BETA: 'account', HP: 'chart', RV: 'research', TRADE: 'trade', WEI: 'monitor', ECO: 'calendar', EQS: 'screener', FUT: 'futures',
+  GP: 'chart', DES: 'research', FA: 'research', HDS: 'flow', CN: 'home', OMON: 'flow', DVD: 'account', BETA: 'account', HP: 'chart', RV: 'research', TRADE: 'trade', WEI: 'monitor', ECO: 'calendar', EQS: 'screener', BLP: 'desk', FUT: 'futures',
   PORT: 'portfolio', ACCT: 'account', JRNL: 'journal', CLIENT: 'clients', PROS: 'prospect', MULTI: 'chart/multi', SCRIPT: 'chart/scripts', COT: 'futures/cot', BTST: 'backtest', SET: 'setups', MACRO: 'macro', INV: 'invest',
 };
 

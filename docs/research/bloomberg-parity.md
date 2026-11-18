@@ -24,7 +24,7 @@ Status: **have** = exists and matches the layout; **upgrade** = data exists, the
 | Footer: source, timestamp, page | trust line | status bar (global) | **new**: per-tile source · as-of | B1 |
 | MENU (numbered 2-3 column directory by asset class) | discovery | Launchpad grid (by section) | **upgrade**: numbered, grouped by asset class, mnemonic + title | B4 |
 | LAST (recent screens) | history | recent list in command bar, Back/Forward | have | — |
-| Launchpad (tiled windows, saved views) | workspace | Chart Workspace (linked charts) | **upgrade**: tiles of any function (monitor, chart, news, calendar), saved views | B4 |
+| Launchpad (tiled windows, saved views) | workspace | **Desk** (Today → Desk): tiles of charts, quote monitors, news, markets, events, Fed odds, curve, notes in named views | done | B4 |
 | ALRT | alerts | Alerts (price, sound, Telegram) | have | — |
 | Export on every screen | CSV/Excel | tables have Copy/CSV (tableTools) | have (extend to new tiles) | B1+ |
 

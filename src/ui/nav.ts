@@ -49,6 +49,7 @@ export interface NavPage {
 export const PAGES = [
   // Markets
   { route: 'home', section: 'today', label: 'Home', title: 'Trading Platform', code: 'BRF', icon: 'home', keywords: 'dashboard brief widgets indexes news morning', about: 'Your dashboard: brief, indexes, news, setups and accounts' },
+  { route: 'desk', section: 'today', label: 'Desk', title: 'Desk', code: 'BLP', icon: 'grid', keywords: 'launchpad desk workspace tiles views my screens layout', about: 'Your own screens built from tiles, saved as views' },
   { route: 'monitor', section: 'markets', label: 'Monitor', title: 'Market monitor', code: 'MON', icon: 'macro', keywords: 'world equities indices wei imap sunburst movers currencies commodities clocks cockpit', about: 'The whole market on one screen: world indices, sectors, movers, FX, commodities, news' },
   { route: 'invest', section: 'markets', label: 'Investments', title: 'Investments', code: 'INV', icon: 'invest', keywords: 'stocks etfs bonds alternatives private funds boards', about: 'Stocks, ETFs, bonds, alternatives and private funds' },
   { route: 'futures', section: 'markets', label: 'Futures', title: 'Futures', code: 'FUT', icon: 'futures', keywords: 'contracts commodities term structure cot', about: 'The futures market by sector, curves and positioning' },
