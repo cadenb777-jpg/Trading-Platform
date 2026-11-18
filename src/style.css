@@ -14125,3 +14125,140 @@ select.input,
     display: table-cell;
   }
 }
+
+/* Ideas → Screener: criteria builder left, matches right */
+.scr-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.6fr);
+  gap: 10px;
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .scr-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.scr-sec + .scr-sec {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.scr-sec h4 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.scr-universe {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+.scr-universe b {
+  font-size: 18px;
+  color: var(--text-strong);
+}
+.scr-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.scr-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  cursor: pointer;
+}
+.scr-chip.on {
+  border-color: var(--section-accent);
+  color: var(--text-strong);
+  background: color-mix(in srgb, var(--section-accent) 16%, transparent);
+}
+.scr-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.scr-row select.input {
+  width: auto;
+}
+.scr-num {
+  width: 6.5em;
+}
+.scr-unit {
+  min-width: 1em;
+}
+.scr-count {
+  margin-left: auto;
+  min-width: 2.5em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-align: center;
+  color: var(--text-strong);
+  background: color-mix(in srgb, var(--section-accent) 16%, transparent);
+}
+.scr-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.scr-sort {
+  cursor: pointer;
+  user-select: none;
+}
+.scr-sort.on {
+  color: var(--text-strong) !important;
+}
+.scr-table td.up { color: var(--up-text); }
+.scr-table td.down { color: var(--down-text); }
+.scr-grid {
+  grid-template-columns: minmax(440px, 1fr) minmax(0, 1.5fr);
+}
+@media (max-width: 1100px) {
+  .scr-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.scr-table {
+  table-layout: auto;
+}
+.scr-table thead th {
+  white-space: normal;
+  vertical-align: bottom;
+  line-height: 1.25;
+}
+.scr-row {
+  flex-wrap: nowrap;
+}
+.scr-row select.input {
+  max-width: 11em;
+}
+.scr-num {
+  width: 5.5em;
+}
+@media (max-width: 520px) {
+  .scr-row {
+    flex-wrap: wrap;
+  }
+}
+.lp-num {
+  min-width: 2.2em;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+/* numbered tiles get a fourth column for the number (Bloomberg menu "12) CODE  Title") */
+.lp-go:has(.lp-num) {
+  grid-template-columns: 2.4em 18px 52px minmax(0, 1fr);
+}
+.lp-num {
+  min-width: 0;
+}

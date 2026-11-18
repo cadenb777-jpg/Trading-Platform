@@ -59,6 +59,7 @@ export const PAGES = [
   { route: 'chart', section: 'security', label: 'Chart', title: '', code: 'GP', icon: 'chart', keywords: 'graph price candles indicators drawings', about: 'The full chart with indicators and drawings' },
   { route: 'flow', section: 'security', label: 'Flow', title: 'Flow', code: 'FLOW', icon: 'flow', keywords: 'short selling options insiders smart money', about: 'Short selling, options and insiders' },
   { route: 'setups', section: 'ideas', label: 'Setups', title: 'Setups', code: 'SET', icon: 'target', keywords: 'scanner signals nasdaq trade ideas', about: 'Nasdaq-100 trade setups, tested after costs' },
+  { route: 'screener', section: 'ideas', label: 'Screener', title: 'Screener', code: 'EQS', icon: 'target', keywords: 'screen screener filter stocks criteria find', about: 'Find stocks by performance, valuation and dividends' },
   { route: 'backtest', section: 'ideas', label: 'Backtest', title: 'Backtest', code: 'BTST', icon: 'backtest', keywords: 'strategy test monte carlo sweep', about: 'Test a strategy on history, then stress-test it' },
   { route: 'strategy', section: 'ideas', label: 'Strategy Lab', title: 'Strategy Lab', code: 'LAB', icon: 'code', keywords: 'strategy lab build rules walk forward', about: 'Build and check your own strategies' },
   { route: 'sec', section: 'security', label: 'Security', title: 'Security', code: '', icon: 'research', keywords: 'security view', about: 'One security in depth', hidden: true },
@@ -85,8 +86,6 @@ export interface NavFunction {
 }
 
 export const FUNCTIONS: readonly NavFunction[] = [
-  { code: 'WEI', label: 'World indices', section: 'markets', icon: 'chart', keywords: 'indexes indices markets world regions', target: 'page:monitor' },
-  { code: 'IMAP', label: 'Sector map (sunburst)', section: 'markets', icon: 'chart', keywords: 'heat map sectors sunburst', target: 'page:monitor' },
   { code: 'COT', label: 'COT positioning', section: 'markets', icon: 'positioning', keywords: 'commitment traders hedgers cftc', target: 'page:futures/cot' },
   { code: 'BONDS', label: 'Bonds and yields', section: 'markets', icon: 'invest', keywords: 'treasuries yields auctions cusip', target: 'fn:BONDS' },
   { code: 'DES', label: 'Security overview', section: 'security', icon: 'research', keywords: 'company profile security description add a ticker aapl des', target: 'fn:DES' },
