@@ -203,7 +203,7 @@ whenever the owner repeats or adds one.
   newest year, whole fiscal years apart, newest run) so panels on one page pick the same years. Review caught: a
   stale note naming the wrong missing line, "$-0.05" for a gross loss, a dead red class on a reading where shrinking
   isn't bad, two float tests of one line that could disagree, duplicated helpers.
-- 2026-11-18 · #PRNUM Taxes and operating leverage (helper 84): cash tax rate against the book and federal rates (Microsoft
+- 2026-11-18 · #49 Taxes and operating leverage (helper 84): cash tax rate against the book and federal rates (Microsoft
   FY2026 12.8% in cash vs 19.4% charged; 19.7% vs 17.8% over 5 years) and operating leverage as the slope of log
   operating profit on log sales (Microsoft 1.4 over 10 years, Amazon 1.6), in the More fold of the Research overview ·
   proposed · backlog A27-A28. Also fixed a failing release audit on main: the bond curve's .cf-range rule (height 14px)
