@@ -6,6 +6,7 @@
 import { engineRequest, realYieldReady } from '../data/schwab';
 import { h } from '../ui/dom';
 import { block, rateBars, savedBeforeUpdate } from './panelBlock';
+import { signedPoints } from './debtDilution';
 import type { CorpYields } from './obligations';
 import { againstBonds, againstWords, noEarningsWords } from './againstBonds';
 
@@ -47,7 +48,7 @@ export function againstBondsPanel(pe: number | null | undefined): HTMLElement {
         return;
       }
       body.replaceChildren(
-        h('div', { class: 'md-head' }, h('b', { class: 'md-value num' }, `${x.gap > 0 ? '+' : x.gap < 0 ? '−' : ''}${Math.abs(x.gap * 100).toFixed(1)} pts`), h('span', { class: 'muted small' }, 'earnings yield over the real 10-year yield')),
+        h('div', { class: 'md-head' }, h('b', { class: 'md-value num' }, `${signedPoints(x.gap)} pts`), h('span', { class: 'muted small' }, 'earnings yield over the real 10-year yield')),
         rateBars([{ label: 'Stock earns', rate: x.earningsYield, kind: 'one' }, { label: 'Real bond pays', rate: x.real, kind: 'two' }], 'Earnings yield and real Treasury yield', 2),
         h('p', { class: 'small' }, againstWords(x, r)),
         source,

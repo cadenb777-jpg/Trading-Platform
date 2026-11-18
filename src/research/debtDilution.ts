@@ -67,6 +67,12 @@ export function pc(v: number | null | undefined, digits = 1, signed = false): st
 // ---------- share count ----------
 
 /** 14,720,306,000 -> "14.72 billion"; 4,200,000 -> "4.2 million". */
+/** A difference of two rates in percentage points, one decimal, signed by the rounded figure: +31.1, −39.7, 0.0. */
+export function signedPoints(v: number): string {
+  const t = Math.abs(v * 100).toFixed(1);
+  return `${t === '0.0' ? '' : v > 0 ? '+' : '−'}${t}`;
+}
+
 export function shareCount(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(2)} billion`;
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)} million`;
