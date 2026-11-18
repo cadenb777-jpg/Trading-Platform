@@ -1,5 +1,5 @@
 /**
- * Against bonds (Research overview, helper 85): what a stock earns per dollar of its price against what a 10-year
+ * Against bonds (Research overview, helper 86): what a stock earns per dollar of its price against what a 10-year
  * inflation-protected Treasury pays above inflation. Pure and tested (againstBonds.test.ts); drawn in
  * againstBondsView.ts.
  *
@@ -12,7 +12,7 @@
 import { pc } from './debtDilution';
 import type { CorpYields } from './obligations';
 
-/** research.corpyields' real10 (helper 85). */
+/** research.corpyields' real10 (helper 86). */
 export type RealYield = NonNullable<CorpYields['real10']>;
 
 export interface AgainstBonds {

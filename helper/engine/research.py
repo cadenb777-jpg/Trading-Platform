@@ -79,7 +79,7 @@ CASH_FLOW = [
     # helper 82: depreciation of property and equipment alone (what wears out what capital spending buys; Microsoft
     # tags only this, no D&A line)
     ('depreciation', 'Depreciation', ['Depreciation']),
-    # helper 84: tax actually paid in cash (supplemental cash-flow disclosure), for Research's cash tax rate
+    # helper 85: tax actually paid in cash (supplemental cash-flow disclosure), for Research's cash tax rate
     ('taxesPaid', 'Income taxes paid', ['IncomeTaxesPaidNet']),  # net of refunds only: never mixed with the gross tag
     ('stockComp', 'Stock-based compensation', ['ShareBasedCompensation', 'AllocatedShareBasedCompensationExpense']),
     ('buybacks', 'Share buybacks', ['PaymentsForRepurchaseOfCommonStock', 'PaymentsForRepurchaseOfEquity']),
@@ -117,7 +117,7 @@ PURCHASE_TAGS = ['UnrecordedUnconditionalPurchaseObligationBalanceSheetAmount', 
 #: helper 83 adds Moody's Baa corporate yield (monthly, since 1919): what a medium-grade company pays to borrow, the
 #: free floor Research sets return on capital against
 CORP_YIELDS = [('ig', 'BAMLC0A0CMEY'), ('hy', 'BAMLH0A0HYM2EY'), ('baa', 'BAA'),
-               # helper 85: the 10-year inflation-protected Treasury yield (daily since 2003), for Research's earnings
+               # helper 86: the 10-year inflation-protected Treasury yield (daily since 2003), for Research's earnings
                # yield against bonds; its percentile says how high real yields are against their own history
                ('real10', 'DFII10')]
 #: series read in full from this date (macro.fred starts in 2006), whose reply also carries where today's value sits

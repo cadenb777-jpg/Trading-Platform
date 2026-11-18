@@ -1,6 +1,6 @@
 /**
  * Research overview: Against bonds = the stock's earnings yield beside the 10-year real Treasury yield (two bars on one
- * scale, the gap as the headline). The yield comes from research.corpyields (helper 85 adds DFII10), its own request
+ * scale, the gap as the headline). The yield comes from research.corpyields (helper 86 adds DFII10), its own request
  * painted when it arrives; maths in againstBonds.ts.
  */
 import { engineRequest, realYieldReady } from '../data/schwab';

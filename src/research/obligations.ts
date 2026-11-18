@@ -36,7 +36,7 @@ export interface CorpYields {
   hy: Yield | null;
   /** helper 83: Moody's Baa corporate yield (FRED BAA, monthly), for Research's return on capital */
   baa?: Yield | null;
-  /** helper 85: 10-year real Treasury yield (FRED DFII10) with its percentile since 2003 */
+  /** helper 86: 10-year real Treasury yield (FRED DFII10) with its percentile since 2003 */
   real10?: (Yield & { since?: string; percentile?: number | null }) | null;
 }
 

@@ -135,6 +135,21 @@ class Connections(Base):
 
 
 class Finnhub(Base):
+    def test_surprises(self):
+        rows = [
+            {'actual': 1.64, 'estimate': 1.6, 'period': '2026-06-30', 'quarter': 3, 'year': 2026},
+            {'actual': 1.4, 'estimate': 1.5, 'period': '2026-09-30', 'quarter': 4, 'year': 2026},
+            {'actual': 0.5, 'estimate': 0, 'period': '2026-03-31', 'quarter': 2, 'year': 2026},
+            {'actual': None, 'estimate': 1.7, 'period': '2026-12-31'},
+        ]
+        q = finnhub.parse_surprises(rows)
+        self.assertEqual([x['period'] for x in q], ['2026-09-30', '2026-06-30', '2026-03-31'])  # newest first, unreported dropped
+        self.assertAlmostEqual(q[0]['surprisePct'], -0.0667, places=4)
+        self.assertAlmostEqual(q[1]['surprise'], 0.04)
+        self.assertIsNone(q[2]['surprisePct'])  # a zero estimate has no percentage
+        with self.assertRaises(EngineError):
+            finnhub.parse_surprises({'error': 'x'})
+
     def test_parsers(self):
         trends = finnhub.parse_recommendations(fixture('finnhub_rec.json'))
         self.assertEqual([t['period'] for t in trends], ['2026-11-01', '2026-10-01'])  # newest first, empty month dropped

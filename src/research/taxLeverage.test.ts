@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Statements } from './debtDilution';
 import { cashTax, leverageWords, operatingLeverage, taxWords, type CashTax, type Leverage } from './taxLeverage';
 
-// SEC company facts as research.statements builds them (helper 84), checked live 2026-11-18 ($bn).
+// SEC company facts as research.statements builds them (helper 85), checked live 2026-11-18 ($bn).
 const B = 1e9;
 function company(periods: string[], v: Record<string, (number | null)[]>): Statements {
   return { periods, values: Object.fromEntries(Object.entries(v).map(([k, xs]) => [k, xs.map((x) => (x == null ? null : x * B))])) };
