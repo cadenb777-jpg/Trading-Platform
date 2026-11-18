@@ -79,6 +79,8 @@ CASH_FLOW = [
     # helper 82: depreciation of property and equipment alone (what wears out what capital spending buys; Microsoft
     # tags only this, no D&A line)
     ('depreciation', 'Depreciation', ['Depreciation']),
+    # helper 85: tax actually paid in cash (supplemental cash-flow disclosure), for Research's cash tax rate
+    ('taxesPaid', 'Income taxes paid', ['IncomeTaxesPaidNet']),  # net of refunds only: never mixed with the gross tag
     ('stockComp', 'Stock-based compensation', ['ShareBasedCompensation', 'AllocatedShareBasedCompensationExpense']),
     ('buybacks', 'Share buybacks', ['PaymentsForRepurchaseOfCommonStock', 'PaymentsForRepurchaseOfEquity']),
     ('dividends', 'Dividends paid', ['PaymentsOfDividends', 'PaymentsOfDividendsCommonStock']),
@@ -443,9 +445,9 @@ async def company_core(ctx, cik, with_maturities=False):
 
 LADDER_KEYS = ('maturities', 'obligations')
 #: statement lines added since helper 71 (71: Beneish M-score, Altman Z-score; 74: cash conversion cycle; 75: deferred
-#: revenue, goodwill and write-downs; 82: depreciation; 83: current debt and long-term securities, for return on capital): a saved copy without one of them is read again once
+#: revenue, goodwill and write-downs; 82: depreciation; 83: current debt and long-term securities, for return on capital; 84: income taxes paid): a saved copy without one of them is read again once
 STATEMENT_KEYS = ('receivables', 'ppe', 'retainedEarnings', 'inventory', 'payables', 'deferredRevenue', 'goodwill',
-                  'goodwillImpairment', 'intangibleImpairment', 'depreciation', 'currentDebt', 'longInvestments')
+                  'goodwillImpairment', 'intangibleImpairment', 'depreciation', 'currentDebt', 'longInvestments', 'taxesPaid')
 
 
 def _ladders(company_facts):

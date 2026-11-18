@@ -7,6 +7,7 @@ import { balanceQualityPanel } from '../research/balanceQualityView';
 import { buildPayPanel } from '../research/buildPayView';
 import { roicPanel } from '../research/roicView';
 import { assetQualityPanel } from '../research/assetQualityView';
+import { taxLeveragePanel } from '../research/taxLeverageView';
 import { fy, type Maturities } from '../research/debtDilution';
 import type { Obligations } from '../research/obligations';
 import { yearBars } from '../research/yearBars';
@@ -241,6 +242,8 @@ export function createResearchPage() {
       roicPanel(d.annual),
       // gross profit per dollar of assets and asset growth vs sales growth (readings)
       assetQualityPanel(d.annual),
+      // cash tax rate vs the book and federal rates, and operating leverage (readings)
+      taxLeveragePanel(d.annual),
       // futures positioning for the company's market: one line, the full COT table is on Futures
       cotSummary(d.symbol, undefined, { quiet: true }),
       stockNewsCard(d.symbol, 5),
@@ -276,7 +279,7 @@ export function createResearchPage() {
     const el = h(
       'details',
       { class: 'ts-more', open },
-      h('summary', {}, h('b', {}, `More on ${symbol}`), h('span', { class: 'muted small' }, 'Segment history · debt · earnings quality · cash · balance sheet · building & stock pay · positioning · news · yearly tables')),
+      h('summary', {}, h('b', {}, `More on ${symbol}`), h('span', { class: 'muted small' }, 'Segment history · debt · earnings quality · cash · balance sheet · building & stock pay · return on capital · profitability · taxes · positioning · news · yearly tables')),
       h('div', { class: 'ts-more-body' }, ...panels),
     ) as HTMLDetailsElement;
     el.addEventListener('toggle', () => {
