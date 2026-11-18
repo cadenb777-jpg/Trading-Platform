@@ -13,6 +13,8 @@ export interface Trade {
 
 export interface LiveHandlers {
   onTrade(trade: Trade): void;
+  /** The official quote (about every 30 s): last price and the time of that trade, in UTC seconds. */
+  onQuote?(quote: { last: number | null; at?: number }): void;
   onStatus(status: ConnectionStatus, message?: string): void;
 }
 

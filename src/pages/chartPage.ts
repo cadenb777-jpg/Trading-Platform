@@ -1,9 +1,11 @@
 /** The full chart screen: toolbar, drawing tools, chart with indicators, and watchlist. */
+import { chartTimeZone, zoneTag, zonedClock } from '../chart/clock';
 import { newsButton } from '../ui/stockNews';
 import { CHART_TYPES, ChartView, THEME, type ChartType } from '../chart/ChartView';
 import { DRAWING_TOOLS, DrawingManager, type Tool } from '../chart/drawings';
 import { getClock, setClock } from '../chart/clock';
-import { SessionShading, isRegularHours, regularHoursOnly } from '../chart/session';
+import { SessionShading, isRegularHours, regularHoursOnly, sessionPhase } from '../chart/session';
+import { mergeTail, needsCatchUp, quoteAsTrade } from '../chart/freshness';
 import { VolumeProfile } from '../chart/volumeProfile';
 import { PROVIDERS, getProvider } from '../data';
 import type { ConnectionStatus, ProviderId } from '../data/provider';
@@ -507,9 +509,18 @@ export function createChartPage() {
   const legendNumber = (v: number) => (Number.isInteger(v) && Math.abs(v) >= 1000 && Math.abs(v) < 1e4 ? v.toLocaleString('en-US') : formatNumber(v));
   let card: HoverCard;
   const fmtVolume = (v: number) => (v >= 1e9 ? `${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `${(v / 1e3).toFixed(1)}K` : formatNumber(v));
-  const intradayFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  const dailyFormat = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-  const timeLabel = (t: number) => (TIMEFRAME_SECONDS[state.timeframe] < 86400 ? intradayFormat : dailyFormat).format(t * 1000);
+  // daily bars are stamped at midnight UTC, so their date is read in UTC (local time would show the day before west of
+  // London); intraday times are on the market's clock (New York for US stocks, with "ET"), like the axis and crosshair
+  const dailyFormat = new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const monthDayIn = new Map<string, Intl.DateTimeFormat>();
+  const timeLabel = (t: number) => {
+    if (TIMEFRAME_SECONDS[state.timeframe] >= 86400) return dailyFormat.format(t * 1000);
+    const tz = chartTimeZone(provider().id);
+    const key = tz ?? 'local';
+    let md = monthDayIn.get(key);
+    if (!md) monthDayIn.set(key, (md = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', ...(tz ? { timeZone: tz } : {}) })));
+    return `${md.format(t * 1000)}, ${zonedClock(t * 1000, tz)}${zoneTag(tz)}`;
+  };
 
 
 
@@ -590,6 +601,7 @@ export function createChartPage() {
     setStatus('connecting');
     showMessage(null);
     lastTradeAt = null;
+    quietUntil = 0;
     const p = provider();
     const sym = symbol();
     const tf = state.timeframe;
@@ -648,11 +660,53 @@ export function createChartPage() {
           lastTradeAt = trade.time;
           live.push(bars.length - 1);
         },
+        // the 30-second official quote keeps the last candle moving when the trade stream has gone quiet
+        onQuote: (q) => {
+          const t = quoteAsTrade(q, lastTradeAt, Date.now() / 1000);
+          if (!t || (extendedApplies() && !state.extendedHours && !isRegularHours(t.time))) return;
+          const before = bars.length;
+          const result = applyTrade(bars, tf, t.price, t.size, t.time);
+          if (!result) return;
+          lastTradeAt = t.time;
+          live.push(Math.min(before, bars.length) - 1);
+        },
         onStatus: setStatus,
       },
       bars[bars.length - 1]?.close ?? 100,
     );
   }
+
+  // ---------- Catch-up: the newest candles stay current after sleep, a dropped stream or a late stream start ----------
+  let catchingUp = false;
+  // after a re-fetch that found nothing new (a holiday, a halted stock), wait 5 minutes before asking again
+  let quietUntil = 0;
+  async function catchUp() {
+    if (catchingUp || !started || !bars.length || !el.isConnected || !el.offsetParent || document.visibilityState !== 'visible') return;
+    const tf = state.timeframe;
+    const now = Date.now() / 1000;
+    const p = provider();
+    const marketOpen = p.id !== 'schwab' || sessionPhase(now) === 'regular' || (state.extendedHours && sessionPhase(now) !== 'closed');
+    const lastDataAt = lastTradeAt ?? bars[bars.length - 1].time;
+    if (now < quietUntil || !needsCatchUp({ lastDataAt, barSec: TIMEFRAME_SECONDS[tf], nowSec: now, marketOpen })) return;
+    const key = loadedKey;
+    const sym = symbol();
+    catchingUp = true;
+    const fetchStart = now;
+    try {
+      let fresh = await p.loadHistory(sym, tf, new AbortController().signal, 2);
+      if (key !== loadedKey) return; // the symbol or time frame changed meanwhile
+      if (extendedApplies() && !state.extendedHours) fresh = regularHoursOnly(fresh);
+      const first = mergeTail(bars, fresh, (lastTradeAt ?? 0) > fetchStart);
+      if (first >= 0) live.push(first);
+      else quietUntil = now + 300;
+    } catch {
+      /* the next check tries again; the live stream keeps running meanwhile */
+    } finally {
+      catchingUp = false;
+    }
+  }
+  setInterval(() => void catchUp(), 30_000);
+  document.addEventListener('visibilitychange', () => ((quietUntil = 0), void catchUp()));
 
   const watchlist = createWatchlist({
     onSelect: (ref) => open(ref),

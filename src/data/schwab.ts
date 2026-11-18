@@ -757,7 +757,7 @@ export const schwab: DataProvider = {
   },
 
   subscribe(symbol, handlers) {
-    const stop = helper.listen(symbol, { onTrade: handlers.onTrade, onStatus: handlers.onStatus });
+    const stop = helper.listen(symbol, { onTrade: handlers.onTrade, onQuote: handlers.onQuote, onStatus: handlers.onStatus });
     return () => {
       stop();
       handlers.onStatus('closed');

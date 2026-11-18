@@ -5,7 +5,7 @@
  * Built once; update() only changes text in place, so live ticks cost almost nothing.
  */
 import { h } from '../ui/dom';
-import { clockText } from './clock';
+import { chartTimeZone, zoneTag, zonedClock } from './clock';
 import { formatCompact, formatPrice, sessionClock, type DaySummary } from './summary';
 
 export interface HeaderInput {
@@ -41,7 +41,7 @@ const FIELDS: { key: Key; label: string; title: string; wide?: boolean }[] = [
   { key: 'clock', label: '', title: 'US stock session (9:30-16:00 New York; NYSE holidays and 13:00 early closes for 2026-2027)', wide: true },
 ];
 
-const timeFormat = { format: (ms: number) => { const d = new Date(ms); return clockText(d.getHours(), d.getMinutes()); } };
+const timeFormat = { format: (ms: number, market = '') => { const tz = chartTimeZone(market); return `${zonedClock(ms, tz)}${zoneTag(tz)}`; } };
 const dateFormat = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
 export function createSecurityHeader() {
@@ -86,7 +86,7 @@ export function createSecurityHeader() {
     set(last, p(s?.last));
     set(chg, s && s.change !== null ? `${s.change >= 0 ? '+' : '−'}${px(Math.abs(s.change))}  ${s.changePct! >= 0 ? '+' : '−'}${Math.abs(s.changePct!).toFixed(2)}%` : '');
     const at = input.at ?? s?.time ?? null;
-    set(values.at, at === null ? '—' : input.daily && input.at == null ? dateFormat.format(at * 1000) : timeFormat.format(at * 1000));
+    set(values.at, at === null ? '—' : input.daily && input.at == null ? dateFormat.format(at * 1000) : timeFormat.format(at * 1000, input.market));
     set(values.op, p(s?.open));
     set(values.hi, p(s?.high));
     set(values.lo, p(s?.low));

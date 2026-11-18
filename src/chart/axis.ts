@@ -2,7 +2,7 @@
  * The crosshair's time label, trader style. (The time-axis labels and the year row are drawn by the square grid,
  * src/chart/grid.ts, at its vertical lines.) Pure, tested in chartFeel.test.ts.
  */
-import { clockText } from './clock';
+import { clockText, zoneTag } from './clock';
 
 export interface AxisOptions {
   /** Bars a day or longer: dates are read in UTC (daily bars are stamped near midnight in a US zone). */
@@ -26,5 +26,5 @@ export function crosshairLabel(t: number, o: AxisOptions): string {
   const parts = fmt(`x:${zone ?? ''}`, { timeZone: zone, weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(t * 1000);
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
   const date = `${get('weekday')} ${get('day')} ${get('month')}`;
-  return o.daily ? `${date} ${get('year')}` : `${date} ${clockText(Number(get('hour')) % 24, Number(get('minute')))}`;
+  return o.daily ? `${date} ${get('year')}` : `${date} ${clockText(Number(get('hour')) % 24, Number(get('minute')))}${zoneTag(o.timeZone)}`;
 }

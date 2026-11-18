@@ -2,6 +2,8 @@
  * Wraps TradingView's open-source Lightweight Charts library: draws the price series and
  * keeps every indicator's lines in sync with the data.
  */
+import { chartTimeZone } from './clock';
+import { setGridZone } from './grid';
 import { MARKET_PARAM } from '../indicators/session';
 import {
   AreaSeries,
@@ -315,7 +317,8 @@ export class ChartView {
     this.timeIndex.clear();
     bars.forEach((b, i) => this.timeIndex.set(b.time, i));
     const daily = TIMEFRAME_SECONDS[timeframe] >= 86400;
-    this.axisOpts = { daily };
+    this.axisOpts = { daily, timeZone: chartTimeZone(this.market) };
+    setGridZone(this.chart, () => (chartTimeZone(this.market) ? 'ny' : 'local'));
     this.chart.applyOptions({ timeScale: { secondsVisible: TIMEFRAME_SECONDS[timeframe] < 60 } });
     this.applyPriceFormat();
     this.heikin = [];
