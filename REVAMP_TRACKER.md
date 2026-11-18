@@ -25,7 +25,11 @@ function and build order are in docs/research/bloomberg-parity.md (phases B1-B4)
 - [x] B1. Function tiles (src/ui/fnTile.ts: title bar + plain-words link, numbered rows, source/time footer) and the
       Markets Monitor (#monitor): world clocks, world equities by region, Nasdaq-100 sector sunburst (live), S&P 500
       movers, currencies / commodities / rates, numbered top news. Typing a row's number in the search bar opens it.
-- [ ] B2. Security: historical prices table, analyst consensus, earnings surprises, peer comparison table + scatter.
+- [x] B2. Security: Prices tab (HP: daily/weekly/monthly blocks, high/average/low, CSV), analyst consensus box + monthly
+      ratings chart, earnings vs estimates (helper 84, Finnhub free key), Peers tab (RV: company first, median/average,
+      growth-vs-value scatter with trend line).
+- [ ] B1b. Site-wide Bloomberg design layer (owner, 2026-11-18: "full rework towards Bloomberg"): dense panels with
+      title bars, hairlines, tight tables, less rounding; own palette (spec 6.0).
 - [ ] B3. Financial statement grid with bar-chart mode, mirrored option chain, calendar table, curve chart, rate path.
 - [ ] B4. Screener, numbered directory, workspace of tiles, portfolio KPI layout.
 

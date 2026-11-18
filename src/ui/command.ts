@@ -46,11 +46,13 @@ export const CODES: FnCode[] = [
   { code: 'DES', label: 'Security view (description, key stats)', ticker: true, keywords: 'research company profile security overview' },
   { code: 'GP', aliases: ['GIP'], label: 'Chart', ticker: true, keywords: 'graph price chart candles' },
   { code: 'FA', label: 'Financials', ticker: true, keywords: 'financial analysis income balance cash flow sec' },
+  { code: 'RV', aliases: ['EQRV', 'COMP'], label: 'Peers (relative value: multiples, growth, margins)', ticker: true, keywords: 'peers comparables comps relative value multiples' },
   { code: 'HDS', label: 'Holders (13F institutions, insiders)', ticker: true, keywords: 'holders institutions 13f insiders ownership' },
   { code: 'CN', label: 'News', ticker: true, keywords: 'company news headlines' },
   { code: 'OMON', aliases: ['FLOW', 'OMST'], label: 'Options and flow', ticker: true, keywords: 'options monitor flow insiders short' },
   { code: 'DVD', label: 'Dividends (yield, history, total return)', ticker: true, keywords: 'dividend yield payout income ex-date' },
-  { code: 'BETA', aliases: ['HP', 'HRA'], label: 'Risk (beta, volatility, drawdown)', ticker: true, keywords: 'beta risk volatility drawdown sharpe sortino correlation' },
+  { code: 'HP', aliases: ['HCPI'], label: 'Historical prices (daily, weekly, monthly table)', ticker: true, keywords: 'price history table close volume download csv' },
+  { code: 'BETA', aliases: ['HRA'], label: 'Risk (beta, volatility, drawdown)', ticker: true, keywords: 'beta risk volatility drawdown sharpe sortino correlation' },
   { code: 'TRADE', aliases: ['TRD'], label: 'Order ticket (pre-fills only)', ticker: true, keywords: 'buy sell order ticket webull' },
   { code: 'ALRT', label: 'Alerts', ticker: true, keywords: 'alert notify price' },
   { code: 'WL', label: 'Add to watchlist', ticker: true, tickerOnly: true, keywords: 'watchlist favourite' },
@@ -77,7 +79,7 @@ export const CODES: FnCode[] = [
 
 /** Where a code without a ticker goes. */
 const CODE_ROUTE: Record<string, string> = {
-  GP: 'chart', DES: 'research', FA: 'research', HDS: 'flow', CN: 'home', OMON: 'flow', DVD: 'account', BETA: 'account', TRADE: 'trade', WEI: 'monitor', ECO: 'calendar', FUT: 'futures',
+  GP: 'chart', DES: 'research', FA: 'research', HDS: 'flow', CN: 'home', OMON: 'flow', DVD: 'account', BETA: 'account', HP: 'chart', RV: 'research', TRADE: 'trade', WEI: 'monitor', ECO: 'calendar', FUT: 'futures',
   PORT: 'portfolio', ACCT: 'account', JRNL: 'journal', CLIENT: 'clients', PROS: 'prospect', MULTI: 'chart/multi', SCRIPT: 'chart/scripts', COT: 'futures/cot', BTST: 'backtest', SET: 'setups', MACRO: 'macro', INV: 'invest',
 };
 

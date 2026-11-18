@@ -95,3 +95,35 @@ async def earnings(ctx, msg):
         payload = await fetch(ctx, 'Finnhub', BASE + 'calendar/earnings', params=params)
         return {'events': parse_earnings(payload), 'from': start.isoformat(), 'to': end.isoformat(), 'fetched': time.time()}
     return await ctx.cached(('finnhub', 'earn', start.isoformat(), days, symbol), 6 * 3600, load, persist=True, stale_ok=True)
+
+
+def parse_surprises(rows):
+    """Finnhub /stock/earnings -> the last reported quarters, newest first: EPS actual vs the analysts' estimate."""
+    if not isinstance(rows, list):
+        raise EngineError('Finnhub sent an unexpected reply.')
+    out = []
+    for r in rows:
+        actual, estimate = r.get('actual'), r.get('estimate')
+        if not r.get('period') or not isinstance(actual, (int, float)):
+            continue
+        est = estimate if isinstance(estimate, (int, float)) else None
+        surprise = actual - est if est is not None else None
+        pct = surprise / abs(est) if est not in (None, 0) else None
+        out.append({'period': str(r['period']), 'quarter': r.get('quarter'), 'year': r.get('year'), 'actual': actual, 'estimate': est,
+                    'surprise': None if surprise is None else round(surprise, 4), 'surprisePct': None if pct is None else round(pct, 4)})
+    return sorted(out, key=lambda x: x['period'], reverse=True)
+
+
+@handler('finnhub.surprises')
+@masked
+async def surprises(ctx, msg):
+    """Earnings per share reported vs the analysts' estimate, last quarters (Finnhub free tier)."""
+    symbol = _symbol(msg)
+    key = _key()
+    if not key:
+        return {'needsKey': True, 'note': NO_KEY, 'signup': SIGNUP, 'symbol': symbol}
+
+    async def load():
+        rows = await fetch(ctx, 'Finnhub', BASE + 'stock/earnings', params={'symbol': symbol, 'token': key})
+        return {'symbol': symbol, 'quarters': parse_surprises(rows)[:8], 'fetched': time.time()}
+    return await ctx.cached(('finnhub', 'surp', symbol), 12 * 3600, load, persist=True, stale_ok=True)
