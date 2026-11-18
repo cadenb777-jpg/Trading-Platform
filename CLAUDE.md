@@ -355,6 +355,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (src/ui/statusBar.ts), panelHeader (src/ui/panel.ts). Home is a widget grid (src/home/widgets.ts, saved per device).
   Market sessions: src/market/sessions.ts is the single source for New York sessions, NYSE holidays and early closes
   (2026-2027 table; extend yearly). marketClock, the status bar and quotes use it; src/chart/summary.ts should switch to it.
+  Design patterns (Bloomberg organisation, owner 2026-11-18): docs/research/bloomberg-patterns.md is the rulebook (title line,
+  view tabs in `.ap-tabrow` under it via pageFrame, flat panels with tinted title bars, kv lists, banded tables, nothing
+  twice on a screen). Charts is its own destination (section 'charts').
   Theme: light/dark via CSS variables (`:root[data-theme='light']`) and src/ui/theme.ts (THEME object updated in place,
   `followTheme(chart)` repaints canvases). Use variables, not hard-coded colours, in new CSS. Tokens, type and do/don't: docs/design.md.
   Chart engine (src/chart/): live ticks recompute indicators on the tail only (incremental.ts: last 512 bars, checked

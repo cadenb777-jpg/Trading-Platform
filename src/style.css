@@ -12028,7 +12028,8 @@ button.viz-heat-tile:hover {
   }
   body.rail-collapsed .rail-pulse,
   body[data-section='today'] .rail-pulse,
-  body[data-page='monitor'] .rail-pulse {
+  body[data-page='monitor'] .rail-pulse,
+  body[data-page='chart'] .rail-pulse {
     /* Today already shows these (ticker tape, market mood, watchlist): additive, not duplicated (owner, 2026-11-17) */
     display: none;
   }
@@ -12097,6 +12098,7 @@ button.viz-heat-tile:hover {
 :root {
   --hue-today: #7ac3ee;
   --hue-markets: #34c6c0;
+  --hue-charts: #ff8a65;
   --hue-security: #a78bfa;
   --hue-ideas: #f2c14e;
   --hue-money: #6f8cff;
@@ -12106,6 +12108,7 @@ button.viz-heat-tile:hover {
 :root[data-theme='light'] {
   --hue-today: #1d5fa8;
   --hue-markets: #0f7f7a;
+  --hue-charts: #b8461f;
   --hue-security: #6a4bc4;
   --hue-ideas: #9a6a00;
   --hue-money: #3550c9;
@@ -12113,6 +12116,7 @@ button.viz-heat-tile:hover {
 }
 body[data-section='today'] { --section-accent: var(--hue-today); }
 body[data-section='markets'] { --section-accent: var(--hue-markets); }
+body[data-section='charts'] { --section-accent: var(--hue-charts); }
 body[data-section='security'] { --section-accent: var(--hue-security); }
 body[data-section='ideas'] { --section-accent: var(--hue-ideas); }
 body[data-section='money'] { --section-accent: var(--hue-money); }
@@ -12121,6 +12125,7 @@ body[data-section='business'] { --section-accent: var(--hue-business); }
 /* where the accent shows: the active destination, the top row's name, panel edges and hover glow */
 .rail .nav-btn.rail-sec[data-section='today'] svg { color: var(--hue-today); }
 .rail .nav-btn.rail-sec[data-section='markets'] svg { color: var(--hue-markets); }
+.rail .nav-btn.rail-sec[data-section='charts'] svg { color: var(--hue-charts); }
 .rail .nav-btn.rail-sec[data-section='security'] svg { color: var(--hue-security); }
 .rail .nav-btn.rail-sec[data-section='ideas'] svg { color: var(--hue-ideas); }
 .rail .nav-btn.rail-sec[data-section='money'] svg { color: var(--hue-money); }
@@ -14456,4 +14461,65 @@ select.input,
 }
 .desk-tile .fn-tile-body {
   overflow-x: auto;
+}
+
+/* Page view tabs: their own row under the title line (Bloomberg band D), underlined, full width */
+.ap-tabrow {
+  display: flex;
+  margin: -2px 0 10px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ap-tabrow > .tabs {
+  border: 0;
+  background: none;
+  padding: 0;
+  gap: 0;
+}
+.ap-tabrow .tab {
+  padding: 8px 14px;
+  border-radius: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  box-shadow: none;
+  background: none;
+}
+.ap-tabrow .tab:hover {
+  color: var(--text-strong);
+}
+.ap-tabrow .tab.active,
+.ap-tabrow .tab[aria-selected='true'] {
+  color: var(--text-strong);
+  box-shadow: inset 0 -2px 0 var(--section-accent);
+  background: none;
+}
+
+/* Pattern: one title style for every page (Trade used its own large white title) */
+.tr-top h1 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+/* Pattern: groups inside a list are labelled by a band (Bloomberg section bar), not a grey caption */
+.list-band {
+  margin: 12px -4px 4px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: var(--bb-band);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.list-band:first-child {
+  margin-top: 4px;
 }
