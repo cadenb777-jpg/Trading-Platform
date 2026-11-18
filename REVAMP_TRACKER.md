@@ -33,9 +33,10 @@ function and build order are in docs/research/bloomberg-parity.md (phases B1-B4)
 - [x] B3. Financials chart mode (tick line names, bars per year, zero line), option chain calls | strike | puts (helper 87:
       bid/ask/last/delta; ITM shaded, price band, expiry picker, phone layout), yield-curve table (today / 1 month / 1 year,
       bp changes) on Macro and Bonds, Fed implied rate path bars with moves priced. Calendar already had the ECO layout.
-- [~] B4. Done: Screener (Ideas, EQS: universe + sector chips, criteria rows with running counts, ready-made screens,
-      sortable matches with medians) and a numbered Launchpad menu (type a number + Enter; duplicate WEI/IMAP entries
-      removed). Still: workspace of tiles, portfolio KPI layout.
+- [x] B4. Screener (Ideas, EQS), numbered Launchpad menu, Desk (Today → Desk, BLP: your own screens from tiles —
+      chart, quote monitor, news, world, sectors, movers, events, Fed odds, curve, notes — in named views; move, resize,
+      edit tickers, remove; saved on this computer). Portfolios already had the PORT layout (KPI strip, returns vs
+      benchmark, drawdowns, stress tests, risk table).
 
 Resume rule: on "continue" or "go", read this file and do the first unticked item.
 

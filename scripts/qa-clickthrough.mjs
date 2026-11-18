@@ -29,7 +29,7 @@ const overlaps = () => p.evaluate(() => {
   return [...new Set(out)].slice(0, 12);
 });
 const report = {};
-const routes = ['home', 'monitor', 'invest', 'futures', 'macro', 'calendar', 'research', 'chart', 'flow', 'setups', 'screener', 'backtest', 'strategy', 'account', 'portfolio', 'trade', 'journal', 'prospect', 'clients'];
+const routes = ['home', 'desk', 'monitor', 'invest', 'futures', 'macro', 'calendar', 'research', 'chart', 'flow', 'setups', 'screener', 'backtest', 'strategy', 'account', 'portfolio', 'trade', 'journal', 'prospect', 'clients'];
 await p.goto('http://localhost:5322/#home'); await p.waitForTimeout(4000);
 for (const r of routes) {
   await p.evaluate((h) => (location.hash = h), r); await p.waitForTimeout(2500);
