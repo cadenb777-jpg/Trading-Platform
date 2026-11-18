@@ -13851,3 +13851,277 @@ select.input,
 .acct-hero-btn {
   margin-top: 8px;
 }
+
+/* Option chain: calls | strike | puts */
+.oc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.oc-pick {
+  width: auto;
+}
+.oc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.oc-table th,
+.oc-table td {
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.oc-table td.num,
+.oc-table th.num {
+  text-align: right;
+}
+.oc-table thead th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.oc-sides th {
+  text-align: center;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.oc-calls { color: var(--up-text) !important; }
+.oc-puts { color: var(--down-text) !important; }
+.oc-strike {
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-strong);
+  background: color-mix(in srgb, var(--raised) 70%, transparent);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+.oc-table tbody tr + tr td,
+.oc-table tbody tr + tr th {
+  border-top: 1px solid color-mix(in srgb, var(--line) 45%, transparent);
+}
+.oc-table td.itm {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.oc-spot td {
+  padding: 2px 8px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--accent-2-text);
+  background: color-mix(in srgb, var(--accent-2) 14%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--accent-2) 50%, transparent) !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent-2) 50%, transparent);
+}
+
+/* Financials: clickable line names + bar-chart mode */
+.fa-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fa-pick i {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  border: 1px solid var(--line-strong);
+}
+.fa-pick.on i {
+  background: var(--accent-2);
+  border-color: var(--accent-2);
+}
+.fa-pick:hover,
+.fa-pick:focus-visible {
+  color: var(--text-strong);
+}
+.fa-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.fa-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fa-legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+.fa-bars {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  height: 190px;
+  padding-bottom: 20px;
+}
+.fa-zero {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--line-strong);
+  pointer-events: none;
+}
+.fa-period {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+.fa-plot {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+}
+.fa-bar {
+  position: absolute;
+  width: calc((100% - 12px) / 3);
+  max-width: 26px;
+  border-radius: 3px 3px 0 0;
+  opacity: 0.88;
+}
+.fa-bar.neg {
+  border-radius: 0 0 3px 3px;
+}
+.fa-plot .fa-bar:nth-child(1) { transform: translateX(-105%); }
+.fa-plot .fa-bar:nth-child(3) { transform: translateX(105%); }
+.fa-plot .fa-bar:only-child { transform: none; }
+.fa-period.latest .fa-bar {
+  opacity: 1;
+  box-shadow: 0 0 0 1px var(--text-strong);
+}
+.fa-period small {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.fa-legend .fa-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+/* Fed rate path: one bar per meeting at the rate the futures expect after it */
+.fed-path {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  height: 150px;
+  margin: 12px 0 4px;
+}
+.fed-path-col {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+.fed-path-val {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.fed-path-bar {
+  width: 100%;
+  max-width: 30px;
+  min-height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.fed-path-col.now .fed-path-bar {
+  background: var(--accent-2);
+}
+.fed-path-col small {
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.fed-path-moves.cut { color: var(--accent); }
+.fed-path-moves.hike { color: var(--accent-2-text); }
+
+/* Yield curve table under the chart */
+.curve-table-wrap {
+  margin-top: 10px;
+}
+.curve-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.curve-table th,
+.curve-table td {
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+.curve-table thead th {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.curve-table th.num,
+.curve-table td.num {
+  text-align: right;
+}
+.curve-table tbody th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+}
+.curve-table tbody tr + tr > * {
+  border-top: 1px solid color-mix(in srgb, var(--line) 45%, transparent);
+}
+.curve-table tr.chg > * {
+  font-weight: 600;
+}
+.curve-table td.lower { color: var(--accent); }
+.curve-table td.higher { color: var(--accent-2-text); }
+.curve-table thead th:first-child {
+  text-align: left;
+}
+@media (max-width: 700px) {
+  .oc-table .oc-x {
+    display: none;
+  }
+  .oc-table th,
+  .oc-table td {
+    padding: 4px 5px;
+  }
+}
+.oc-table .oc-narrow {
+  display: none;
+}
+@media (max-width: 700px) {
+  .oc-table .oc-wide {
+    display: none;
+  }
+  .oc-table .oc-narrow {
+    display: table-cell;
+  }
+}

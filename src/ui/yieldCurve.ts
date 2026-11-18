@@ -83,3 +83,34 @@ export function yieldCurve(points: CurvePoint[], onPick: (label: string) => void
   wrap.append(legend, svg, tip);
   return wrap;
 }
+
+/** Change in basis points between two yields (null when one is missing; pure, tested). */
+export const bpChange = (now: number, then: number | null) => (then == null ? null : Math.round((now - then) * 100));
+
+/**
+ * The curve as a table under the chart (Bloomberg's curve screen): a column per maturity, rows for today, a month ago
+ * and a year ago, then the changes in basis points. Blue = lower than then, amber = higher (neither is good or bad).
+ */
+export function curveTable(points: CurvePoint[]): HTMLElement {
+  const bp = (v: number | null) => (v == null ? '—' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}`);
+  const row = (label: string, cells: (string | { v: number | null })[], cls = '') =>
+    h('tr', { class: cls }, h('th', { scope: 'row' }, label), ...cells.map((c) => (typeof c === 'string' ? h('td', { class: 'num' }, c) : h('td', { class: `num ${c.v == null || c.v === 0 ? '' : c.v < 0 ? 'lower' : 'higher'}` }, bp(c.v)))));
+  return h(
+    'div',
+    { class: 'sv-table-wrap curve-table-wrap' },
+    h(
+      'table',
+      { class: 'curve-table' },
+      h('thead', {}, h('tr', {}, h('th', {}, 'Yield %'), ...points.map((p) => h('th', { class: 'num' }, p.label)))),
+      h(
+        'tbody',
+        {},
+        row('Today', points.map((p) => p.now.toFixed(2))),
+        row('1 month ago', points.map((p) => (p.monthAgo == null ? '—' : p.monthAgo.toFixed(2)))),
+        row('1 year ago', points.map((p) => (p.yearAgo == null ? '—' : p.yearAgo.toFixed(2)))),
+        row('Change vs 1 month (bp)', points.map((p) => ({ v: bpChange(p.now, p.monthAgo) })), 'chg'),
+        row('Change vs 1 year (bp)', points.map((p) => ({ v: bpChange(p.now, p.yearAgo) })), 'chg'),
+      ),
+    ),
+  );
+}

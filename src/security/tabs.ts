@@ -4,6 +4,8 @@
  * the reason), and says where every figure comes from and when.
  */
 import { hpTab } from './hpTab';
+import { faGraph, togglePick } from './faGraph';
+import { chainPanel } from './chainView';
 import { rvTab } from './rvTab';
 import { ratingChart, ratingWords, surpriseChart, surpriseWords, type Surprise } from './analysts';
 import { combineHoldings, myPortfolios } from '../portfolio/account';
@@ -71,7 +73,7 @@ function slot(ctx: TabCtx, what: string, run: () => Promise<Node | Node[]>): HTM
 const money = (v: number | null | undefined) => fmtCompact(v, { money: true });
 
 /** A plain number table with a label column (tabular figures, negative in red, "—" for blanks). */
-function numTable(headers: string[], rows: { label: string; cells: (string | Node)[]; cls?: string }[]): HTMLElement {
+function numTable(headers: string[], rows: { label: string | Node; cells: (string | Node)[]; cls?: string }[]): HTMLElement {
   return h(
     'div',
     { class: 'sv-table-wrap' },
@@ -299,6 +301,24 @@ const RATIOS: [string, string, 'pct' | 'x'][] = [
   ['debtToEquity', 'Debt / equity', 'x'],
 ];
 
+const FA_PICK_KEY = 'tp-sec-fa-graph';
+const readFaPicked = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(FA_PICK_KEY) ?? 'null');
+    return Array.isArray(v) ? v.filter((x) => typeof x === 'string').slice(0, 3) : ['revenue', 'netIncome'];
+  } catch {
+    return ['revenue', 'netIncome'];
+  }
+};
+const saveFaPicked = (v: string[]) => {
+  try {
+    localStorage.setItem(FA_PICK_KEY, JSON.stringify(v));
+  } catch {
+    /* storage blocked: the choice just isn't remembered */
+  }
+};
+let faPicked = readFaPicked();
+
 export function faTab(ctx: TabCtx) {
   const s = ctx.symbol;
   if (!isCompanyLike(s)) return ctx.body.replaceChildren(note('Financial statements are for companies that file with the SEC.'));
@@ -315,10 +335,14 @@ export function faTab(ctx: TabCtx) {
     })];
     const vals = (k: string) => (st.values[k] ?? []).slice(off);
     const fmt = (k: string, v: number | null) => (v == null ? DASH : k === 'epsDiluted' ? fmtChange(v).replace('+', '') : k === 'dilutedShares' ? fmtCompact(v) : money(v));
+    // a line's name is a toggle: click it to chart it in the graph above (Bloomberg's FA graph mode)
+    const lineLabel = (k: string) =>
+      h('button', { type: 'button', class: `fa-pick ${faPicked.includes(k) ? 'on' : ''}`, 'aria-pressed': String(faPicked.includes(k)), title: faPicked.includes(k) ? 'Remove from the chart' : 'Chart this line', onclick: () => ((faPicked = togglePick(faPicked, k)), saveFaPicked(faPicked), draw(d)) }, h('i', { 'aria-hidden': 'true' }), d.labels[k] ?? k);
     const statement = (title: string, keys: string[]) => {
       const shown = keys.filter((k) => vals(k).some((v) => v != null));
-      return panel(title, `${SEC}${quarterly ? '; Q4 = full year minus the first three quarters' : '; each 10-K'}`, d.filings?.[0]?.filed, shown.length ? numTable(head, shown.map((k) => ({ label: d.labels[k] ?? k, cells: vals(k).map((v) => fmt(k, v)), cls: ['netIncome', 'freeCashFlow', 'equity'].includes(k) ? 'total' : '' }))) : note('Not reported in the XBRL data.'));
+      return panel(title, `${SEC}${quarterly ? '; Q4 = full year minus the first three quarters' : '; each 10-K'}`, d.filings?.[0]?.filed, shown.length ? numTable(head, shown.map((k) => ({ label: lineLabel(k), cells: vals(k).map((v) => fmt(k, v)), cls: ['netIncome', 'freeCashFlow', 'equity'].includes(k) ? 'total' : '' }))) : note('Not reported in the XBRL data.'));
     };
+    const graphSeries = faPicked.filter((k) => vals(k).some((v) => v != null)).map((k) => ({ key: k, label: d.labels[k] ?? k, values: vals(k) }));
     // per share: from the statements (diluted shares)
     const sh = vals('dilutedShares');
     const perShare = (k: string) => vals(k).map((v, i) => (v != null && sh[i] ? v / sh[i]! : null));
@@ -335,6 +359,7 @@ export function faTab(ctx: TabCtx) {
         } }, p === 'annual' ? 'Annual' : 'Quarterly'))),
         h('span', { class: 'muted small' }, 'US dollars. Figures as filed; blank lines are labels the company reports its own way.'),
       ),
+      panel('Chart', SEC, d.filings?.[0]?.filed, faGraph(graphSeries, head.slice(1), (v) => money(v) ?? String(v))),
       statement('Income statement', d.sections.income),
       statement('Balance sheet', d.sections.balance),
       statement('Cash flow', d.sections.cashflow),
@@ -469,6 +494,7 @@ export function omonTab(ctx: TabCtx) {
         ['Call / put volume', `${fmtCompact(x.callVolume)} / ${fmtCompact(x.putVolume)}`],
         ['Net gamma exposure', fig(money(x.netGex), { tone: tone(x.netGex) })],
       ])),
+      chainPanel(s, d),
       exp.length
         ? panel('By expiration', 'Schwab option chain', Date.now(), numTable(['Expiry', 'Days', 'P/C vol', 'P/C OI', 'ATM IV', 'Max pain', 'Exp. move'], exp.map((e) => ({
             label: fmtDate(e.expiration),

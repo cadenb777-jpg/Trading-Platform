@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { meetingRead, type FedMeeting } from './fedOdds';
+import { meetingRead, movesPriced, type FedMeeting } from './fedOdds';
 import { corrRead } from './netLiquidity';
 
 const meeting = (over: Partial<FedMeeting>): FedMeeting => ({ date: '2026-12-09', before: 3.88, after: 3.75, steps: -0.5, ranges: [{ lower: 3.5, upper: 3.75, p: 0.51 }, { lower: 3.75, upper: 4, p: 0.49 }], pCut: 0.51, pHold: 0.49, pHike: 0, expectedChange: -0.127, tentative: false, ...over });
@@ -105,5 +105,13 @@ describe('live flow', () => {
     expect(dollars(2_450_000)).toBe('$2.45M');
     expect(dollars(350_000)).toBe('$350K');
     expect(dollars(undefined)).toBe('—');
+  });
+});
+
+describe('rate path', () => {
+  it('counts 25 bp moves priced in by a meeting', () => {
+    const m = { date: '2026-12-10', before: 3.88, after: 3.63, steps: 1, ranges: [], pCut: 1, pHold: 0, pHike: 0, expectedChange: -0.5, tentative: false };
+    expect(movesPriced(m)).toBe(-2);
+    expect(movesPriced({ ...m, expectedChange: 0.06 })).toBe(0.2);
   });
 });

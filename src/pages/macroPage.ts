@@ -7,7 +7,7 @@ import { pageFrame } from '../ui/charts';
 import { activatable, h } from '../ui/dom';
 import { openChartWindow } from '../ui/chartWindow';
 import { openFredWindow } from '../ui/fredWindow';
-import { yieldCurve, type CurvePoint } from '../ui/yieldCurve';
+import { yieldCurve, curveTable, type CurvePoint } from '../ui/yieldCurve';
 import { asOfStamp } from '../ui/dataHealth';
 import { infoTip } from '../ui/glossary';
 import { fedOddsPanel } from '../edge/fedOdds';
@@ -357,6 +357,7 @@ export function createMacroPage() {
           h('span', { class: 'muted small' }, spread < 0 ? 'Inverted: short-term rates are above long-term ones, which has often come before recessions.' : 'Normal shape: longer loans pay more than short ones.'),
         ),
         yieldCurve(curve),
+        curveTable(curve),
       );
     } catch (err) {
       curvePanel.replaceChildren(h('div', { class: 'panel-head' }, h('h3', {}, 'Treasury yield curve')), h('div', { class: 'macro-error' }, (err as Error).message, h('button', { class: 'btn small', onclick: loadCurve }, 'Retry')));

@@ -153,6 +153,10 @@ def analyze_chain(chain, expiration=None):
         row[f'{side}Oi'] += c['oi']
         if c['iv']:
             row[f'{side}Iv'] = c['iv']
+        # helper 87: the quote of the contract itself, for the calls | strike | puts chain (Bloomberg OMON layout)
+        for key in ('bid', 'ask', 'last', 'delta'):
+            if c.get(key) is not None:
+                row[f'{side}{key.capitalize()}'] = c[key]
     gex = gamma_exposure(contracts, spot)
     by_exp = []
     for exp in expirations:

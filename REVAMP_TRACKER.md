@@ -30,7 +30,9 @@ function and build order are in docs/research/bloomberg-parity.md (phases B1-B4)
       growth-vs-value scatter with trend line).
 - [x] B1b. Site-wide Bloomberg design layer (owner, 2026-11-18: "full rework towards Bloomberg"): dense panels with
       title bars, hairlines, tight tables, less rounding; own palette (spec 6.0).
-- [ ] B3. Financial statement grid with bar-chart mode, mirrored option chain, calendar table, curve chart, rate path.
+- [x] B3. Financials chart mode (tick line names, bars per year, zero line), option chain calls | strike | puts (helper 87:
+      bid/ask/last/delta; ITM shaded, price band, expiry picker, phone layout), yield-curve table (today / 1 month / 1 year,
+      bp changes) on Macro and Bonds, Fed implied rate path bars with moves priced. Calendar already had the ECO layout.
 - [ ] B4. Screener, numbered directory, workspace of tiles, portfolio KPI layout.
 
 Resume rule: on "continue" or "go", read this file and do the first unticked item.
