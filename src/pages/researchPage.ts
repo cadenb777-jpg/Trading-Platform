@@ -9,6 +9,7 @@ import { roicPanel } from '../research/roicView';
 import { assetQualityPanel } from '../research/assetQualityView';
 import { taxLeveragePanel } from '../research/taxLeverageView';
 import { againstBondsPanel } from '../research/againstBondsView';
+import { filerRankPanel } from '../research/filerRankView';
 import { fy, type Maturities } from '../research/debtDilution';
 import type { Obligations } from '../research/obligations';
 import { yearBars } from '../research/yearBars';
@@ -228,6 +229,8 @@ export function createResearchPage() {
       segmentsPanel(d.symbol),
       // the deep dives fold under one heading (owner: "less reading"); open state remembered
       moreAnalysis(d.symbol, [
+      // each reading ranked against every US SEC filer (SEC XBRL frames)
+      filerRankPanel(d.profile.cik),
       segmentHistoryPanel(d.symbol),
       // debt maturities (10-K), interest cover, share count and buybacks after stock pay
       debtDilutionPanel({ annual: d.annual, marketCap: v.marketCap, cash: v.cash, maturities: d.maturities, obligations: d.obligations }),
@@ -282,7 +285,7 @@ export function createResearchPage() {
     const el = h(
       'details',
       { class: 'ts-more', open },
-      h('summary', {}, h('b', {}, `More on ${symbol}`), h('span', { class: 'muted small' }, 'Segment history · debt · earnings quality · cash · balance sheet · building & stock pay · return on capital · profitability · taxes · against bonds · positioning · news · yearly tables')),
+      h('summary', {}, h('b', {}, `More on ${symbol}`), h('span', { class: 'muted small' }, 'Rank among US companies · segment history · debt · earnings quality · cash and inventory · balance sheet · building & stock pay · return on capital · profitability · taxes · against bonds · positioning · news · yearly tables')),
       h('div', { class: 'ts-more-body' }, ...panels),
     ) as HTMLDetailsElement;
     el.addEventListener('toggle', () => {

@@ -8,6 +8,8 @@ import { block, savedBeforeUpdate } from './panelBlock';
 import { dataTable, money } from '../ui/charts';
 import { fy, type Statements } from './debtDilution';
 import { cashCycle, coverWord, coverWords, cycleWords, dividendCover } from './cashHealth';
+import { inventorySales, inventoryStaleWords, inventoryWords, pilingUp } from './inventory';
+import { pc } from './debtDilution';
 
 const x = (v: number | null) => (v == null ? '—' : v <= 0 ? 'none' : `${v.toFixed(v >= 10 ? 0 : 1)}×`);
 const d = (v: number) => `${v < 0 ? '−' : ''}${Math.round(Math.abs(v))}`;
@@ -76,10 +78,43 @@ export function cashHealthPanel(a: Statements): HTMLElement {
             ]),
   );
 
+  const inv = 'inventory' in a.values ? inventorySales(a) : undefined;
+  const pts = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v * 100).toFixed(1)}`;
+  const stock = block(
+    'Inventory against sales',
+    'inventoryVsSales',
+    ...(inv === undefined
+      ? [savedBeforeUpdate(cashCycleReady())]
+      : inv === null
+        ? [h('p', { class: 'muted small' }, 'No inventory in the filings (most service, software and financial companies hold none), or not for two year-ends in a row with sales.')]
+        : 'lastShown' in inv
+          ? [h('p', { class: 'muted small' }, inventoryStaleWords(inv))]
+          : [
+              h('div', { class: 'md-head' }, h('b', { class: 'md-value num' }, `${pts(inv.latest.gap)} pts`), ...(pilingUp(inv.latest) ? [h('span', { class: 'md-read tight' }, 'Piling up')] : []), h('span', { class: 'muted small' }, `inventory growth over sales growth, ${fy(inv.latest.end)}`)),
+              h(
+                'div',
+                { class: 'qe-table' },
+                dataTable(
+                  ['Year', 'Inventory', 'Sales', 'Gap (pts)'],
+                  inv.history.map((y) => [
+                    { v: fy(y.end), cls: 'label' },
+                    { v: pc(y.inventoryGrowth, 1, true), cls: 'num' },
+                    { v: pc(y.salesGrowth, 1, true), cls: 'num' },
+                    { v: pts(y.gap), cls: `num${pilingUp(y) ? ' warn' : ''}`, ...(pilingUp(y) ? { title: 'Inventory grew more than 10 points faster than sales' } : {}) },
+                  ]),
+                  undefined,
+                  false,
+                ),
+              ),
+              h('p', { class: 'small' }, inventoryWords(inv)),
+              h('p', { class: 'muted small' }, 'Inventory at each fiscal year-end and sales for the year, from the 10-K. Flagged when inventory grew more than 10 points faster than sales and is at least 1% of a year’s sales. A reading, not a signal.'),
+            ]),
+  );
+
   return h(
     'section',
     { class: 'panel qe-panel ch-panel' },
-    h('div', { class: 'panel-head' }, h('h3', {}, 'Cash health'), h('span', { class: 'muted small' }, 'Does the cash the business makes pay its dividend, and how long is cash tied up? Fiscal years from the company’s SEC filings (XBRL)')),
-    h('div', { class: 'md-grid' }, cover, cycle),
+    h('div', { class: 'panel-head' }, h('h3', {}, 'Cash health'), h('span', { class: 'muted small' }, 'Does the cash the business makes pay its dividend, how long is cash tied up, and is stock piling up? Fiscal years from the company’s SEC filings (XBRL)')),
+    h('div', { class: 'md-grid' }, cover, cycle, stock),
   );
 }

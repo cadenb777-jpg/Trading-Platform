@@ -661,17 +661,26 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   from 5 years; Novy-Marx 2013) and total-asset growth vs sales growth (amber when more than a point above, one test
   `ahead` for table and words; Cooper-Gulen-Schill 2008). Readings, not signals. Shared year rules for every Research
   reading panel: src/research/years.ts (newestYear, yearsBefore = whole fiscal years apart, lastRun, Stale).
-- Research → Taxes and operating leverage (helper 84, TAX_HELPER_VERSION/taxReady; src/research/taxLeverage.ts pure +
+- Research → Taxes and operating leverage (helper 85, TAX_HELPER_VERSION/taxReady; src/research/taxLeverage.ts pure +
   taxLeverageView.ts, class tl-panel, in the More fold; bars via panelBlock.rateBars): statements add taxesPaid (IncomeTaxesPaidNet only); cash rate =
   paid / pre-tax, long run = sums over up to 5 consecutive years (Dyreng-Hanlon-Maydew 2008; none when losses cancel more
   than half the profitable years), against the book rate and 21%; a net refund is said as one. Operating leverage =
   slope of ln operating income on ln sales over up to 10 consecutive profitable years (Mandelker-Rhee 1984; slopeOf from
   c-math), yearly ratio only when sales moved 2%+; words follow the rounded multiple shown.
-- Research → Against bonds (helper 85, REAL_YIELD_HELPER_VERSION/realYieldReady; src/research/againstBonds.ts pure +
+- Research → Against bonds (helper 86, REAL_YIELD_HELPER_VERSION/realYieldReady; src/research/againstBonds.ts pure +
   againstBondsView.ts, class ab-panel, in the More fold): earnings yield = 1 / P/E (the tear sheet's v.pe ?? quote
   peRatio) vs research.corpyields real10 = FRED DFII10 read in full from 2003 (FULL_FROM, ratesdesk._full) with its
   percentile (ratesdesk.percentile_rank); gap rounded to 0.1 point before words/sign (Asness 2003). Rates side by side
   use panelBlock.rateBars (classes rb-*), shared with Taxes and operating leverage.
+- Research → Among US companies (helper 88, FILER_RANK_HELPER_VERSION/filerRankReady; engine/filerrank.py
+  `research.filerrank {cik}`; src/research/filerRank.ts pure + filerRankView.ts, class fr-*, first in the More fold): seven
+  readings (gross profit/assets, operating margin, ROA, sales growth, asset growth, accruals, inventory vs sales growth)
+  ranked among every filer with total assets >= $100M from SEC XBRL frames (one file per concept and calendar period,
+  cached a week as 'sec-frame'; field cached a day as 'sec-filerrank'). Fiscal year = the company's row in the CY duration
+  frame (net income, else operating cash flow); balances from the quarter frame nearest that year-end, dated within 10
+  days; revenue growth only with the same tag both years; a CY frame under 4,000 net-income rows is skipped for the year
+  before. Percentile = ratesdesk.percentile_rank against the others. Inventory against sales (src/research/inventory.ts,
+  no helper change) is the third block of Cash health: flagged > 10 points ahead of sales and >= 1% of sales.
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per

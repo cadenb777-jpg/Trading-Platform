@@ -11352,6 +11352,27 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .rb-bar.two { background: var(--viz-2); }
 .rb-bar.base { background: color-mix(in srgb, var(--muted) 60%, transparent); }
 .rb-val { text-align: right; color: var(--text-strong); }
+/* Research → Among US companies: one row per reading, a 0-100 rank track with the middle half shaded */
+.fr-list { display: grid; gap: 6px; margin: var(--sp-2) 0; }
+.fr-row, .fr-axis { display: grid; grid-template-columns: minmax(12rem, 15rem) 5.5rem minmax(8rem, 1fr) minmax(14rem, 19rem); align-items: center; gap: var(--sp-2); }
+.fr-label { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+.fr-value { text-align: right; color: var(--text-strong); font-weight: 600; }
+.fr-track { position: relative; height: 12px; border-radius: 2px; background: color-mix(in srgb, var(--muted) 14%, transparent); min-width: 0; }
+.fr-track.empty { background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--muted) 18%, transparent) 0 4px, transparent 4px 8px); height: 2px; }
+.fr-mid { position: absolute; left: 25%; width: 50%; top: 0; bottom: 0; background: color-mix(in srgb, var(--muted) 24%, transparent); }
+.fr-median { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: color-mix(in srgb, var(--muted) 70%, transparent); }
+.fr-dot { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--viz-1); border: 2px solid var(--panel); box-sizing: content-box; }
+.fr-dot.out { background: var(--label); }
+.fr-axis { margin-bottom: -2px; }
+.fr-axis-scale { display: flex; justify-content: space-between; font-size: 0.72rem; }
+@media (max-width: 720px) {
+  .fr-row { grid-template-columns: 1fr auto; grid-template-areas: 'label value' 'track track' 'words words'; row-gap: 4px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+  .fr-label { grid-area: label; }
+  .fr-value { grid-area: value; }
+  .fr-track { grid-area: track; }
+  .fr-words { grid-area: words; }
+  .fr-axis { display: none; }
+}
 /* Research: Return on capital (src/research/roicView.ts) */
 .roc-bars { display: grid; gap: var(--sp-2); }
 .roc-row { display: grid; grid-template-columns: 4.5rem 1fr 3rem; align-items: center; gap: var(--sp-2); padding: 2px 0; }

@@ -203,19 +203,27 @@ whenever the owner repeats or adds one.
   newest year, whole fiscal years apart, newest run) so panels on one page pick the same years. Review caught: a
   stale note naming the wrong missing line, "$-0.05" for a gross loss, a dead red class on a reading where shrinking
   isn't bad, two float tests of one line that could disagree, duplicated helpers.
-- 2026-11-18 · #49 Taxes and operating leverage (helper 84): cash tax rate against the book and federal rates (Microsoft
+- 2026-11-18 · #49 Taxes and operating leverage (helper 84, merged as 85): cash tax rate against the book and federal rates (Microsoft
   FY2026 12.8% in cash vs 19.4% charged; 19.7% vs 17.8% over 5 years) and operating leverage as the slope of log
   operating profit on log sales (Microsoft 1.4 over 10 years, Amazon 1.6), in the More fold of the Research overview ·
-  proposed · backlog A27-A28. Also fixed a failing release audit on main: the bond curve's .cf-range rule (height 14px)
+  approved (merged 2026-11-18) · backlog A27-A28. Also fixed a failing release audit on main: the bond curve's .cf-range rule (height 14px)
   squashed the Chart page's range buttons (same class) into the toolbar on phones; rules are now scoped to their cell.
   Lessons: never mix net and gross taxes-paid tags in one sum; a long-run rate is meaningless when losses cancel most of
   the profit; words must follow the rounded figure the page shows; generic class names collide across pages.
-- 2026-11-18 · #50 Against bonds (helper 85, stacked on #49): the stock's earnings yield (1 / P/E) beside the 10-year
+- 2026-11-18 · #50 Against bonds (helper 85, merged as 86): the stock's earnings yield (1 / P/E) beside the 10-year
   real Treasury yield (FRED DFII10, 2.92% on 2026-11-16, higher than on 99% of days since 2003), with the gap as the
-  headline, in the More fold · proposed · backlog A29. Lessons: macro.fred starts in 2006, so a "since 2003" history needs
+  headline, in the More fold · approved (merged 2026-11-18) · backlog A29. Lessons: macro.fred starts in 2006, so a "since 2003" history needs
   ratesdesk._full; use the platform's one percentile rule (ratesdesk.percentile_rank) and never say "higher than on
   100% of days"; round the gap before choosing its sign and words; a reply's provenance.fetchedAt is its oldest source,
   not the price time, so the page says when the figures were loaded instead of inventing a time. Review also caught: the
   P/E differing from the tear sheet's, a negative real yield worded as "above inflation", a pre-update cached reply
   shown as a FRED failure, duplicated bar code (now panelBlock.rateBars).
-
+- 2026-11-18 · #PRNUM Among US companies + inventory against sales (helper 88): seven Research readings ranked against
+  every US SEC filer with $100M+ of assets from the SEC's free XBRL frames (Coca-Cola's gross profit per dollar of assets
+  $0.28 = 54.7th percentile of 1,474; Microsoft's operating margin 45.6% higher than 95% of 2,539), and inventory growth
+  against sales growth on Cash health (Apple FY2026 +154.3% vs +15.1%) · proposed · backlog A31-A32. Lessons: frames
+  calendarise fiscal years loosely (Microsoft's July-June year sits in CY2025), so balances are read from the quarter frame
+  nearest each company's own year-end and must be dated within 10 days of it; growth only when both years use the same
+  revenue tag; a frame still filling up (CY2026: 353 companies in November) is skipped for the year before. Also fixed on
+  main: the Taxes and Against bonds gates still said helper 84/85 after #49/#50 were renumbered 85/86, so a helper 84 or
+  85 was told to refresh instead of update.
