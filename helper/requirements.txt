@@ -1,4 +1,4 @@
-schwab-py>=1.5,<2
+schwab-py>=1.5.1,<2
 websockets>=17.4
 httpx>=0.28.1
 tzdata
