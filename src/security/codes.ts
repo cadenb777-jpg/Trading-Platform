@@ -3,7 +3,7 @@
  * Pure and tested (codes.test.ts). See docs/research/bloomberg-structure.md for the mapping.
  */
 
-export type SecTab = 'des' | 'gp' | 'fa' | 'hds' | 'cn' | 'omon' | 'dvd' | 'beta' | 'set';
+export type SecTab = 'des' | 'gp' | 'hp' | 'fa' | 'rv' | 'hds' | 'cn' | 'omon' | 'dvd' | 'beta' | 'set';
 
 export interface TabDef {
   id: SecTab;
@@ -18,12 +18,14 @@ export interface TabDef {
 export const SEC_TABS: TabDef[] = [
   { id: 'des', code: 'DES', label: 'Overview' },
   { id: 'gp', code: 'GP', aliases: ['GIP'], label: 'Chart' },
+  { id: 'hp', code: 'HP', aliases: ['HCPI'], label: 'Prices' },
   { id: 'fa', code: 'FA', label: 'Financials', company: true },
+  { id: 'rv', code: 'RV', aliases: ['EQRV', 'COMP'], label: 'Peers', company: true },
   { id: 'hds', code: 'HDS', label: 'Holders', company: true },
   { id: 'cn', code: 'CN', label: 'News' },
   { id: 'omon', code: 'OMON', aliases: ['OMST'], label: 'Options' },
   { id: 'dvd', code: 'DVD', label: 'Dividends' },
-  { id: 'beta', code: 'BETA', aliases: ['HP', 'HRA'], label: 'Risk' },
+  { id: 'beta', code: 'BETA', aliases: ['HRA'], label: 'Risk' },
   { id: 'set', code: 'SET', aliases: ['SETUP', 'SETUPS'], label: 'Setups' },
 ];
 

@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 83;
+export const LATEST_HELPER_VERSION = 84;
 /** The "Log in to Schwab" request (schwab_login) and the in-place re-login need this version. */
 export const SCHWAB_LOGIN_HELPER_VERSION = 47;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
