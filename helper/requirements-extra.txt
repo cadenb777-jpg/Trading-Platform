@@ -1,7 +1,7 @@
 # Optional parts: portfolio maths (numpy, scipy), the AI assistant (anthropic) and the Form ADV PDF reader (pypdf).
 # If these fail to install, charts, prices and news still work.
 numpy>=2.5.4
-scipy>=1.13
+scipy>=1.18.1
 anthropic>=2.8.0,<3
 # Prospecting: reads Form ADV Part 1 PDFs from IAPD (people and private funds filed after the SEC bulk data ended).
 pypdf>=7.1.0
