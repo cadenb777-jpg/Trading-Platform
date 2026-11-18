@@ -2,7 +2,7 @@
 # If these fail to install, charts, prices and news still work.
 numpy>=2.5.4
 scipy>=1.13
-anthropic>=2.6.0,<3
+anthropic>=2.8.0,<3
 # Prospecting: reads Form ADV Part 1 PDFs from IAPD (people and private funds filed after the SEC bulk data ended).
 pypdf>=7.0.0
 # Prospecting contacts: DNS (MX) lookups without the free DNS-over-HTTPS fallback.
