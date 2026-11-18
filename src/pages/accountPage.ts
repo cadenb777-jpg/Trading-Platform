@@ -340,7 +340,8 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
       mine.length > 1 ? switcher(mine, picked.choice) : '',
       overviewBox,
       unpriced.length ? h('p', { class: 'badge warn' }, `No live price for ${unpriced.join(', ')}: left out of the totals. Check the helper is logged in to Schwab, then Refresh.`) : '',
-      panel(single ? 'Account' : 'Accounts', 'Imported statements, synced Webull accounts and portfolios marked as yours', accountsBox, webull),
+      // one account that isn't synced from Webull: its card would only repeat the summary, so its button moves up there
+      single && !single.webullAccount ? '' : panel(single ? 'Account' : 'Accounts', 'Imported statements, synced Webull accounts and portfolios marked as yours', accountsBox, webull),
       workingOrdersCard(),
       holdingsBox,
       riskBox,
@@ -459,7 +460,9 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     }
 
     function holdingsTable(list: RowView[], sum: number, combined: boolean) {
-      const shown = COLUMNS.filter((c) => columns.has(c.key) && (c.key !== 'accounts' || combined));
+      // until any dividend is known, Dividends is all "—" and Total return equals Price gain: leave both out (no repeats)
+      const anyDividends = list.some((x) => x.gain.dividends != null && x.gain.dividends !== 0);
+      const shown = COLUMNS.filter((c) => columns.has(c.key) && (c.key !== 'accounts' || combined) && (anyDividends || (c.key !== 'divs' && c.key !== 'total')));
       const sorted = [...list].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
       const td = (text: Node | string, cls = 'num', value?: number | null) => h('td', { class: cls, ...(value != null && Number.isFinite(value) ? { 'data-value': value } : {}) }, text);
       const divCell = (x: RowView) => {
@@ -574,6 +577,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
           h('b', { class: 'acct-hero-value num', title: `${one ? `Only ${one.name}` : 'All your accounts added together'}${cash ? `; includes ${usd(cash)} cash and other amounts` : ''}` }, usd(sum)),
           h('span', { class: `acct-hero-today num ${tone(d.usd)}`, title: 'Change since yesterday’s close on your shares' }, `${fmtDay(d.usd, d.pct)} today`),
           cash ? h('span', { class: 'acct-hero-sub' }, `${usd(cash)} in cash`) : '',
+          one && !one.webullAccount ? h('button', { type: 'button', class: 'btn small acct-hero-btn', title: 'Backtest, stress-test and optimise this account’s mix, or edit its holdings', onclick: () => openPortfolio(one.id) }, 'Analyse in Portfolios') : '',
         ),
         h(
           'dl',

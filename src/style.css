@@ -1683,7 +1683,7 @@ input[type='radio'] {
 }
 
 .impact-badge {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -5003,7 +5003,7 @@ a.btn {
 }
 
 .holding-tag {
-  font-size: 10.5px;
+  font-size: 11px;
   border-radius: 999px;
   padding: 1px 7px;
   white-space: nowrap;
@@ -13338,7 +13338,7 @@ select.input,
     font-size: 17px;
   }
   .mon-city {
-    font-size: 10.5px;
+    font-size: 11px;
     letter-spacing: 0.04em;
   }
   .mon-state {
@@ -13410,7 +13410,7 @@ select.input,
 }
 .anr-col small,
 .eps-col small {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--faint);
   white-space: nowrap;
 }
@@ -13457,7 +13457,7 @@ select.input,
 .eps-act.up { background: var(--up); }
 .eps-act.down { background: var(--down); }
 .eps-pct {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -13674,4 +13674,171 @@ select.input,
 .rv-dot.target .rv-label {
   fill: var(--text-strong);
   font-weight: 600;
+}
+
+/* ======================================================================================================================
+   Bloomberg-organised finish (owner, 2026-11-18: "a full rework towards Bloomberg", design as well as functions).
+   Bloomberg's layout language in the platform's own palette (spec 6.0: never its amber-on-black brand): dense panels
+   separated by thin tinted title bars rather than floating cards, hairline dividers, small corners, no drop shadows,
+   tight table rows with banded headers, compact stat tiles, a slim page title. The chrome (rail, top bar, pop-ups)
+   keeps its glass; the Home greeting keeps its glow.
+   ====================================================================================================================== */
+:root {
+  --bb-radius: 6px;
+  --bb-pad: 12px;
+  --bb-band: color-mix(in srgb, var(--section-accent) 9%, var(--surface));
+  --bb-panel: var(--surface);
+  --bb-row: 5px;
+}
+/* panels and tiles: flat, hairline, small corners */
+.panel,
+.sv-panel,
+.fn-tile,
+.stat-cards .stat-card,
+.mm-tile,
+.cal-week-day,
+.pl-col,
+.acct-hero,
+.mon-clock,
+.ts-more > summary {
+  background: var(--bb-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--bb-radius);
+  box-shadow: none;
+}
+.panel:hover,
+.sv-panel:hover,
+.fn-tile:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--section-accent) 28%, transparent);
+}
+.panel {
+  padding: var(--bb-pad);
+}
+.sv-panel {
+  padding: 0 var(--bb-pad) var(--bb-pad);
+  margin-bottom: 10px;
+}
+/* the title bar: a thin tinted band across the top of every panel */
+.panel > .panel-head:first-child {
+  margin: calc(-1 * var(--bb-pad)) calc(-1 * var(--bb-pad)) 10px;
+  padding: 7px var(--bb-pad);
+  background: var(--bb-band);
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--bb-radius) var(--bb-radius) 0 0;
+}
+.sv-panel > .sv-panel-title:first-child {
+  margin: 0 calc(-1 * var(--bb-pad)) 10px;
+  padding: 7px var(--bb-pad);
+  background: var(--bb-band);
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--bb-radius) var(--bb-radius) 0 0;
+}
+.panel-head h3,
+.sv-panel-title,
+.fn-tile-head h3,
+.pr-sec h3 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-2-text);
+}
+.fn-tile-head {
+  padding: 7px var(--bb-pad);
+  background: var(--bb-band);
+}
+.fn-tile-body {
+  padding: 8px var(--bb-pad) 10px;
+}
+.fn-tile-foot,
+.sv-panel .sv-source,
+.panel .asof {
+  font-size: 11px;
+}
+/* page title: one slim line with a hairline under it */
+.ap-header {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.ap-header h1 {
+  font-size: 15px;
+  letter-spacing: 0.1em;
+}
+.ap-body {
+  gap: 10px;
+}
+.sv-grid {
+  gap: 10px;
+}
+/* stat tiles: compact label over value */
+.stat-card {
+  padding: 8px 12px;
+}
+.stat-label {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+.stat-value {
+  font-size: 18px;
+}
+/* tables: banded header, tight rows, faint row lines */
+.data-table th,
+.sv-table th,
+.mon-table thead th,
+.rv-table thead th,
+.hp-table th {
+  background: color-mix(in srgb, var(--raised) 55%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.data-table td,
+.sv-table td,
+.sv-table th[scope='row'] {
+  padding-top: var(--bb-row);
+  padding-bottom: var(--bb-row);
+}
+.data-table tbody tr:hover td,
+.sv-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--section-accent) 7%, transparent);
+}
+.kv {
+  gap: 5px 14px;
+}
+/* key/value lists read like Bloomberg's label | value rows: a faint rule between rows */
+.kv dt,
+.kv dd {
+  padding-bottom: 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 45%, transparent);
+}
+.kv dt:nth-last-of-type(1),
+.kv dd:last-child {
+  border-bottom: 0;
+}
+/* buttons and inputs: tighter, small corners */
+.btn,
+.input,
+select.input,
+.segmented,
+.icon-btn {
+  border-radius: 5px;
+}
+.segmented button {
+  border-radius: 3px;
+}
+/* the Home greeting keeps its glow, with the same corner language */
+.home > .home-hero {
+  border-radius: 10px;
+}
+.mon-clock {
+  padding: 8px 12px;
+}
+.acct-hero {
+  padding: 16px 18px;
+}
+.acct-hero-btn {
+  margin-top: 8px;
 }
