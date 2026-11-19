@@ -3,6 +3,7 @@
  * grid, and a panel whose footer always says where its numbers come from and when.
  */
 import { h } from '../ui/dom';
+import { icon } from '../ui/icons';
 import { DASH, fmtDate } from './format';
 import { HELPER_NOT_RUNNING } from '../data/schwab';
 
@@ -46,6 +47,10 @@ export function panel(title: string, source: string, asOf: number | string | nul
     'section',
     { class: 'sv-panel' },
     h('h3', { class: 'sv-panel-title' }, title),
+    h('button', { type: 'button', class: 'icon-btn sv-float', title: 'Pop out into a window', 'aria-label': `Pop out ${title}`, onclick: (e: Event) => {
+        const target = (e.currentTarget as HTMLElement).closest<HTMLElement>('.sv-panel');
+        if (target) void import('../ui/floatPanel').then((m) => m.floatPanel(target, title));
+      } }, icon('float', 14)),
     ...children,
     h('p', { class: 'sv-source muted tiny' }, `Source: ${source}${when ? ` · as of ${when}` : ''}`),
   );

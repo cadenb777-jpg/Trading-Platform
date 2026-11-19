@@ -599,6 +599,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
       onRefresh: p.onRefresh,
       onPopOut: p.open?.go,
       popOutLabel: p.open?.label,
+      floatTarget: () => head.closest<HTMLElement>('.wd'),
       collapse: { body, collapsed: !!layout.items.find((i) => i.id === id)?.collapsed, onToggle: (c) => saveLayout(updateWidget(layout, id, { collapsed: c })) },
     });
     const frame = h('section', { class: `panel wd ${p.cls ?? ''}`, 'data-widget': id, 'aria-label': def.title }, head, body);
