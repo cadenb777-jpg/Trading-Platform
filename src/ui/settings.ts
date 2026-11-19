@@ -14,7 +14,8 @@ import { deliverySummary } from './alertsLogic';
 import { diagnosticsButton } from './diagnostics';
 import { updateCheckRow } from './updateCheck';
 import { h, openModal, toast } from './dom';
-import { currentTheme, setTheme, type ThemeName } from './theme';
+import { currentLook, currentTheme, setLook, setTheme, type LookName, type ThemeName } from './theme';
+import { flashEnabled, setFlashEnabled } from '../term/flash';
 
 export interface PlatformSettings {
   aiKeySet: boolean;
@@ -476,7 +477,23 @@ function appearanceRow(): HTMLElement[] {
       ),
     );
   draw();
-  return [h('h3', { class: 'settings-section' }, 'Appearance'), h('div', { class: 'settings-row' }, h('div', { class: 'settings-label' }, h('b', {}, 'Theme')), seg), ...chartRows()];
+  const lookSeg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Look' });
+  const drawLook = () =>
+    lookSeg.replaceChildren(
+      ...(['terminal', 'classic'] as LookName[]).map((t) =>
+        h('button', { type: 'button', class: currentLook() === t ? 'active' : '', 'aria-pressed': String(currentLook() === t), onclick: () => (setLook(t), drawLook()) }, t === 'terminal' ? 'Terminal' : 'Classic'),
+      ),
+    );
+  drawLook();
+  const flashBox = h('input', { type: 'checkbox', checked: flashEnabled() }) as HTMLInputElement;
+  flashBox.addEventListener('change', () => setFlashEnabled(flashBox.checked));
+  return [
+    h('h3', { class: 'settings-section' }, 'Appearance'),
+    h('div', { class: 'settings-row' }, h('div', { class: 'settings-label' }, h('b', {}, 'Theme')), seg),
+    h('div', { class: 'settings-row' }, h('div', { class: 'settings-label' }, h('b', {}, 'Look')), h('p', { class: 'muted small' }, 'Terminal: dense screens in one monospace font with glass panels. Classic: the earlier, roomier look.'), lookSeg),
+    h('div', { class: 'settings-row' }, h('label', { class: 'check-item' }, flashBox, h('b', {}, 'Flash prices when they change')), h('p', { class: 'muted small' }, 'One soft tint that fades, at most every 2 seconds per number. Off when your system asks for reduced motion.')),
+    ...chartRows(),
+  ];
 }
 
 /** Chart: one switch for the decorative motion (saved in this browser). "Reduce motion" in the system turns it off. */

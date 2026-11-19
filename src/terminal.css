@@ -1,0 +1,388 @@
+/* ======================================================================================================================
+   Terminal look (owner, 2026-11-19: "the terminal feel is how I want most of it to feel, but still the Apple look:
+   the glassiness, beautiful"). Bloomberg's density in the platform's own finish:
+     - one font everywhere: TP Mono (JetBrains Mono with a plain zero, src/fonts, scripts/make_tp_mono.py);
+     - near-black page, frosted-glass panels (blur + saturation, a faint top highlight), hairline rules, small corners;
+     - amber function codes and panel titles, sky blue for anything clickable, green/red only for up/down;
+     - dense tables: 12px, tight rows, right-aligned numbers, banded groups;
+     - calm change flashes (src/term/flash.ts): one soft tint that fades, never a blink.
+   Switched on by :root[data-look='terminal'] (Settings > Appearance > Look; the default). Classic is the earlier look.
+   ====================================================================================================================== */
+@font-face { font-family: 'TP Mono'; font-weight: 400; font-display: swap; src: url('./fonts/tp-mono-400.woff2') format('woff2'); }
+@font-face { font-family: 'TP Mono'; font-weight: 500; font-display: swap; src: url('./fonts/tp-mono-500.woff2') format('woff2'); }
+@font-face { font-family: 'TP Mono'; font-weight: 600; font-display: swap; src: url('./fonts/tp-mono-600.woff2') format('woff2'); }
+@font-face { font-family: 'TP Mono'; font-weight: 700; font-display: swap; src: url('./fonts/tp-mono-700.woff2') format('woff2'); }
+
+:root[data-look='terminal'] {
+  --font-term: 'TP Mono', 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+  --font-ui: var(--font-term);
+  --font-display: var(--font-term);
+  --font-mono: var(--font-term);
+  --fs-base: 12.5px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 14px;
+  --fs-xl: 16px;
+  --fs-2xl: 18px;
+  --fs-display: 26px;
+  --bb-radius: 7px;
+  --bb-pad: 10px;
+  --radius: 5px;
+  --radius-lg: 7px;
+  --term-amber: #ffb340;
+  --term-amber-dim: #c98a2a;
+  --term-label: #6fb6ff;
+}
+:root[data-look='terminal']:not([data-theme='light']) {
+  --bg: #030405;
+  --bg-deep: #020203;
+  --bg-chart: #07090b;
+  --surface: #0b0d10;
+  --raised: #12161a;
+  --high: #1a2026;
+  --line: #ffffff12;
+  --line-strong: #ffffff24;
+  --text: #e9edf1;
+  --muted: #9aa4ae;
+  --faint: #67717c;
+  --accent-2: var(--term-amber);
+  --accent-2-text: var(--term-amber);
+  --glass-panel: color-mix(in srgb, #0d1014 70%, transparent);
+  --glass-band: color-mix(in srgb, #ffffff 4%, transparent);
+  --glass-edge: inset 0 1px 0 #ffffff0d, 0 0 0 1px #ffffff10, 0 12px 32px #00000066;
+  --bb-panel: var(--glass-panel);
+  --bb-band: linear-gradient(180deg, #ffffff0a, #ffffff04);
+}
+:root[data-look='terminal'][data-theme='light'] {
+  --term-amber: #a35f00;
+  --term-amber-dim: #8a5200;
+  --term-label: #1d5fa8;
+  --accent-2-text: var(--term-amber);
+  --glass-panel: color-mix(in srgb, #ffffff 74%, transparent);
+  --glass-edge: inset 0 1px 0 #ffffffcc, 0 0 0 1px #0b1b2e14, 0 10px 28px #0b1b2e14;
+  --bb-panel: var(--glass-panel);
+  --bb-band: linear-gradient(180deg, #0b1b2e08, #0b1b2e03);
+}
+
+/* type: one monospace face, slightly tighter, numbers line up everywhere */
+:root[data-look='terminal'] body {
+  font-family: var(--font-term);
+  font-size: var(--fs-base);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+:root[data-look='terminal'] :is(input, select, textarea, button) {
+  font-family: var(--font-term);
+}
+
+/* glass on every panel: frosted, a faint top highlight and depth; the title band stays crisp */
+:root[data-look='terminal'] :is(.panel, .sv-panel, .fn-tile, .tp, .stat-cards .stat-card, .mm-tile, .acct-hero, .mon-clock) {
+  background: var(--bb-panel);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(22px) saturate(160%);
+  box-shadow: var(--glass-edge);
+  border-color: transparent;
+}
+:root[data-look='terminal'] :is(.panel-head h3, .sv-panel-title, .fn-tile-head h3, .pr-sec h3, .section-title, .settings-section) {
+  font-family: var(--font-term);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--term-amber);
+}
+
+/* tables: dense rows, blue column labels, banded group rows */
+:root[data-look='terminal'] table th {
+  color: var(--term-label);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+:root[data-look='terminal'] :is(table td, table th) {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+/* page titles: one slim amber line */
+:root[data-look='terminal'] .ap-header h1 {
+  font-family: var(--font-term);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-strong);
+}
+
+/* the Home greeting keeps its size and glow, now in the terminal face */
+:root[data-look='terminal'] :is(.brief-hello, .hero-greeting, .greeting) {
+  font-family: var(--font-term);
+  letter-spacing: -0.03em;
+}
+
+/* ---------- terminal panels (src/term/kit.ts) ---------- */
+.tp {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-radius: var(--bb-radius, 7px);
+  background: var(--bb-panel, var(--surface));
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.tp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 10px;
+  background: var(--bb-band);
+  border-bottom: 1px solid var(--line);
+  flex: none;
+}
+.tp-code {
+  font: 700 11.5px var(--font-mono);
+  color: var(--term-amber, var(--accent-2-text));
+  letter-spacing: 0.04em;
+}
+.tp-title {
+  flex: none;
+  max-width: 70%;
+  margin: 0;
+  font: 600 12px var(--font-mono);
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-src {
+  margin-left: auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-link {
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font: 500 11px var(--font-mono);
+  cursor: pointer;
+  padding: 2px 0 2px 6px;
+  white-space: nowrap;
+}
+.tp-link:hover { text-decoration: underline; }
+.tp-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.tp-note {
+  flex: none;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 5px 10px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--faint);
+}
+.tp-note-act {
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* dense tables */
+.tt {
+  width: 100%;
+  border-collapse: collapse;
+  font: 12px/1.35 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.tt th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 8px;
+  text-align: right;
+  font-weight: 500;
+  color: var(--term-label, var(--accent-text));
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.tt td {
+  padding: 2px 8px;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--text);
+}
+.tt :is(th, td).l { text-align: left; }
+.tt td.l { color: var(--text-strong); max-width: 0; overflow: hidden; text-overflow: ellipsis; width: 40%; }
+.tt tbody tr:nth-child(even of :not(.tt-band)) td { background: color-mix(in srgb, var(--text) 2.5%, transparent); }
+.tt .tt-n { width: 30px; text-align: left; color: var(--faint); padding-right: 0; }
+.tt .tt-band th {
+  position: static;
+  text-align: left;
+  color: var(--term-amber, var(--accent-2-text));
+  font-weight: 600;
+  background: color-mix(in srgb, var(--term-amber, var(--accent-2)) 6%, transparent);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  padding: 3px 8px;
+}
+.tt tr.tt-open { cursor: pointer; }
+.tt tr.tt-open:hover td { background: var(--row-hover); }
+.tt tr.tt-open:focus-visible { outline: 1px solid var(--focus); outline-offset: -1px; }
+.tt td.up { color: var(--up-text); }
+.tt td.down { color: var(--down-text); }
+.tt td.dim { color: var(--muted); }
+
+/* calm change flash: one soft tint that fades (never a blink); none with reduced motion */
+.tk-up { animation: tk-up 900ms ease-out; }
+.tk-down { animation: tk-down 900ms ease-out; }
+@keyframes tk-up { from { background-color: color-mix(in srgb, var(--up) 22%, transparent); } to { background-color: transparent; } }
+@keyframes tk-down { from { background-color: color-mix(in srgb, var(--down) 22%, transparent); } to { background-color: transparent; } }
+@media (prefers-reduced-motion: reduce) {
+  .tk-up, .tk-down { animation: none; }
+}
+
+/* ---------- terminal pages: command strip, numbered tabs, a grid that fills the window ---------- */
+.term-page {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: calc(100dvh - 44px - 26px - 20px);
+  min-height: 560px;
+  padding: 10px 14px 0;
+  max-width: none;
+}
+.term-cmd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: var(--bb-radius, 7px);
+  background: var(--bb-panel, var(--surface));
+  box-shadow: var(--glass-edge, none);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(22px) saturate(160%);
+  flex: none;
+}
+.term-fn {
+  font: 700 12px var(--font-mono);
+  color: #120c00;
+  background: var(--term-amber, var(--accent-2));
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.06em;
+}
+.term-title {
+  margin: 0;
+  font: 600 13px var(--font-mono);
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+.term-clocks {
+  margin-left: auto;
+  display: flex;
+  gap: 14px;
+  font: 12px var(--font-mono);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.term-clock b { color: var(--text); font-weight: 600; }
+.term-clock i { font-style: normal; font-size: 11px; }
+.term-clock.open i { color: var(--up-text); }
+.term-clock.lunch i { color: var(--warn-text); }
+.term-clock.closed i { color: var(--faint); }
+.term-tabs {
+  display: flex;
+  gap: 2px;
+  flex: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.term-tabs button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 500 12px var(--font-mono);
+  padding: 5px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.term-tabs button b { color: var(--term-amber, var(--accent-2-text)); font-weight: 600; }
+.term-tabs button:hover { color: var(--text); background: color-mix(in srgb, var(--text) 5%, transparent); }
+.term-tabs button.on { color: var(--text-strong); background: color-mix(in srgb, var(--term-label, var(--accent)) 16%, transparent); box-shadow: inset 0 -2px 0 var(--term-label, var(--accent)); }
+.term-empty { margin: 0; padding: 10px; color: var(--faint); font-size: 12px; }
+.term-skel { height: 160px; margin: 10px; }
+.term-read { margin: 0; padding: 8px 10px; display: grid; grid-template-columns: max-content 1fr; gap: 5px 12px; font-size: 12px; line-height: 1.5; }
+.term-read dt { color: var(--term-amber, var(--accent-2-text)); font-weight: 600; }
+.term-read dd { margin: 0; color: var(--text); }
+.term-river { list-style: none; margin: 0; padding: 2px 0; }
+.term-story { display: grid; grid-template-columns: 34px 1fr auto; gap: 6px; padding: 3px 8px; font-size: 12px; cursor: pointer; align-items: baseline; }
+.term-story:nth-child(even) { background: color-mix(in srgb, var(--text) 2.5%, transparent); }
+.term-story:hover { background: var(--row-hover); }
+.term-story .tt-n { color: var(--faint); }
+.term-story.hot .term-headline { color: var(--text-strong); font-weight: 600; }
+.term-headline { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.term-meta { color: var(--faint); font-size: 11px; }
+.tt td.sym { color: var(--accent-text); font-weight: 600; width: 1%; }
+.tt td.spec { color: var(--muted); }
+.corr-tt td { text-align: center; }
+.corr-tt th { text-align: center; }
+.corr-tt { table-layout: fixed; }
+.corr-tt th:first-child, .corr-tt td.l { width: 46px; max-width: none; text-align: left; }
+.corr-tt td { padding: 2px 2px; line-height: 1.15; }
+.corr-tt td small { display: block; color: var(--faint); font-size: 11px; }
+.corr-tt td.c-diag { color: var(--faint); }
+.corr-tt td.c-changed { outline: 1px solid var(--term-amber, var(--accent-2)); outline-offset: -2px; }
+
+/* Monitor: three columns of panels; each column's last panel takes the leftover height and scrolls inside */
+.mon2-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 1.12fr) minmax(0, 0.92fr);
+  gap: 8px;
+  padding-bottom: 10px;
+}
+.mon2-col { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; }
+.mon2-col > .tp { flex: 0 1 auto; min-height: 84px; }
+.mon2-col > .tp:is(.m-wei, .m-fut) { flex: 1 1 300px; }
+.mon2-col > .tp.m-top { flex: 1 1 120px; }
+.mon2-grid .tp:not([data-views~='overview']) { display: none; }
+/* other tabs: only that tab's panels, in one or two wide columns */
+.mon2-grid:not([data-view='overview']) { display: block; overflow: auto; columns: 2 520px; column-gap: 8px; }
+.mon2-grid:not([data-view='overview']) .mon2-col { display: contents; }
+.mon2-grid:not([data-view='overview']) .tp { display: none; break-inside: avoid; margin-bottom: 8px; }
+.mon2-grid[data-view='equities'] .tp[data-views~='equities'],
+.mon2-grid[data-view='rates'] .tp[data-views~='rates'],
+.mon2-grid[data-view='cross'] .tp[data-views~='cross'],
+.mon2-grid[data-view='movers'] .tp[data-views~='movers'],
+.mon2-grid[data-view='news'] .tp[data-views~='news'] { display: flex; }
+.mon2-grid:not([data-view='overview']) .tp-body { overflow: visible; }
+.m-heat .tp-body { display: grid; place-items: center; padding: 10px; }
+
+@media (max-width: 1100px) {
+  .term-page { display: block; height: auto; min-height: 0; }
+  .term-page > * + * { margin-top: 8px; }
+  .mon2-grid { display: flex; flex-direction: column; flex: none; }
+  .mon2-col { min-height: auto; }
+  .mon2-col > .tp { min-height: auto; }
+  .mon2-col > .tp { flex: none !important; }
+  .mon2-grid .tp-body { overflow: visible; }
+  .term-clocks { display: none; }
+  .tt .hide-narrow { display: none; }
+}

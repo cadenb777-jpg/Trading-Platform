@@ -38,6 +38,34 @@ export function setTheme(name: ThemeName) {
   for (const fn of [...listeners]) fn();
 }
 
+export type LookName = 'terminal' | 'classic';
+const LOOK_KEY = 'tp-look';
+
+/** The look (terminal.css): 'terminal' (dense, one monospace face, glass panels; the default) or 'classic'. */
+export function currentLook(): LookName {
+  return document.documentElement.dataset.look === 'classic' ? 'classic' : 'terminal';
+}
+
+export function setLook(name: LookName) {
+  document.documentElement.dataset.look = name;
+  try {
+    localStorage.setItem(LOOK_KEY, name);
+  } catch {
+    // not remembered
+  }
+  for (const fn of [...listeners]) fn();
+}
+
+export function initLook() {
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem(LOOK_KEY);
+  } catch {
+    // ignore
+  }
+  document.documentElement.dataset.look = saved === 'classic' ? 'classic' : 'terminal';
+}
+
 /** Applies the saved theme (dark by default). Call once before the first page is built. */
 export function initTheme() {
   let saved: string | null = null;
@@ -46,6 +74,7 @@ export function initTheme() {
   } catch {
     // ignore
   }
+  initLook();
   setTheme(saved === 'light' ? 'light' : 'dark');
 }
 
