@@ -12,6 +12,7 @@ import { smtpCheckRow } from '../prospect/smtpSetting';
 import { dataConnectionsSection } from './connections';
 import { deliverySummary } from './alertsLogic';
 import { diagnosticsButton } from './diagnostics';
+import { updateCheckRow } from './updateCheck';
 import { h, openModal, toast } from './dom';
 import { currentTheme, setTheme, type ThemeName } from './theme';
 
@@ -416,7 +417,7 @@ function connectionCheck(): HTMLElement {
   } else {
     const v = helper.version ?? 0;
     const newest = helper.update ? Math.max(v, helper.update.latest ?? 0) : LATEST_HELPER_VERSION;
-    const how = helper.update ? 'click Update now in the banner at the top' : 'download the project ZIP again to update';
+    const how = 'click Check for updates below';
     rows.push(['Schwab helper', `Running, version ${v}${v < newest ? ` (newest is ${newest}: ${how})` : ' (up to date)'}`, v < newest ? 'warn' : 'ok']);
     const st = helper.status;
     rows.push(['Schwab data', st.status === 'live' ? 'Streaming live prices' : st.message || st.status, st.status === 'live' ? 'ok' : st.status === 'error' ? 'bad' : 'warn']);
@@ -429,6 +430,7 @@ function connectionCheck(): HTMLElement {
     { class: 'settings-row', id: 'settings-connection' },
     h('div', { class: 'settings-label' }, h('b', {}, 'Connection check')),
     ...rows.map(([label, text, tone]) => h('div', { class: `check-row ${tone}` }, h('span', { class: 'check-dot' }), h('b', {}, label), h('span', {}, text))),
+    helper.isConnected ? updateCheckRow() : null,
     loginBtn ? h('div', { class: 'ap-controls' }, loginBtn, h('span', { class: 'muted small' }, 'Opens Schwab’s login page on this computer; prices resume once you approve.')) : null,
     helper.problems.length ? h('p', { class: 'muted small' }, 'If something says unavailable, close the helper window and start it again. If that doesn’t help, send me the log file above.') : null,
   );
