@@ -22,6 +22,7 @@ import { icon, type IconName } from '../ui/icons';
 import { functionBar } from '../ui/functionBar';
 import { panelHeader } from '../ui/panel';
 import { marketMood } from '../home/mood';
+import { createMarketReadWidget } from '../term/readWidget';
 import { LAYOUT_KEY, WIDGETS, addWidget, defaultLayout, hiddenWidgets, moveWidget, nextSpan, parseLayout, removeWidget, updateWidget, type Layout, type WidgetId } from '../home/widgets';
 import type { ReadySetup } from '../home/brief';
 import { greeting, marketStatus } from '../ui/marketClock';
@@ -511,7 +512,9 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     open?: { label: string; go: () => void };
     cls?: string;
   }
+  const why = createMarketReadWidget();
   const parts: Record<WidgetId, WidgetParts> = {
+    read: { icon: 'pulse', body: [why.body], asOf: why.asOf, onRefresh: () => void why.refresh(), open: { label: 'Open the Monitor', go: () => (location.hash = '#monitor') } },
     mood: { icon: 'pulse', body: [marketMood()], open: { label: 'Open Markets', go: () => (location.hash = '#invest') } },
     indexes: {
       icon: 'chart',
@@ -738,6 +741,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     upcoming.refresh();
     void brief.refresh();
     void loadEdge();
+    void why.refresh();
     for (const c of cards) c.loadSparkline();
   }
   function start() {
@@ -765,6 +769,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
     setInterval(() => !el.hidden && helper.isConnected && upcoming.refresh(), 5 * 60 * 1000);
     setInterval(() => !el.hidden && helper.isConnected && document.visibilityState === 'visible' && void brief.refresh(), 2 * 60 * 1000);
     setInterval(() => !el.hidden && helper.isConnected && document.visibilityState === 'visible' && void loadEdge(), 2 * 60 * 1000);
+    setInterval(() => !el.hidden && helper.isConnected && document.visibilityState === 'visible' && void why.refresh(), 60 * 1000);
     briefKeys(el);
     setInterval(() => helper.isConnected && cards.forEach((c) => c.loadSparkline()), 5 * 60 * 1000);
     refreshNews();
