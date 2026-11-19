@@ -58,10 +58,17 @@ export function nowcast(gdpnow: Point[], gdp: Point[] | null): Nowcast | null {
   };
 }
 
-/** A figure to `d` decimals with a real minus sign, the sign taken from the rounded figure (never −0.0). */
+/** v rounded to `d` decimals the way it is printed (toFixed on the size, then the sign): the one rounding rule for
+ * figures, signs, sides and badges, so -0.005 is -0.01 everywhere and -0.004 is 0 everywhere. */
+export function rounded(v: number, d: number): number {
+  const t = Number(Math.abs(v).toFixed(d));
+  return t === 0 ? 0 : v < 0 ? -t : t;
+}
+
+/** A figure to `d` decimals with a real minus sign (never −0.0). */
 export function signed(v: number, d: number): string {
-  const t = Math.abs(v).toFixed(d);
-  return `${v < 0 && Number(t) !== 0 ? '−' : ''}${t}`;
+  const r = rounded(v, d);
+  return `${r < 0 ? '−' : ''}${Math.abs(r).toFixed(d)}`;
 }
 const pc = (v: number) => `${signed(v, 1)}%`;
 
@@ -80,9 +87,7 @@ export function nowcastWords(n: Nowcast): string {
 export interface Conditions {
   date: string;
   value: number;
-  /** share of the weeks loaded that were looser (lower) than today, 0-1 (FRED via the helper starts in 2006, not 1971) */
-  looserShare: number;
-  /** first week loaded */
+  /** first week loaded (FRED via the helper starts in 2006, not 1971) */
   since: string;
   /** weeks loaded, and how many were looser / tighter than today (ties are neither) */
   weeks: number;
@@ -105,7 +110,6 @@ export function conditions(nfci: Point[], anfci: Point[]): Conditions | null {
   return {
     date: latest.time,
     value: latest.value,
-    looserShare: looser / nfci.length,
     since: nfci[0].time,
     weeks: nfci.length,
     looser,
@@ -117,7 +121,7 @@ export function conditions(nfci: Point[], anfci: Point[]): Conditions | null {
 
 /** Plain words: zero is the index's own average since 1971 (its design); the share of weeks is over the weeks loaded. */
 export function conditionsWords(c: Conditions, day: (iso: string) => string): string {
-  const v = Math.round(c.value * 100) / 100;
+  const v = rounded(c.value, 2);
   const side = v < 0 ? 'looser than' : v > 0 ? 'tighter than' : 'at';
   const from = c.since.slice(0, 4);
   let t = `In the week to ${day(c.date)} the Chicago Fed’s index stood at ${signed(c.value, 2)}: money and credit were ${side} the index’s average since 1971 (zero).`;
@@ -138,7 +142,7 @@ export function conditionsWords(c: Conditions, day: (iso: string) => string): st
     t += Math.abs(d) < 0.05 ? ' Little changed over the last 13 weeks.' : ` Over the last 13 weeks conditions ${d < 0 ? 'eased' : 'tightened'} by ${Math.abs(d).toFixed(2)}.`;
   }
   if (c.adjusted != null) {
-    const a = Math.round(c.adjusted * 100) / 100;
+    const a = rounded(c.adjusted, 2);
     t += ` Allowing for the state of the economy (ANFCI), ${a < 0 ? 'looser' : a > 0 ? 'tighter' : 'average'} too, at ${signed(c.adjusted, 2)}.`;
   }
   return t;

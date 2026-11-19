@@ -9,12 +9,23 @@ import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { openFredWindow } from '../ui/fredWindow';
 import { rangeTrack } from '../ui/viz';
-import { conditions, conditionsWords, nowcast, nowcastWords, quarterLabel, signed, type Point } from './conditions';
+import { conditions, conditionsWords, nowcast, nowcastWords, quarterLabel, rounded, signed, type Point } from './conditions';
 
 type Raw = { data: Point[] };
 /** One FRED series and its reply (the reply carries the fetch time for the as-of stamp). */
 const raw = (series: string) =>
   engineRequest<Raw>('macro.series', { series, raw: true, limit: 5000 }, 45_000).then((reply) => ({ reply, data: reply.data.filter((p) => Number.isFinite(p.value)) }));
+type Prov = { provenance?: { fetchedAt?: number; stale?: boolean } };
+/** The older of two replies (or the stale saved one), so a panel's stamp never looks fresher than its oldest figure. */
+const older = (a: unknown, b: unknown) => {
+  const pa = (a as Prov)?.provenance;
+  const pb = (b as Prov)?.provenance;
+  if (!pb) return a;
+  if (!pa) return b;
+  if (pb.stale && !pa.stale) return b;
+  if (pa.stale && !pb.stale) return a;
+  return (pb.fetchedAt ?? Infinity) < (pa.fetchedAt ?? Infinity) ? b : a;
+};
 const day = (iso: string) => new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 const link = (id: string, name: string, unit: string) => h('button', { class: 'link-btn', type: 'button', onclick: () => openFredWindow(id, name, unit) }, id);
 
@@ -40,8 +51,10 @@ function growthPanel(): HTMLElement {
   Promise.all([raw('GDPNOW'), raw('A191RL1Q225SBEA').catch(() => null)]).then(
     ([now, gdp]) => {
       // the reply's own fetch time (amber when it is a stale saved copy)
-      stamp.el.replaceWith(asOfStamp('fred', { reply: now.reply, source: 'FRED' }).el);
-      const n = nowcast(now.data, gdp?.data ?? null);
+      stamp.el.replaceWith(asOfStamp('fred', { reply: gdp ? older(now.reply, gdp.reply) : now.reply, source: 'FRED' }).el);
+      // an empty official series is as good as none: no comparison, and it is said
+      const official = gdp?.data.length ? gdp.data : null;
+      const n = nowcast(now.data, official);
       if (!n) {
         body.replaceChildren(h('p', { class: 'muted small' }, 'FRED sent no GDPNow estimates right now.'));
         return;
@@ -49,7 +62,7 @@ function growthPanel(): HTMLElement {
       body.replaceChildren(
         h('div', { class: 'md-head' }, h('b', { class: 'md-value num' }, `${signed(n.value, 1)}%`), h('span', { class: 'muted small' }, `${quarterLabel(n.quarter)}, a year’s pace${n.running ? ' (still being estimated)' : ''}`), infoTip('gdpNow')),
         h('p', { class: 'small' }, nowcastWords(n)),
-        gdp ? '' : h('p', { class: 'muted small' }, 'The official growth figures couldn’t be loaded, so there is no comparison or record right now.'),
+        official ? '' : h('p', { class: 'muted small' }, gdp ? 'FRED sent no official growth figures, so there is no comparison or record right now.' : 'The official growth figures couldn’t be loaded, so there is no comparison or record right now.'),
         h('p', { class: 'muted small' }, 'Source: FRED ', link('GDPNOW', 'GDPNow (Atlanta Fed)', '%'), ' (latest estimate per quarter) and ', link('A191RL1Q225SBEA', 'Real GDP growth (BEA)', '%'), ' (official real GDP growth, annualised). Higgins (2014). A reading of the economy, not a market signal.'),
       );
     },
@@ -64,7 +77,7 @@ function conditionsPanel(): HTMLElement {
   const section = panel('Financial conditions', 'How easy money and credit are, against their history', body, stamp.el);
   Promise.all([raw('NFCI'), raw('ANFCI').catch(() => null)]).then(
     ([nfci, anfci]) => {
-      stamp.el.replaceWith(asOfStamp('fred', { reply: nfci.reply, source: 'FRED' }).el);
+      stamp.el.replaceWith(asOfStamp('fred', { reply: anfci ? older(nfci.reply, anfci.reply) : nfci.reply, source: 'FRED' }).el);
       const c = conditions(nfci.data, anfci?.data ?? []);
       if (!c) {
         body.replaceChildren(h('p', { class: 'muted small' }, 'FRED sent no financial conditions readings right now.'));
@@ -72,7 +85,7 @@ function conditionsPanel(): HTMLElement {
       }
       const lo = Math.min(...nfci.data.map((p) => p.value));
       const hi = Math.max(...nfci.data.map((p) => p.value));
-      const v = Math.round(c.value * 100) / 100;
+      const v = rounded(c.value, 2);
       body.replaceChildren(
         h(
           'div',

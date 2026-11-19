@@ -56,7 +56,8 @@ describe('Financial conditions', () => {
   it('where today sits, how it moved, and the adjusted index', () => {
     const c = conditions(nfci, anfci)!;
     // looser (lower) than -0.478: -0.6, -0.55, -0.5 -> 3 of 18
-    expect(c.looserShare).toBeCloseTo(3 / 18, 9);
+    // tighter (higher): 0.6, 0.2, -0.44, -0.45, four -0.46, five -0.47 and -0.473 = 14; looser: -0.6, -0.55, -0.5 = 3
+    expect([c.looser, c.tighter, c.weeks]).toEqual([3, 14, 18]);
     // 13 weeks back is -0.5 (position 4): -0.478 - (-0.5) = +0.022
     expect(c.change13w).toBeCloseTo(0.022, 9);
     expect(conditionsWords(c, day)).toBe(
@@ -75,6 +76,9 @@ describe('Financial conditions', () => {
     // today ties the tightest earlier week: no week was tighter (ties are neither)
     const tie = conditions(weeks([-0.5, 0.2, 0.9, 0.9], '2026-11-13'), [])!;
     expect(conditionsWords(tie, day)).toMatch(/No week since 2026 was tighter\./);
+    // -0.005 prints as -0.01 and is said as looser (one rounding rule for figure and side)
+    const half = conditions(weeks([0.3, -0.3, -0.005], '2026-11-13'), [])!;
+    expect(conditionsWords(half, day)).toMatch(/stood at −0\.01: money and credit were looser than/);
     // a reading that rounds to zero has no sign and no side
     const zero = conditions(weeks([0.3, -0.3, -0.004], '2026-11-13'), [{ time: '2026-11-13', value: 0.001 }])!;
     expect(conditionsWords(zero, day)).toMatch(/stood at 0\.00: money and credit were at the index’s average since 1971 \(zero\)\..*\(ANFCI\), average too, at 0\.00\.$/);

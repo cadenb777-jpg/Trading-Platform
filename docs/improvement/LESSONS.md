@@ -247,4 +247,5 @@ whenever the owner repeats or adds one.
   official figures includes revisions it couldn't know, so say so and give the median miss, not a hit rate; the
   comparison series failing must not hide the reading itself. Review: macro.series raw reads FRED from 2006 (macro.fred START),
   so "share of weeks" is since 2006 and must say so; panels built once in skeleton() never refreshed (now rebuilt on
-  every load, with Retry); ties count as neither looser nor tighter; signs come from the rounded figure.
+  Refresh, with Retry; the 30-minute timer leaves them alone so nothing jumps); ties count as neither looser nor tighter;
+  one rounding rule (rounded()) for figure, sign, side and badge, so -0.005 is -0.01 everywhere.

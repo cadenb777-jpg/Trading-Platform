@@ -168,7 +168,7 @@ export function createMacroPage() {
   const frame = pageFrame('Macro', 'The economy the way macro desks read it: the regime, the Fed, liquidity, the curve and every key series. From FRED and the US Treasury.', [
     stamp,
     ai.button,
-    h('button', { class: 'btn', title: 'Load fresh data now', onclick: () => (clearEngineCache('macro.'), load()) }, 'Refresh'),
+    h('button', { class: 'btn', title: 'Load fresh data now', onclick: () => (clearEngineCache('macro.'), load(true)) }, 'Refresh'),
   ]);
 
   // Tabs: the US dashboard (FRED) and World (macroWorld.ts). The choice is remembered in this browser.
@@ -330,7 +330,6 @@ export function createMacroPage() {
     frame.body.replaceChildren(
       ai.panel,
       readPanel,
-      // the Sahm rule, real time, with its record against NBER recession dates
       // the recession check, this quarter's growth and financial conditions: rebuilt on every load (Refresh, timer)
       fredSlot,
       boardPanel,
@@ -371,7 +370,8 @@ export function createMacroPage() {
   }
 
   let loading = false;
-  async function load() {
+  /** rebuild: the owner pressed Refresh (the 30-minute timer leaves the FRED panels as they are, so nothing jumps). */
+  async function load(rebuild = false) {
     if (loading) return;
     loading = true;
     try {
@@ -380,7 +380,7 @@ export function createMacroPage() {
         catalog = (await engineRequest<{ series: CatalogEntry[] }>('macro.catalog', {}, 15000)).series;
         skeleton();
       }
-      fredSlot.replaceChildren(sahmPanel(), rightNowPanels());
+      if (rebuild || !fredSlot.childElementCount) fredSlot.replaceChildren(sahmPanel(), rightNowPanels());
       note.textContent = '';
       const failures: string[] = [];
       await Promise.all([
@@ -407,7 +407,7 @@ export function createMacroPage() {
     start() {
       setTab(tab);
       // Economic data changes at most daily; check again every 30 minutes while the page is open.
-      timer ??= setInterval(load, 30 * 60 * 1000);
+      timer ??= setInterval(() => load(), 30 * 60 * 1000);
     },
     stop() {
       clearInterval(timer);
