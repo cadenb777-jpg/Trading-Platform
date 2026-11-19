@@ -13,6 +13,7 @@ import { infoTip } from '../ui/glossary';
 import { fedOddsPanel } from '../edge/fedOdds';
 import { netLiquidityPanel } from '../edge/netLiquidity';
 import { sahmPanel } from '../macro/sahmView';
+import { rightNowPanels } from '../macro/conditionsView';
 import { percentileNow, regime, sparkPoints, valueAgo, type Point, type RegimeInput } from '../macro/monitor';
 import { createWorldTab } from './macroWorld';
 
@@ -330,6 +331,8 @@ export function createMacroPage() {
       readPanel,
       // the Sahm rule, real time, with its record against NBER recession dates
       sahmPanel(),
+      // this quarter's growth nowcast and financial conditions, side by side
+      rightNowPanels(),
       boardPanel,
       h('div', { class: 'xe-grid' }, fedOddsPanel(), netLiquidityPanel()),
       curvePanel,

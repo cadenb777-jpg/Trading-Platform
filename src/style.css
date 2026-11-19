@@ -11352,6 +11352,8 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .rb-bar.two { background: var(--viz-2); }
 .rb-bar.base { background: color-mix(in srgb, var(--muted) 60%, transparent); }
 .rb-val { text-align: right; color: var(--text-strong); }
+/* Macro → Growth this quarter and Financial conditions */
+.cond-panel .viz-track-bar { background: color-mix(in srgb, var(--muted) 30%, transparent); }
 /* Macro → Recession check (Sahm rule) */
 .sahm-panel .viz-range { max-width: 34rem; }
 /* a neutral track: low is the good end here, so no red-to-green gradient */
