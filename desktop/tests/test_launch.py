@@ -49,6 +49,7 @@ class RunApp(unittest.TestCase):
                 mock.patch.object(launch.console, 'show'), \
                 mock.patch.object(launch.subprocess, 'Popen', side_effect=lambda *a, **k: next(procs)) as popen, \
                 mock.patch.object(launch, 'helper_running', return_value=running), \
+                mock.patch.object(launch, 'replace_old_helper', return_value=False), \
                 mock.patch.object(launch.desktop_update, 'restore') as restore, \
                 mock.patch.object(launch.splash, 'wait_for_enter'), mock.patch.object(launch.splash, 'ok'), \
                 mock.patch.object(launch.splash, 'warn'), mock.patch.object(launch.splash, 'fail'):
@@ -95,3 +96,35 @@ class RunApp(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class OldHelper(unittest.TestCase):
+    """An older helper still running after an update is replaced, never reused ("it says helper 82")."""
+
+    def run_it(self, running, on_disk, on_port=None):
+        stopped = []
+        with mock.patch.object(launch, 'python_on_port', return_value=on_port):
+            done = launch.replace_old_helper(lambda s: None, running=running, on_disk=on_disk,
+                                             stop=lambda pid: stopped.append(pid) or True, wait=lambda port: True)
+        return done, stopped
+
+    def test_an_older_noted_helper_is_stopped(self):
+        self.assertEqual(self.run_it({'pid': 42, 'version': 89, 'port': 8765}, 90), (True, [42]))
+
+    def test_the_same_version_is_kept(self):
+        self.assertEqual(self.run_it({'pid': 42, 'version': 90, 'port': 8765}, 90), (False, []))
+
+    def test_a_helper_from_before_the_note_is_found_by_its_port(self):
+        self.assertEqual(self.run_it(False, 90, on_port=7), (True, [7]))
+
+    def test_nothing_python_on_the_port_is_left_alone(self):
+        self.assertEqual(self.run_it(False, 90, on_port=None), (False, []))
+
+    def test_only_a_python_process_counts(self):
+        class Done:
+            def __init__(self, out):
+                self.stdout = out
+        outs = iter([Done('p123\ncnode\n'), Done('')])
+        self.assertIsNone(launch.python_on_port(8765, run=lambda *a, **k: next(outs)) if os.name != 'nt' else None)
+        outs = iter([Done('p123\ncPython\n')])
+        self.assertEqual(launch.python_on_port(8765, run=lambda *a, **k: next(outs)), 123)

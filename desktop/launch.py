@@ -22,6 +22,7 @@ import desktop_update  # noqa: E402
 import shortcut  # noqa: E402  (the Trading Terminal icon on your desktop)
 from tp_desktop import console, progress  # noqa: E402  (hiding the helper's window; the start screen's progress)
 import private  # noqa: E402  (private mode: the platform from your own copy of the code)
+import codeupdate  # noqa: E402  (git pull for a copy made with git; which helper is running)
 
 
 def desktop_parts(bar, log):
@@ -138,7 +139,8 @@ def gui_main():
     bar = FileBar(PROGRESS).start()
     log = splash.open_log()
     updated = None
-    before = tree('desktop') if mine else None
+    clone = mine or private.is_clone()
+    before = tree('desktop') if clone else None
     try:
         if mine:
             bar.stage('Getting the latest changes...', 10, expect_seconds=4)
@@ -150,9 +152,14 @@ def gui_main():
         else:
             bar.stage('Checking for a newer version...', 10, expect_seconds=3)
             try:
-                updated = None if private.is_clone() else desktop_update.update_if_newer(lambda s: log.write(s + '\n'))
+                if clone:  # a copy made with git: git pull is its update (a download would overwrite it)
+                    log.write(private.pull(log) + '\n')
+                else:
+                    updated = desktop_update.update_if_newer(lambda s: log.write(s + '\n'))
             except desktop_update.UpdateError as err:
                 log.write(f'Update failed, nothing changed: {err}\n')
+            except private.StepError as err:  # no git: the copy you have still works
+                log.write(f'{err}\n')
             bar.finish()
         splash.prepare(bar, log)
         desktop_parts(bar, log)
@@ -178,7 +185,7 @@ def gui_main():
     finally:
         log.close()
     bar.stop()
-    if updated or (mine and before and tree('desktop') != before):
+    if updated or (clone and before and tree('desktop') != before):
         # the update changed the app itself: the start-up window closes and the new app opens
         progress.write(PROGRESS, pct=100, label='Updated: opening the new version...', state='restart')
         app.wait()
@@ -284,7 +291,7 @@ def main():
 def start_helper(env):
     """The website's helper, started here (None when one is already running). Without a console: in a console of its
     own, hidden (it shows itself only when it needs you, or from the tray menu)."""
-    if helper_running():
+    if helper_running() and not replace_old_helper(lambda s: None):
         return None
     if GUI:
         info = subprocess.STARTUPINFO()
@@ -328,7 +335,7 @@ def run_app(updated, url=None, app=None, helper=None, helper_started=False):
     if app is None:  # (the start-up window's app is already running when it showed this start's progress)
         app = subprocess.Popen([str(splash.venv_python()), '-m', 'tp_desktop', *app_args(url)], cwd=HERE, env=env)
     if not helper_started:
-        if helper_running():
+        if helper_running() and not replace_old_helper(splash.ok):
             splash.ok('Opening Trading Terminal, using the helper that is already running.')
         else:
             # the website's own helper, beside the app: its start screen, the Schwab login when it asks, its updates;
@@ -372,6 +379,65 @@ def stop_tree(proc):
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
         pass
+
+
+def replace_old_helper(say, port=8765, running=None, on_disk=None, stop=None, wait=None):
+    """An older helper still running (from before an update) is stopped so the new one starts: otherwise the app keeps
+    talking to the old version ("it says helper 82"). True when it was stopped. A helper of the same version is kept.
+    Helpers from version 90 note their process and version (codeupdate.note_running); an older one is found by the
+    port it listens on, and only stopped when that process is Python."""
+    disk = codeupdate.version_on_disk() if on_disk is None else on_disk
+    info = codeupdate.read_running() if running is None else running
+    if info and info.get('port', port) == port:
+        if disk is None or info['version'] >= disk:
+            return False
+        pid, old = info['pid'], info['version']
+    else:
+        pid, old = python_on_port(port), None  # helpers before 90 don't note themselves
+        if pid is None:
+            return False
+    say(f'Stopping the old helper{f" (version {old})" if old else ""} so version {disk} starts.')
+    if not (stop or stop_process)(pid):
+        return False
+    return (wait or wait_port_free)(port)
+
+
+def python_on_port(port, run=subprocess.run):
+    """The process listening on 127.0.0.1:port when it is Python (our helper), else None."""
+    try:
+        if os.name == 'nt':
+            out = run(['netstat', '-ano', '-p', 'TCP'], capture_output=True, text=True, timeout=10).stdout
+            pid = next((int(line.split()[-1]) for line in out.splitlines()
+                        if f':{port} ' in line and 'LISTENING' in line and line.split()[-1].isdigit()), None)
+            if pid is None:
+                return None
+            name = run(['tasklist', '/FI', f'PID eq {pid}', '/FO', 'CSV', '/NH'], capture_output=True, text=True, timeout=10).stdout
+        else:
+            out = run(['lsof', '-nP', f'-iTCP:{port}', '-sTCP:LISTEN', '-Fpc'], capture_output=True, text=True, timeout=10).stdout
+            pid = next((int(line[1:]) for line in out.splitlines() if line.startswith('p') and line[1:].isdigit()), None)
+            name = out
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+    return pid if pid and 'python' in name.lower() else None
+
+
+def stop_process(pid):
+    try:
+        if os.name == 'nt':
+            return subprocess.run(['taskkill', '/PID', str(pid), '/T', '/F'], capture_output=True, timeout=15).returncode == 0
+        os.kill(pid, 15)
+        return True
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def wait_port_free(port, limit=15):
+    end = time.time() + limit
+    while time.time() < end:
+        if not helper_running(port):
+            return True
+        time.sleep(0.3)
+    return False
 
 
 def helper_running(port=8765):

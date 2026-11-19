@@ -58,14 +58,28 @@ def tool(name):
 
 
 def pull(log):
-    """Latest changes from GitHub. Returns a short note; never stops the start (your copy still works offline)."""
-    git = tool('git')
-    if not git:
+    """Latest changes from GitHub (fast-forward only: your own edits are never merged or lost). Returns a short note;
+    never stops the start (your copy still works offline). A failure says why and how to fix it in plain words, and
+    uses the GitHub key from Settings when git's own sign-in is refused (codeupdate.py)."""
+    if not tool('git'):
         raise StepError('Git is not installed.', hints=GIT_HINTS)
-    code, tail = _run([git, 'pull', '--ff-only'], log, timeout=120)
-    if code != 0:
-        return 'Could not get the latest changes (no internet, or GitHub sign-in needed: see PRIVATE-MODE.md): using the copy you have. ' + (tail[-1] if tail else '')
-    return 'Up to date.' if any('Already up to date' in t for t in tail) else 'Got the latest changes.'
+    import codeupdate  # the helper folder is on the path (launch.py)
+    log.write('$ git pull --ff-only\n')
+    res = codeupdate.pull(ROOT, github_key())
+    log.write(f"{res}\n")
+    log.flush()
+    if not res['ok']:
+        return f"Could not get the latest changes: {res['reason']} {res['fix']} Using the copy you have."
+    return 'Got the latest changes.' if res['changed'] else 'Up to date.'
+
+
+def github_key():
+    """The GitHub key saved in Settings (needed while the repository is private), or ''."""
+    try:
+        import json
+        return json.loads((Path.home() / '.trading-platform' / 'settings.json').read_text(encoding='utf-8')).get('github_token') or ''
+    except (OSError, ValueError, AttributeError):
+        return ''
 
 
 def fingerprint(root=ROOT, log=None):

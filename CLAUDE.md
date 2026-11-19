@@ -36,6 +36,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Summaries: the helper fetches the article (decoding Google News links via batchexecute) and
   extracts key sentences (`summarize_text`); no paid AI.
   Changing the protocol means the owner must re-download the helper; say so.
+  Updates (v90): a copy made with git (or private mode) updates by `git pull --ff-only` every 10 minutes
+  (helper/codeupdate.py, plain-words reason + fix on failure; the GitHub key from Settings is used only after git's own
+  sign-in is refused, only for https://github.com/, via GIT_CONFIG_* env, never on the command line); other copies use
+  updater.py. Request `update.check` (Settings → Connection check → Check for updates) runs it now. The helper notes
+  pid + version in ~/.trading-platform/helper-running.json; the desktop launcher stops an older running helper
+  (pre-90: found by port, only if Python) instead of reusing it, and pulls a git copy on every start.
   Engine (helper/engine/): `@handler('name')` registers request types (flow.*, research.company, macro.*,
   portfolio.analyze/optimize, store.*); the browser calls them with `engineRequest()` and replies come back as
   type engine. Uses numpy/scipy, SEC EDGAR (contact email asked once), FRED CSV, CFTC, Yahoo dividends (total
