@@ -36,6 +36,9 @@ log = logging.getLogger('engine.companies')
 DB_PATH = Path.home() / '.trading-platform' / 'companies.db'
 DATA_DIR = Path.home() / '.trading-platform' / 'companies'
 CATALOG = 'https://data.sba.gov/api/3/action/package_show?id={}'
+#: when a dataset was renamed (the catalog answers 404), search for it instead
+SEARCH = 'https://data.sba.gov/api/3/action/package_search?q={}&rows=20'
+QUERIES = {'sba7a504': '7(a) 504 FOIA', 'ppp': 'PPP FOIA'}
 #: source id -> (catalog dataset, label)
 SOURCES = {'sba7a504': ('7a-504-foia', 'SBA 7(a) and 504 loans since 2020 (quarterly)'),
            'ppp': ('ppp-foia', 'SBA PPP loans of $150,000+ (2020-2021)')}
@@ -221,27 +224,52 @@ def check_header(header):
     raise EngineError('An SBA file has an unknown layout. Nothing was changed.')
 
 
-def pick_files(catalog, source='ppp'):
-    """The CSV files to read from one SBA catalog reply: the PPP $150k+ list, or the 7(a) since FY2020 and 504 since
-    FY2010 lists (the older 7(a) files are left out)."""
+def _newness(r):
+    """Sort key: the catalog's own dates, then the newest-looking date in the file name (e.g. 240930)."""
+    dates = ''.join(str(r.get(k) or '') for k in ('last_modified', 'created'))
+    nums = re.findall(r'\d{6,8}', r.get('url', ''))
+    return (str(r.get('last_modified') or r.get('created') or ''), max(nums) if nums else '', dates)
+
+
+def pick_groups(catalog, source='ppp'):
+    """The files to read from one SBA catalog reply, grouped by list (PPP $150k+; 7(a) since FY2020; 504 since
+    FY2010), newest copy first in each group. The catalog can keep older dated copies whose files were removed from
+    the website (a 404), so the next copy is the fallback, and one missing list never stops the others."""
     try:
         resources = catalog['result']['resources']
     except (KeyError, TypeError):
         raise EngineError('The SBA data catalog answered in an unexpected shape. Nothing was changed.')
-    picked = []
+    groups = {}
     for r in resources:
         if not isinstance(r, dict):
             continue
         url, label = r.get('url', ''), f"{r.get('name', '')} {r.get('url', '')}".lower()
         if not url.lower().endswith('.csv'):
             continue
+        key = None
         if source == 'ppp' and re.search(r'150k_?plus', label):
-            picked.append(url)
-        elif source == 'sba7a504' and (re.search(r'7\(?a\)?.*fy ?2020', label) or re.search(r'504.*fy ?2010', label)):
-            picked.append(url)
-    if not picked:
+            key = '150k'
+        elif source == 'sba7a504' and re.search(r'7\(?a\)?.*fy ?2020', label):
+            key = '7a'
+        elif source == 'sba7a504' and re.search(r'504.*fy ?2010', label):
+            key = '504'
+        if key:
+            groups.setdefault(key, []).append(r)
+    if not groups:
         raise EngineError(f'The SBA catalog lists no {SOURCES[source][1]} file right now.')
-    return picked
+    out = []
+    for rows in groups.values():
+        urls = []
+        for r in sorted(rows, key=_newness, reverse=True):
+            if r['url'] not in urls:
+                urls.append(r['url'])
+        out.append(urls)
+    return out
+
+
+def pick_files(catalog, source='ppp'):
+    """The newest file of each list (see pick_groups)."""
+    return [urls[0] for urls in pick_groups(catalog, source)]
 
 
 # ---------- database ----------
@@ -393,6 +421,44 @@ def status(con):
 
 # ---------- download ----------
 
+async def catalog(ctx, source, dataset):
+    """The dataset's catalog entry; when the SBA renamed it (HTTP 404), the dataset a search finds with that list."""
+    import urllib.parse
+    resp = await ctx.http.get(CATALOG.format(dataset), timeout=60)
+    if resp.status_code == 200:
+        return resp.json()
+    if resp.status_code != 404:
+        raise EngineError(f'the SBA data catalog answered HTTP {resp.status_code}')
+    found = await ctx.http.get(SEARCH.format(urllib.parse.quote(QUERIES[source])), timeout=60)
+    if found.status_code == 200:
+        for pkg in (found.json().get('result') or {}).get('results') or []:
+            entry = {'result': pkg}
+            try:
+                pick_groups(entry, source)
+                log.info('SBA dataset %s was renamed: using %s', dataset, pkg.get('name'))
+                return entry
+            except EngineError:
+                continue
+    raise EngineError(f'the SBA catalog no longer has the "{dataset}" dataset (HTTP 404) and a search found no replacement')
+
+
+async def download_first(ctx, urls, label, emit=None):
+    """The newest copy that is really on the website: a 404 moves on to the next copy. Returns (path, problem)."""
+    from . import prospect
+    problem = ''
+    for url in urls:
+        name = url.rsplit('/', 1)[-1]
+        JOB['text'] = f'Downloading {label}: {name}...'
+        try:
+            return await prospect.download(ctx, url, DATA_DIR / prospect._file_name(url), emit=emit, label=label), ''
+        except EngineError as err:
+            if 'no longer on the website' not in str(err):
+                raise
+            log.warning('SBA file %s is listed but missing (404); trying an older copy', name)
+            problem = f'the SBA lists {name} but the file is not on its website (404)'
+    return None, problem + (' and no other copy was there either' if len(urls) > 1 else '')
+
+
 async def run_download(ctx, emit=None):
     """Downloads every source (one failing doesn't stop the others) and rebuilds the list from what arrived."""
     from . import prospect
@@ -401,12 +467,12 @@ async def run_download(ctx, emit=None):
     try:
         for source, (dataset, label) in SOURCES.items():
             try:
-                resp = await ctx.http.get(CATALOG.format(dataset), timeout=60)
-                if resp.status_code != 200:
-                    raise EngineError(f'the SBA data catalog answered HTTP {resp.status_code}')
-                for url in pick_files(resp.json(), source):
-                    JOB['text'] = f'Downloading {label}: {url.rsplit("/", 1)[-1]}...'
-                    paths.append(await prospect.download(ctx, url, DATA_DIR / prospect._file_name(url), emit=emit, label=label))
+                for urls in pick_groups(await catalog(ctx, source, dataset), source):
+                    path, missing = await download_first(ctx, urls, label, emit)
+                    if path:
+                        paths.append(path)
+                    else:
+                        problems.append(f'{label}: {missing}')
             except Exception as err:
                 problems.append(f'{label}: {err}')
                 log.warning('Company source %s failed: %s', source, err)

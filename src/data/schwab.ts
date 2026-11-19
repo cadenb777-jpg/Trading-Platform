@@ -14,14 +14,14 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 90;
+export const LATEST_HELPER_VERSION = 91;
 /** The "Log in to Schwab" request (schwab_login) and the in-place re-login need this version. */
 export const SCHWAB_LOGIN_HELPER_VERSION = 47;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
 const CORE_HELPER_VERSION = 2;
 /** The analysis engine (Flow, Research, Macro, Portfolios, Clients, AI) needs at least this version. */
 const ENGINE_HELPER_VERSION = 6;
-const CORE_REQUESTS = new Set(['history', 'news', 'calendar', 'summary', 'update']);
+const CORE_REQUESTS = new Set(['history', 'news', 'calendar', 'summary', 'update', 'update.check']);
 /** Installing an update downloads the new version and its Python parts, which can take a few minutes. */
 const UPDATE_TIMEOUT_MS = 15 * 60 * 1000;
 /** The Investments page (markets, bonds, private funds) needs at least this version. */
@@ -120,7 +120,7 @@ export const realYieldReady = () => !helper.tooOld && (helper.version ?? 0) >= R
 export const FILER_RANK_HELPER_VERSION = 88;
 export const filerRankReady = () => !helper.tooOld && (helper.version ?? 0) >= FILER_RANK_HELPER_VERSION;
 /** Among US companies adds share count change and R&D per $ of sales. */
-export const FILER_RANK_V2_HELPER_VERSION = 90;
+export const FILER_RANK_V2_HELPER_VERSION = 91;
 export const filerRankV2Ready = () => !helper.tooOld && (helper.version ?? 0) >= FILER_RANK_V2_HELPER_VERSION;
 export const healthReady = () => !helper.tooOld && (helper.version ?? 0) >= HEALTH_HELPER_VERSION;
 /** The Strategy Lab's game.* requests and the Equilibrium-Prime assistant mode (ai.chat with `mode`) need this version. */
@@ -252,7 +252,26 @@ export interface HelperUpdate {
   message: string;
   /** Automatic updates on (helper v46+): the helper installs new versions itself, so the page shows no button. */
   auto?: boolean;
+  /** How this copy updates (helper v90+): 'git' = a copy made with git (git pull), 'download' = from the GitHub ZIP. */
+  mode?: 'git' | 'download';
+  /** A git copy's last check: changes waiting on GitHub, or why pulling failed and the fix. */
+  git?: { behind?: number | null; reason?: string; fix?: string };
 }
+
+/** The result of Check for updates (helper v90+). */
+export interface UpdateCheck {
+  ok: boolean;
+  mode: 'git' | 'download';
+  current: number;
+  latest?: number | null;
+  changed?: boolean;
+  restarting?: boolean;
+  message: string;
+  fix?: string;
+}
+
+/** Helpers from this version on answer Check for updates (older ones need one manual update). */
+export const CHECK_UPDATES_HELPER_VERSION = 90;
 
 type HelperMessage =
   | { type: 'status'; status: ConnectionStatus; message: string; version?: number; problems?: string[]; log?: string; update?: HelperUpdate }
@@ -358,6 +377,11 @@ class HelperConnection {
   /** Asks the helper to download and install the newest version; it restarts by itself and the page reconnects. */
   async installUpdate(): Promise<void> {
     await this.request({ type: 'update' }, undefined, UPDATE_TIMEOUT_MS);
+  }
+
+  /** Check for updates now: installs what it finds (git pull for a copy made with git) and restarts when needed. */
+  async checkForUpdates(): Promise<UpdateCheck> {
+    return (await this.request({ type: 'update.check' }, undefined, UPDATE_TIMEOUT_MS)) as unknown as UpdateCheck;
   }
 
   /** Calls `fn(true)` when the helper connects and `fn(false)` when it can't be reached. */

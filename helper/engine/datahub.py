@@ -614,7 +614,7 @@ def delete_prefix(prefix, keep=None):
 #: The scanner runs its own 30-minute migration first (it reads these rows to tell Alpaca bars from Schwab ones).
 MIGRATIONS = (
     ('alpaca-split-only', delete_prefix("('alpaca', '", ", 'split')")),
-    # helper 88's ranking field (seven readings); helper 90 saves nine under 'sec-filerrank-v2'
+    # helper 88's ranking field (seven readings); helper 91 saves nine under 'sec-filerrank-v2'
     ('filerrank-v1', delete_prefix("('sec-filerrank', ")),
 )
 
