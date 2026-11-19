@@ -7,11 +7,10 @@ import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { openFredWindow } from '../ui/fredWindow';
 import { rangeTrack } from '../ui/viz';
-import { missedRecessions, nowWords, recordWords, sahmSignals, sahmState, TRIGGER, WATCH, type MonthPoint } from './sahm';
+import { missedRecessions, month, nowWords, recordWords, sahmSignals, sahmState, TRIGGER, WATCH, type MonthPoint } from './sahm';
 
 type Raw = { data: MonthPoint[]; date?: string };
 
-const month = (iso: string) => new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 const STATE_LABEL = { triggered: 'Triggered', watch: 'Watch', calm: 'Calm' } as const;
 
 export function sahmPanel(): HTMLElement {
@@ -22,13 +21,12 @@ export function sahmPanel(): HTMLElement {
     h('div', { class: 'panel-head' }, h('h3', {}, 'Recession check'), h('span', { class: 'muted small' }, 'The Sahm rule: has unemployment risen enough to say a recession has begun?')),
     body,
   );
-  Promise.all([
-    engineRequest<Raw>('macro.series', { series: 'SAHMREALTIME', raw: true, limit: 2000 }, 45_000),
-    engineRequest<Raw>('macro.series', { series: 'USREC', raw: true, limit: 2000 }, 45_000),
-  ]).then(
+  // the recession dates only feed the record: if they fail, the reading still shows
+  const dates = engineRequest<Raw>('macro.series', { series: 'USREC', raw: true, limit: 2000 }, 45_000).catch(() => null);
+  Promise.all([engineRequest<Raw>('macro.series', { series: 'SAHMREALTIME', raw: true, limit: 2000 }, 45_000), dates]).then(
     ([s, u]) => {
       const sahm = s.data.filter((p) => Number.isFinite(p.value));
-      const usrec = u.data.filter((p) => Number.isFinite(p.value));
+      const usrec = (u?.data ?? []).filter((p) => Number.isFinite(p.value));
       if (!sahm.length) {
         body.replaceChildren(h('p', { class: 'muted small' }, 'FRED sent no Sahm rule readings right now.'));
         return;
@@ -38,6 +36,7 @@ export function sahmPanel(): HTMLElement {
       const signals = sahmSignals(sahm, usrec);
       const record = missedRecessions(sahm, usrec, signals);
       const top = Math.max(1, Math.ceil(latest.value * 2) / 2);
+      const low = Math.min(0, Math.floor(latest.value * 2) / 2);
       body.replaceChildren(
         h(
           'div',
@@ -48,9 +47,9 @@ export function sahmPanel(): HTMLElement {
           infoTip('sahmRule'),
         ),
         rangeTrack({
-          low: 0,
+          low,
           high: top,
-          value: Math.max(0, latest.value),
+          value: latest.value,
           format: (v) => v.toFixed(2),
           title: 'Unemployment rise above its 12-month low (points)',
           marks: [
@@ -60,8 +59,8 @@ export function sahmPanel(): HTMLElement {
           caption: `Marks: ${WATCH.toFixed(2)} worth watching · ${TRIGGER.toFixed(2)} the rule fires. Lower is better.`,
         }),
         h('p', { class: 'small' }, nowWords(latest)),
-        h('p', { class: 'small' }, recordWords(signals, sahm[0].time, usrec.length ? usrec[usrec.length - 1].time : null, record)),
-        signals.length
+        h('p', { class: 'small' }, u ? recordWords(signals, sahm[0].time, usrec.length ? usrec[usrec.length - 1].time : null, record) : 'Its record against past recessions needs the NBER recession dates (FRED USREC), which couldn’t be loaded right now.'),
+        u && signals.length
           ? h(
               'details',
               { class: 'sahm-record' },

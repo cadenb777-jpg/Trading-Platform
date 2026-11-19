@@ -2,6 +2,7 @@
 frames give them (checked live 2026-11-18: CY2025 frames for GrossProfit, OperatingIncomeLoss, NetIncomeLoss,
 NetCashProvidedByUsedInOperatingActivities and Revenues, Assets and InventoryNet at CY2025Q4I / CY2024Q4I)."""
 import datetime as dt
+import math
 import os
 import sys
 import unittest
@@ -106,8 +107,8 @@ class IssuanceAndResearch(unittest.TestCase):
     def test_coca_cola_shares(self):
         dur, rev, rev_prev, instants = frames()
         # WeightedAverageNumberOfDilutedSharesOutstanding CY2025 4,313 million, CY2024 4,320 million
-        shares = {KO: [4_313e6, END, 'x']}
-        shares_prev = {KO: [4_320e6, '2024-12-31', 'x']}
+        shares = {fr.SHARES_TAGS[0]: {KO: [4_313e6, END, 'x']}}
+        shares_prev = {fr.SHARES_TAGS[0]: {KO: [4_320e6, '2024-12-31', 'x']}}
         x = fr.readings(fr.company_rows(dur, rev, rev_prev, instants, shares, shares_prev)[KO])
         # ln(4,313 / 4,320) = ln(1 - 7 / 4,320) = -0.0016217
         self.assertAlmostEqual(x['shareIssuance'], -0.0016217, 6)
@@ -115,29 +116,45 @@ class IssuanceAndResearch(unittest.TestCase):
 
     def test_apple_research_and_shares(self):
         end, prev = '2025-09-27', '2024-09-28'
-        dur = {'ni': {1: [112_010e6, end, 'x']}, 'rnd': {1: [34_550e6, end, 'x']}}
+        dur = {'ni': {1: [112_010e6, end, 'x']}}
+        rnd = {'ResearchAndDevelopmentExpense': {1: [34_550e6, end, 'x']}}
         rev = {'RevenueFromContractWithCustomerExcludingAssessedTax': {1: [416_161e6, end, 'x']}}
         rev_prev = {'RevenueFromContractWithCustomerExcludingAssessedTax': {1: [391_035e6, prev, 'x']}}
-        shares = {1: [15_004_697e3, end, 'x']}
-        shares_prev = {1: [15_408_095e3, prev, 'x']}
-        x = fr.readings(fr.company_rows(dur, rev, rev_prev, {}, shares, shares_prev)[1])
+        shares = {fr.SHARES_TAGS[0]: {1: [15_004_697e3, end, 'x']}}
+        shares_prev = {fr.SHARES_TAGS[0]: {1: [15_408_095e3, prev, 'x']}}
+        x = fr.readings(fr.company_rows(dur, rev, rev_prev, {}, shares, shares_prev, rnd)[1])
         # 34,550 / 416,161
         self.assertAlmostEqual(x['rdIntensity'], 0.083021, 6)
         # ln(15,004.697 / 15,408.095): 2.6% fewer shares after buybacks
         self.assertAlmostEqual(x['shareIssuance'], -0.026530, 6)
 
-    def test_splits_are_not_issuance(self):
+    def test_splits_and_fallbacks(self):
         self.assertTrue(fr.split_like(2.0))
         self.assertTrue(fr.split_like(10.3))   # within 8% of 10-for-1
         self.assertTrue(fr.split_like(1 / 4))  # a 1-for-4 reverse split
+        self.assertTrue(fr.split_like(1 / 100))  # a 1-for-100 reverse split, never a 99% buyback
         self.assertFalse(fr.split_like(1.5))
         self.assertFalse(fr.split_like(0.97))
         dur, rev, rev_prev, instants = frames()
-        x = fr.readings(fr.company_rows(dur, rev, rev_prev, instants, {KO: [8_640e6, END, 'x']}, {KO: [4_320e6, '2024-12-31', 'x']})[KO])
-        self.assertIsNone(x['shareIssuance'])
+        D = fr.SHARES_TAGS[0]
+
+        def issuance(now, before, accn_now='a', accn_before='a', tag=D):
+            return fr.readings(fr.company_rows(dur, rev, rev_prev, instants, {tag: {KO: [now, END, accn_now]}}, {tag: {KO: [before, '2024-12-31', accn_before]}})[KO])['shareIssuance']
+
+        # both years from one filing are on one basis (the SEC restates for splits): a real doubling counts
+        self.assertAlmostEqual(issuance(8_640e6, 4_320e6), math.log(2))
+        # from two filings, a whole multiple is a split the older one wasn't restated for
+        self.assertIsNone(issuance(8_640e6, 4_320e6, 'a', 'b'))
+        self.assertAlmostEqual(issuance(4_313e6, 4_320e6, 'a', 'b'), -0.0016217, 6)
+        # a loss-maker tagging only basic shares is still read, from that one tag both years
+        self.assertAlmostEqual(issuance(110e6, 100e6, tag=fr.SHARES_TAGS[1]), math.log(1.1))
         # last year's count from a year that doesn't end about a year before is not compared
-        x = fr.readings(fr.company_rows(dur, rev, rev_prev, instants, {KO: [4_313e6, END, 'x']}, {KO: [4_320e6, '2024-06-30', 'x']})[KO])
+        x = fr.readings(fr.company_rows(dur, rev, rev_prev, instants, {D: {KO: [4_313e6, END, 'a']}}, {D: {KO: [4_320e6, '2024-06-30', 'a']}})[KO])
         self.assertIsNone(x['shareIssuance'])
+        # R&D under the drug makers' line when the plain one is missing
+        rnd = {fr.RND_TAGS[1]: {KO: [4_794.1e6, END, 'a']}}
+        x = fr.readings(fr.company_rows(dur, rev, rev_prev, instants, rnd=rnd)[KO])
+        self.assertAlmostEqual(x['rdIntensity'], 0.1, 6)  # 4,794.1 / 47,941
 
 
 class Ranking(unittest.TestCase):

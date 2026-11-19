@@ -3,12 +3,12 @@
  * assets (one row per reading: value, a 0-100 percentile track with the middle half shaded, plain words). Its own
  * request (research.filerrank, helper 88), painted when it arrives; maths in filerRank.ts and engine/filerrank.py.
  */
-import { engineRequest, filerRankReady } from '../data/schwab';
+import { engineRequest, filerRankReady, filerRankV2Ready } from '../data/schwab';
 import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { day } from './debtDilution';
-import { block, savedBeforeUpdate } from './panelBlock';
-import { comesWithUpdate, METRICS, missingWords, placeWords, standsOut, summaryWords, type FilerRank, type MetricInfo, type Ranked } from './filerRank';
+import { ARRIVES_WITH_UPDATE, block, savedBeforeUpdate } from './panelBlock';
+import { METRICS, missingWords, placeWords, savedBeforeWords, standsOut, summaryWords, type FilerRank, type MetricInfo, type Ranked } from './filerRank';
 
 function track(m: MetricInfo, r: Ranked): HTMLElement {
   const at = Math.max(0, Math.min(100, r.percentile));
@@ -33,7 +33,7 @@ function row(m: MetricInfo, r: Ranked | null | undefined, sent: boolean): HTMLEl
     h('span', { class: 'fr-label' }, m.label, infoTip(m.term)),
     h('b', { class: 'fr-value num' }, r ? m.format(r.value) : '—'),
     r ? track(m, r) : h('span', { class: 'fr-track empty', 'aria-hidden': 'true' }),
-    h('span', { class: 'fr-words small muted' }, r ? `${placeWords(r)} · median ${m.format(r.median)}` : sent ? missingWords : comesWithUpdate),
+    h('span', { class: 'fr-words small muted' }, r ? `${placeWords(r)} · median ${m.format(r.median)}` : sent ? missingWords : filerRankV2Ready() ? savedBeforeWords : ARRIVES_WITH_UPDATE),
   );
 }
 

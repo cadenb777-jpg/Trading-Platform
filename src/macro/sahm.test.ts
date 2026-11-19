@@ -64,5 +64,7 @@ describe('Sahm rule recession check', () => {
     expect(nowWords({ time: '2026-10-01', value: 0 })).toBe('In Oct 2026 the 3-month average unemployment rate was 0.00 points above its low of the year before. That is 0.50 points short of the 0.50 line: no sign of a recession from jobs.');
     expect(nowWords({ time: '2024-07-01', value: 0.53 })).toMatch(/at or past the 0\.50 line the rule uses: by its record, a recession has probably begun\.$/);
     expect([sahmState(0.29), sahmState(0.3), sahmState(0.5)]).toEqual(['calm', 'watch', 'triggered']);
+    // below zero (unemployment falling to new lows, as in 2021-22): said as below, the gap to the line from there
+    expect(nowWords({ time: '2022-03-01', value: -0.4 })).toBe('In Mar 2022 the 3-month average unemployment rate was 0.40 points below its low of the year before: unemployment was still falling. That is 0.90 points short of the 0.50 line: no sign of a recession from jobs.');
   });
 });

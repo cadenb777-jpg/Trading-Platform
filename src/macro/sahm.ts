@@ -72,7 +72,7 @@ export function sahmSignals(sahm: MonthPoint[], usrec: MonthPoint[]): Signal[] {
 export type SahmState = 'triggered' | 'watch' | 'calm';
 export const sahmState = (v: number): SahmState => (v >= TRIGGER ? 'triggered' : v >= WATCH ? 'watch' : 'calm');
 
-const month = (iso: string) => new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+export const month = (iso: string) => new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 const pts = (v: number) => v.toFixed(2);
 const WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
 /** 'eight', '14'; Cap for the start of a sentence. */
@@ -84,7 +84,11 @@ const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${word(n)}
 export function nowWords(latest: MonthPoint): string {
   const v = latest.value;
   const s = sahmState(v);
-  const base = `In ${month(latest.time)} the 3-month average unemployment rate was ${pts(v)} points above its low of the year before.`;
+  // below zero: unemployment is still falling to new lows (the 3-month average is under last year's lowest)
+  const base =
+    v < 0
+      ? `In ${month(latest.time)} the 3-month average unemployment rate was ${pts(-v)} points below its low of the year before: unemployment was still falling.`
+      : `In ${month(latest.time)} the 3-month average unemployment rate was ${pts(v)} points above its low of the year before.`;
   if (s === 'triggered') return `${base} That is at or past the ${pts(TRIGGER)} line the rule uses: by its record, a recession has probably begun.`;
   if (s === 'watch') return `${base} That is ${pts(TRIGGER - v)} points short of the ${pts(TRIGGER)} line: worth watching.`;
   return `${base} That is ${pts(TRIGGER - v)} points short of the ${pts(TRIGGER)} line: no sign of a recession from jobs.`;

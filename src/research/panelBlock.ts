@@ -11,11 +11,13 @@ export function block(title: string, term: string, ...body: (Node | string)[]) {
 
 /** The reply lacks lines a newer helper sends: either the helper is older, or the page holds a reply saved before the
  * update (it fills in at the next refresh). */
+export const ARRIVES_WITH_UPDATE = 'Arrives with the next helper update (it installs by itself).';
+
 export function savedBeforeUpdate(helperReady: boolean): HTMLElement {
   return h(
     'p',
     { class: 'muted small' },
-    helperReady ? 'This page is showing data saved before your helper update. It fills in when the company’s data next refreshes (Refresh, or within 5 minutes).' : 'Arrives with the next helper update (it installs by itself).',
+    helperReady ? 'This page is showing data saved before your helper update. It fills in when the company’s data next refreshes (Refresh, or within 5 minutes).' : ARRIVES_WITH_UPDATE,
   );
 }
 

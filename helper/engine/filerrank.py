@@ -48,11 +48,15 @@ BALANCE_DAYS = 10
 #: last year's figures must end about a year before this year's (days either side)
 YEAR_DAYS = 31
 
-DURATION = {'gp': 'GrossProfit', 'op': 'OperatingIncomeLoss', 'ni': 'NetIncomeLoss', 'cfo': 'NetCashProvidedByUsedInOperatingActivities',
-            'rnd': 'ResearchAndDevelopmentExpense'}
-#: diluted weighted-average shares for the year (unit 'shares'), this year and last
-SHARES_TAG = 'WeightedAverageNumberOfDilutedSharesOutstanding'
-#: a share count that moved by a whole multiple (within this) is a split, not issuance (as debtDilution.looksLikeSplit)
+DURATION = {'gp': 'GrossProfit', 'op': 'OperatingIncomeLoss', 'ni': 'NetIncomeLoss', 'cfo': 'NetCashProvidedByUsedInOperatingActivities'}
+#: R&D: the plain line first, else the one drug makers use that leaves out acquired in-process R&D (117 filers in CY2025)
+RND_TAGS = ('ResearchAndDevelopmentExpense', 'ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost')
+#: weighted-average shares for the year (unit 'shares'): diluted first, else basic (195 more filers in CY2025, mostly
+#: loss-makers, whose diluted count equals the basic one); this year and last always from the same tag
+SHARES_TAGS = ('WeightedAverageNumberOfDilutedSharesOutstanding', 'WeightedAverageNumberOfSharesOutstandingBasic')
+#: when the two years come from different filings, a count that moved by about a whole multiple (within this) is a
+#: split the older filing wasn't restated for (as debtDilution.looksLikeSplit); within one filing both years are
+#: already on the same basis (the SEC frames take last year's figure from the newest filing that reports it)
 SPLIT_TOLERANCE = 0.08
 REVENUE_TAGS = ('RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues')
 #: the second revenue tag replaces the first only when more than this many times it (the first is then a part only;
@@ -94,7 +98,7 @@ def split_like(ratio):
     """True when shares moved by about a whole multiple (2-for-1, 1-for-10...): a split, not shares issued or bought back."""
     if ratio <= 0:
         return True
-    for n in range(2, 51):
+    for n in range(2, 1001):
         if abs(ratio / n - 1) <= SPLIT_TOLERANCE or abs(ratio * n - 1) <= SPLIT_TOLERANCE:
             return True
     return False
@@ -105,14 +109,15 @@ def compact(frame):
     return {int(r['cik']): [r['val'], r['end'], r.get('accn', '')] for r in frame.get('data', []) if r.get('val') is not None}
 
 
-def company_rows(dur, rev, rev_prev, instants, shares=None, shares_prev=None):
+def company_rows(dur, rev, rev_prev, instants, shares=None, shares_prev=None, rnd=None):
     """Every company's figures for one fiscal year.
 
     dur: {key: {cik: [val, end, accn]}} for the DURATION keys in the year;
     rev / rev_prev: {tag: {cik: [...]}}; instants: {concept: {frame label: {cik: [...]}}};
-    shares / shares_prev: {cik: [...]} diluted weighted-average shares this year and last.
+    shares / shares_prev: {tag: {cik: [...]}} weighted-average shares this year and last (SHARES_TAGS);
+    rnd: {tag: {cik: [...]}} research and development (RND_TAGS).
     Returns {cik: {end, accn, gp, op, ni, cfo, rnd, rev, revTag, revPrev, assets, assetsPrev, inventory, inventoryPrev,
-    shares, sharesPrev}}.
+    shares, sharesPrev, sharesOneFiling}}.
     """
     out = {}
     anchors = set(dur.get('ni', {})) | set(dur.get('cfo', {}))
@@ -148,10 +153,22 @@ def company_rows(dur, rev, rev_prev, instants, shares=None, shares_prev=None):
             before = frames.get(quarter_frame(prev_end), {}).get(cik)
             row[key] = now[0] if now and _near(now[1], end, BALANCE_DAYS) else None
             row[key + 'Prev'] = before[0] if before and _near(before[1], prev_end, BALANCE_DAYS) else None
-        now = (shares or {}).get(cik)
-        before = (shares_prev or {}).get(cik)
-        row['shares'] = now[0] if now and _near(now[1], end, BALANCE_DAYS) else None
-        row['sharesPrev'] = before[0] if before and _near(before[1], prev_end, YEAR_DAYS) else None
+        row['shares'] = row['sharesPrev'] = row['sharesOneFiling'] = None
+        for tag in SHARES_TAGS:
+            now = (shares or {}).get(tag, {}).get(cik)
+            if now and _near(now[1], end, BALANCE_DAYS):
+                before = (shares_prev or {}).get(tag, {}).get(cik)
+                row['shares'] = now[0]
+                if before and _near(before[1], prev_end, YEAR_DAYS):
+                    row['sharesPrev'] = before[0]
+                    row['sharesOneFiling'] = bool(now[2]) and now[2] == before[2]
+                break
+        row['rnd'] = None
+        for tag in RND_TAGS:
+            v = (rnd or {}).get(tag, {}).get(cik)
+            if v and _near(v[1], end, BALANCE_DAYS):
+                row['rnd'] = v[0]
+                break
         out[cik] = row
     return out
 
@@ -169,7 +186,7 @@ def readings(r):
     inv, inv0 = r.get('inventory'), r.get('inventoryPrev')
     inv_growth = inv / inv0 - 1 if inv is not None and inv0 and inv0 > 0 else None
     sh, sh0 = r.get('shares'), r.get('sharesPrev')
-    issuance = math.log(sh / sh0) if sh and sh0 and sh > 0 and sh0 > 0 and not split_like(sh / sh0) else None
+    issuance = math.log(sh / sh0) if sh and sh0 and sh > 0 and sh0 > 0 and (r.get('sharesOneFiling') or not split_like(sh / sh0)) else None
     rnd = r.get('rnd')
     return {
         'grossProfitability': r['gp'] / assets if r.get('gp') is not None and assets and assets > 0 else None,
@@ -270,15 +287,16 @@ async def _frame(ctx, tag, period, unit='USD'):
 
 
 async def _year_rows(ctx, year):
-    names = [('dur', k, tag, f'CY{year}') for k, tag in DURATION.items()]
-    names += [('rev', t, t, f'CY{year}') for t in REVENUE_TAGS] + [('revPrev', t, t, f'CY{year - 1}') for t in REVENUE_TAGS]
-    got = await asyncio.gather(*(_frame(ctx, tag, period) for _, _, tag, period in names),
-                               _frame(ctx, SHARES_TAG, f'CY{year}', 'shares'), _frame(ctx, SHARES_TAG, f'CY{year - 1}', 'shares'))
-    shares, shares_prev = got[-2], got[-1]
-    got = got[:-2]
-    dur, rev, rev_prev = {}, {}, {}
-    for (kind, key, _, _), frame in zip(names, got):
-        {'dur': dur, 'rev': rev, 'revPrev': rev_prev}[kind][key] = frame
+    # (kind, key, tag, period, unit): one table, so every frame lands under its own kind and key
+    names = [('dur', k, tag, f'CY{year}', 'USD') for k, tag in DURATION.items()]
+    names += [('rev', t, t, f'CY{year}', 'USD') for t in REVENUE_TAGS] + [('revPrev', t, t, f'CY{year - 1}', 'USD') for t in REVENUE_TAGS]
+    names += [('rnd', t, t, f'CY{year}', 'USD') for t in RND_TAGS]
+    names += [('shares', t, t, f'CY{year}', 'shares') for t in SHARES_TAGS] + [('sharesPrev', t, t, f'CY{year - 1}', 'shares') for t in SHARES_TAGS]
+    got = await asyncio.gather(*(_frame(ctx, tag, period, unit) for _, _, tag, period, unit in names))
+    kinds = {k: {} for k in ('dur', 'rev', 'revPrev', 'rnd', 'shares', 'sharesPrev')}
+    for (kind, key, _, _, _), frame in zip(names, got):
+        kinds[kind][key] = frame
+    dur, rev, rev_prev = kinds['dur'], kinds['rev'], kinds['revPrev']
     # the quarters holding everyone's year-ends (and a year earlier): usually five or six
     labels = {}
     for cik in set(dur['ni']) | set(dur['cfo']):
@@ -291,7 +309,7 @@ async def _year_rows(ctx, year):
     for concept, tag in INSTANT.items():
         frames = await asyncio.gather(*(_frame(ctx, tag, lab) for lab in wanted))
         instants[concept] = dict(zip(wanted, frames))
-    return company_rows(dur, rev, rev_prev, instants, shares, shares_prev), wanted
+    return company_rows(dur, rev, rev_prev, instants, kinds['shares'], kinds['sharesPrev'], kinds['rnd']), wanted
 
 
 async def _field(ctx, year):
@@ -347,5 +365,6 @@ async def filer_rank(ctx, msg):
                     'noAssets': me['assets'] is None},
         'metrics': rank(data['byMetric'], me['readings'], member),
         'minAssets': MIN_ASSETS,
-        'frames': [FRAME_URL.format(tag=t, unit='USD', period=f'CY{year}') for t in (DURATION['ni'], DURATION['gp'])],
+        'frames': [FRAME_URL.format(tag=t, unit=u, period=f'CY{year}') for t, u in
+                   ((DURATION['ni'], 'USD'), (DURATION['gp'], 'USD'), (SHARES_TAGS[0], 'shares'), (RND_TAGS[0], 'USD'))],
     }

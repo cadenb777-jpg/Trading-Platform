@@ -86,5 +86,5 @@ export function summaryWords(f: FilerRank): string {
 /** Why a reading is missing: the companies that don't tag the line (Amazon has no gross profit line, banks no inventory). */
 export const missingWords = 'Not tagged in the filing in a way that can be compared.';
 
-/** A reading an older helper doesn't send at all (absent, not null). */
-export const comesWithUpdate = 'Arrives with the next helper update (it installs by itself).';
+/** A reading absent from a reply the browser saved before the helper was updated (the helper itself sends it). */
+export const savedBeforeWords = 'Saved before your helper update: press Refresh to fill it in.';
