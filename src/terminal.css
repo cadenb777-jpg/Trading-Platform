@@ -386,3 +386,6 @@
   .term-clocks { display: none; }
   .tt .hide-narrow { display: none; }
 }
+
+/* Home: Why it's moving (src/term/readWidget.ts) */
+.home-read .term-read { padding: 4px 0; grid-template-columns: max-content 1fr; }

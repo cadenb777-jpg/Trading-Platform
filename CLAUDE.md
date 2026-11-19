@@ -370,6 +370,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   tables. New terminal screens use src/term/kit.ts (termPanel, termTable: update in place) and calm flashes (src/term/flash.ts:
   one fading tint, max once per 2 s per cell and 12 per second per screen, off with reduced motion or the setting). Missing data =
   one line in the panel's note, never an empty box. Cross-data read: src/term/read.ts (rules, not AI); correlations src/term/corr.ts.
+  Speed (T2, helper 91): src/data/saved.ts keeps the last reply of public market-data requests (SAVED_TYPES; never
+  accounts/portfolios/settings) in localStorage; savedThenFresh draws it at once, then the fresh reply. The helper warms
+  the Monitor's requests at start and every 15 minutes (WARM_UP, WARM_EVERY_SECONDS) and answers stale_ok from its cache.
+  Home's first widget 'read' (src/term/readWidget.ts) is the same cross-market read (no prices repeated from the strip).
   Markets > Monitor is the first rebuilt screen (numbered tabs 1-6, three columns that fill the window). Keep Home's greeting and tape.
   Theme: light/dark via CSS variables (`:root[data-theme='light']`) and src/ui/theme.ts (THEME object updated in place,
   `followTheme(chart)` repaints canvases). Use variables, not hard-coded colours, in new CSS. Tokens, type and do/don't: docs/design.md.

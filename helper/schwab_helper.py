@@ -52,7 +52,7 @@ from engine.safexml import fromstring as safe_fromstring  # noqa: E402  (refuses
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 90
+HELPER_VERSION = 91
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -1428,7 +1428,15 @@ WARM_UP = [
     ('macro.curve', {}),
     ('bonds.market', {}),
     ('bonds.curvefit', {}),  # Home's Edge today line; the first fit of the day takes a while
+    # Markets > Monitor (src/pages/monitorPage.ts): world markets and sectors, futures with positioning, the Fed path,
+    # movers and the correlation set, so the screen opens from a fresh copy
+    ('invest.board', {'symbols': ['SPY', 'QQQ', 'DIA', 'IWM', 'EWC', 'EWZ', 'EWW', 'EZU', 'EWU', 'EWG', 'EWQ', 'EWL', 'EWI', 'EWP', 'KSA', 'EWJ', 'FXI', 'EWH', 'EWY', 'EWT', 'INDA', 'EWA', 'XLK', 'XLC', 'XLY', 'XLF', 'XLI', 'XLV', 'XLP', 'XLE', 'XLB', 'XLRE', 'XLU']}),
+    ('futures.board', {}),
+    ('macro.fedodds', {}),
+    ('invest.movers', {'index': '$SPX'}),
+    *[('invest.history', {'symbol': s}) for s in ('SPY', 'TLT', 'UUP', 'GLD', 'USO')],
 ]
+WARM_EVERY_SECONDS = 15 * 60  # kept warm all day: a screen opened later still answers from a recent copy
 
 
 async def warm_up(market):
@@ -1438,12 +1446,14 @@ async def warm_up(market):
     except Exception as err:
         log.info('News warm-up failed: %s', err)
     await engine.wait_loaded()
-    for kind, params in WARM_UP:
-        if kind in engine.HANDLERS:
-            try:
-                await engine.HANDLERS[kind](market.engine, dict(params))
-            except Exception as err:
-                log.info('Warm-up of %s failed: %s', kind, err)
+    while True:
+        for kind, params in WARM_UP:
+            if kind in engine.HANDLERS:
+                try:
+                    await engine.HANDLERS[kind](market.engine, dict(params))
+                except Exception as err:
+                    log.info('Warm-up of %s failed: %s', kind, err)
+        await asyncio.sleep(WARM_EVERY_SECONDS)
 
 
 async def market_scanner(market):
