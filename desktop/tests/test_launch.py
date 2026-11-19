@@ -124,7 +124,12 @@ class OldHelper(unittest.TestCase):
         class Done:
             def __init__(self, out):
                 self.stdout = out
-        outs = iter([Done('p123\ncnode\n'), Done('')])
-        self.assertIsNone(launch.python_on_port(8765, run=lambda *a, **k: next(outs)) if os.name != 'nt' else None)
-        outs = iter([Done('p123\ncPython\n')])
+        if os.name == 'nt':
+            listen = '  TCP    127.0.0.1:8765     0.0.0.0:0      LISTENING       123\n'
+            node, py = [Done(listen), Done('"node.exe","123"')], [Done(listen), Done('"python.exe","123"')]
+        else:
+            node, py = [Done('p123\ncnode\n')], [Done('p123\ncPython\n')]
+        outs = iter(node)
+        self.assertIsNone(launch.python_on_port(8765, run=lambda *a, **k: next(outs)))
+        outs = iter(py)
         self.assertEqual(launch.python_on_port(8765, run=lambda *a, **k: next(outs)), 123)
