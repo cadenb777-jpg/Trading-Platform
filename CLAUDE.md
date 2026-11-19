@@ -680,8 +680,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   readings (gross profit/assets, operating margin, ROA, sales growth, asset growth, accruals, inventory vs sales growth;
   helper 90: share count change = ln of weighted shares vs last year (diluted, else basic; one tag both years; a
   whole-multiple move is skipped as a split only when the two years come from different filings), shown as the % change;
-  R&D (plain, else excluding acquired IPR&D) / revenue; a reading absent from a reply says it arrives with the update,
-  or on helper 90+ that the reply was saved before it)
+  R&D (excluding acquired IPR&D, else plain) / revenue; a reading absent from a reply says it arrives with the update
+  (ARRIVES_WITH_UPDATE in schwab.ts, one text everywhere); on helper 90+ a pre-update saved reply is asked again with
+  refresh; the reply's `frames` = [{label, url}] of the exact SEC files used (filerrank.sources))
   ranked among every filer with total assets >= $100M from SEC XBRL frames (one file per concept and calendar period,
   cached a week as 'sec-frame'; field cached a day as 'sec-filerrank-v2', helper 88's 'sec-filerrank' removed by datahub migration filerrank-v1). Fiscal year = the company's row in the CY duration
   frame (net income, else operating cash flow); balances from the quarter frame nearest that year-end, dated within 10

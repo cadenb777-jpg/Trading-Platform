@@ -82,7 +82,8 @@ const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${word(n)}
 
 /** Today's reading in words. */
 export function nowWords(latest: MonthPoint): string {
-  const v = latest.value;
+  // to the shown 2 decimals, so a tiny negative reading is "0.00 above", never "0.00 below ... still falling"
+  const v = Math.round(latest.value * 100) / 100 || 0;
   const s = sahmState(v);
   // below zero: unemployment is still falling to new lows (the 3-month average is under last year's lowest)
   const base =

@@ -130,7 +130,8 @@ class IssuanceAndResearch(unittest.TestCase):
 
     def test_splits_and_fallbacks(self):
         self.assertTrue(fr.split_like(2.0))
-        self.assertTrue(fr.split_like(10.3))   # within 8% of 10-for-1
+        self.assertTrue(fr.split_like(10.2))   # within 3% of 10-for-1
+        self.assertFalse(fr.split_like(8.3))   # an 8.3x jump (a de-SPAC, say) is issuance, not a split
         self.assertTrue(fr.split_like(1 / 4))  # a 1-for-4 reverse split
         self.assertTrue(fr.split_like(1 / 100))  # a 1-for-100 reverse split, never a 99% buyback
         self.assertFalse(fr.split_like(1.5))
@@ -151,10 +152,24 @@ class IssuanceAndResearch(unittest.TestCase):
         # last year's count from a year that doesn't end about a year before is not compared
         x = fr.readings(fr.company_rows(dur, rev, rev_prev, instants, {D: {KO: [4_313e6, END, 'a']}}, {D: {KO: [4_320e6, '2024-06-30', 'a']}})[KO])
         self.assertIsNone(x['shareIssuance'])
-        # R&D under the drug makers' line when the plain one is missing
-        rnd = {fr.RND_TAGS[1]: {KO: [4_794.1e6, END, 'a']}}
+        # R&D: recurring spending (excluding acquired in-process R&D) before the plain line when both are tagged
+        rnd = {'ResearchAndDevelopmentExpense': {KO: [6_794.1e6, END, 'a']}, 'ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost': {KO: [4_794.1e6, END, 'a']}}
         x = fr.readings(fr.company_rows(dur, rev, rev_prev, instants, rnd=rnd)[KO])
         self.assertAlmostEqual(x['rdIntensity'], 0.1, 6)  # 4,794.1 / 47,941
+        # diluted this year only, basic both years: the tag with both years is used
+        B = fr.SHARES_TAGS[1]
+        row = fr.company_rows(dur, rev, rev_prev, instants, {D: {KO: [130e6, END, 'a']}, B: {KO: [120e6, END, 'a']}}, {B: {KO: [100e6, '2024-12-31', 'a']}})[KO]
+        self.assertEqual(row['sharesTag'], B)
+        self.assertAlmostEqual(fr.readings(row)['shareIssuance'], math.log(1.2))
+
+    def test_sources_name_the_exact_files(self):
+        got = fr.sources(2025, '2025-06-30', {'rev': 'Revenues', 'shares': fr.SHARES_TAGS[1], 'rnd': fr.RND_TAGS[1]})
+        labels = [s['label'] for s in got]
+        self.assertIn('Revenues CY2024', labels)
+        self.assertIn('Assets CY2025Q2I', labels)  # Microsoft-style June year-end: the June balance sheet
+        self.assertIn('Assets CY2024Q2I', labels)
+        self.assertIn(f'{fr.SHARES_TAGS[1]} CY2024', labels)
+        self.assertIn('https://data.sec.gov/api/xbrl/frames/us-gaap/WeightedAverageNumberOfSharesOutstandingBasic/shares/CY2025.json', [s['url'] for s in got])
 
 
 class Ranking(unittest.TestCase):

@@ -228,7 +228,7 @@ whenever the owner repeats or adds one.
   main: the Taxes and Against bonds gates still said helper 84/85 after #49/#50 were renumbered 85/86, so a helper 84 or
   85 was told to refresh instead of update.
 - 2026-11-19 · #PRNUM Share count change + R&D per $ of sales ranked among US filers (helper 90) and the Sahm rule on Macro:
-  two more rows of Among US companies from SEC frames (diluted shares, else basic, 3,617 filers: Apple -2.6% after buybacks, 16th
+  two more rows of Among US companies from SEC frames (diluted shares, else basic, 3,619 filers: Apple -2.6% after buybacks, 16th
   percentile; R&D, 1,327 filers: Microsoft 11.5%, the middle) and Macro → Recession check from FRED SAHMREALTIME + USREC
   (0.00 for October 2026; since 1959 it fired 11 times, 9 within 3 months of a recession's start, all 9 recessions caught,
   false alarms Nov 1976 and Jul 2024) · proposed · backlog A33-A35. Lessons: a "12 quiet months" rule for a new Sahm
@@ -237,5 +237,6 @@ whenever the owner repeats or adds one.
   migration (filerrank-v1) rather than left to show seven rows for a day; a reading an older helper doesn't send says
   "arrives with the update" (or "saved before your update" on helper 90+), never "not tagged". Review: the SEC frames take
   last year's share count from the newest filing (already split-restated), so a whole-multiple split filter wrongly
-  dropped ~590 real issuers; it now applies only when the two years come from different filings.
+  dropped ~590 real issuers; it now applies only when the two years come from different filings, and only to the usual
+  split ratios within 3% (an 8.3x de-SPAC jump is issuance). R&D prefers the line without acquired in-process R&D.
 

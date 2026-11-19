@@ -30,7 +30,8 @@ export interface FilerRank {
   company: { end: string; accn: string; assets: number | null; small: boolean; noAssets?: boolean } | null;
   metrics: Partial<Record<MetricKey, Ranked | null>>;
   minAssets: number;
-  frames?: string[];
+  /** the SEC frames its figures came from (helper 90; helper 88-89 sent bare URLs) */
+  frames?: ({ label: string; url: string } | string)[];
 }
 
 export interface MetricInfo {
@@ -85,6 +86,3 @@ export function summaryWords(f: FilerRank): string {
 
 /** Why a reading is missing: the companies that don't tag the line (Amazon has no gross profit line, banks no inventory). */
 export const missingWords = 'Not tagged in the filing in a way that can be compared.';
-
-/** A reading absent from a reply the browser saved before the helper was updated (the helper itself sends it). */
-export const savedBeforeWords = 'Saved before your helper update: press Refresh to fill it in.';

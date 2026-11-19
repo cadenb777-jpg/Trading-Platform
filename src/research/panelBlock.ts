@@ -1,5 +1,6 @@
 /** Shared pieces of the Research overview's reading panels (Debt and dilution, Earnings quality, Cash health,
  * Balance-sheet quality). */
+import { ARRIVES_WITH_UPDATE } from '../data/schwab';
 import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { pc } from './debtDilution';
@@ -11,8 +12,6 @@ export function block(title: string, term: string, ...body: (Node | string)[]) {
 
 /** The reply lacks lines a newer helper sends: either the helper is older, or the page holds a reply saved before the
  * update (it fills in at the next refresh). */
-export const ARRIVES_WITH_UPDATE = 'Arrives with the next helper update (it installs by itself).';
-
 export function savedBeforeUpdate(helperReady: boolean): HTMLElement {
   return h(
     'p',

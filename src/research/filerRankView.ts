@@ -3,12 +3,12 @@
  * assets (one row per reading: value, a 0-100 percentile track with the middle half shaded, plain words). Its own
  * request (research.filerrank, helper 88), painted when it arrives; maths in filerRank.ts and engine/filerrank.py.
  */
-import { engineRequest, filerRankReady, filerRankV2Ready } from '../data/schwab';
+import { ARRIVES_WITH_UPDATE, engineRequest, filerRankReady, filerRankV2Ready } from '../data/schwab';
 import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { day } from './debtDilution';
-import { ARRIVES_WITH_UPDATE, block, savedBeforeUpdate } from './panelBlock';
-import { METRICS, missingWords, placeWords, savedBeforeWords, standsOut, summaryWords, type FilerRank, type MetricInfo, type Ranked } from './filerRank';
+import { block, savedBeforeUpdate } from './panelBlock';
+import { METRICS, missingWords, placeWords, standsOut, summaryWords, type FilerRank, type MetricInfo, type Ranked } from './filerRank';
 
 function track(m: MetricInfo, r: Ranked): HTMLElement {
   const at = Math.max(0, Math.min(100, r.percentile));
@@ -33,7 +33,7 @@ function row(m: MetricInfo, r: Ranked | null | undefined, sent: boolean): HTMLEl
     h('span', { class: 'fr-label' }, m.label, infoTip(m.term)),
     h('b', { class: 'fr-value num' }, r ? m.format(r.value) : '—'),
     r ? track(m, r) : h('span', { class: 'fr-track empty', 'aria-hidden': 'true' }),
-    h('span', { class: 'fr-words small muted' }, r ? `${placeWords(r)} · median ${m.format(r.median)}` : sent ? missingWords : filerRankV2Ready() ? savedBeforeWords : ARRIVES_WITH_UPDATE),
+    h('span', { class: 'fr-words small muted' }, r ? `${placeWords(r)} · median ${m.format(r.median)}` : sent ? missingWords : ARRIVES_WITH_UPDATE),
   );
 }
 
@@ -54,7 +54,11 @@ export function filerRankPanel(cik: number | string | null | undefined): HTMLEle
     return section;
   }
   const failed = () => body.replaceChildren(h('p', { class: 'muted small' }, 'The SEC’s yearly files for every company couldn’t be loaded right now. Refresh to try again.'));
-  engineRequest<FilerRank>('research.filerrank', { cik: Number(cik) }, 90_000).then((f) => {
+  // a reply the browser saved before the helper update lacks the newer rows: ask the helper again, past the saved copy
+  const stale = (f: FilerRank) => filerRankV2Ready() && METRICS.some((m) => !(m.key in f.metrics));
+  engineRequest<FilerRank>('research.filerrank', { cik: Number(cik) }, 90_000)
+    .then((f) => (f.company && stale(f) ? engineRequest<FilerRank>('research.filerrank', { cik: Number(cik), refresh: 1 }, 90_000) : f))
+    .then((f) => {
     if (!f.company) {
       body.replaceChildren(h('p', { class: 'muted small' }, `This company isn’t in the SEC’s US accounting (US GAAP) files for ${f.year} or ${f.year - 1}, so it can’t be ranked: it may file late, or report under international rules (IFRS), as many foreign companies do.`));
       return;
@@ -62,9 +66,7 @@ export function filerRankPanel(cik: number | string | null | undefined): HTMLEle
     const sources = h(
       'p',
       { class: 'muted small' },
-      `Fiscal year ending ${day(f.company.end)}, from the SEC’s XBRL frames for ${f.year} (`,
-      ...(f.frames ?? []).flatMap((u, i) => [i ? ', ' : '', h('a', { href: u, target: '_blank', rel: 'noopener' }, u.split('/').slice(-3, -2)[0])]),
-      `; refreshed weekly). Field: every filer with total assets of $${Math.round(f.minAssets / 1e6)} million or more at its year-end, all industries together; each reading needs the company to tag the lines it uses. Rank = share of the other companies below, ties counted half. Readings, not signals.`,
+      `Fiscal year ending ${day(f.company.end)}, from the SEC’s XBRL frames for ${f.year} (refreshed weekly). Field: every filer with total assets of $${Math.round(f.minAssets / 1e6)} million or more at its year-end, all industries together; each reading needs the company to tag the lines it uses. Rank = share of the other companies below, ties counted half. Readings, not signals.`,
     );
     body.replaceChildren(
       h('p', { class: 'small' }, summaryWords(f)),
@@ -75,6 +77,19 @@ export function filerRankPanel(cik: number | string | null | undefined): HTMLEle
           : []),
       h('div', { class: 'fr-list', role: 'list', 'aria-label': 'Readings ranked among US companies' }, h('div', { class: 'fr-axis small muted', 'aria-hidden': 'true' }, h('span', {}), h('span', {}), h('span', { class: 'fr-axis-scale' }, h('span', {}, 'lowest'), h('span', {}, 'middle half'), h('span', {}, 'highest')), h('span', {})), ...METRICS.map((m) => row(m, f.metrics[m.key], m.key in f.metrics))),
       sources,
+      ...(f.frames?.length
+        ? [
+            h(
+              'details',
+              { class: 'fr-files' },
+              h('summary', { class: 'small muted' }, `SEC files used (${f.frames.length})`),
+              h('p', { class: 'small' }, ...f.frames.flatMap((x, i) => {
+                const { label, url } = typeof x === 'string' ? { label: x.split('/').slice(-3, -2)[0], url: x } : x;
+                return [i ? ' · ' : '', h('a', { href: url, target: '_blank', rel: 'noopener' }, label)];
+              })),
+            ),
+          ]
+        : []),
     );
   }, failed);
   return section;

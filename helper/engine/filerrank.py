@@ -49,15 +49,18 @@ BALANCE_DAYS = 10
 YEAR_DAYS = 31
 
 DURATION = {'gp': 'GrossProfit', 'op': 'OperatingIncomeLoss', 'ni': 'NetIncomeLoss', 'cfo': 'NetCashProvidedByUsedInOperatingActivities'}
-#: R&D: the plain line first, else the one drug makers use that leaves out acquired in-process R&D (117 filers in CY2025)
-RND_TAGS = ('ResearchAndDevelopmentExpense', 'ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost')
+#: R&D: the line that leaves out acquired in-process R&D first (drug makers, 117 filers in CY2025; a one-off purchase is
+#: not research spending), else the plain line most filers use
+RND_TAGS = ('ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost', 'ResearchAndDevelopmentExpense')
 #: weighted-average shares for the year (unit 'shares'): diluted first, else basic (195 more filers in CY2025, mostly
 #: loss-makers, whose diluted count equals the basic one); this year and last always from the same tag
 SHARES_TAGS = ('WeightedAverageNumberOfDilutedSharesOutstanding', 'WeightedAverageNumberOfSharesOutstandingBasic')
 #: when the two years come from different filings, a count that moved by about a whole multiple (within this) is a
 #: split the older filing wasn't restated for (as debtDilution.looksLikeSplit); within one filing both years are
 #: already on the same basis (the SEC frames take last year's figure from the newest filing that reports it)
-SPLIT_TOLERANCE = 0.08
+SPLIT_TOLERANCE = 0.03
+#: the split ratios companies actually use (forward and reverse); a 8.3x jump in shares is issuance, not a split
+SPLIT_FACTORS = (2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 100, 200)
 REVENUE_TAGS = ('RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues')
 #: the second revenue tag replaces the first only when more than this many times it (the first is then a part only;
 #: a gross-of-excise 'Revenues' rarely reaches twice net sales)
@@ -95,13 +98,11 @@ def _near(a, b, days):
 
 
 def split_like(ratio):
-    """True when shares moved by about a whole multiple (2-for-1, 1-for-10...): a split, not shares issued or bought back."""
+    """True when shares moved by about a usual split ratio (2-for-1, 1-for-10...): a split, not shares issued or bought
+    back. Only asked when the two years come from different filings."""
     if ratio <= 0:
         return True
-    for n in range(2, 1001):
-        if abs(ratio / n - 1) <= SPLIT_TOLERANCE or abs(ratio * n - 1) <= SPLIT_TOLERANCE:
-            return True
-    return False
+    return any(abs(ratio / n - 1) <= SPLIT_TOLERANCE or abs(ratio * n - 1) <= SPLIT_TOLERANCE for n in SPLIT_FACTORS)
 
 
 def compact(frame):
@@ -117,7 +118,7 @@ def company_rows(dur, rev, rev_prev, instants, shares=None, shares_prev=None, rn
     shares / shares_prev: {tag: {cik: [...]}} weighted-average shares this year and last (SHARES_TAGS);
     rnd: {tag: {cik: [...]}} research and development (RND_TAGS).
     Returns {cik: {end, accn, gp, op, ni, cfo, rnd, rev, revTag, revPrev, assets, assetsPrev, inventory, inventoryPrev,
-    shares, sharesPrev, sharesOneFiling}}.
+    shares, sharesPrev, sharesOneFiling, sharesTag, rndTag}}.
     """
     out = {}
     anchors = set(dur.get('ni', {})) | set(dur.get('cfo', {}))
@@ -153,21 +154,25 @@ def company_rows(dur, rev, rev_prev, instants, shares=None, shares_prev=None, rn
             before = frames.get(quarter_frame(prev_end), {}).get(cik)
             row[key] = now[0] if now and _near(now[1], end, BALANCE_DAYS) else None
             row[key + 'Prev'] = before[0] if before and _near(before[1], prev_end, BALANCE_DAYS) else None
-        row['shares'] = row['sharesPrev'] = row['sharesOneFiling'] = None
+        # shares: the first tag with both years (diluted before basic), else the first with this year only
+        row['shares'] = row['sharesPrev'] = row['sharesOneFiling'] = row['sharesTag'] = None
+        found = []
         for tag in SHARES_TAGS:
             now = (shares or {}).get(tag, {}).get(cik)
             if now and _near(now[1], end, BALANCE_DAYS):
                 before = (shares_prev or {}).get(tag, {}).get(cik)
-                row['shares'] = now[0]
-                if before and _near(before[1], prev_end, YEAR_DAYS):
-                    row['sharesPrev'] = before[0]
-                    row['sharesOneFiling'] = bool(now[2]) and now[2] == before[2]
-                break
-        row['rnd'] = None
+                found.append((tag, now, before if before and _near(before[1], prev_end, YEAR_DAYS) else None))
+        if found:
+            tag, now, before = next((f for f in found if f[2]), found[0])
+            row['sharesTag'], row['shares'] = tag, now[0]
+            if before:
+                row['sharesPrev'] = before[0]
+                row['sharesOneFiling'] = bool(now[2]) and now[2] == before[2]
+        row['rnd'] = row['rndTag'] = None
         for tag in RND_TAGS:
             v = (rnd or {}).get(tag, {}).get(cik)
             if v and _near(v[1], end, BALANCE_DAYS):
-                row['rnd'] = v[0]
+                row['rnd'], row['rndTag'] = v[0], tag
                 break
         out[cik] = row
     return out
@@ -269,6 +274,29 @@ def pick_year(today, ni_rows):
     return None
 
 
+def sources(year, end, tags):
+    """The SEC frames one company's figures came from: [{label, url}] (its own revenue, shares and R&D tags, and the
+    quarter files holding its year-end balances)."""
+    out = []
+
+    def add(tag, period, unit='USD'):
+        out.append({'label': f'{tag} {period}', 'url': FRAME_URL.format(tag=tag, unit=unit, period=period)})
+    for tag in DURATION.values():
+        add(tag, f'CY{year}')
+    if tags.get('rev'):
+        add(tags['rev'], f'CY{year}')
+        add(tags['rev'], f'CY{year - 1}')
+    for concept in INSTANT.values():
+        add(concept, quarter_frame(end))
+        add(concept, quarter_frame(year_before(end)))
+    if tags.get('shares'):
+        add(tags['shares'], f'CY{year}', 'shares')
+        add(tags['shares'], f'CY{year - 1}', 'shares')
+    if tags.get('rnd'):
+        add(tags['rnd'], f'CY{year}')
+    return out
+
+
 # ---------- downloads ----------
 
 async def _frame(ctx, tag, period, unit='USD'):
@@ -317,7 +345,8 @@ async def _field(ctx, year):
     async def load():
         rows, quarters = await _year_rows(ctx, year)
         by_metric, per = field(rows)
-        companies = {str(k): {'end': r['end'], 'accn': r['accn'], 'assets': r.get('assets'), 'readings': per[k]} for k, r in rows.items()}
+        companies = {str(k): {'end': r['end'], 'accn': r['accn'], 'assets': r.get('assets'), 'readings': per[k],
+                              'tags': {'rev': r.get('revTag'), 'shares': r.get('sharesTag'), 'rnd': r.get('rndTag')}} for k, r in rows.items()}
         return {'byMetric': by_metric, 'companies': companies, 'quarters': quarters}
     return await ctx.cached(('sec-filerrank-v2', year), 24 * 3600, load, persist=True, stale_ok=True)
 
@@ -365,6 +394,5 @@ async def filer_rank(ctx, msg):
                     'noAssets': me['assets'] is None},
         'metrics': rank(data['byMetric'], me['readings'], member),
         'minAssets': MIN_ASSETS,
-        'frames': [FRAME_URL.format(tag=t, unit=u, period=f'CY{year}') for t, u in
-                   ((DURATION['ni'], 'USD'), (DURATION['gp'], 'USD'), (SHARES_TAGS[0], 'shares'), (RND_TAGS[0], 'USD'))],
+        'frames': sources(year, me['end'], me.get('tags') or {}),
     }

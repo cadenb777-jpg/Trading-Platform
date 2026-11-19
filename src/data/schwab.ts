@@ -137,6 +137,9 @@ export const DATAHUB_HELPER_VERSION = 44;
 /** True when the connected helper has the data hub (v44+). */
 export const datahubReady = () => !helper.tooOld && (helper.version ?? 0) >= DATAHUB_HELPER_VERSION;
 
+/** A reading an older helper doesn't send (one text for every page). */
+export const ARRIVES_WITH_UPDATE = 'Arrives with the next helper update (it installs by itself).';
+
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';
 export const HELPER_UPDATE_FOR_FEATURE =

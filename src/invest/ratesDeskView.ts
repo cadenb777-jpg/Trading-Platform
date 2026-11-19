@@ -2,7 +2,7 @@
  * Rates desk panels (helper 64): credit spreads by rating (Bonds → Bond market), the auction demand scorecard
  * (Bonds → Treasury auctions) and the term premium block (Bonds → What the curve says). Readings: ratesDesk.ts.
  */
-import { engineRequest, helper } from '../data/schwab';
+import { ARRIVES_WITH_UPDATE, engineRequest, helper } from '../data/schwab';
 import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { openFredWindow } from '../ui/fredWindow';
@@ -27,7 +27,7 @@ const monthYear = (iso: string | undefined) => (iso ? new Date(`${iso.slice(0, 1
  *  Shared by the rates desk and money desk panels. */
 export function whenReady(body: HTMLElement, el: HTMLElement, go: () => void, ready: () => boolean = ratesDeskReady) {
   if (ready()) return go();
-  body.replaceChildren(h('p', { class: 'muted small' }, helper.isConnected ? 'Arrives with the next helper update (it installs by itself).' : 'Start the helper to see this.'));
+  body.replaceChildren(h('p', { class: 'muted small' }, helper.isConnected ? ARRIVES_WITH_UPDATE : 'Start the helper to see this.'));
   const off = helper.onStatusChange(() => {
     if (!ready()) return;
     off();
@@ -127,7 +127,7 @@ export function auctionScorecard(coupons: AuctionRow[] | null | undefined): HTML
     h('div', { class: 'panel-head' }, h('h3', {}, 'Auction demand scorecard', infoTip('auctionDemand')), h('span', { class: 'muted small' }, 'Did investors want the Treasury’s new notes and bonds?')),
   );
   if (coupons === undefined) {
-    el.append(h('p', { class: 'muted small' }, 'Arrives with the next helper update (it installs by itself).'));
+    el.append(h('p', { class: 'muted small' }, ARRIVES_WITH_UPDATE));
     return el;
   }
   if (coupons === null) {
