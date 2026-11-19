@@ -102,7 +102,7 @@ function conditionsPanel(): HTMLElement {
           format: (x) => signed(x, 2),
           title: `Loosest to tightest week since ${c.since.slice(0, 4)}`,
           marks: [{ value: 0, label: 'Average since 1971' }],
-          caption: 'Mark: zero, the index’s average since 1971. Left is looser (easy money and credit), right is tighter.',
+          caption: 'Mark: zero, the 1971 average. Left is looser, right is tighter.',
         }),
         h('p', { class: 'small' }, conditionsWords(c, day)),
         anfci == null
