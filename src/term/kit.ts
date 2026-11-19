@@ -8,6 +8,7 @@
  *     values change without the table being rebuilt, and changed numbers get one calm flash (flash.ts).
  */
 import { h } from '../ui/dom';
+import { icon } from '../ui/icons';
 import { numberRow } from '../ui/fnTile';
 import { flash } from './flash';
 
@@ -33,6 +34,10 @@ export function termPanel(o: { code: string; title: string; tip?: string; cls?: 
       h('span', { class: 'tp-code' }, o.code),
       h('h3', { class: 'tp-title', title: o.tip ?? '' }, o.title),
       src,
+      h('button', { type: 'button', class: 'tp-float', title: 'Pop out into a window', 'aria-label': `Pop out ${o.title}`, onclick: (e: Event) => {
+        const target = (e.currentTarget as HTMLElement).closest<HTMLElement>('.tp');
+        if (target) void import('../ui/floatPanel').then((m) => m.floatPanel(target, `${o.code} ${o.title}`));
+      } }, icon('float', 13)),
       o.link ? h('button', { type: 'button', class: 'tp-link', title: `Open ${o.link.label.toLowerCase()}`, onclick: o.link.open }, o.link.label, h('span', { 'aria-hidden': 'true' }, ' ›')) : '',
     ),
     body,

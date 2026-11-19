@@ -374,6 +374,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   accounts/portfolios/settings) in localStorage; savedThenFresh draws it at once, then the fresh reply. The helper warms
   the Monitor's requests at start and every 15 minutes (WARM_UP, WARM_EVERY_SECONDS) and answers stale_ok from its cache.
   Home's first widget 'read' (src/term/readWidget.ts) is the same cross-market read (no prices repeated from the strip).
+  Pop-out (T5): src/ui/floatPanel.ts moves the panel element itself into a floating glass window (drag, resize, snap to a
+  half / full screen at the edges, double-click to fill, Esc or × docks; leaving the page docks all), so live data keeps
+  running. Buttons: termPanel (.tp-float), fnTile, security panel() (.sv-float), panelHeader floatTarget (Home widgets).
+  Density (T3/T4): terminal.css tightens the spacing scale, controls and page padding for every page; Security header/tabs.
   Markets > Monitor is the first rebuilt screen (numbered tabs 1-6, three columns that fill the window). Keep Home's greeting and tape.
   Theme: light/dark via CSS variables (`:root[data-theme='light']`) and src/ui/theme.ts (THEME object updated in place,
   `followTheme(chart)` repaints canvases). Use variables, not hard-coded colours, in new CSS. Tokens, type and do/don't: docs/design.md.

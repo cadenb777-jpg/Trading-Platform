@@ -4,6 +4,7 @@
  * upcoming list, the Fed odds panel, the curve chart, the sunburst) so the Desk adds a way to arrange them, not copies.
  */
 import { engineRequest, helper, HELPER_NOT_RUNNING, loadNews } from '../data/schwab';
+import { createMarketReadWidget } from '../term/readWidget';
 import { subscribeQuote, guessMarket } from '../data/quotes';
 import { fedOddsPanel } from '../edge/fedOdds';
 import type { BoardRow } from '../invest/shared';
@@ -215,6 +216,13 @@ function notesTile(body: HTMLElement, text: string, save: (text: string) => void
 /** Draws a tile's content; returns its stop function. */
 export function mountTile(t: Tile, body: HTMLElement, saveText: (text: string) => void): () => void {
   switch (t.type) {
+    case 'read': {
+      const w = createMarketReadWidget();
+      body.replaceChildren(w.body, h('p', { class: 'fn-tile-foot' }, w.asOf));
+      void w.refresh();
+      const timer = window.setInterval(() => document.visibilityState === 'visible' && void w.refresh(), 60_000);
+      return () => clearInterval(timer);
+    }
     case 'chart':
       return chartTile(body, t.symbols?.[0] ?? 'SPY');
     case 'quotes':

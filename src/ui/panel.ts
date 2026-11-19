@@ -16,6 +16,8 @@ export interface PanelHeaderOptions {
   /** Opens the full version (its page or a window). */
   onPopOut?: () => void;
   popOutLabel?: string;
+  /** The panel to pop out into a floating window (floatPanel.ts); adds a float button. */
+  floatTarget?: () => HTMLElement | null;
   /** The body that collapses; the header gets a collapse button. */
   collapse?: { body: HTMLElement; collapsed?: boolean; onToggle?: (collapsed: boolean) => void };
   /** Leading content (e.g. a drag handle). */
@@ -30,6 +32,10 @@ export function panelHeader(o: PanelHeaderOptions): HTMLElement {
   const btn = (name: IconName, label: string, onclick: () => void, extra: Record<string, string> = {}) =>
     h('button', { type: 'button', class: 'icon-btn ph-act', title: label, 'aria-label': `${label}: ${o.title}`, onclick, ...extra }, icon(name, 16));
   if (o.onRefresh) actions.push(btn('refresh', 'Refresh', o.onRefresh));
+  if (o.floatTarget) actions.push(btn('float', 'Pop out into a window', () => {
+    const el = o.floatTarget?.();
+    if (el) void import('./floatPanel').then((m) => m.floatPanel(el, o.title));
+  }));
   if (o.onPopOut) actions.push(btn('popout', o.popOutLabel ?? 'Open in full', o.onPopOut));
   if (o.collapse) {
     const c = o.collapse;
