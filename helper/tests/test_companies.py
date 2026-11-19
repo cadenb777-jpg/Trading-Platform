@@ -103,6 +103,54 @@ class Companies(unittest.TestCase):
         with self.assertRaises(EngineError):
             co.pick_files({'oops': 1})
 
+    def test_newest_copy_first_and_older_copies_as_fallback(self):
+        cat = {'result': {'resources': [
+            {'url': 'https://data.sba.gov/x/public_150k_plus_230101.csv', 'last_modified': '2023-01-05'},
+            {'url': 'https://data.sba.gov/x/public_150k_plus_240930.csv', 'last_modified': '2024-10-02'},
+            {'url': 'https://data.sba.gov/x/foia-504-fy2010-present.csv'}]}}
+        self.assertEqual(co.pick_groups(cat), [['https://data.sba.gov/x/public_150k_plus_240930.csv', 'https://data.sba.gov/x/public_150k_plus_230101.csv']])
+
+    def test_a_missing_file_falls_back_and_never_stops_the_other_lists(self):
+        import asyncio
+        from unittest import mock
+        from engine import prospect
+        tried = []
+
+        async def fake(ctx, url, dest, emit=None, label=''):
+            tried.append(url.rsplit('/', 1)[-1])
+            if 'new' in url:
+                raise EngineError('The file is no longer on the website (new.csv).')
+            return dest
+        with mock.patch.object(prospect, 'download', fake):
+            path, problem = asyncio.run(co.download_first(None, ['https://h/new.csv', 'https://h/old.csv'], 'PPP'))
+            self.assertEqual((tried, problem), (['new.csv', 'old.csv'], ''))
+            self.assertTrue(str(path).endswith('old.csv'))
+            path, problem = asyncio.run(co.download_first(None, ['https://h/new.csv'], 'PPP'))
+            self.assertIsNone(path)
+            self.assertIn('404', problem)
+
+    def test_a_renamed_dataset_is_found_by_search(self):
+        import asyncio
+
+        class Resp:
+            def __init__(self, code, data=None):
+                self.status_code, self.data = code, data
+
+            def json(self):
+                return self.data
+
+        class Http:
+            async def get(self, url, timeout=60):
+                if 'package_show' in url:
+                    return Resp(404)
+                return Resp(200, {'result': {'results': [{'name': 'other', 'resources': []},
+                                                         {'name': 'ppp-foia-2', 'resources': [{'url': 'https://h/public_150k_plus_1.csv'}]}]}})
+
+        class Ctx:
+            http = Http()
+        entry = asyncio.run(co.catalog(Ctx(), 'ppp', 'ppp-foia'))
+        self.assertEqual(co.pick_files(entry), ['https://h/public_150k_plus_1.csv'])
+
 
 if __name__ == '__main__':
     unittest.main()

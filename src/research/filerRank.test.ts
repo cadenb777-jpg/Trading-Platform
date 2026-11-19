@@ -14,7 +14,7 @@ const ko: FilerRank = {
     assetGrowth: r(0.042437, 46.9, 4055),
     accruals: r(0.055501, 91.3, 3768),
     inventoryVsSales: r(-0.082785, 31.4, 1610),
-    // helper 90 (frames of 2026-11-19): ln(4,313 / 4,320) diluted shares; Coca-Cola tags no R&D line
+    // helper 91 (frames of 2026-11-19): ln(4,313 / 4,320) diluted shares; Coca-Cola tags no R&D line
     shareIssuance: r(-0.0016217, 35.3, 3619),
     rdIntensity: null,
   },

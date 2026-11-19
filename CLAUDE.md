@@ -36,6 +36,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Summaries: the helper fetches the article (decoding Google News links via batchexecute) and
   extracts key sentences (`summarize_text`); no paid AI.
   Changing the protocol means the owner must re-download the helper; say so.
+  Updates (v90): a copy made with git (or private mode) updates by `git pull --ff-only` every 10 minutes
+  (helper/codeupdate.py, plain-words reason + fix on failure; the GitHub key from Settings is used only after git's own
+  sign-in is refused, only for https://github.com/, via GIT_CONFIG_* env, never on the command line); other copies use
+  updater.py. Request `update.check` (Settings → Connection check → Check for updates) runs it now. The helper notes
+  pid + version in ~/.trading-platform/helper-running.json; the desktop launcher stops an older running helper
+  (pre-90: found by port, only if Python) instead of reusing it, and pulls a git copy on every start.
   Engine (helper/engine/): `@handler('name')` registers request types (flow.*, research.company, macro.*,
   portfolio.analyze/optimize, store.*); the browser calls them with `engineRequest()` and replies come back as
   type engine. Uses numpy/scipy, SEC EDGAR (contact email asked once), FRED CSV, CFTC, Yahoo dividends (total
@@ -678,10 +684,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 - Research → Among US companies (helper 88, FILER_RANK_HELPER_VERSION/filerRankReady; engine/filerrank.py
   `research.filerrank {cik}`; src/research/filerRank.ts pure + filerRankView.ts, class fr-*, first in the More fold): nine
   readings (gross profit/assets, operating margin, ROA, sales growth, asset growth, accruals, inventory vs sales growth;
-  helper 90: share count change = ln of weighted shares vs last year (diluted, else basic; one tag both years; a
+  helper 91: share count change = ln of weighted shares vs last year (diluted, else basic; one tag both years; a
   whole-multiple move is skipped as a split only when the two years come from different filings), shown as the % change;
   R&D (excluding acquired IPR&D, else plain) / revenue; a reading absent from a reply says it arrives with the update
-  (ARRIVES_WITH_UPDATE in schwab.ts, one text everywhere); on helper 90+ a pre-update saved reply is asked again with
+  (ARRIVES_WITH_UPDATE in schwab.ts, one text everywhere); on helper 91+ a pre-update saved reply is asked again with
   refresh; the reply's `frames` = [{label, url}] of the exact SEC files used (filerrank.sources))
   ranked among every filer with total assets >= $100M from SEC XBRL frames (one file per concept and calendar period,
   cached a week as 'sec-frame'; field cached a day as 'sec-filerrank-v2', helper 88's 'sec-filerrank' removed by datahub migration filerrank-v1). Fiscal year = the company's row in the CY duration

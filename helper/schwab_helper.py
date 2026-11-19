@@ -44,6 +44,7 @@ from schwab.auth import RedirectTimeoutError, client_from_token_file, easy_clien
 from schwab.streaming import StreamClient  # noqa: E402
 from websockets.asyncio.server import broadcast, serve  # noqa: E402
 import updater  # noqa: E402  (standard library only)
+import codeupdate  # noqa: E402  (standard library only: git pull for a copy made with git)
 import engine  # noqa: E402  (light: its big modules load in the background, see engine.start_loading)
 from engine import diagnostics  # noqa: E402  (standard library only: records requests for the diagnostics file)
 from engine.core import is_safe_url  # noqa: E402
@@ -51,7 +52,7 @@ from engine.safexml import fromstring as safe_fromstring  # noqa: E402  (refuses
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 90
+HELPER_VERSION = 91
 
 HOST = '127.0.0.1'
 PORT = 8765
@@ -706,6 +707,9 @@ class Market:
         self.updater = updater.Updater(HELPER_VERSION, on_change=self.update_changed, token=github_key)
         self.restart = asyncio.Event()
         self.offered = None
+        # A copy of the code made with git (or the desktop app's private mode): git pull is the update (codeupdate.py).
+        self.git_mode = bool(os.environ.get('TP_PRIVATE')) or codeupdate.is_git_copy()
+        self.git_state = {}  # the last check: behind / reason / fix
         # Logging in to Schwab again while running (the saved login was refused): see relogin().
         self.config = None  # set by run(): the Schwab app key/secret the login page needs
         self.login_task = None
@@ -732,7 +736,7 @@ class Market:
                 'officialQuotes': len(self.official), 'update': self.updater.public(), 'uptimeSeconds': round(now - STARTED)}
 
     def set_status(self, status, message):
-        self.status = {**self._status(status, message), 'update': {**self.updater.public(), 'auto': auto_update_on()}}
+        self.status = {**self._status(status, message), 'update': self.update_public()}
         broadcast(self.browsers, json.dumps(self.status))
         if SCREEN:
             SCREEN.status(status, message)
@@ -760,6 +764,8 @@ class Market:
                     engine.background(self.reply(ws, msg.get('id'), self.calendar_reply(), 'calendar'))
                 elif kind == 'update':
                     engine.background(self.reply(ws, msg.get('id'), self.update_reply(), 'update'))
+                elif kind == 'update.check':
+                    engine.background(self.reply(ws, msg.get('id'), self.check_reply(), 'update'))
                 elif kind == 'schwab_login':
                     engine.background(self.reply(ws, msg.get('id'), self.login_reply(), 'schwab_login'))
                 elif kind == 'summary':
@@ -911,6 +917,61 @@ class Market:
         asyncio.get_running_loop().call_later(1.5, self.restart.set)  # lets this reply reach the browser first
         return {'type': 'update', 'version': self.updater.latest}
 
+    def update_public(self):
+        """What the page shows about updates: the newest version, progress, and how this copy is updated."""
+        mode = {'mode': 'git', 'git': self.git_state} if self.git_mode else {'mode': 'download'}
+        return {**self.updater.public(), 'auto': auto_update_on(), **mode}
+
+    async def check_reply(self):
+        """Check for updates (the owner clicked it): looks now, installs what it finds and restarts when the helper
+        itself changed. Works for both kinds of copy; a failure comes back in plain words with the fix."""
+        if self.git_mode:
+            return await self.git_update(asked=True)
+        await self.updater.check(self.news.http)
+        base = {'type': 'update', 'check': True, 'mode': 'download', 'current': HELPER_VERSION, 'latest': self.updater.latest}
+        if self.updater.state == 'failed':
+            return {**base, 'ok': False, 'message': self.updater.message, 'fix': ''}
+        if self.updater.latest is None:
+            return {**base, 'ok': False, 'message': 'GitHub could not be reached.', 'fix': 'Check the internet connection and try again.'}
+        if not self.updater.available:
+            return {**base, 'ok': True, 'message': f'Up to date: version {HELPER_VERSION} is the newest.'}
+        await self.update_reply()
+        return {**base, 'ok': True, 'restarting': True, 'message': f'Installing version {self.updater.latest}; the helper restarts in a moment.'}
+
+    async def git_update(self, asked=False):
+        """git pull for a copy made with git: checks GitHub, pulls (fast-forward only) and restarts when the helper's
+        version changed. Automatic runs wait for a safe moment; Check for updates goes straight away."""
+        token = github_key()
+        st = await asyncio.to_thread(codeupdate.status, codeupdate.ROOT, token)
+        self.git_state = {'behind': st.get('behind'), 'reason': st.get('reason', ''), 'fix': st.get('fix', ''), 'checked': time.time()}
+        base = {'type': 'update', 'check': True, 'mode': 'git', 'current': HELPER_VERSION}
+        if not st['ok']:
+            self.update_changed()
+            return {**base, 'ok': False, 'message': st['reason'], 'fix': st['fix']}
+        if not st['behind']:
+            self.update_changed()
+            return {**base, 'ok': True, 'latest': HELPER_VERSION, 'message': f'Up to date: version {HELPER_VERSION}, nothing new on GitHub.'}
+        while not asked and not self.safe_to_restart():
+            await asyncio.sleep(30)
+        res = await asyncio.to_thread(codeupdate.pull, codeupdate.ROOT, token)
+        if not res['ok']:
+            self.git_state = {**self.git_state, 'reason': res['reason'], 'fix': res['fix']}
+            self.update_changed()
+            return {**base, 'ok': False, 'message': res['reason'], 'fix': res['fix']}
+        new = codeupdate.version_on_disk() or HELPER_VERSION
+        self.git_state = {'behind': 0, 'reason': '', 'fix': '', 'checked': time.time()}
+        site = ' Close and reopen the app to rebuild the website from it.' if os.environ.get('TP_PRIVATE') else ''
+        if new != HELPER_VERSION:
+            log.info('git pull brought helper version %s: restarting', new)
+            self.updater.latest = new
+            self.updater._set('restarting', f'Updated to version {new}. Restarting...')
+            asyncio.get_running_loop().call_later(1.5, self.restart.set)
+            return {**base, 'ok': True, 'latest': new, 'changed': True, 'restarting': True,
+                    'message': f'Got {st["behind"]} new change(s): helper version {new}. The helper restarts in a moment.{site}'}
+        self.update_changed()
+        return {**base, 'ok': True, 'latest': HELPER_VERSION, 'changed': True,
+                'message': f'Got {st["behind"]} new change(s); the helper itself is unchanged (version {HELPER_VERSION}).{site}'}
+
     def update_changed(self):
         """Tells open tabs (and the start screen) about a newer version or update progress."""
         self.set_status(self.status['status'], self.status['message'])
@@ -951,9 +1012,21 @@ class Market:
         restarts; open tabs reconnect and say which version is now running.
         Not in private mode (the desktop launcher's --private, or a git clone): there `git pull` is the update, and an
         online update would overwrite your copy of the code."""
-        if os.environ.get('TP_PRIVATE') or (Path(__file__).resolve().parent.parent / '.git').exists():
-            log.info('Private copy of the code: online helper updates are off (git pull updates it)')
-            return
+        if self.git_mode:
+            # a copy made with git: the same automatic updates, by git pull (fast-forward only) every 10 minutes
+            log.info('Copy of the code made with git: updates come from git pull')
+            await asyncio.sleep(20)
+            while True:
+                if auto_update_on():
+                    try:
+                        res = await self.git_update()
+                        if res.get('restarting'):
+                            return
+                        if not res['ok']:
+                            log.warning('Automatic git update: %s', res['message'])
+                    except Exception as err:
+                        log.warning('Automatic git update failed: %s', err)
+                await asyncio.sleep(600)
         await asyncio.sleep(5)
         while True:
             await self.updater.check(self.news.http)
@@ -1473,6 +1546,8 @@ async def run(client, sec_contact='', open_browser=True, config=None):
         if SCREEN:
             SCREEN.pause()
         sys.exit(f'Port {PORT} is already in use. Is the helper already running in another window?')
+    if not DESKTOP:
+        codeupdate.note_running(HELPER_VERSION, PORT)  # the desktop launcher replaces an older helper instead of reusing it
     async with server:
         jobs = [market.run_stream(), market.send_quotes(), market.refresh_official(), engine_ready(market), warm_up(market),
                 open_when_ready(market, open_browser), market_scanner(market), prospect_schedule(market), market.update_loop(),
@@ -1663,6 +1738,8 @@ def serve_forever(args):
         prospect = sys.modules.get('engine.prospect')
         if prospect is not None:
             prospect.shutdown()  # and the prospect data worker
+        if not DESKTOP:
+            codeupdate.clear_running()
     if restart:
         restart_helper()
 
