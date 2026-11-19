@@ -364,6 +364,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Design patterns (Bloomberg organisation, owner 2026-11-18): docs/research/bloomberg-patterns.md is the rulebook (title line,
   view tabs in `.ap-tabrow` under it via pageFrame, flat panels with tinted title bars, kv lists, banded tables, nothing
   twice on a screen). Charts is its own destination (section 'charts').
+  Terminal look (2026-11-19, owner: "terminal feel, but the Apple glass"): src/terminal.css under :root[data-look='terminal']
+  (default; Settings > Appearance > Look, 'classic' = the earlier look; theme.ts setLook/initLook). One font everywhere: TP Mono
+  (JetBrains Mono with a plain zero, renamed per the OFL, src/fonts, scripts/make_tp_mono.py). Glass panels, amber codes, dense
+  tables. New terminal screens use src/term/kit.ts (termPanel, termTable: update in place) and calm flashes (src/term/flash.ts:
+  one fading tint, max once per 2 s per cell and 12 per second per screen, off with reduced motion or the setting). Missing data =
+  one line in the panel's note, never an empty box. Cross-data read: src/term/read.ts (rules, not AI); correlations src/term/corr.ts.
+  Markets > Monitor is the first rebuilt screen (numbered tabs 1-6, three columns that fill the window). Keep Home's greeting and tape.
   Theme: light/dark via CSS variables (`:root[data-theme='light']`) and src/ui/theme.ts (THEME object updated in place,
   `followTheme(chart)` repaints canvases). Use variables, not hard-coded colours, in new CSS. Tokens, type and do/don't: docs/design.md.
   Chart engine (src/chart/): live ticks recompute indicators on the tail only (incremental.ts: last 512 bars, checked

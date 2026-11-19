@@ -8408,6 +8408,10 @@ button.stat-drill:focus-visible .stat-drill-mark {
 .pf-real {
   margin: var(--sp-2) 0;
 }
+.pf-real-actions {
+  margin-top: var(--sp-2);
+  align-items: center;
+}
 .pf-accounts-link {
   margin-top: var(--sp-3);
 }
@@ -11366,7 +11370,7 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .sahm-table .num { text-align: right; }
 /* Research → Among US companies: one row per reading, a 0-100 rank track with the middle half shaded */
 .fr-list { display: grid; gap: 6px; margin: var(--sp-2) 0; container: frlist / inline-size; }
-.fr-row, .fr-axis { display: grid; grid-template-columns: minmax(9rem, 15rem) 5rem minmax(6rem, 1fr) minmax(11rem, 19rem); align-items: center; gap: var(--sp-2); }
+.fr-row, .fr-axis { display: grid; grid-template-columns: minmax(9rem, 15rem) 5.5rem minmax(6rem, 1fr) minmax(12rem, 23rem); align-items: center; gap: var(--sp-2); }
 .fr-label { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
 .fr-value { text-align: right; color: var(--text-strong); font-weight: 600; }
 .fr-track { position: relative; height: 12px; border-radius: 2px; background: color-mix(in srgb, var(--muted) 14%, transparent); min-width: 0; }

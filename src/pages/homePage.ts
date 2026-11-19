@@ -3,6 +3,7 @@
  * my accounts, what needs attention, setups, news, the week's calendar, the watchlist; src/home/widgets.ts).
  */
 import { CandlestickSeries, LineStyle, TickMarkType, createChart, type IPriceLine, type UTCTimestamp } from 'lightweight-charts';
+import { CHART_FONT } from '../chart/axisChrome';
 import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
 import { HELPER_OUTDATED, helper, loadNews, schwab, type NewsItem, type NewsSection } from '../data/schwab';
 import { insightButton } from '../ai/insight';
@@ -111,7 +112,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
   const chart = createChart(chartBox, {
     autoSize: true,
     ...chartThemeOptions(true),
-    layout: { ...chartThemeOptions(true).layout, fontFamily: "'Inter', sans-serif", fontSize: 11 },
+    layout: { ...chartThemeOptions(true).layout, fontFamily: CHART_FONT, fontSize: 11 },
     // the square dotted grid comes from chartThemeOptions + followTheme (src/chart/grid.ts)
     rightPriceScale: { borderVisible: false, entireTextOnly: true, scaleMargins: { top: 0.18, bottom: 0.08 } }, // entireTextOnly: no half-cut labels at the edges
     timeScale: { borderVisible: false, fixLeftEdge: true, fixRightEdge: true, timeVisible: true, tickMarkMaxCharacterLength: 6, tickMarkFormatter: (t: number, type: TickMarkType) => cardTick(t, type, range) },

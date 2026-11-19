@@ -1,225 +1,434 @@
 /**
- * Markets > Monitor (MON): the whole market on one screen, Bloomberg-cockpit style (owner's spec 7.5: several small
- * titled tables tiled on one page, no scrolling on a wide screen). Left to right, most important first:
- *   - world market clocks (open / lunch / closed),
- *   - world equities by region (WEI): numbered rows, last, today, YTD, a 1-year sparkline,
- *   - the Nasdaq-100 as a sector sunburst (IMAP), live, equal weight,
- *   - today's S&P 500 movers (MOV),
- *   - currencies, commodities and rates (through the ETFs that track them),
- *   - the top headlines, numbered (TOP).
- * Every tile's link opens the full screen; every row has a number ("5" + Enter in the search bar opens it).
- * Free data only: Schwab quotes and daily closes (invest.board), Schwab movers, Google News / CNBC RSS.
+ * Markets > Monitor (MON): the whole market on one screen in the terminal layout (owner, 2026-11-19: "I'm digging
+ * that model"). Three columns of dense glass panels that fill the window, most important first, and a numbered tab row
+ * that widens one asset class to the whole screen:
+ *   WEI  world equities (live)          FUT  futures across assets: today's move, the move in standard deviations,
+ *   IMAP US sectors against the S&P 500      1 week, 1 month and where speculators are positioned (CFTC)
+ *        (live)                        READ why it's moving: one read across all the panels (rules, src/term/read.ts)
+ *                                      MOV  S&P 500 movers
+ *   GC   Treasury curve with bp changes and spreads · WIRP Fed path · CORR 20-day correlations against a year · TOP news
+ * Numbers update in place with one calm flash when they change (src/term/flash.ts). A missing source says so in one
+ * line at the foot of its panel; nothing is made up. Every row is numbered: "5" + Enter in the command bar opens it.
  */
 import { engineRequest, HELPER_NOT_RUNNING, helper, loadNews, type NewsItem } from '../data/schwab';
 import { subscribeQuote } from '../data/quotes';
-import { CROSS_ASSET, EXCHANGES, WORLD, boardSymbols, leaders, sessionState, type BoardSection } from '../markets/monitor';
+import { EXCHANGES, WORLD, boardSymbols, sessionState } from '../markets/monitor';
 import { SECTOR_LISTS } from '../security/related';
 import { openSecurity } from '../security/open';
 import type { BoardRow } from '../invest/shared';
-import { pct } from '../ui/charts';
+import type { FedOdds } from '../edge/fedOdds';
 import { formatPrice, h } from '../ui/dom';
-import { fnTile, numberRow } from '../ui/fnTile';
-import { sparkline } from '../ui/sparkline';
 import { sunburst } from '../ui/viz';
+import { bp, pc, sgn, termPanel, termTable, toneOf, type TermPanel } from '../term/kit';
+import { marketRead, spread, type CurvePoint, type FutRow } from '../term/read';
+import { alignedReturns, corrMatrix, type Closes } from '../term/corr';
 
-const tone = (v: number | null | undefined) => (v == null || !Number.isFinite(v) || Math.abs(v) < 5e-5 ? '' : v > 0 ? 'up' : 'down');
 const clock = (t: number) => new Date(t * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+const errText = (err: unknown) => (helper.isConnected ? (err as Error).message : HELPER_NOT_RUNNING);
+const shortDate = (iso: string) => (iso ? new Date(iso.length <= 10 ? `${iso}T12:00:00Z` : iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) : '');
+
+const SECTORS: [string, string][] = [
+  ['XLK', 'Technology'], ['XLC', 'Communications'], ['XLY', 'Discretionary'], ['XLF', 'Financials'], ['XLI', 'Industrials'], ['XLV', 'Health care'],
+  ['XLP', 'Staples'], ['XLE', 'Energy'], ['XLB', 'Materials'], ['XLRE', 'Real estate'], ['XLU', 'Utilities'],
+];
+/** The futures shown on the overview (the FX & commodities tab shows every market on the board). */
+const KEY_FUTURES = new Set(['ES', 'NQ', 'RTY', 'ZT', 'ZN', 'ZB', 'CL', 'NG', 'GC', 'SI', 'HG', 'ZC', '6E', '6J', 'DX', 'BTC', 'VX']);
+/** Short market names for the dense futures table (the full contract name is in the row's tooltip). */
+const FUT_NAMES: Record<string, string> = {
+  ES: 'S&P 500', NQ: 'Nasdaq 100', YM: 'Dow', RTY: 'Russell 2000', ZT: 'UST 2Y', ZF: 'UST 5Y', ZN: 'UST 10Y', ZB: 'UST bond', SR3: 'SOFR 3M',
+  CL: 'WTI crude', NG: 'Natural gas', RB: 'Gasoline', HO: 'Heating oil', GC: 'Gold', SI: 'Silver', HG: 'Copper', PL: 'Platinum',
+  ZC: 'Corn', ZS: 'Soybeans', ZW: 'Wheat', ZL: 'Soy oil', ZM: 'Soy meal', LE: 'Live cattle', HE: 'Lean hogs', KC: 'Coffee', SB: 'Sugar', CC: 'Cocoa',
+  '6E': 'EUR/USD', '6J': 'JPY/USD', '6B': 'GBP/USD', '6A': 'AUD/USD', '6C': 'CAD/USD', DX: 'Dollar index', BTC: 'Bitcoin', ETH: 'Ether', VX: 'VIX futures',
+};
+const FUT_ORDER = ['Equity index', 'Rates', 'Energy', 'Metals', 'Ags', 'FX', 'Crypto', 'Volatility'];
+const CORR_SET: [string, string][] = [['SPY', 'SPX'], ['TLT', 'Bonds'], ['UUP', 'USD'], ['GLD', 'Gold'], ['USO', 'Oil']];
+
+type View = 'overview' | 'equities' | 'rates' | 'cross' | 'movers' | 'news';
+const VIEWS: [View, string][] = [['overview', 'Overview'], ['equities', 'Equities'], ['rates', 'Rates'], ['cross', 'FX & commodities'], ['movers', 'Movers'], ['news', 'News']];
+
+interface Fut extends FutRow {
+  symbol: string;
+  full?: string;
+  price: number | null;
+}
 
 export function createMonitorPage() {
-  const clocks = h('div', { class: 'mon-clocks', role: 'list', 'aria-label': 'World market clocks' });
   const go = (route: string) => () => (location.hash = `#${route}`);
+  const panel = (o: Parameters<typeof termPanel>[0], views: View[]) => {
+    const p = termPanel(o);
+    p.el.dataset.views = views.join(' ');
+    return p;
+  };
 
-  const wei = fnTile({ title: 'World equities', link: 'All markets', open: go('invest'), cls: 'mon-wei', tip: 'Today, year to date and the last year for the main stock markets' });
-  const sun = fnTile({ title: 'Nasdaq-100 by sector', link: 'Heat maps', open: go('invest'), cls: 'mon-sun' });
-  const mov = fnTile({ title: 'S&P 500 movers', link: 'More movers', open: go('invest'), cls: 'mon-mov' });
-  const cross = fnTile({ title: 'Currencies, commodities & rates', link: 'Rates board', linkTitle: 'Open the rates and money-markets board (Macro)', open: go('macro'), cls: 'mon-cross' });
-  const top = fnTile({ title: 'Top news', link: 'All news', linkTitle: 'Open all news (Today)', open: go('home'), cls: 'mon-news' });
+  // ---------- panels ----------
+  const wei = panel({ code: 'WEI', title: 'World equity markets', cls: 'm-wei', link: { label: 'All markets', open: go('invest') }, tip: 'Countries through the US-listed ETFs that track them' }, ['overview', 'equities']);
+  const sec = panel({ code: 'IMAP', title: 'US sectors vs S&P 500', cls: 'm-sec' }, ['overview', 'equities']);
+  const heat = panel({ code: 'HEAT', title: 'Nasdaq-100 by sector', cls: 'm-heat' }, ['equities']);
+  const fut = panel({ code: 'FUT', title: 'Futures across assets', cls: 'm-fut', link: { label: 'Futures', open: go('futures') }, tip: 'σ = today’s move in daily standard deviations · Spec = speculators’ net position against the last 3 years (0 = most short, 100 = most long), CFTC' }, ['overview', 'cross']);
+  const read = panel({ code: 'READ', title: 'Why it’s moving', cls: 'm-read', tip: 'Worked out from the numbers on this screen by fixed rules (not AI)' }, ['overview', 'cross', 'rates']);
+  const mov = panel({ code: 'MOV', title: 'S&P 500 movers', cls: 'm-mov', link: { label: 'More', open: go('invest') } }, ['overview', 'movers', 'equities']);
+  const gc = panel({ code: 'GC', title: 'US Treasury curve', cls: 'm-gc', link: { label: 'Bonds', open: go('invest') } }, ['overview', 'rates']);
+  const wirp = panel({ code: 'WIRP', title: 'Fed path (futures)', cls: 'm-wirp', link: { label: 'Fed odds', open: go('macro') } }, ['overview', 'rates']);
+  const corr = panel({ code: 'CORR', title: 'Correlation 20d / 1y', cls: 'm-corr', tip: 'Daily moves over the last 20 sessions; the year’s figure in brackets. A big gap means a relationship has changed.' }, ['overview', 'rates', 'cross']);
+  const top = panel({ code: 'TOP', title: 'Top news', cls: 'm-top', link: { label: 'All news', open: go('home') } }, ['overview', 'news']);
+
+  // ---------- command strip, clocks, tabs ----------
+  const clocks = h('div', { class: 'term-clocks', 'aria-label': 'World market clocks' });
+  const drawClocks = () =>
+    clocks.replaceChildren(
+      ...EXCHANGES.map((x) => {
+        const s = sessionState(x, new Date());
+        return h('span', { class: `term-clock ${s.state}`, title: `${x.city}: ${s.note}` }, h('b', {}, x.city.slice(0, 3).toUpperCase()), ` ${s.time} `, h('i', {}, s.state === 'open' ? 'OPEN' : s.state === 'lunch' ? 'LUNCH' : 'CLSD'));
+      }),
+    );
+  const grid = h('div', { class: 'mon2-grid', 'data-view': 'overview' },
+    h('div', { class: 'mon2-col' }, wei.el, sec.el, heat.el),
+    h('div', { class: 'mon2-col' }, fut.el, read.el, mov.el),
+    h('div', { class: 'mon2-col' }, gc.el, wirp.el, corr.el, top.el),
+  );
+  const tabs = h('div', { class: 'term-tabs', role: 'tablist', 'aria-label': 'Monitor views' });
+  let view: View = 'overview';
+  const drawTabs = () =>
+    tabs.replaceChildren(
+      ...VIEWS.map(([v, label], i) =>
+        h('button', { type: 'button', role: 'tab', class: v === view ? 'on' : '', 'aria-selected': String(v === view), onclick: () => setView(v) }, h('b', {}, `${i + 1})`), ` ${label}`),
+      ),
+    );
+  const setView = (v: View) => {
+    view = v;
+    grid.dataset.view = v;
+    drawTabs();
+    if (futRows.length) drawFut();
+  };
+  drawTabs();
+  const onKey = (e: KeyboardEvent) => {
+    // 1-6 switch tabs when nothing is being typed (numbers typed in the command bar open rows instead)
+    const t = e.target as HTMLElement | null;
+    if (e.altKey || e.ctrlKey || e.metaKey || (t && (t.closest('input, textarea, select, [contenteditable]') || t.isContentEditable))) return;
+    const n = Number(e.key);
+    if (n >= 1 && n <= VIEWS.length && el.offsetParent) setView(VIEWS[n - 1][0]);
+  };
 
   const el = h(
     'div',
-    { class: 'analysis-page monitor-page' },
-    h('header', { class: 'ap-header' }, h('div', {}, h('h1', {}, 'Market monitor'), h('p', { class: 'muted' }, 'The whole market on one screen. Click any row to open it (or type its number in the search bar).'))),
-    clocks,
-    h('div', { class: 'mon-grid' }, wei.el, sun.el, mov.el, cross.el, top.el),
+    { class: 'term-page monitor2' },
+    h('div', { class: 'term-cmd' }, h('span', { class: 'term-fn' }, 'MON'), h('h1', { class: 'term-title' }, 'World markets monitor'), clocks),
+    tabs,
+    grid,
   );
 
-  // ---------- clocks ----------
-  const drawClocks = () => {
-    const now = new Date();
-    clocks.replaceChildren(
-      ...EXCHANGES.map((x) => {
-        const s = sessionState(x, now);
-        return h(
-          'div',
-          { class: `mon-clock ${s.state}`, role: 'listitem', title: `${x.city}: ${s.note} (regular hours; public holidays are not counted)` },
-          h('span', { class: 'mon-city' }, x.city),
-          h('b', { class: 'num' }, s.time),
-          h('span', { class: 'mon-state' }, h('i', { 'aria-hidden': 'true' }), s.state === 'open' ? 'Open' : s.state === 'lunch' ? 'Lunch' : 'Closed'),
-        );
+  // ---------- WEI: world equities (board + live quotes) ----------
+  const board = new Map<string, BoardRow>();
+  const weiTable = termTable<[string, string]>({
+    id: ([s]) => s,
+    number: 1,
+    label: ([, n]) => n,
+    open: ([s]) => void openSecurity(s),
+    rowTitle: ([s, n]) => `${n} (${s}): open it`,
+    cols: [
+      { label: 'Market', left: true, text: ([, n]) => n },
+      { label: 'Last', text: ([s]) => (board.get(s)?.price != null ? formatPrice(board.get(s)!.price!) : '—'), value: ([s]) => board.get(s)?.price, minMove: 0.0002 },
+      { label: '%Chg', text: ([s]) => pc(board.get(s)?.change), tone: ([s]) => toneOf(board.get(s)?.change) },
+      { label: '1M%', text: ([s]) => pc(board.get(s)?.m1, 1), tone: ([s]) => toneOf(board.get(s)?.m1) },
+      { label: 'YTD%', text: ([s]) => pc(board.get(s)?.ytd, 1), tone: ([s]) => toneOf(board.get(s)?.ytd) },
+      { label: '1Y%', text: ([s]) => pc(board.get(s)?.y1, 1), tone: ([s]) => toneOf(board.get(s)?.y1) },
+    ],
+  });
+  wei.body.append(weiTable.el);
+  const drawWei = () => weiTable.set(WORLD.map((g) => ({ title: g.title, rows: g.rows })));
+
+  const spy = () => board.get('SPY')?.change ?? null;
+  const rel = (s: string) => (board.get(s)?.change != null && spy() != null ? board.get(s)!.change! - spy()! : null);
+  const rel3 = (s: string) => {
+    const a = board.get(s)?.m3, b = board.get('SPY')?.m3;
+    return a != null && b != null ? (1 + a) / (1 + b) - 1 : null;
+  };
+  const secTable = termTable<[string, string]>({
+    id: ([s]) => s,
+    number: 31,
+    label: ([, n]) => n,
+    open: ([s]) => void openSecurity(s),
+    cols: [
+      { label: 'Sector', left: true, text: ([, n]) => n },
+      { label: '%1D', text: ([s]) => pc(board.get(s)?.change), tone: ([s]) => toneOf(board.get(s)?.change), value: ([s]) => board.get(s)?.price, minMove: 0.0002 },
+      { label: 'vs SPX', text: ([s]) => pc(rel(s)), tone: ([s]) => toneOf(rel(s)) },
+      { label: '%1M', text: ([s]) => pc(board.get(s)?.m1, 1), tone: ([s]) => toneOf(board.get(s)?.m1) },
+      { label: '3M vs SPX', text: ([s]) => pc(rel3(s), 1), tone: ([s]) => toneOf(rel3(s)), title: '3-month return relative to the S&P 500' },
+    ],
+  });
+  sec.body.append(secTable.el);
+  const drawSec = () => {
+    const rows = [...SECTORS].sort((a, b) => (rel(b[0]) ?? -9) - (rel(a[0]) ?? -9));
+    secTable.set([{ title: '', rows }]);
+  };
+
+  async function loadBoard() {
+    const symbols = [...boardSymbols(WORLD), ...SECTORS.map(([s]) => s)];
+    try {
+      const { rows, asOf } = await engineRequest<{ rows: BoardRow[]; asOf?: number }>('invest.board', { symbols }, 90000);
+      for (const r of rows) board.set(r.symbol, { ...board.get(r.symbol), ...r });
+      drawWei();
+      drawSec();
+      wei.source(`Schwab · ${clock(asOf ?? Date.now() / 1000)}`);
+      sec.source(`ranked vs S&P · ${clock(asOf ?? Date.now() / 1000)}`);
+      wei.note('');
+      drawRead();
+    } catch (err) {
+      wei.note(errText(err));
+    }
+  }
+
+  // live quotes move Last and %Chg between board refreshes
+  let quoteUnsubs: (() => void)[] = [];
+  let liveFrame = 0;
+  const liveRedraw = () => {
+    if (liveFrame) return;
+    liveFrame = requestAnimationFrame(() => {
+      liveFrame = 0;
+      drawWei();
+      drawSec();
+    });
+  };
+  const listenQuotes = () => {
+    if (quoteUnsubs.length) return;
+    quoteUnsubs = [...boardSymbols(WORLD), ...SECTORS.map(([s]) => s)].map((sym) =>
+      subscribeQuote({ provider: 'schwab', symbol: sym }, (q) => {
+        const r = board.get(sym);
+        if (!r || q.last == null) return;
+        r.price = q.last;
+        if (q.prevClose) r.change = q.last / q.prevClose - 1;
+        liveRedraw();
       }),
     );
   };
 
-  // ---------- boards (world equities; currencies, commodities, rates) ----------
-  const boardTable = (sections: BoardSection[], rows: Map<string, BoardRow>, first: number, withYtd: boolean, showSym = true) => {
-    let n = first;
-    const head = h('tr', {}, h('th', { class: 'num-col' }, '#'), h('th', {}, 'Market'), h('th', { class: 'num' }, 'Last'), h('th', { class: 'num' }, 'Today'), withYtd ? h('th', { class: 'num' }, 'YTD') : '', h('th', { class: 'spark-col' }, '1 year'));
-    const body: HTMLElement[] = [];
-    for (const sec of sections) {
-      body.push(h('tr', { class: 'mon-band' }, h('th', { colspan: withYtd ? 6 : 5, scope: 'colgroup' }, sec.title)));
-      for (const [sym, name] of sec.rows) {
-        const r = rows.get(sym);
-        const sp = r?.spark?.filter((v) => Number.isFinite(v)) ?? [];
-        const tr = h(
-          'tr',
-          { class: 'mon-row', tabindex: 0, title: `${name} (${sym}): open it`, onclick: () => void openSecurity(sym), onkeydown: (e: Event) => void ((e as KeyboardEvent).key === 'Enter' && openSecurity(sym)) },
-          h('td', { class: 'num-col' }, String(n)),
-          h('td', {}, h('span', { class: 'mon-name' }, name), showSym ? h('span', { class: 'mon-sym' }, sym) : ''),
-          h('td', { class: 'num' }, r?.price != null ? formatPrice(r.price) : '—'),
-          h('td', { class: `num ${tone(r?.change)}` }, pct(r?.change)),
-          withYtd ? h('td', { class: `num ${tone(r?.ytd)}` }, pct(r?.ytd, 1)) : '',
-          h('td', { class: 'spark-col' }, sp.length > 2 ? sparkline(sp, sp[0], (sp.at(-1) ?? 0) >= sp[0] ? 'var(--up)' : 'var(--down)') : ''),
-        );
-        body.push(numberRow(tr, n++, name));
-      }
-    }
-    return h('table', { class: 'mon-table' }, h('thead', {}, head), h('tbody', {}, ...body));
-  };
-
-  const worldSummary = (rows: Map<string, BoardRow>) => {
-    const named = WORLD.flatMap((s) => s.rows.map(([sym, name]) => ({ name, change: rows.get(sym)?.change ?? null })));
-    const l = leaders(named, 1);
-    const up = named.filter((x) => (x.change ?? 0) > 0).length;
-    const priced = named.filter((x) => x.change != null).length;
-    if (!priced) return '';
-    return h(
-      'p',
-      { class: 'mon-words' },
-      `${up} of ${priced} markets up today`,
-      l.up[0] ? h('span', {}, ' · best ', h('b', { class: 'up' }, `${l.up[0].name} ${pct(l.up[0].change, 1)}`)) : '',
-      l.down[0] ? h('span', {}, ' · worst ', h('b', { class: 'down' }, `${l.down[0].name} ${pct(l.down[0].change, 1)}`)) : '',
-    );
-  };
-
-  let boardsAsOf = 0;
-  async function loadBoards() {
-    const symbols = [...boardSymbols(WORLD), ...boardSymbols(CROSS_ASSET)];
-    try {
-      const { rows, asOf } = await engineRequest<{ rows: BoardRow[]; asOf?: number }>('invest.board', { symbols }, 90000);
-      const map = new Map(rows.map((r) => [r.symbol, r]));
-      boardsAsOf = asOf ?? Date.now() / 1000;
-      wei.body.replaceChildren(worldSummary(map), boardTable(WORLD, map, 1, true));
-      cross.body.replaceChildren(boardTable(CROSS_ASSET, map, 31, false, false));
-      wei.foot(`Schwab quotes · countries through US-listed ETFs · ${clock(boardsAsOf)}`);
-      cross.foot(`Schwab quotes of the ETFs that track each market · ${clock(boardsAsOf)}`);
-    } catch (err) {
-      const msg = helper.status.status === 'live' ? (err as Error).message : HELPER_NOT_RUNNING;
-      wei.body.replaceChildren(h('p', { class: 'ap-error' }, msg));
-      cross.body.replaceChildren(h('p', { class: 'muted' }, 'Waiting for the helper.'));
-    }
-  }
-
-  // ---------- movers ----------
-  async function loadMovers() {
-    try {
-      const m = await engineRequest<{ up?: BoardRow[]; down?: BoardRow[] }>('invest.movers', { index: '$SPX' }, 60000);
-      let n = 51;
-      const list = (title: string, rows: BoardRow[] = []) =>
-        h(
-          'div',
-          { class: 'mon-movers' },
-          h('h4', {}, title),
-          rows.length
-            ? h(
-                'ol',
-                {},
-                ...rows.slice(0, 5).map((r) =>
-                  numberRow(
-                    h(
-                      'li',
-                      { tabindex: 0, title: `${r.name || r.symbol}: open it`, onclick: () => void openSecurity(r.symbol), onkeydown: (e: Event) => void ((e as KeyboardEvent).key === 'Enter' && openSecurity(r.symbol)) },
-                      h('span', { class: 'num-col' }, String(n)),
-                      h('b', {}, r.symbol),
-                      h('span', { class: 'mon-mov-name' }, r.name ?? ''),
-                      h('span', { class: `num ${tone(r.change)}` }, pct(r.change, 1)),
-                    ),
-                    n++,
-                    r.symbol,
-                  ),
-                ),
-              )
-            : h('p', { class: 'muted small' }, 'None yet (the market may not have opened).'),
-        );
-      mov.body.replaceChildren(list('Up most', m.up), list('Down most', m.down));
-      mov.foot(`Schwab movers · ${clock(Date.now() / 1000)}`);
-    } catch (err) {
-      mov.body.replaceChildren(h('p', { class: 'muted' }, helper.status.status === 'live' ? (err as Error).message : 'Waiting for the helper.'));
-    }
-  }
-
-  // ---------- sector sunburst (live) ----------
+  // ---------- HEAT: Nasdaq-100 sunburst (Equities tab) ----------
   const groups = Object.entries(SECTOR_LISTS).map(([label, syms]) => ({ label, items: syms.split(' ') }));
   const changes = new Map<string, number>();
-  const burst = sunburst({
-    groups,
-    title: 'Today by stock and sector',
-    centre: 'Nasdaq-100',
-    format: (v) => pct(v, 2),
-    onItem: (sym) => void openSecurity(sym),
-    caption: 'Inner ring: sectors. Outer ring: each stock (equal weight). Deeper colour = bigger move. Click a slice to open it.',
-    size: 320,
-    hideTitle: true,
-  });
-  sun.body.append(burst.el);
-  let frame = 0;
-  const redraw = () => {
-    if (frame) return;
-    frame = requestAnimationFrame(() => {
-      frame = 0;
-      burst.update((s) => changes.get(s));
-      sun.foot(`Schwab live quotes · ${changes.size} of ${groups.reduce((a, g) => a + g.items.length, 0)} priced`);
-    });
-  };
-  let unsubs: (() => void)[] = [];
-  const listen = () => {
-    if (unsubs.length) return;
-    unsubs = groups.flatMap((g) =>
+  const burst = sunburst({ groups, title: 'Today by stock and sector', centre: 'Nasdaq-100', format: (v) => sgn(v * 100, 2) + '%', onItem: (s) => void openSecurity(s), caption: 'Inner ring: sectors. Outer ring: each stock (equal weight).', size: 300, hideTitle: true });
+  heat.body.append(burst.el);
+  let heatUnsubs: (() => void)[] = [];
+  let heatFrame = 0;
+  const listenHeat = () => {
+    if (heatUnsubs.length) return;
+    heatUnsubs = groups.flatMap((g) =>
       g.items.map((sym) =>
         subscribeQuote({ provider: 'schwab', symbol: sym }, (q) => {
           if (q.last != null && q.prevClose) changes.set(sym, q.last / q.prevClose - 1);
-          redraw();
+          if (!heatFrame) heatFrame = requestAnimationFrame(() => ((heatFrame = 0), burst.update((s) => changes.get(s)), heat.source(`live · ${changes.size} priced`)));
         }),
       ),
     );
-    redraw();
   };
 
-  // ---------- news ----------
-  async function loadTop() {
+  // ---------- FUT: futures across assets ----------
+  let futRows: Fut[] = [];
+  const futTable = termTable<Fut>({
+    id: (r) => r.root,
+    number: 51,
+    label: (r) => r.name,
+    open: () => (location.hash = '#futures'),
+    rowTitle: (r) => `${r.full ?? r.name} (${r.symbol})${r.positioning?.date ? ` · CFTC ${r.positioning.date}` : ''}`,
+    cols: [
+      { label: 'Market', left: true, text: (r) => r.name },
+      { label: 'Last', text: (r) => (r.price != null ? formatPrice(r.price) : '—'), value: (r) => r.price, minMove: 0.0002 },
+      { label: '%Chg', text: (r) => pc(r.change), tone: (r) => toneOf(r.change) },
+      { label: 'σ', text: (r) => sgn(r.sigma), tone: (r) => (r.sigma != null && Math.abs(r.sigma) >= 2 ? toneOf(r.sigma) : ''), title: 'Today’s move in daily standard deviations (2 or more is unusual)' },
+      { label: '1W%', text: (r) => pc(r.w1, 1), tone: (r) => toneOf(r.w1) },
+      { label: '1M%', text: (r) => pc(r.m1, 1), tone: (r) => toneOf(r.m1) },
+      { label: 'Spec', text: (r) => (r.positioning?.specIndex != null ? String(Math.round(r.positioning.specIndex)) : '—'), cls: 'spec', title: 'Speculators’ net position against the last 3 years: 0 = most short, 100 = most long (CFTC)' },
+    ],
+  });
+  fut.body.append(futTable.el);
+  const drawFut = () => {
+    const all = view === 'cross';
+    const rows = futRows.filter((r) => (all ? !/^M[A-Z]/.test(r.root) : KEY_FUTURES.has(r.root)));
+    futTable.set(FUT_ORDER.map((s) => ({ title: s, rows: rows.filter((r) => r.sector === s) })).filter((g) => g.rows.length));
+  };
+  async function loadFutures() {
     try {
-      const { items } = await loadNews();
-      const best = [...items].sort((a, b) => b.score - a.score).slice(0, 9);
-      let n = 71;
-      const row = (it: NewsItem) =>
-        numberRow(
-          h(
-            'li',
-            { class: `mon-story ${it.impact === 'high' ? 'hot' : ''}`, tabindex: 0, title: it.summary || it.title, onclick: () => window.open(it.link, '_blank', 'noopener'), onkeydown: (e: Event) => void ((e as KeyboardEvent).key === 'Enter' && window.open(it.link, '_blank', 'noopener')) },
-            h('span', { class: 'num-col' }, String(n)),
-            h('span', { class: 'mon-story-text' }, h('span', { class: 'mon-headline' }, it.title), h('span', { class: 'mon-meta' }, [it.published ? clock(it.published) : '', it.source].filter(Boolean).join(' · '))),
-          ),
-          n++,
-          it.title,
-        );
-      top.body.replaceChildren(best.length ? h('ol', { class: 'mon-river' }, ...best.map(row)) : h('p', { class: 'muted' }, 'No headlines yet.'));
-      top.foot('Google News and CNBC, ranked by likely market impact');
+      const b = await engineRequest<{ rows: Fut[]; asOf: number; errors: Record<string, string> }>('futures.board', {}, 90000);
+      futRows = b.rows.map((r) => ({ ...r, full: r.name, name: FUT_NAMES[r.root] ?? r.name }));
+      drawFut();
+      fut.source(`Schwab · CFTC · ${clock(b.asOf)}`);
+      fut.note(Object.values(b.errors ?? {}).join(' '));
+      drawRead();
     } catch (err) {
-      top.body.replaceChildren(h('p', { class: 'muted' }, helper.status.status === 'live' ? (err as Error).message : 'Waiting for the helper.'));
+      fut.note(errText(err));
     }
   }
 
-  // skeletons sized like the final content (no layout jump)
-  for (const t of [wei, cross, mov, top]) t.body.replaceChildren(h('div', { class: 'skeleton mon-skel' }));
+  // ---------- GC: Treasury curve ----------
+  let curve: (CurvePoint & { date?: string })[] = [];
+  const gcTable = termTable<{ label: string; now: number | null; m: number | null; y: number | null; spread?: boolean }>({
+    id: (r) => r.label,
+    cols: [
+      { label: 'Tenor', left: true, text: (r) => r.label },
+      { label: 'Yield', text: (r) => (r.now == null ? '—' : r.spread ? bp(r.now) : r.now.toFixed(2)), value: (r) => r.now },
+      { label: '1M bp', text: (r) => bp(r.m), cls: 'dim' },
+      { label: '1Y bp', text: (r) => bp(r.y), cls: 'dim' },
+    ],
+  });
+  gc.body.append(gcTable.el);
+  async function loadCurve() {
+    try {
+      const d = await engineRequest<{ curve: (CurvePoint & { date?: string })[] }>('macro.curve', {}, 60000);
+      curve = d.curve ?? [];
+      const diff = (a: number | null | undefined, b: number | null | undefined) => (a != null && b != null ? (a - b) * 100 : null);
+      const tenors = curve.map((c) => ({ label: c.label, now: c.now, m: diff(c.now, c.monthAgo), y: diff(c.now, c.yearAgo) }));
+      const sp = (a: string, b: string) => {
+        const n = spread(curve, a, b), m = spread(curve, a, b, 'monthAgo'), y = spread(curve, a, b, 'yearAgo');
+        const t = (x: string) => (x.endsWith('Y') ? `${x.slice(0, -1)}s` : x.toLowerCase());
+        return { label: `${t(a)}${t(b)}`, now: n, m: n != null && m != null ? n - m : null, y: n != null && y != null ? n - y : null, spread: true };
+      };
+      gcTable.set([{ title: '', rows: tenors }, { title: 'Spreads (bp)', rows: [sp('2Y', '10Y'), sp('3M', '10Y'), sp('5Y', '30Y')].filter((r) => r.now != null) }]);
+      gc.source(`Treasury · ${shortDate(curve[0]?.date ?? '')}`);
+      gc.note('');
+      drawRead();
+    } catch (err) {
+      gc.note(errText(err));
+    }
+  }
+
+  // ---------- WIRP: Fed path ----------
+  let fedLine: { change: number; by: string } | null = null;
+  const wirpTable = termTable<FedOdds['meetings'][number] & { effr: number }>({
+    id: (m) => m.date,
+    cols: [
+      { label: 'Meeting', left: true, text: (m) => new Date(`${m.date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) + (m.tentative ? '*' : ''), title: 'An asterisk marks a meeting date the Fed has not confirmed yet' },
+      { label: 'Implied', text: (m) => m.after.toFixed(2), value: (m) => m.after },
+      { label: 'Δ bp', text: (m) => bp(m.expectedChange * 100), cls: 'dim', title: 'Change priced in from today' },
+      { label: 'P(cut)', text: (m) => `${Math.round(m.pCut * 100)}%` },
+      { label: 'P(hike)', text: (m) => `${Math.round(m.pHike * 100)}%`, cls: 'dim' },
+    ],
+  });
+  wirp.body.append(wirpTable.el);
+  async function loadFed() {
+    try {
+      const d = await engineRequest<FedOdds>('macro.fedodds', {}, 60000);
+      const ms = d.meetings.slice(0, 6).map((m) => ({ ...m, effr: d.effr }));
+      wirpTable.set([{ title: '', rows: ms }]);
+      const third = d.meetings[Math.min(2, d.meetings.length - 1)];
+      fedLine = third ? { change: third.expectedChange, by: new Date(`${third.date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) } : null;
+      wirp.source(`EFFR ${d.effr.toFixed(2)} · ${shortDate(d.asOf)}`);
+      wirp.note('');
+      drawRead();
+    } catch (err) {
+      wirp.note(errText(err));
+    }
+  }
+
+  // ---------- CORR: correlations ----------
+  async function loadCorr() {
+    try {
+      const got = await Promise.all(CORR_SET.map(([s]) => engineRequest<{ closes: Closes }>('invest.history', { symbol: s }, 60000).then((d) => d.closes).catch(() => [] as Closes)));
+      const series: Record<string, Closes> = {};
+      CORR_SET.forEach(([, name], i) => got[i].length && (series[name] = got[i]));
+      const { names, rows } = alignedReturns(series);
+      if (names.length < 2 || rows.length < 25) {
+        corr.note('Not enough daily history yet to measure correlations.');
+        return;
+      }
+      const short = corrMatrix(names, rows, 20);
+      const year = corrMatrix(names, rows, 0);
+      const cell = (v: number | null, y: number | null, diag: boolean) => {
+        if (diag) return h('td', { class: 'c-diag' }, '·');
+        if (v == null) return h('td', {}, '—');
+        const changed = y != null && Math.abs(v - y) >= 0.4;
+        const tint = v >= 0 ? 'var(--viz-1)' : 'var(--viz-2)';
+        const two = (x: number) => x.toFixed(2).replace(/^(-?)0\./, '$1.');
+        return h('td', { class: changed ? 'c-changed' : '', style: `background:color-mix(in srgb, ${tint} ${Math.round(Math.abs(v) * 42)}%, transparent)`, title: `20 days ${v.toFixed(2)} · 1 year ${y?.toFixed(2) ?? '—'}${changed ? ' · changed a lot' : ''}` }, two(v), h('small', {}, y != null ? two(y) : '—'));
+      };
+      corr.body.replaceChildren(
+        h('table', { class: 'tt corr-tt' },
+          h('thead', {}, h('tr', {}, h('th', {}), ...names.map((n) => h('th', {}, n)))),
+          h('tbody', {}, ...names.map((n, i) => h('tr', {}, h('td', { class: 'l' }, n), ...names.map((_, j) => cell(short[i][j], year[i][j], i === j))))),
+        ),
+      );
+      corr.source('ETFs · daily closes');
+      corr.note('Blue = move together, orange = move opposite. Outlined: 20 days differs from the year by 0.4 or more.');
+    } catch (err) {
+      corr.note(errText(err));
+    }
+  }
+
+  // ---------- READ ----------
+  function drawRead() {
+    const markets: Record<string, number | null | undefined> = {};
+    for (const s of ['SPY', 'IWM', 'EWJ', 'FXI']) markets[s] = board.get(s)?.change;
+    const lines = marketRead({
+      futures: futRows,
+      curve,
+      fed: fedLine,
+      sectorsVsSpx: SECTORS.map(([s, name]) => ({ name, rel: rel(s) })).filter((x): x is { name: string; rel: number } => x.rel != null),
+      markets,
+    });
+    read.body.replaceChildren(
+      lines.length
+        ? h('dl', { class: 'term-read' }, ...lines.flatMap((l) => [h('dt', {}, l.label), h('dd', {}, l.text)]))
+        : h('p', { class: 'term-empty' }, 'The read appears once prices, futures and the curve have loaded.'),
+    );
+  }
+  drawRead();
+
+  // ---------- MOV ----------
+  const movTable = termTable<BoardRow>({
+    id: (r) => r.symbol,
+    number: 81,
+    label: (r) => r.symbol,
+    open: (r) => void openSecurity(r.symbol),
+    cols: [
+      { label: 'Symbol', left: true, text: (r) => r.symbol, cls: 'sym' },
+      { label: 'Name', left: true, text: (r) => r.name ?? '', cls: 'dim' },
+      { label: 'Last', text: (r) => (r.price != null ? formatPrice(r.price) : '—'), value: (r) => r.price },
+      { label: '%Chg', text: (r) => pc(r.change), tone: (r) => toneOf(r.change) },
+    ],
+  });
+  mov.body.append(movTable.el);
+  async function loadMovers() {
+    try {
+      const m = await engineRequest<{ up?: BoardRow[]; down?: BoardRow[] }>('invest.movers', { index: '$SPX' }, 60000);
+      movTable.set([{ title: 'Up most', rows: (m.up ?? []).slice(0, 5) }, { title: 'Down most', rows: (m.down ?? []).slice(0, 5) }]);
+      mov.source(`Schwab · ${clock(Date.now() / 1000)}`);
+      mov.note(m.up?.length || m.down?.length ? '' : 'No movers yet (the market may not have opened).');
+    } catch (err) {
+      mov.note(errText(err));
+    }
+  }
+
+  // ---------- TOP ----------
+  async function loadTop() {
+    try {
+      const { items } = await loadNews();
+      const best = [...items].sort((a, b) => b.score - a.score).slice(0, 14);
+      let n = 101;
+      const row = (it: NewsItem) => {
+        const li = h(
+          'li',
+          { class: `term-story ${it.impact === 'high' ? 'hot' : ''}`, tabindex: 0, title: it.summary || it.title, onclick: () => window.open(it.link, '_blank', 'noopener'), onkeydown: (e: Event) => void ((e as KeyboardEvent).key === 'Enter' && window.open(it.link, '_blank', 'noopener')) },
+          h('span', { class: 'tt-n' }, `${n})`),
+          h('span', { class: 'term-headline' }, it.title),
+          h('span', { class: 'term-meta' }, it.published ? clock(it.published) : ''),
+        );
+        li.dataset.num = String(n);
+        li.dataset.numLabel = it.title;
+        n++;
+        return li;
+      };
+      top.body.replaceChildren(best.length ? h('ol', { class: 'term-river' }, ...best.map(row)) : h('p', { class: 'term-empty' }, 'No headlines yet.'));
+      top.source('Google News · CNBC · by impact');
+      top.note('');
+    } catch (err) {
+      top.note(errText(err));
+    }
+  }
+
+  // skeleton rows until data arrives (sized like the content, no jump)
+  const allPanels: TermPanel[] = [wei, sec, fut, gc, wirp, corr, mov, top];
+  for (const p of allPanels) if (!p.body.textContent) p.body.append(h('div', { class: 'skeleton term-skel' }));
+  const clearSkel = () => el.querySelectorAll('.term-skel').forEach((s) => s.remove());
+  drawWei();
+  drawSec();
   drawClocks();
 
   let timers: number[] = [];
@@ -227,22 +436,27 @@ export function createMonitorPage() {
     el,
     start() {
       drawClocks();
-      void loadBoards();
-      void loadMovers();
-      void loadTop();
-      listen();
+      document.addEventListener('keydown', onKey);
+      void Promise.allSettled([loadBoard(), loadFutures(), loadCurve(), loadFed(), loadCorr(), loadMovers(), loadTop()]).then(clearSkel);
+      listenQuotes();
+      listenHeat();
       timers = [
         window.setInterval(drawClocks, 30_000),
-        window.setInterval(() => void loadBoards(), 60_000),
+        window.setInterval(() => void loadBoard(), 60_000),
+        window.setInterval(() => void loadFutures(), 60_000),
         window.setInterval(() => void loadMovers(), 120_000),
         window.setInterval(() => void loadTop(), 300_000),
+        window.setInterval(() => void (loadCurve(), loadFed()), 600_000),
+        window.setInterval(() => void loadCorr(), 3_600_000),
       ];
     },
     stop() {
+      document.removeEventListener('keydown', onKey);
       timers.forEach(clearInterval);
       timers = [];
-      unsubs.forEach((u) => u());
-      unsubs = [];
+      [...quoteUnsubs, ...heatUnsubs].forEach((u) => u());
+      quoteUnsubs = [];
+      heatUnsubs = [];
     },
   };
 }
