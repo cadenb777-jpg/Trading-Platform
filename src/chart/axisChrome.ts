@@ -13,8 +13,8 @@ import { sessionPhase } from './session';
 import { clockText } from './clock';
 import type { Bar } from '../types';
 
-/** Digits from a font with equal-width figures (see chartFeel.css), everything else in Inter. */
-export const CHART_FONT = "'TP Figures', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+/** The terminal face (terminal.css: TP Mono, a plain zero), then equal-width figures (chartFeel.css) and Inter. */
+export const CHART_FONT = "'TP Mono', 'TP Figures', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
 export interface ChromeHost {
   bars(): Bar[];

@@ -239,9 +239,7 @@ export function createPortfolioPage() {
             { class: 'callout pf-real' },
             h('b', {}, `${p.name} is one of your real accounts. `),
             'Its home is the Account page. Saving here changes that account’s record; to try changes without touching it, make a copy. ',
-            h('button', { class: 'btn small', onclick: saveCopy }, 'Save as a what-if copy'),
-            ' ',
-            h('a', { href: '#account', class: 'small' }, 'Back to Account →'),
+            h('div', { class: 'ap-controls pf-real-actions' }, h('button', { class: 'btn small', onclick: saveCopy }, 'Save as a what-if copy'), h('a', { href: '#account', class: 'small' }, 'Back to Account →')),
           )
         : '',
       h(

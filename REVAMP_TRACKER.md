@@ -42,6 +42,20 @@ function and build order are in docs/research/bloomberg-parity.md (phases B1-B4)
       docs/research/bloomberg-patterns.md; view tabs always on their own row under the title (pageFrame), one title
       style (Trade matched), list groups as bands (Portfolios), Charts as its own destination (rail, coral accent).
 
+Owner, 2026-11-19: the terminal model (mockup approved: "I'm digging that look"), with Apple glass, one monospace font
+(plain zero), Home's greeting and tape kept, tabbing and pop-outs kept, data crossed with other data, calm flashes.
+
+- [x] T1. Terminal look layer (src/terminal.css, TP Mono, glass panels, look switch + flash switch in Settings), the kit
+      (src/term: termPanel, termTable, calm flash, cross-data read, correlations) and Markets → Monitor rebuilt with it
+      (world equities, sectors vs S&P, futures with σ and CFTC positioning, Treasury curve and spreads, Fed path,
+      20-day vs 1-year correlations, "Why it's moving", movers, news; tabs 1-6).
+- [ ] T2. Speed: the helper keeps the watchlist, holdings and Nasdaq-100 data warm (prices, fundamentals, curve) and
+      answers from the saved copy at once while refreshing stale parts behind the scenes; heavy maths precomputed.
+- [ ] T3. Security screens in the kit (Overview DES as dense panels, Financials FA grid, Peers, Holders, Options).
+- [ ] T4. Money in the kit (Account, Portfolios, Trade blotters), Ideas (Setups list, Screener), Macro and Calendar.
+- [ ] T5. Desk/Launchpad: drag, dock and pop out any panel; link groups and live subscriptions survive moves.
+- [ ] T6. Home: keep greeting + tape; terminal panels below them (indexes, mood, brief) with the cross-data read.
+
 Resume rule: on "continue" or "go", read this file and do the first unticked item.
 
 ## Phase 1: audit (done 2026-11-16)

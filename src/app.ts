@@ -1,5 +1,6 @@
 import './installLocaleGuard';
 import './style.css';
+import './terminal.css';
 import { createChartPage } from './pages/chartPage';
 import { createHomePage } from './pages/homePage';
 import { createAssistant, type AssistantAction, type AssistantActions } from './ai/assistant';

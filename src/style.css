@@ -8408,6 +8408,10 @@ button.stat-drill:focus-visible .stat-drill-mark {
 .pf-real {
   margin: var(--sp-2) 0;
 }
+.pf-real-actions {
+  margin-top: var(--sp-2);
+  align-items: center;
+}
 .pf-accounts-link {
   margin-top: var(--sp-3);
 }

@@ -1,5 +1,6 @@
 /** Small reusable charts for analysis pages: date line charts (Lightweight Charts) and bar lists. */
 import { functionBar, type FnAction } from './functionBar';
+import { CHART_FONT } from '../chart/axisChrome';
 import { ColorType, LineSeries, createChart, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { THEME, chartThemeOptions, followTheme } from './theme';
 import { attachTooltip, isDailySeries, openChartWindow, toUnix } from './chartWindow';
@@ -25,7 +26,7 @@ export function createLineChart(container: HTMLElement, opts: { percent?: boolea
   const chart: IChartApi = createChart(container, {
     ...chartThemeOptions(true), // our square dotted grid (src/chart/grid.ts) and theme colours from creation
     autoSize: true,
-    layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text, fontFamily: "'Inter', sans-serif", fontSize: 12 },
+    layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: THEME.text, fontFamily: CHART_FONT, fontSize: 12 },
     rightPriceScale: { borderColor: THEME.border },
     timeScale: { borderColor: THEME.border },
     handleScroll: false,
