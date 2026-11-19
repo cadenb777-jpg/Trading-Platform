@@ -14573,3 +14573,61 @@ select.input,
 .legend-ohlc .legend-num {
   overflow: visible;
 }
+
+/* Security → Holders: named holders with their move last quarter */
+.hds-name {
+  display: inline-block;
+  max-width: 22em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  color: var(--text-strong);
+}
+.hds-tag {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--raised) 80%, transparent);
+}
+.hds-tag.new,
+.hds-tag.added { color: var(--up-text); background: color-mix(in srgb, var(--up) 14%, transparent); }
+.hds-tag.reduced,
+.hds-tag.soldOut { color: var(--down-text); background: color-mix(in srgb, var(--down) 14%, transparent); }
+.hds-sell-box {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.hds-sell-box h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hds-sellers {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 4px 18px;
+}
+.hds-sellers li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 45%, transparent);
+  font-size: var(--fs-sm);
+}
+.hds-sellers .down { color: var(--down-text); }
+.sv-grid > .sv-wide {
+  grid-column: 1 / -1;
+}

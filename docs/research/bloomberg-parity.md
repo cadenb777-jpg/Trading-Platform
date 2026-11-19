@@ -53,7 +53,7 @@ Status: **have** = exists and matches the layout; **upgrade** = data exists, the
 | EE / ERN / SURP earnings estimates & surprises | none | **new** where the free key allows: last 4 quarters actual vs estimate, next date | Finnhub free key (`finnhub.earnings`); without a key: "add a free Finnhub key" | B2 |
 | ANR analyst recommendations | none | **new**: consensus box, buy/hold/sell bars over time | Finnhub free `recommendation` (counts by month; no broker names or targets free) | B2 |
 | RV / EQRV comps | `quant.comps` used in Research | **upgrade**: subject row first, peer mean/median rows, scatter (growth vs multiple) | SEC XBRL + Schwab | B2 |
-| HDS holders | 13F counts + insiders | have; named holders later | SEC 13F, Form 4 | — |
+| HDS holders | 13F counts + insiders + **named top holders with last quarter's change, biggest sellers** (helper 89) | done | SEC 13F, Form 4 | — |
 | GPTR / INS insiders | Flow insiders | have | SEC Form 4 | — |
 | DVD | Dividends tab | have | Yahoo | — |
 | CN | News tab | have | Google News, CNBC RSS | — |
