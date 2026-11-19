@@ -239,7 +239,7 @@ whenever the owner repeats or adds one.
   last year's share count from the newest filing (already split-restated), so a whole-multiple split filter wrongly
   dropped ~590 real issuers; it now applies only when the two years come from different filings, and only to the usual
   split ratios within 3% (an 8.3x de-SPAC jump is issuance). R&D prefers the line without acquired in-process R&D.
-- 2026-11-19 · #PRNUM Growth this quarter + Financial conditions on Macro (no helper change, stacked on #61): the Atlanta
+- 2026-11-19 · #62 Growth this quarter + Financial conditions on Macro (no helper change, stacked on #61): the Atlanta
   Fed's GDPNow (3.2% for Q4 2026; median miss 1.2 points against today's official figures over 61 quarters) and the
   Chicago Fed's NFCI (-0.48 in the week to Nov 13, 2026: looser than the 1971 average, yet 42% of weeks were looser, so
   within its usual range; ANFCI -0.50), from FRED via macro.series raw · proposed · backlog A36-A37. Lessons: "below the
