@@ -4,6 +4,7 @@
  * the reason), and says where every figure comes from and when.
  */
 import { hpTab } from './hpTab';
+import { holderWords, holdersTable, sellersList } from './holdersView';
 import { faGraph, togglePick } from './faGraph';
 import { chainPanel } from './chainView';
 import { rvTab } from './rvTab';
@@ -56,6 +57,9 @@ export const isCompanyLike = (s: string) => /^[A-Z]{1,5}(\.[A-Z])?$/.test(s);
 
 const SEC = 'SEC EDGAR XBRL (company filings)';
 const SCHWAB = 'Schwab market data';
+
+/** A slot that takes the grid's full width (wide tables). */
+const wideSlot = (el: HTMLElement) => (el.classList.add('sv-wide'), el);
 
 /** A grid of panels. */
 const grid = (...nodes: (Node | null | false)[]) => h('div', { class: 'sv-grid' }, ...nodes.filter((n): n is Node => !!n));
@@ -444,6 +448,20 @@ export function hdsTab(ctx: TabCtx) {
             : note('No open-market insider buys or sells in the last two years. Planned sales and awards are left out.'),
         );
       }),
+      wideSlot(slot(ctx, 'top holders (13F)', async () => {
+        const d = await loadHolders(s);
+        if (!d.top) return panel('Top holders', 'SEC Form 13F', null, note('Holder names arrive with the updated helper (version 89 or newer).'));
+        if (!d.top.length) return panel('Top holders', 'SEC Form 13F', d.period ?? null, note('No 13F holders in the newest quarter of the download.'));
+        ctx.share('topHolders', d.top.slice(0, 10).map((r) => ({ name: r.name, shares: r.shares, change: r.change, status: r.status })));
+        return panel(
+          'Top holders',
+          `SEC Form 13F · quarter ending ${d.period}${d.prevPeriod ? `, change since ${d.prevPeriod}` : ''}`,
+          d.period ?? null,
+          h('p', { class: 'anr-words' }, holderWords(d.top)),
+          holdersTable(d.top),
+          d.sellers?.length ? h('div', { class: 'hds-sell-box' }, h('h4', {}, 'Biggest sellers last quarter'), sellersList(d.sellers)) : null,
+        );
+      }))
     ),
   );
 }

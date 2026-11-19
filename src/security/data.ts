@@ -68,6 +68,23 @@ export interface HoldersReply {
   cusip: string;
   note: string;
   quarters: { period: string; holders: number; shares: number; value: number; new?: number; added?: number; reduced?: number; soldOut?: number }[];
+  /** Helper 89: the biggest holders in the newest quarter and the biggest sellers since the quarter before. */
+  top?: HolderRow[];
+  sellers?: HolderRow[];
+  period?: string;
+  prevPeriod?: string | null;
+}
+
+export interface HolderRow {
+  cik: number;
+  name: string;
+  shares: number;
+  value?: number;
+  /** Part of all shares reported on 13F for the stock. */
+  share?: number;
+  /** Shares bought (+) or sold (−) since the quarter before; null when the filer didn't report both quarters. */
+  change: number | null;
+  status: 'new' | 'added' | 'reduced' | 'same' | 'soldOut' | null;
 }
 
 export interface ScanReply {

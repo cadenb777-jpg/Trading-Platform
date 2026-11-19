@@ -182,6 +182,31 @@ class Holders13F(unittest.TestCase):
         self.assertEqual((q[1]['new'], q[1]['added'], q[1]['reduced'], q[1]['soldOut']), (0, 1, 1, 1))
         self.assertNotIn('new', q[0])
 
+    def test_named_holders_and_sellers(self):
+        r = self.row
+        rows = [
+            r(1, '2025-03-31', 100), r(2, '2025-03-31', 50), r(3, '2025-03-31', 10),
+            r(1, '2025-06-30', 150), r(2, '2025-06-30', 20), r(4, '2025-06-30', 30),
+            r(3, '2025-06-30', 9, cusip='999999ZZ9'),  # filer 3 reported without ACME: sold out
+            r(4, '2025-03-31', 1, cusip='999999ZZ9'),  # filer 4 reported in March without ACME: new
+        ]
+        path = self.make_db(rows)
+        con = sqlite3.connect(path)
+        con.execute('CREATE TABLE filers_13f (cik INTEGER PRIMARY KEY, name TEXT)')
+        con.executemany('INSERT INTO filers_13f VALUES (?, ?)', [(1, 'Big Fund LP'), (2, 'Mid Capital')])
+        con.execute('CREATE TABLE filer_history_13f (cik INTEGER, period TEXT, name TEXT)')
+        con.executemany('INSERT INTO filer_history_13f VALUES (?, ?, ?)', [(3, '2024-12-31', 'Old Name'), (3, '2025-03-31', 'Small Advisors')])
+        con.commit()
+        con.close()
+        out = smartmoney.holders_from_db(path, 123, 'ACME')
+        top = out['top']
+        self.assertEqual([x['name'] for x in top], ['Big Fund LP', 'CIK 4', 'Mid Capital'])
+        self.assertEqual((top[0]['shares'], top[0]['change'], top[0]['status']), (150, 50, 'added'))
+        self.assertEqual(top[1]['status'], 'new')
+        self.assertAlmostEqual(top[0]['share'], 150 / 200)
+        self.assertEqual([(x['name'], x['change'], x['status']) for x in out['sellers']], [('Mid Capital', -30, 'reduced'), ('Small Advisors', -10, 'soldOut')])
+        self.assertEqual((out['period'], out['prevPeriod']), ('2025-06-30', '2025-03-31'))
+
     def test_share_classes_stay_apart(self):
         cusips = (('02079K305', 'GOOG', 1652044), ('02079K107', 'GOOG', 1652044))
         rows = [self.row(1, '2025-06-30', 100, cusip='02079K305', cls='CAP STK CL A'), self.row(2, '2025-06-30', 300, cusip='02079K107', cls='CAP STK CL C'),

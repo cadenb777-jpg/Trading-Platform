@@ -162,11 +162,68 @@ def holders_from_db(path, cik, symbol=''):
             held[period] = {r[0]: (r[1] or 0.0, r[2] or 0.0) for r in con.execute(
                 "SELECT cik, SUM(shares), SUM(value) FROM holdings_13f WHERE cusip = ? AND period = ? "
                 "AND COALESCE(put_call, '') = '' AND COALESCE(share_type, 'SH') IN ('SH', '') GROUP BY cik", (cusip, period))}
+        rows = holder_rows(periods, held, reporting, {})
+        wanted = {r['cik'] for r in rows['top'] + rows['sellers']}
+        names = filer_names(con, wanted)
     except sqlite3.OperationalError as err:
         raise _db_error(err) from err
     finally:
         con.close()
-    return {'cusip': cusip, 'note': note, 'quarters': quarter_changes(periods, held, reporting)}
+    for r in rows['top'] + rows['sellers']:
+        r['name'] = names.get(r['cik']) or f'CIK {r["cik"]}'
+    return {'cusip': cusip, 'note': note, 'quarters': quarter_changes(periods, held, reporting), **rows}
+
+
+def filer_names(con, ciks):
+    """Fund names for 13F filer CIKs: the filer table first, then the newest name in the filer history for any left
+    (an older download may lack either table; helper 89)."""
+    out, history = {}, {}
+    ciks = list(ciks)
+    for i in range(0, len(ciks), 400):
+        part = ciks[i:i + 400]
+        marks = ','.join('?' * len(part))
+        try:
+            out.update({c: n for c, n in con.execute(f'SELECT cik, name FROM filers_13f WHERE cik IN ({marks})', part) if n})
+        except sqlite3.OperationalError:
+            pass
+        try:
+            # ordered by period, so a later name replaces an earlier one
+            history.update({c: n for c, n in con.execute(f'SELECT cik, name FROM filer_history_13f WHERE cik IN ({marks}) ORDER BY period', part) if n})
+        except sqlite3.OperationalError:
+            pass
+    return {**history, **out}
+
+
+def holder_rows(periods, held, reporting, names, top=25, sellers=10):
+    """The biggest holders in the newest quarter with their change since the quarter before, and the biggest sellers
+    (helper 89, Bloomberg HDS). A change is only stated for filers that reported in both quarters (a late report isn't
+    a sale); `share` is the holder's part of all shares reported on 13F for the stock."""
+    if not periods:
+        return {'top': [], 'sellers': []}
+    latest = periods[-1]
+    prev = periods[-2] if len(periods) > 1 else None
+    now = {c: v for c, v in held[latest].items() if v[0] > 0}
+    was = {c: v for c, v in held[prev].items() if v[0] > 0} if prev else {}
+    both = (reporting[prev] & reporting[latest]) if prev else set()
+    total = sum(v[0] for v in now.values()) or 1
+    rows = []
+    for cik, (sh, val) in now.items():
+        r = {'cik': cik, 'name': names.get(cik, ''), 'shares': sh, 'value': val, 'share': sh / total, 'change': None, 'status': None}
+        if cik in both:
+            before = was.get(cik, (0.0, 0.0))[0]
+            r['change'] = sh - before
+            r['status'] = 'new' if before <= 0 else 'added' if sh > before else 'reduced' if sh < before else 'same'
+        rows.append(r)
+    rows.sort(key=lambda r: (-r['shares'], r['cik']))
+    out_sellers = []
+    for cik in both:
+        before = was.get(cik, (0.0, 0.0))[0]
+        after = now.get(cik, (0.0, 0.0))[0]
+        if before > 0 and after < before:
+            out_sellers.append({'cik': cik, 'name': names.get(cik, ''), 'shares': after, 'change': after - before,
+                                'status': 'soldOut' if after <= 0 else 'reduced'})
+    out_sellers.sort(key=lambda r: (r['change'], r['cik']))
+    return {'top': rows[:top], 'sellers': out_sellers[:sellers], 'period': latest, 'prevPeriod': prev}
 
 
 def quarter_changes(periods, held, reporting):
