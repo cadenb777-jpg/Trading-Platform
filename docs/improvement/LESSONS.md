@@ -245,5 +245,6 @@ whenever the owner repeats or adds one.
   within its usual range; ANFCI -0.50), from FRED via macro.series raw · proposed · backlog A36-A37. Lessons: "below the
   average" and "unusual" are different claims: say both (zero vs the share of weeks); a model's record against revised
   official figures includes revisions it couldn't know, so say so and give the median miss, not a hit rate; the
-  comparison series failing must not hide the reading itself.
-
+  comparison series failing must not hide the reading itself. Review: macro.series raw reads FRED from 2006 (macro.fred START),
+  so "share of weeks" is since 2006 and must say so; panels built once in skeleton() never refreshed (now rebuilt on
+  every load, with Retry); ties count as neither looser nor tighter; signs come from the rounded figure.

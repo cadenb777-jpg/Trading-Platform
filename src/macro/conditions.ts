@@ -33,36 +33,45 @@ export interface Nowcast {
   /** quarter of the newest nowcast (first day) */
   quarter: string;
   value: number;
-  /** the newest official quarter */
+  /** the newest official quarter (null when the official series couldn't be loaded) */
   official: Point | null;
-  /** the nowcast is for a quarter without an official figure yet */
-  running: boolean;
+  /** the nowcast is for a quarter without an official figure yet; null = unknown (no official series) */
+  running: boolean | null;
   /** quarters with both, and the median gap between them (points) */
   record: { n: number; medianMiss: number } | null;
 }
 
-export function nowcast(gdpnow: Point[], gdp: Point[]): Nowcast | null {
+/** gdp null = the official series couldn't be loaded (whether the quarter is still running is then unknown). */
+export function nowcast(gdpnow: Point[], gdp: Point[] | null): Nowcast | null {
   if (!gdpnow.length) return null;
   const latest = gdpnow[gdpnow.length - 1];
-  const official = gdp.length ? gdp[gdp.length - 1] : null;
-  const byDate = new Map(gdp.map((p) => [p.time, p.value]));
+  const official = gdp?.length ? gdp[gdp.length - 1] : null;
+  const byDate = new Map((gdp ?? []).map((p) => [p.time, p.value]));
   const misses = gdpnow.filter((p) => byDate.has(p.time)).map((p) => Math.abs(p.value - byDate.get(p.time)!));
   const m = median(misses);
   return {
     quarter: latest.time,
     value: latest.value,
     official,
-    running: !official || latest.time > official.time,
+    running: official ? latest.time > official.time : null,
     record: m == null ? null : { n: misses.length, medianMiss: m },
   };
 }
 
-const pc = (v: number) => `${v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}%`;
+/** A figure to `d` decimals with a real minus sign, the sign taken from the rounded figure (never −0.0). */
+export function signed(v: number, d: number): string {
+  const t = Math.abs(v).toFixed(d);
+  return `${v < 0 && Number(t) !== 0 ? '−' : ''}${t}`;
+}
+const pc = (v: number) => `${signed(v, 1)}%`;
 
 export function nowcastWords(n: Nowcast): string {
-  let t = n.running
-    ? `The Atlanta Fed’s GDPNow model puts real growth in ${quarterLabel(n.quarter)} at ${pc(n.value)} a year, from the data out so far; the official figure comes about a month after the quarter ends.`
-    : `GDPNow’s last estimate for ${quarterLabel(n.quarter)} was ${pc(n.value)} a year; the official figure is out.`;
+  let t =
+    n.running === true
+      ? `The Atlanta Fed’s GDPNow model puts real growth in ${quarterLabel(n.quarter)} at ${pc(n.value)} a year, from the data out so far; the official figure comes about a month after the quarter ends.`
+      : n.running === false
+        ? `GDPNow’s last estimate for ${quarterLabel(n.quarter)} was ${pc(n.value)} a year; the official figure is out.`
+        : `The Atlanta Fed’s GDPNow model’s latest estimate for ${quarterLabel(n.quarter)} is ${pc(n.value)} a year.`;
   if (n.official) t += ` The newest official figure: ${pc(n.official.value)} for ${quarterLabel(n.official.time)}.`;
   if (n.record) t += ` Over ${n.record.n} quarters its final estimate has been ${n.record.medianMiss.toFixed(1)} points away from today’s official figures in a typical (median) quarter, so read it as a range, not a point.`;
   return t;
@@ -71,13 +80,14 @@ export function nowcastWords(n: Nowcast): string {
 export interface Conditions {
   date: string;
   value: number;
-  /** share of weeks since the series began that were looser (lower) than today, 0-1 */
+  /** share of the weeks loaded that were looser (lower) than today, 0-1 (FRED via the helper starts in 2006, not 1971) */
   looserShare: number;
+  /** first week loaded */
   since: string;
-  /** weeks in the history, and how many were looser than today (counts, so the extremes are exact) */
+  /** weeks loaded, and how many were looser / tighter than today (ties are neither) */
   weeks: number;
   looser: number;
-  change4w: number | null;
+  tighter: number;
   change13w: number | null;
   /** the adjusted index (ANFCI) on the same date, when FRED has it */
   adjusted: number | null;
@@ -90,6 +100,7 @@ export function conditions(nfci: Point[], anfci: Point[]): Conditions | null {
   if (!nfci.length) return null;
   const latest = nfci[nfci.length - 1];
   const looser = nfci.filter((p) => p.value < latest.value).length;
+  const tighter = nfci.filter((p) => p.value > latest.value).length;
   const adj = anfci.find((p) => p.time === latest.time);
   return {
     date: latest.time,
@@ -98,32 +109,37 @@ export function conditions(nfci: Point[], anfci: Point[]): Conditions | null {
     since: nfci[0].time,
     weeks: nfci.length,
     looser,
-    change4w: ago(nfci, 4),
+    tighter,
     change13w: ago(nfci, 13),
     adjusted: adj ? adj.value : null,
   };
 }
 
-/** Plain words: zero is the long-run average; the share of weeks says where today sits in the whole history. */
+/** Plain words: zero is the index's own average since 1971 (its design); the share of weeks is over the weeks loaded. */
 export function conditionsWords(c: Conditions, day: (iso: string) => string): string {
-  const v = c.value.toFixed(2);
-  const side = c.value < 0 ? 'looser than' : c.value > 0 ? 'tighter than' : 'at';
-  let t = `In the week to ${day(c.date)} the Chicago Fed’s index stood at ${c.value < 0 ? '−' : ''}${v.replace('-', '')}: money and credit were ${side} their average since ${c.since.slice(0, 4)}.`;
-  const share = Math.round(c.looserShare * 100);
+  const v = Math.round(c.value * 100) / 100;
+  const side = v < 0 ? 'looser than' : v > 0 ? 'tighter than' : 'at';
+  const from = c.since.slice(0, 4);
+  let t = `In the week to ${day(c.date)} the Chicago Fed’s index stood at ${signed(c.value, 2)}: money and credit were ${side} the index’s average since 1971 (zero).`;
+  const looserPct = Math.round((c.looser / c.weeks) * 100);
+  const tighterPct = Math.round((c.tighter / c.weeks) * 100);
   t +=
     c.looser === 0
-      ? ' No week before it was looser.'
-      : c.looser === c.weeks - 1
-        ? ' No week before it was tighter.'
-        : share <= 10
-          ? ` Only ${Math.max(1, share)}% of weeks were looser.`
-          : share >= 90
-            ? ` Only ${Math.max(1, 100 - share)}% of weeks were tighter.`
-            : ` ${share}% of weeks were looser, so it sits within its usual range.`;
+      ? ` No week since ${from} was looser.`
+      : c.tighter === 0
+        ? ` No week since ${from} was tighter.`
+        : looserPct <= 10
+          ? ` Only ${Math.max(1, looserPct)}% of weeks since ${from} were looser.`
+          : tighterPct <= 10
+            ? ` Only ${Math.max(1, tighterPct)}% of weeks since ${from} were tighter.`
+            : ` ${looserPct}% of weeks since ${from} were looser, so it sits within its usual range.`;
   if (c.change13w != null) {
     const d = c.change13w;
     t += Math.abs(d) < 0.05 ? ' Little changed over the last 13 weeks.' : ` Over the last 13 weeks conditions ${d < 0 ? 'eased' : 'tightened'} by ${Math.abs(d).toFixed(2)}.`;
   }
-  if (c.adjusted != null) t += ` Allowing for the state of the economy (ANFCI), ${c.adjusted < 0 ? 'looser' : c.adjusted > 0 ? 'tighter' : 'average'} too, at ${c.adjusted < 0 ? '−' : ''}${Math.abs(c.adjusted).toFixed(2)}.`;
+  if (c.adjusted != null) {
+    const a = Math.round(c.adjusted * 100) / 100;
+    t += ` Allowing for the state of the economy (ANFCI), ${a < 0 ? 'looser' : a > 0 ? 'tighter' : 'average'} too, at ${signed(c.adjusted, 2)}.`;
+  }
   return t;
 }

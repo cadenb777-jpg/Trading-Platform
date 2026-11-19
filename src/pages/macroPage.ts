@@ -136,6 +136,7 @@ export function createMacroPage() {
   let catalog: CatalogEntry[] = [];
   const curvePanel = h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Treasury yield curve')), h('div', { class: 'skeleton', style: 'height:260px' }));
   const readPanel = h('section', { class: 'panel mm-read' }, h('div', { class: 'skeleton', style: 'height:150px' }));
+  const fredSlot = h('div', { class: 'mm-fred' });
   // sized like the finished board, so nothing below jumps when it fills in
   const boardPanel = h('section', { class: 'panel mm-board-panel' }, h('div', { class: 'skeleton', style: 'height:300px' }));
   function renderBoard() {
@@ -330,9 +331,8 @@ export function createMacroPage() {
       ai.panel,
       readPanel,
       // the Sahm rule, real time, with its record against NBER recession dates
-      sahmPanel(),
-      // this quarter's growth nowcast and financial conditions, side by side
-      rightNowPanels(),
+      // the recession check, this quarter's growth and financial conditions: rebuilt on every load (Refresh, timer)
+      fredSlot,
       boardPanel,
       h('div', { class: 'xe-grid' }, fedOddsPanel(), netLiquidityPanel()),
       curvePanel,
@@ -380,6 +380,7 @@ export function createMacroPage() {
         catalog = (await engineRequest<{ series: CatalogEntry[] }>('macro.catalog', {}, 15000)).series;
         skeleton();
       }
+      fredSlot.replaceChildren(sahmPanel(), rightNowPanels());
       note.textContent = '';
       const failures: string[] = [];
       await Promise.all([
