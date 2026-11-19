@@ -14,6 +14,9 @@ const ko: FilerRank = {
     assetGrowth: r(0.042437, 46.9, 4055),
     accruals: r(0.055501, 91.3, 3768),
     inventoryVsSales: r(-0.082785, 31.4, 1610),
+    // helper 90 (frames of 2026-11-19): ln(4,313 / 4,320) diluted shares; Coca-Cola tags no R&D line
+    shareIssuance: r(-0.0016217, 37.0, 3420),
+    rdIntensity: null,
   },
   minAssets: 100e6,
 };
@@ -29,8 +32,13 @@ describe('Among US companies', () => {
   });
 
   it('formats every reading', () => {
-    const f = Object.fromEntries(METRICS.map((m) => [m.key, m.format(ko.metrics[m.key]!.value)]));
-    expect(f).toEqual({ grossProfitability: '$0.28', operatingMargin: '28.7%', returnOnAssets: '12.8%', salesGrowth: '+1.9%', assetGrowth: '+4.2%', accruals: '+5.6%', inventoryVsSales: '−8.3 pts' });
+    const f = Object.fromEntries(METRICS.filter((m) => ko.metrics[m.key]).map((m) => [m.key, m.format(ko.metrics[m.key]!.value)]));
+    // share count change: the log change shown as the % change it equals, e^-0.0016217 - 1 = -0.16%
+    expect(f).toEqual({ grossProfitability: '$0.28', operatingMargin: '28.7%', returnOnAssets: '12.8%', salesGrowth: '+1.9%', assetGrowth: '+4.2%', accruals: '+5.6%', inventoryVsSales: '−8.3 pts', shareIssuance: '−0.2%' });
+    // Apple FY2025: R&D 34,550 / sales 416,161; ln(15,004.697 / 15,408.095) = 2.6% fewer shares
+    const rd = METRICS.find((m) => m.key === 'rdIntensity')!;
+    const sh = METRICS.find((m) => m.key === 'shareIssuance')!;
+    expect([rd.format(0.083021), sh.format(-0.02653)]).toEqual(['8.3%', '−2.6%']);
   });
 
   it('names the top and bottom tenths', () => {

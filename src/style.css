@@ -11352,6 +11352,14 @@ tr.tick-down > td.num, .stat-card.tick-down .stat-value { animation: tick-down 1
 .rb-bar.two { background: var(--viz-2); }
 .rb-bar.base { background: color-mix(in srgb, var(--muted) 60%, transparent); }
 .rb-val { text-align: right; color: var(--text-strong); }
+/* Macro → Recession check (Sahm rule) */
+.sahm-panel .viz-range { max-width: 34rem; }
+/* a neutral track: low is the good end here, so no red-to-green gradient */
+.sahm-panel .viz-track-bar { background: color-mix(in srgb, var(--muted) 30%, transparent); }
+.sahm-record summary { cursor: pointer; padding: 4px 0; }
+.sahm-table { border-collapse: collapse; margin-top: 4px; }
+.sahm-table th, .sahm-table td { padding: 3px 12px 3px 0; text-align: left; border-bottom: 1px solid var(--border); }
+.sahm-table .num { text-align: right; }
 /* Research → Among US companies: one row per reading, a 0-100 rank track with the middle half shaded */
 .fr-list { display: grid; gap: 6px; margin: var(--sp-2) 0; container: frlist / inline-size; }
 .fr-row, .fr-axis { display: grid; grid-template-columns: minmax(9rem, 15rem) 5rem minmax(6rem, 1fr) minmax(11rem, 19rem); align-items: center; gap: var(--sp-2); }

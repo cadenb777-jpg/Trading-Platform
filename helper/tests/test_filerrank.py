@@ -100,6 +100,46 @@ class CocaCola(unittest.TestCase):
         self.assertIsNotNone(x['returnOnAssets'])
 
 
+class IssuanceAndResearch(unittest.TestCase):
+    """Helper 90: diluted share change and R&D intensity (frames checked live 2026-11-19)."""
+
+    def test_coca_cola_shares(self):
+        dur, rev, rev_prev, instants = frames()
+        # WeightedAverageNumberOfDilutedSharesOutstanding CY2025 4,313 million, CY2024 4,320 million
+        shares = {KO: [4_313e6, END, 'x']}
+        shares_prev = {KO: [4_320e6, '2024-12-31', 'x']}
+        x = fr.readings(fr.company_rows(dur, rev, rev_prev, instants, shares, shares_prev)[KO])
+        # ln(4,313 / 4,320) = ln(1 - 7 / 4,320) = -0.0016217
+        self.assertAlmostEqual(x['shareIssuance'], -0.0016217, 6)
+        self.assertIsNone(x['rdIntensity'])  # Coca-Cola tags no R&D line
+
+    def test_apple_research_and_shares(self):
+        end, prev = '2025-09-27', '2024-09-28'
+        dur = {'ni': {1: [112_010e6, end, 'x']}, 'rnd': {1: [34_550e6, end, 'x']}}
+        rev = {'RevenueFromContractWithCustomerExcludingAssessedTax': {1: [416_161e6, end, 'x']}}
+        rev_prev = {'RevenueFromContractWithCustomerExcludingAssessedTax': {1: [391_035e6, prev, 'x']}}
+        shares = {1: [15_004_697e3, end, 'x']}
+        shares_prev = {1: [15_408_095e3, prev, 'x']}
+        x = fr.readings(fr.company_rows(dur, rev, rev_prev, {}, shares, shares_prev)[1])
+        # 34,550 / 416,161
+        self.assertAlmostEqual(x['rdIntensity'], 0.083021, 6)
+        # ln(15,004.697 / 15,408.095): 2.6% fewer shares after buybacks
+        self.assertAlmostEqual(x['shareIssuance'], -0.026530, 6)
+
+    def test_splits_are_not_issuance(self):
+        self.assertTrue(fr.split_like(2.0))
+        self.assertTrue(fr.split_like(10.3))   # within 8% of 10-for-1
+        self.assertTrue(fr.split_like(1 / 4))  # a 1-for-4 reverse split
+        self.assertFalse(fr.split_like(1.5))
+        self.assertFalse(fr.split_like(0.97))
+        dur, rev, rev_prev, instants = frames()
+        x = fr.readings(fr.company_rows(dur, rev, rev_prev, instants, {KO: [8_640e6, END, 'x']}, {KO: [4_320e6, '2024-12-31', 'x']})[KO])
+        self.assertIsNone(x['shareIssuance'])
+        # last year's count from a year that doesn't end about a year before is not compared
+        x = fr.readings(fr.company_rows(dur, rev, rev_prev, instants, {KO: [4_313e6, END, 'x']}, {KO: [4_320e6, '2024-06-30', 'x']})[KO])
+        self.assertIsNone(x['shareIssuance'])
+
+
 class Ranking(unittest.TestCase):
     def test_field_leaves_out_small_companies(self):
         rows = {1: {'end': END, 'gp': 30.0, 'assets': 150e6}, 2: {'end': END, 'gp': 5.0, 'assets': 50e6}, 3: {'end': END, 'gp': 5.0, 'assets': None}}

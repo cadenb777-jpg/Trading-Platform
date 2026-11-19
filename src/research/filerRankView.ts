@@ -8,7 +8,7 @@ import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { day } from './debtDilution';
 import { block, savedBeforeUpdate } from './panelBlock';
-import { METRICS, missingWords, placeWords, standsOut, summaryWords, type FilerRank, type MetricInfo, type Ranked } from './filerRank';
+import { comesWithUpdate, METRICS, missingWords, placeWords, standsOut, summaryWords, type FilerRank, type MetricInfo, type Ranked } from './filerRank';
 
 function track(m: MetricInfo, r: Ranked): HTMLElement {
   const at = Math.max(0, Math.min(100, r.percentile));
@@ -26,14 +26,14 @@ function track(m: MetricInfo, r: Ranked): HTMLElement {
   );
 }
 
-function row(m: MetricInfo, r: Ranked | null | undefined): HTMLElement {
+function row(m: MetricInfo, r: Ranked | null | undefined, sent: boolean): HTMLElement {
   return h(
     'div',
     { class: 'fr-row', role: 'listitem' },
     h('span', { class: 'fr-label' }, m.label, infoTip(m.term)),
     h('b', { class: 'fr-value num' }, r ? m.format(r.value) : '—'),
     r ? track(m, r) : h('span', { class: 'fr-track empty', 'aria-hidden': 'true' }),
-    h('span', { class: 'fr-words small muted' }, r ? `${placeWords(r)} · median ${m.format(r.median)}` : missingWords),
+    h('span', { class: 'fr-words small muted' }, r ? `${placeWords(r)} · median ${m.format(r.median)}` : sent ? missingWords : comesWithUpdate),
   );
 }
 
@@ -73,7 +73,7 @@ export function filerRankPanel(cik: number | string | null | undefined): HTMLEle
         : f.company.noAssets
           ? [h('p', { class: 'muted small' }, 'The SEC’s files have no total assets dated at this company’s year-end, so readings that need assets are left out and it is not counted in the field.')]
           : []),
-      h('div', { class: 'fr-list', role: 'list', 'aria-label': 'Readings ranked among US companies' }, h('div', { class: 'fr-axis small muted', 'aria-hidden': 'true' }, h('span', {}), h('span', {}), h('span', { class: 'fr-axis-scale' }, h('span', {}, 'lowest'), h('span', {}, 'middle half'), h('span', {}, 'highest')), h('span', {})), ...METRICS.map((m) => row(m, f.metrics[m.key]))),
+      h('div', { class: 'fr-list', role: 'list', 'aria-label': 'Readings ranked among US companies' }, h('div', { class: 'fr-axis small muted', 'aria-hidden': 'true' }, h('span', {}), h('span', {}), h('span', { class: 'fr-axis-scale' }, h('span', {}, 'lowest'), h('span', {}, 'middle half'), h('span', {}, 'highest')), h('span', {})), ...METRICS.map((m) => row(m, f.metrics[m.key], m.key in f.metrics))),
       sources,
     );
   }, failed);

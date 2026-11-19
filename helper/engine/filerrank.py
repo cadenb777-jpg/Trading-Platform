@@ -1,5 +1,5 @@
 """
-Rank against every US filer (Research → Among US companies, helper 88): where a company's readings sit among all
+Rank against every US filer (Research → Among US companies, helper 88; issuance and R&D rows helper 90): where a company's readings sit among all
 companies that file with the SEC, not only against its own past. FactSet and Bloomberg's relative-value screens show
 the same kind of percentile; here it is built from the SEC's free XBRL "frames" API, which returns one value per
 company for one concept and one calendar period:
@@ -19,6 +19,8 @@ Readings (each one already shown against the company's own history somewhere on 
   assetGrowth        = total assets / last year-end's - 1                (Cooper, Gulen and Schill 2008)
   accruals           = (net income - operating cash flow) / average assets (Sloan 1996)
   inventoryVsSales   = inventory growth - sales growth                    (Thomas and Zhang 2002)
+  shareIssuance      = ln(diluted shares / last year's)                  (Pontiff and Woodgate 2008)
+  rdIntensity        = research and development / revenue                (Chan, Lakonishok and Sougiannis 2001)
 
 The field is every filer with total assets of at least MIN_ASSETS at that year-end (shell companies out), all
 industries together. Percentile = share of the other companies below, plus half the ties (ratesdesk.percentile_rank,
@@ -27,13 +29,14 @@ the platform's one rule). Readings only, never signals.
 import asyncio
 import datetime as dt
 import logging
+import math
 
 from . import ratesdesk, sec
 from .core import EngineError, handler
 
 log = logging.getLogger('engine.filerrank')
 
-FRAME_URL = 'https://data.sec.gov/api/xbrl/frames/us-gaap/{tag}/USD/{period}.json'
+FRAME_URL = 'https://data.sec.gov/api/xbrl/frames/us-gaap/{tag}/{unit}/{period}.json'
 #: frames change only as filings arrive; a week keeps them fresh enough for yearly figures
 FRAME_TTL = 7 * 24 * 3600
 #: companies smaller than this at the year-end (total assets, dollars) are left out of the field
@@ -45,14 +48,20 @@ BALANCE_DAYS = 10
 #: last year's figures must end about a year before this year's (days either side)
 YEAR_DAYS = 31
 
-DURATION = {'gp': 'GrossProfit', 'op': 'OperatingIncomeLoss', 'ni': 'NetIncomeLoss', 'cfo': 'NetCashProvidedByUsedInOperatingActivities'}
+DURATION = {'gp': 'GrossProfit', 'op': 'OperatingIncomeLoss', 'ni': 'NetIncomeLoss', 'cfo': 'NetCashProvidedByUsedInOperatingActivities',
+            'rnd': 'ResearchAndDevelopmentExpense'}
+#: diluted weighted-average shares for the year (unit 'shares'), this year and last
+SHARES_TAG = 'WeightedAverageNumberOfDilutedSharesOutstanding'
+#: a share count that moved by a whole multiple (within this) is a split, not issuance (as debtDilution.looksLikeSplit)
+SPLIT_TOLERANCE = 0.08
 REVENUE_TAGS = ('RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues')
 #: the second revenue tag replaces the first only when more than this many times it (the first is then a part only;
 #: a gross-of-excise 'Revenues' rarely reaches twice net sales)
 PARTIAL_REVENUE = 2.0
 INSTANT = {'assets': 'Assets', 'inventory': 'InventoryNet'}
 
-METRICS = ('grossProfitability', 'operatingMargin', 'returnOnAssets', 'salesGrowth', 'assetGrowth', 'accruals', 'inventoryVsSales')
+METRICS = ('grossProfitability', 'operatingMargin', 'returnOnAssets', 'salesGrowth', 'assetGrowth', 'accruals', 'inventoryVsSales',
+           'shareIssuance', 'rdIntensity')
 
 
 def _date(s):
@@ -81,17 +90,29 @@ def _near(a, b, days):
     return abs((_date(a) - _date(b)).days) <= days
 
 
+def split_like(ratio):
+    """True when shares moved by about a whole multiple (2-for-1, 1-for-10...): a split, not shares issued or bought back."""
+    if ratio <= 0:
+        return True
+    for n in range(2, 51):
+        if abs(ratio / n - 1) <= SPLIT_TOLERANCE or abs(ratio * n - 1) <= SPLIT_TOLERANCE:
+            return True
+    return False
+
+
 def compact(frame):
     """The frames API reply -> {cik: [value, end, accession]} (only what the ranking reads)."""
     return {int(r['cik']): [r['val'], r['end'], r.get('accn', '')] for r in frame.get('data', []) if r.get('val') is not None}
 
 
-def company_rows(dur, rev, rev_prev, instants):
+def company_rows(dur, rev, rev_prev, instants, shares=None, shares_prev=None):
     """Every company's figures for one fiscal year.
 
     dur: {key: {cik: [val, end, accn]}} for the DURATION keys in the year;
-    rev / rev_prev: {tag: {cik: [...]}}; instants: {concept: {frame label: {cik: [...]}}}.
-    Returns {cik: {end, accn, gp, op, ni, cfo, rev, revTag, revPrev, assets, assetsPrev, inventory, inventoryPrev}}.
+    rev / rev_prev: {tag: {cik: [...]}}; instants: {concept: {frame label: {cik: [...]}}};
+    shares / shares_prev: {cik: [...]} diluted weighted-average shares this year and last.
+    Returns {cik: {end, accn, gp, op, ni, cfo, rnd, rev, revTag, revPrev, assets, assetsPrev, inventory, inventoryPrev,
+    shares, sharesPrev}}.
     """
     out = {}
     anchors = set(dur.get('ni', {})) | set(dur.get('cfo', {}))
@@ -127,6 +148,10 @@ def company_rows(dur, rev, rev_prev, instants):
             before = frames.get(quarter_frame(prev_end), {}).get(cik)
             row[key] = now[0] if now and _near(now[1], end, BALANCE_DAYS) else None
             row[key + 'Prev'] = before[0] if before and _near(before[1], prev_end, BALANCE_DAYS) else None
+        now = (shares or {}).get(cik)
+        before = (shares_prev or {}).get(cik)
+        row['shares'] = now[0] if now and _near(now[1], end, BALANCE_DAYS) else None
+        row['sharesPrev'] = before[0] if before and _near(before[1], prev_end, YEAR_DAYS) else None
         out[cik] = row
     return out
 
@@ -136,13 +161,16 @@ def _avg(a, b):
 
 
 def readings(r):
-    """The seven readings for one company's row (None where an input is missing or a denominator isn't positive)."""
+    """The readings for one company's row (None where an input is missing or a denominator isn't positive)."""
     assets, prev = r.get('assets'), r.get('assetsPrev')
     avg = _avg(assets, prev)
     rev, rev0 = r.get('rev'), r.get('revPrev')
     sales_growth = rev / rev0 - 1 if rev is not None and rev0 and rev0 > 0 else None
     inv, inv0 = r.get('inventory'), r.get('inventoryPrev')
     inv_growth = inv / inv0 - 1 if inv is not None and inv0 and inv0 > 0 else None
+    sh, sh0 = r.get('shares'), r.get('sharesPrev')
+    issuance = math.log(sh / sh0) if sh and sh0 and sh > 0 and sh0 > 0 and not split_like(sh / sh0) else None
+    rnd = r.get('rnd')
     return {
         'grossProfitability': r['gp'] / assets if r.get('gp') is not None and assets and assets > 0 else None,
         'operatingMargin': r['op'] / rev if r.get('op') is not None and rev and rev > 0 else None,
@@ -151,6 +179,8 @@ def readings(r):
         'assetGrowth': assets / prev - 1 if assets is not None and prev and prev > 0 else None,
         'accruals': (r['ni'] - r['cfo']) / avg if r.get('ni') is not None and r.get('cfo') is not None and avg and avg > 0 else None,
         'inventoryVsSales': inv_growth - sales_growth if inv_growth is not None and sales_growth is not None else None,
+        'shareIssuance': issuance,
+        'rdIntensity': rnd / rev if rnd is not None and rnd >= 0 and rev and rev > 0 else None,
     }
 
 
@@ -224,24 +254,28 @@ def pick_year(today, ni_rows):
 
 # ---------- downloads ----------
 
-async def _frame(ctx, tag, period):
+async def _frame(ctx, tag, period, unit='USD'):
     """One frame, compacted and saved for a week ({} when the SEC has none for that period)."""
     async def load():
         try:
-            r = await sec.sec_get(ctx, FRAME_URL.format(tag=tag, period=period))
+            r = await sec.sec_get(ctx, FRAME_URL.format(tag=tag, unit=unit, period=period))
         except EngineError as e:
             if 'no data' in str(e):
                 return {}
             raise
         return {str(k): v for k, v in compact(r.json()).items()}
-    got = await ctx.cached(('sec-frame', tag, period), FRAME_TTL, load, persist=True, stale_ok=True)
+    key = ('sec-frame', tag, period) if unit == 'USD' else ('sec-frame', tag, period, unit)
+    got = await ctx.cached(key, FRAME_TTL, load, persist=True, stale_ok=True)
     return {int(k): v for k, v in got.items()}
 
 
 async def _year_rows(ctx, year):
     names = [('dur', k, tag, f'CY{year}') for k, tag in DURATION.items()]
     names += [('rev', t, t, f'CY{year}') for t in REVENUE_TAGS] + [('revPrev', t, t, f'CY{year - 1}') for t in REVENUE_TAGS]
-    got = await asyncio.gather(*(_frame(ctx, tag, period) for _, _, tag, period in names))
+    got = await asyncio.gather(*(_frame(ctx, tag, period) for _, _, tag, period in names),
+                               _frame(ctx, SHARES_TAG, f'CY{year}', 'shares'), _frame(ctx, SHARES_TAG, f'CY{year - 1}', 'shares'))
+    shares, shares_prev = got[-2], got[-1]
+    got = got[:-2]
     dur, rev, rev_prev = {}, {}, {}
     for (kind, key, _, _), frame in zip(names, got):
         {'dur': dur, 'rev': rev, 'revPrev': rev_prev}[kind][key] = frame
@@ -257,7 +291,7 @@ async def _year_rows(ctx, year):
     for concept, tag in INSTANT.items():
         frames = await asyncio.gather(*(_frame(ctx, tag, lab) for lab in wanted))
         instants[concept] = dict(zip(wanted, frames))
-    return company_rows(dur, rev, rev_prev, instants), wanted
+    return company_rows(dur, rev, rev_prev, instants, shares, shares_prev), wanted
 
 
 async def _field(ctx, year):
@@ -267,7 +301,7 @@ async def _field(ctx, year):
         by_metric, per = field(rows)
         companies = {str(k): {'end': r['end'], 'accn': r['accn'], 'assets': r.get('assets'), 'readings': per[k]} for k, r in rows.items()}
         return {'byMetric': by_metric, 'companies': companies, 'quarters': quarters}
-    return await ctx.cached(('sec-filerrank', year), 24 * 3600, load, persist=True, stale_ok=True)
+    return await ctx.cached(('sec-filerrank-v2', year), 24 * 3600, load, persist=True, stale_ok=True)
 
 
 @handler('research.filerrank')
@@ -313,5 +347,5 @@ async def filer_rank(ctx, msg):
                     'noAssets': me['assets'] is None},
         'metrics': rank(data['byMetric'], me['readings'], member),
         'minAssets': MIN_ASSETS,
-        'frames': [FRAME_URL.format(tag=t, period=f'CY{year}') for t in (DURATION['ni'], DURATION['gp'])],
+        'frames': [FRAME_URL.format(tag=t, unit='USD', period=f'CY{year}') for t in (DURATION['ni'], DURATION['gp'])],
     }
