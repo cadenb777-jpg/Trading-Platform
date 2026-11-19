@@ -56,7 +56,7 @@ export function sahmPanel(): HTMLElement {
             { value: WATCH, label: 'Watch' },
             { value: TRIGGER, label: 'Sahm rule fires' },
           ],
-          caption: `Marks: ${WATCH.toFixed(2)} worth watching · ${TRIGGER.toFixed(2)} the rule fires. Lower is better.`,
+          caption: `Marks: ${WATCH.toFixed(2)} watch · ${TRIGGER.toFixed(2)} the rule fires. Lower is better.`,
         }),
         h('p', { class: 'small' }, nowWords(latest)),
         h('p', { class: 'small' }, u ? recordWords(signals, sahm[0].time, usrec.length ? usrec[usrec.length - 1].time : null, record) : 'Its record against past recessions needs the NBER recession dates (FRED USREC), which couldn’t be loaded right now.'),
