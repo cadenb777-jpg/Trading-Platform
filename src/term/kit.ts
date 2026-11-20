@@ -101,8 +101,10 @@ export function termTable<R>(o: {
   let cells: { td: HTMLTableCellElement; value: number | null | undefined }[][] = [];
 
   const paint = (td: HTMLTableCellElement, c: Col<R>, r: R) => {
-    td.textContent = c.text(r);
-    td.className = `${c.left ? 'l' : ''} ${c.tone?.(r) ?? ''} ${c.cls ?? ''}`.trim();
+    const text = c.text(r);
+    const cls = `${c.left ? 'l' : ''} ${c.tone?.(r) ?? ''} ${c.cls ?? ''}`.trim();
+    if (td.textContent !== text) td.textContent = text; // untouched cells aren't repainted
+    if (td.className !== cls) td.className = cls;
   };
 
   function build(groups: TermRows<R>[]) {
