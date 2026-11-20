@@ -22,6 +22,8 @@ export interface TearSheet {
   days: number;
   riskFree: number;
   priceOnly: string[];
+  /** Holdings too young to measure (under about 7 months of prices), left out of every figure (helper 92+). */
+  leftOut?: string[];
   volatility: number;
   var: { level: number; days: number; historical: number; historicalCvar: number; parametric: number; parametricCvar: number; samples: number }[];
   correlation: { symbols: string[]; matrix: number[][] };
@@ -91,7 +93,7 @@ export function tearSheetBlock(holdings: TearSheetHolding[], value: number, opts
   }
 
   function draw(t: TearSheet) {
-    const parts: (Node | null)[] = [head, h('p', { class: 'muted small' }, `Today's weights held ${t.start} to ${t.end} (${t.days.toLocaleString('en-US')} trading days; the youngest holding sets the start). ${modelNotes(t.symbols, opts.notes)}${t.priceOnly.length ? `Price-only (no dividend data): ${t.priceOnly.join(', ')}. ` : ''}Sources: ${t.sources}.`)];
+    const parts: (Node | null)[] = [head, h('p', { class: 'muted small' }, `Today's weights held ${t.start} to ${t.end} (${t.days.toLocaleString('en-US')} trading days; the youngest holding sets the start). ${modelNotes(t.symbols, opts.notes)}${t.priceOnly.length ? `Price-only (no dividend data): ${t.priceOnly.join(', ')}. ` : ''}${t.leftOut?.length ? `Left out (under about 7 months of prices, too young to measure): ${t.leftOut.join(', ')}; the others are measured on their own weights. ` : ''}Sources: ${t.sources}.`)];
     if (!omit.has('var')) parts.push(varPanel(t));
     const pair: Node[] = [];
     if (!omit.has('drawdowns')) pair.push(drawdownPanel(t));

@@ -2,15 +2,16 @@
  * Calm change flashes (owner, 2026-11-19: "listen to the flashing lights every time it changes so it's not
  * fatiguing"). A value that changes gets one soft tint that fades (up = green, down = red), never a blink. Limits that
  * keep a busy screen quiet:
- *   - a cell flashes at most once every 2 seconds, however often its value ticks;
+ *   - a cell flashes at most once every 5 seconds, however often its value ticks;
  *   - tiny changes (below `minMove`, relative) don't flash at all;
- *   - at most 12 cells start a flash in any one second across the whole screen; the rest just update;
+ *   - at most 4 cells start a flash in any one second across the whole screen; the rest just update;
+ *   - nothing flashes while a saved copy is swapped for the fresh reply (quietFlashes);
  *   - nothing flashes when the system asks for reduced motion, when the setting is off or when the tab is hidden;
  *   - the first value a cell shows never flashes (only real changes do).
  * The decision is pure (`shouldFlash`) and tested; `flash` applies it.
  */
 
-export const FLASH = { cellGapMs: 2000, perSecond: 12, fadeMs: 900 };
+export const FLASH = { cellGapMs: 5000, perSecond: 4, fadeMs: 900 };
 const KEY = 'tp-flash';
 
 export function flashEnabled(): boolean {
@@ -53,11 +54,17 @@ export function shouldFlash(state: FlashState, cell: object, prev: number | null
 }
 
 const shared = newFlashState();
+let quietUntil = 0;
+
+/** No flashes for the next `ms` (a whole table refreshed at once is not news). */
+export function quietFlashes(ms = 400) {
+  quietUntil = Math.max(quietUntil, performance.now() + ms);
+}
 
 /** Soft-tints `el` once when `next` differs from `prev` (see the limits above). */
 export function flash(el: HTMLElement, prev: number | null | undefined, next: number | null | undefined, minMove = 0) {
   if (typeof document !== 'undefined' && document.hidden) return;
-  if (!flashEnabled()) return;
+  if (!flashEnabled() || performance.now() < quietUntil) return;
   const dir = shouldFlash(shared, el, prev, next, performance.now(), minMove);
   if (!dir) return;
   el.classList.remove('tk-up', 'tk-down');

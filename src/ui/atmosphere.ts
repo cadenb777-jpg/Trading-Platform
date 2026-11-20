@@ -72,7 +72,10 @@ export function initAtmosphere() {
 
   const offsets = SPOTS.map((s) => Math.random() * s.move * 2); // each shape starts somewhere along its loop
   const pulseOffsets = SPOTS.map((s) => Math.random() * s.pulse * 2);
-  const still = matchMedia('(prefers-reduced-motion: reduce)');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+  // the terminal look keeps the background still: a moving background makes every glass panel above it redraw, which
+  // flickers on some graphics chips (owner, 2026-11-20: "glitching and blinking"); Classic keeps the slow drift
+  const still = { get matches() { return reduce.matches || document.documentElement.dataset.look !== 'classic'; } };
   let colors: string[] = [];
   let colorsRead = 0;
   const started = performance.now() / 1000;
@@ -123,7 +126,7 @@ export function initAtmosphere() {
     draw();
   };
   addEventListener('resize', () => draw());
-  still.addEventListener?.('change', () => draw());
+  reduce.addEventListener?.('change', () => draw());
   draw();
   requestAnimationFrame(loop);
 }

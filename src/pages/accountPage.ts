@@ -9,6 +9,7 @@
  * portfolios and what-ifs are on Portfolios ("Analyse in Portfolios" opens an account there).
  */
 import { guessMarket, subscribeQuote } from '../data/quotes';
+import { flashEnabled } from '../term/flash';
 import { listDocs, saveDoc } from '../data/store';
 import { clearEngineCache, loadNews, type NewsItem } from '../data/schwab';
 import { ALL_ACCOUNTS, allocation, combineHoldings, holdingNewsSymbols, dividendPayload, myPortfolios, partKey, pickAccounts, receivedPayload, todayChange, type AccountPart, type CombinedHolding } from '../portfolio/account';
@@ -129,17 +130,24 @@ function readColumns(): Set<string> {
 
 const METHOD_SHORT: Record<string, string> = { entered: 'entered', statement: 'statement', purchase: 'est.', tracked: 'est.', mixed: 'mixed', none: '' };
 
-/** How often the Account page shows new live prices (ms). */
-const LIVE_MS = 3000;
+/** How often the Account page shows new live prices (ms). Every redraw rebuilds the tables, so not too often
+ * (owner, 2026-11-20: "it flickers a ton" — every 3 s the whole table blinked). */
+const LIVE_MS = 10000;
 
 /** After a live redraw: rows whose value went up flash green, down red (and the total), so you can see it moving. */
+/** Calm: only the 3 rows that moved most (and by at least 0.1%), and the total when it moved 0.05% or more. */
+export function rowsToFlash(before: Map<string, number | null>, now: { r: { symbol: string }; value: number | null }[]): { symbol: string; up: boolean }[] {
+  return now
+    .map((x) => ({ x, was: before.get(x.r.symbol) }))
+    .filter(({ x, was }) => was != null && x.value != null && was !== 0 && Math.abs(x.value / was - 1) >= 0.001)
+    .sort((a, b) => Math.abs(b.x.value! / b.was! - 1) - Math.abs(a.x.value! / a.was! - 1))
+    .slice(0, 3)
+    .map(({ x, was }) => ({ symbol: x.r.symbol, up: x.value! > was! }));
+}
 function flashChanges(holdings: HTMLElement, overview: HTMLElement, before: Map<string, number | null>, now: { r: { symbol: string }; value: number | null }[], totalBefore: number, totalNow: number) {
-  for (const x of now) {
-    const was = before.get(x.r.symbol);
-    if (was == null || x.value == null || Math.abs(x.value - was) < 0.005) continue;
-    holdings.querySelector(`tr[data-symbol="${CSS.escape(x.r.symbol)}"]`)?.classList.add(x.value > was ? 'tick-up' : 'tick-down');
-  }
-  if (Math.abs(totalNow - totalBefore) >= 0.005) overview.querySelector('.stat-card')?.classList.add(totalNow > totalBefore ? 'tick-up' : 'tick-down');
+  if (!flashEnabled()) return;
+  for (const f of rowsToFlash(before, now)) holdings.querySelector(`tr[data-symbol="${CSS.escape(f.symbol)}"]`)?.classList.add(f.up ? 'tick-up' : 'tick-down');
+  if (totalBefore && Math.abs(totalNow / totalBefore - 1) >= 0.0005) overview.querySelector('.stat-card')?.classList.add(totalNow > totalBefore ? 'tick-up' : 'tick-down');
 }
 
 export function createAccountPage(openPortfolio: (id: string) => void, openTrade: (accountId: string, kind?: 'stocks' | 'futures') => void) {
@@ -278,7 +286,19 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     /** Webull buying power per account, read once per load (the cards are redrawn when display choices change). */
     const buyingPower = new Map<string, Promise<number | null>>();
     const buyingPowerOf = (id: string) => {
-      if (!buyingPower.has(id)) buyingPower.set(id, loadSnapshot(id).then((s) => s.balances?.buyingPower ?? null, () => null));
+      // only US stock accounts have stock buying power: a futures account is skipped (asking Webull for it is an error)
+      if (!buyingPower.has(id))
+        buyingPower.set(
+          id,
+          loadSnapshot().then(
+            (status) => {
+              const acct = status.accounts?.find((a) => a.id === id);
+              if (acct && (acct.futures || acct.stocks === false)) return null;
+              return id === status.accountId ? (status.balances?.buyingPower ?? null) : loadSnapshot(id).then((s) => s.balances?.buyingPower ?? null, () => null);
+            },
+            () => null,
+          ),
+        );
       return buyingPower.get(id)!;
     };
     const drawHoldings = () => {
@@ -848,7 +868,8 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
       );
     };
     const tick = setInterval(() => {
-      if (run !== loading || !moved || document.visibilityState !== 'visible' || busy()) return;
+      // not while another page is showing (the Account page stays built in the background)
+      if (run !== loading || !moved || document.visibilityState !== 'visible' || !frame.body.offsetParent || busy()) return;
       moved = false;
       redraw();
     }, LIVE_MS);

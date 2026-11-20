@@ -15,14 +15,14 @@ describe('calm flashes', () => {
     expect(shouldFlash(s, {}, 100, 100.01, 0, 0.0002)).toBeNull();
     expect(shouldFlash(s, {}, 100, 100.05, 0, 0.0002)).toBe('up');
   });
-  it('lets one cell flash at most every two seconds', () => {
+  it('lets one cell flash at most every five seconds', () => {
     const s = newFlashState();
     const cell = {};
     expect(shouldFlash(s, cell, 1, 2, 0)).toBe('up');
     expect(shouldFlash(s, cell, 2, 3, 500)).toBeNull();
     expect(shouldFlash(s, cell, 3, 4, FLASH.cellGapMs + 1)).toBe('up');
   });
-  it('caps the whole screen at a dozen flashes a second', () => {
+  it('caps the whole screen at four flashes a second', () => {
     const s = newFlashState();
     const fired = Array.from({ length: 30 }, (_, i) => shouldFlash(s, {}, 1, 2, i * 10)).filter(Boolean).length;
     expect(fired).toBe(FLASH.perSecond);

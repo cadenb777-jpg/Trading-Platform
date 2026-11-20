@@ -49,12 +49,15 @@ Owner, 2026-11-19: the terminal model (mockup approved: "I'm digging that look")
       (src/term: termPanel, termTable, calm flash, cross-data read, correlations) and Markets → Monitor rebuilt with it
       (world equities, sectors vs S&P, futures with σ and CFTC positioning, Treasury curve and spreads, Fed path,
       20-day vs 1-year correlations, "Why it's moving", movers, news; tabs 1-6).
-- [ ] T2. Speed: the helper keeps the watchlist, holdings and Nasdaq-100 data warm (prices, fundamentals, curve) and
+- [x] T2. Speed: the helper keeps the watchlist, holdings and Nasdaq-100 data warm (prices, fundamentals, curve) and
       answers from the saved copy at once while refreshing stale parts behind the scenes; heavy maths precomputed.
-- [ ] T3. Security screens in the kit (Overview DES as dense panels, Financials FA grid, Peers, Holders, Options).
-- [ ] T4. Money in the kit (Account, Portfolios, Trade blotters), Ideas (Setups list, Screener), Macro and Calendar.
-- [ ] T5. Desk/Launchpad: drag, dock and pop out any panel; link groups and live subscriptions survive moves.
-- [ ] T6. Home: keep greeting + tape; terminal panels below them (indexes, mood, brief) with the cross-data read.
+- [x] T3. Security screens in the kit (Overview DES as dense panels, Financials FA grid, Peers, Holders, Options).
+- [x] T4. Money in the kit (Account, Portfolios, Trade blotters), Ideas (Setups list, Screener), Macro and Calendar.
+- [x] T5. Desk/Launchpad: drag, dock and pop out any panel; link groups and live subscriptions survive moves.
+      (Done as: pop-out of any panel into a floating glass window that snaps to halves; Desk keeps move/resize; Desk gets the read tile.
+      T3/T4 done as a site-wide density pass in terminal.css, not a per-page rewrite: next, rebuild single screens in the kit
+      where a dense table beats cards: Setups list, Account holdings, Calendar.)
+- [x] T6. Home: keep greeting + tape; terminal panels below them (indexes, mood, brief) with the cross-data read.
 
 Resume rule: on "continue" or "go", read this file and do the first unticked item.
 

@@ -48,7 +48,27 @@ export function createStatusBar(d: StatusDeps): HTMLElement {
   const updated = item('sb-updated', 'When the last data arrived: open Data health', (e) => d.openHealth(e.currentTarget as HTMLElement));
   const ready = h('span', { class: 'sb-ready', role: 'status', 'aria-live': 'polite' });
 
-  function draw() {
+  // Drawn at most once a second, and only when something it shows changed (owner, 2026-11-20: "it flickers a ton":
+  // every streamed price used to rebuild the whole bar, 100+ times a second, and its widths jittered).
+  let lastSig = '';
+  let lastDrawAt = 0;
+  let queued: ReturnType<typeof setTimeout> | undefined;
+  const draw = () => {
+    const wait = 1000 - (Date.now() - lastDrawAt);
+    if (wait > 0) {
+      queued ??= setTimeout(() => ((queued = undefined), draw()), wait);
+      return;
+    }
+    lastDrawAt = Date.now();
+    const a0 = getActivity();
+    const s0 = marketSession(new Date());
+    const sig = JSON.stringify([helper.isConnected, helper.version, helper.outdated, FEED_ITEMS.map(([id]) => health(id)), a0.lastLatencyMs, a0.lastAt, a0.inflight > 0, s0.label, s0.nyTime]);
+    if (sig === lastSig) return;
+    lastSig = sig;
+    paint();
+  };
+
+  function paint() {
     const up = helper.isConnected;
     const v = helper.version;
     helperBtn.replaceChildren(dot(up ? (helper.outdated ? 'stale' : 'ok') : 'error'), h('span', {}, up ? `Helper${v ? ` v${v}` : ''}` : 'Helper offline'));
@@ -76,6 +96,7 @@ export function createStatusBar(d: StatusDeps): HTMLElement {
     clearTimeout(pendingDraw);
     pendingDraw = setTimeout(draw, getActivity().inflight > 0 ? 250 : 0);
   });
+  // (draw itself waits until a second has passed since the last one)
   onHealthChange(draw);
   helper.onAvailability(draw);
   helper.onUpdateChange(draw);

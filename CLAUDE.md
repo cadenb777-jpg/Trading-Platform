@@ -370,6 +370,14 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   tables. New terminal screens use src/term/kit.ts (termPanel, termTable: update in place) and calm flashes (src/term/flash.ts:
   one fading tint, max once per 2 s per cell and 12 per second per screen, off with reduced motion or the setting). Missing data =
   one line in the panel's note, never an empty box. Cross-data read: src/term/read.ts (rules, not AI); correlations src/term/corr.ts.
+  Speed (T2, helper 91): src/data/saved.ts keeps the last reply of public market-data requests (SAVED_TYPES; never
+  accounts/portfolios/settings) in localStorage; savedThenFresh draws it at once, then the fresh reply. The helper warms
+  the Monitor's requests at start and every 15 minutes (WARM_UP, WARM_EVERY_SECONDS) and answers stale_ok from its cache.
+  Home's first widget 'read' (src/term/readWidget.ts) is the same cross-market read (no prices repeated from the strip).
+  Pop-out (T5): src/ui/floatPanel.ts moves the panel element itself into a floating glass window (drag, resize, snap to a
+  half / full screen at the edges, double-click to fill, Esc or × docks; leaving the page docks all), so live data keeps
+  running. Buttons: termPanel (.tp-float), fnTile, security panel() (.sv-float), panelHeader floatTarget (Home widgets).
+  Density (T3/T4): terminal.css tightens the spacing scale, controls and page padding for every page; Security header/tabs.
   Markets > Monitor is the first rebuilt screen (numbered tabs 1-6, three columns that fill the window). Keep Home's greeting and tape.
   Theme: light/dark via CSS variables (`:root[data-theme='light']`) and src/ui/theme.ts (THEME object updated in place,
   `followTheme(chart)` repaints canvases). Use variables, not hard-coded colours, in new CSS. Tokens, type and do/don't: docs/design.md.
@@ -691,10 +699,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 - Research → Among US companies (helper 88, FILER_RANK_HELPER_VERSION/filerRankReady; engine/filerrank.py
   `research.filerrank {cik}`; src/research/filerRank.ts pure + filerRankView.ts, class fr-*, first in the More fold): nine
   readings (gross profit/assets, operating margin, ROA, sales growth, asset growth, accruals, inventory vs sales growth;
-  helper 91: share count change = ln of weighted shares vs last year (diluted, else basic; one tag both years; a
+  helper 93: share count change = ln of weighted shares vs last year (diluted, else basic; one tag both years; a
   whole-multiple move is skipped as a split only when the two years come from different filings), shown as the % change;
   R&D (excluding acquired IPR&D, else plain) / revenue; a reading absent from a reply says it arrives with the update
-  (ARRIVES_WITH_UPDATE in schwab.ts, one text everywhere); on helper 91+ a pre-update saved reply is asked again with
+  (ARRIVES_WITH_UPDATE in schwab.ts, one text everywhere); on helper 93+ a pre-update saved reply is asked again with
   refresh; the reply's `frames` = [{label, url}] of the exact SEC files used (filerrank.sources))
   ranked among every filer with total assets >= $100M from SEC XBRL frames (one file per concept and calendar period,
   cached a week as 'sec-frame'; field cached a day as 'sec-filerrank-v2', helper 88's 'sec-filerrank' removed by datahub migration filerrank-v1). Fiscal year = the company's row in the CY duration
