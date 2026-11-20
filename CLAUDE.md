@@ -495,6 +495,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   cells say "Loading...", reads values. Adds ycharts.calc (YCS aggregate), ycharts.holdings (YCH), frequency on series,
   and a 'ycharts' source in crosscheck (price, NAV as M:, trailing yield, net expense ratio). The full metric catalog is the
   owner's reference workbook loaded on the YCharts page into localStorage (not in this public repo).
+  YCharts woven in (v99): ycharts.profile {symbol, asset stock|etf|mutual_fund} = PROFILE_INFO (YCI) + PROFILE_FIGURES (YCP)
+  in one Excel pass, cached 12 h. src/data/ycharts.ts yProfile() never throws; Overview panels draw their own data first
+  and withYCharts()/fillRows() (src/security/tabs.ts) fill empty rows and add YCharts facts in place (company long
+  description, sector, HQ, IPO, next earnings; fund benchmark, style, share class, waivers, how it invests). Research's
+  tear sheet prefers the YCharts description. The YCharts explorer page is hidden from the menu (#ycharts still works).
   CLIENT PRIVACY (owner's rule): never read YCharts Portfolios (P: tickers refused by check_id/guard_formula) or account
   data (YCU is never built; guard_formula allows only YCP/YCS/YCI/YCH); the catalog skips Model Portfolio and User Info.
   Market map (v96): Monitor HEAT and the Desk sectors tile are src/markets/marketMap.ts, a squarified treemap

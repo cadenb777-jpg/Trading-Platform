@@ -69,3 +69,14 @@ describe('buddy sees a thin row of buttons', () => {
     expect(spotIsFree(0, 0, 78, 78, () => gap)).toBe(true);
   });
 });
+
+describe('buddy keeps cards clear', () => {
+  it('counts the blank part of a panel or card as occupied', async () => {
+    const { isEmptyAt } = await import('./buddy');
+    // a blank div inside a card: closest() finds the card through the '.sv-panel' part of the content selector
+    const inCard = { closest: (sel: string) => (sel.split(',').some((x) => x.trim() === '.sv-panel') ? inCard : null), childNodes: [] } as unknown as Element;
+    const gap = { closest: () => null, childNodes: [] } as unknown as Element;
+    expect(isEmptyAt(inCard)).toBe(false);
+    expect(isEmptyAt(gap)).toBe(true);
+  });
+});
