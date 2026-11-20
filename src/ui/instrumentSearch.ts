@@ -14,7 +14,7 @@ import { searchCatalog } from '../invest/catalog';
 import { secHash } from '../security/codes';
 import { h } from './dom';
 
-export type Kind = 'stock' | 'etf' | 'mutual_fund' | 'index' | 'bond' | 'alt' | 'crypto' | 'other';
+export type Kind = 'ticker' | 'stock' | 'etf' | 'mutual_fund' | 'index' | 'bond' | 'alt' | 'crypto' | 'other';
 export interface Hit {
   kind: Kind;
   /** Ticker, CUSIP or private-fund catalog id */
@@ -26,6 +26,7 @@ export interface Hit {
 }
 
 export const KIND_LABEL: Record<Kind, string> = {
+  ticker: 'Ticker',
   stock: 'Stocks',
   etf: 'ETFs',
   mutual_fund: 'Mutual funds',
@@ -71,12 +72,18 @@ export function schwabHits(results: { symbol: string; name: string; assetType?: 
   });
 }
 
+/** AAPL, QYLD, VFIAX, BRK.B: 1-5 letters, optionally a class letter after . or - (pure, tested). */
+export const looksLikeTicker = (q: string) => /^[A-Za-z]{1,5}([.-][A-Za-z])?$/.test(q.trim());
+
 /** What the platform already knows without asking Schwab: a CUSIP, its own lists and the private-fund directory. */
 export function localHits(query: string): Hit[] {
   const q = query.trim();
   if (q.length < 2) return [];
   const out: Hit[] = [];
   if (isCusip(q)) out.push({ kind: 'bond', id: q.toUpperCase(), label: `Bond CUSIP ${q.toUpperCase()}`, sub: 'Look it up: issuer, coupon, maturity, price' });
+  // text that looks like a ticker opens that ticker first (Enter never lands on a private-fund search by accident);
+  // its page works out whether it is a stock, ETF or fund. Schwab's own result for the same ticker replaces this one.
+  else if (looksLikeTicker(q)) out.push({ kind: 'ticker', id: q.toUpperCase(), label: `Open ${q.toUpperCase()}`, sub: 'Its page shows the right information for a stock, ETF or fund' });
   const { symbols, funds } = searchCatalog(q);
   for (const s of symbols.slice(0, 8)) {
     // the Investments lists: $ = an index, crypto pairs, the stock lists' stocks; everything else there is a listed fund
@@ -92,9 +99,9 @@ export function localHits(query: string): Hit[] {
 export function mergeHits(local: Hit[], remote: Hit[], filter: 'all' | Kind): { kind: Kind; hits: Hit[] }[] {
   const byId = new Map<string, Hit>();
   for (const x of [...remote, ...local]) if (!byId.has(`${x.kind === 'alt' ? 'alt:' : ''}${x.id}`)) byId.set(`${x.kind === 'alt' ? 'alt:' : ''}${x.id}`, x);
-  const order: Kind[] = ['stock', 'etf', 'mutual_fund', 'bond', 'index', 'alt', 'crypto', 'other'];
+  const order: Kind[] = ['ticker', 'stock', 'etf', 'mutual_fund', 'bond', 'index', 'alt', 'crypto', 'other'];
   return order
-    .filter((k) => filter === 'all' || k === filter)
+    .filter((k) => filter === 'all' || k === filter || k === 'ticker')
     .map((k) => ({ kind: k, hits: [...byId.values()].filter((x) => x.kind === k) }))
     .filter((g) => g.hits.length);
 }

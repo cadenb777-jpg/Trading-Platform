@@ -120,7 +120,7 @@ export function symbolActions(symbol: string, label: string, kind: SymbolKind, c
   const overview: GoAction = { id: 'des', label: 'Overview', icon: 'info', code: 'DES', hint: 'Security overview', run: go('DES', detail) };
   const chart: GoAction = { id: 'gp', label: 'Chart', icon: 'chart', code: 'GP', key: 'c', hint: 'Price chart (security view)', run: go('GP', chartPage) };
   const financials: GoAction = { id: 'fa', label: 'Financials', icon: 'profile', code: 'FA', key: 'f', hint: 'Income, balance sheet, cash flow', run: go('FA', () => page('research', 'open', symbol, 'financials')) };
-  const research: GoAction = { id: 'research', label: 'Research', icon: 'research', key: 'r', hint: `Company research for ${shown}`, run: () => ctx.openResearch(symbol) };
+  const research: GoAction = { id: 'research', label: 'Company analysis', icon: 'research', key: 'r', hint: `SEC accounts, quality and valuation for ${shown}`, run: () => ctx.openResearch(symbol) };
   const news: GoAction = {
     id: 'cn',
     label: 'News',
