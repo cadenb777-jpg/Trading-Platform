@@ -27,6 +27,7 @@ export interface PlatformSettings {
   eiaKeySet?: boolean;
   censusKeySet?: boolean;
   finnhubKeySet?: boolean;
+  ychartsKeySet?: boolean;
   /** Both Alpaca keys are saved (missing from helpers without Alpaca support; the keys themselves are never sent back). */
   alpacaSet?: boolean;
   /** Webull App Key + Secret saved (helper 26+); the keys themselves are never sent back. */

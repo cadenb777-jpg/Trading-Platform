@@ -115,6 +115,7 @@ const LOADERS: Record<PageRoute, () => Page | Promise<Page>> = {
   home: () => createHomePage(openChart, () => (location.hash = '#calendar'), openPageWith),
   desk: async () => (await import('./pages/deskPage')).createDeskPage(),
   monitor: async () => (await import('./pages/monitorPage')).createMonitorPage(),
+  ycharts: async () => (await import('./pages/ychartsPage')).createYchartsPage(),
   invest: async () => (await import('./pages/investmentsPage')).createInvestmentsPage({ openChart, openResearch, openPage: openPageWith }),
   futures: async () => (await import('./pages/futuresPage')).createFuturesPage(),
   macro: async () => (await import('./pages/macroPage')).createMacroPage(),

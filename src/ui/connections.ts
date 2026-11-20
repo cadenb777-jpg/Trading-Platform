@@ -18,7 +18,7 @@ export interface ConnectionField {
 }
 
 export interface Connection {
-  id: 'fred' | 'bea' | 'bls' | 'eia' | 'census' | 'finnhub' | 'alpaca' | 'ai' | 'sec' | 'github';
+  id: 'fred' | 'bea' | 'bls' | 'eia' | 'census' | 'finnhub' | 'alpaca' | 'ai' | 'sec' | 'github' | 'ycharts';
   name: string;
   /** What it switches on, in plain words. */
   unlocks: string;
@@ -84,6 +84,12 @@ export const CONNECTIONS: Connection[] = [
     unlocks: 'Analyst buy/hold/sell views on a stock’s overview (DES) and an earnings calendar on the Calendar page.',
     signup: 'https://finnhub.io/register', signupLabel: 'Get a free key', limit: '60 requests a minute (free plan)',
     fields: [key('finnhubKey', 'Finnhub API key', '20 letters and numbers')], isSet: (s) => s.finnhubKeySet, refreshes: ['finnhub.'],
+  },
+  {
+    id: 'ycharts', name: 'YCharts (paid API)', optional: true,
+    unlocks: 'YCharts figures on every stock and fund overview, and the YCharts explorer (Markets > YCharts): any metric YCharts has for companies, ETFs, mutual funds, indexes and economic indicators, as a chart and table.',
+    signup: 'https://ycharts.com/accounts/my_account', signupLabel: 'Your YCharts account (API key)', limit: 'Your YCharts API plan',
+    fields: [key('ychartsKey', 'YCharts API key', 'From YCharts > My Account > API')], isSet: (s) => s.ychartsKeySet, refreshes: ['ycharts.'],
   },
   {
     id: 'alpaca', name: 'Alpaca (price history)', optional: true,
