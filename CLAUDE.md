@@ -488,6 +488,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   mutual_funds (M:X), indices (^X), indicators (I:X). Metric codes were taken from YCharts' sample clients (its docs are
   behind its login): a code the plan lacks is listed as missing, never estimated. Security Overview shows a YCharts panel
   (nothing without a key); Markets > YCharts (#ycharts/<kind>/<ids>, src/pages/ychartsPage.ts) charts any codes.
+  Market map (v96): Monitor HEAT and the Desk sectors tile are src/markets/marketMap.ts, a squarified treemap
+  (src/ui/viz.ts squarify/treemap) sized by invest.caps (Schwab instruments fundamental marketCap, cached a day; only
+  relative sizes are used) and coloured by live quotes, deepest shade at +/-3%. Equal sizes when caps are missing.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).
   Data hub (v44, helper/engine/datahub.py; audit in docs/research/data-aggregation-audit.md): every outside call goes
   through `datahub.get(ctx.http, '<source>', url, params=...)` or `datahub.call('<source>', fn, key=...)`, never a bare

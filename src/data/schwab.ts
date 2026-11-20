@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 95;
+export const LATEST_HELPER_VERSION = 96;
 /** The "Log in to Schwab" request (schwab_login) and the in-place re-login need this version. */
 export const SCHWAB_LOGIN_HELPER_VERSION = 47;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
@@ -624,6 +624,7 @@ export async function loadNews(symbols: string[] = [], query = ''): Promise<{ it
  */
 export const ENGINE_CACHE_MS: Record<string, number> = {
   'invest.board': 20_000,
+  'invest.caps': 3_600_000,
   'invest.movers': 20_000,
   'flow.options': 20_000,
   'quant.options': 20_000,

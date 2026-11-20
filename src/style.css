@@ -14697,3 +14697,29 @@ select.input,
 .ws-holdings li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-fact b.up { color: var(--up-text); }
 .ws-fact b.down { color: var(--down-text); }
+
+/* Market map (squarified treemap, src/ui/viz.ts treemap): blocks sized by market cap, grouped by sector */
+.viz-treemap { margin: 0; }
+.tm-art { position: relative; width: 100%; overflow: hidden; border-radius: 6px; background: var(--surface); }
+.tm-group { position: absolute; box-sizing: border-box; border: 1px solid var(--bg); }
+.tm-head { position: absolute; left: 0; right: 0; top: 0; height: 18px; display: flex; justify-content: space-between; gap: 6px; padding: 2px 5px 0; font-size: 11px; line-height: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; }
+.tm-head-name { overflow: hidden; text-overflow: ellipsis; }
+.tm-head-chg { font-family: var(--font-mono); }
+.tm-head-chg.up { color: var(--up-text); }
+.tm-head-chg.down { color: var(--down-text); }
+.tm-cell { position: absolute; box-sizing: border-box; margin: 0; padding: 2px; border: 0; border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; overflow: hidden; color: var(--text); font-family: var(--font-mono); line-height: 1.1; cursor: pointer; transition: background-color 0.4s ease; }
+.tm-cell:hover, .tm-cell:focus-visible { outline: 1px solid var(--text); outline-offset: -1px; z-index: 1; }
+.tm-sym { font-weight: 700; }
+.tm-chg { font-size: max(11px, 0.75em); opacity: 0.9; }
+.tm-cell.tm-sm .tm-chg { display: none; }
+.tm-cell.tm-xs .tm-sym, .tm-cell.tm-xs .tm-chg { display: none; }
+@media (prefers-reduced-motion: reduce) { .tm-cell { transition: none; } }
+
+/* The selected destination in the rail shows one colour: its own icon's (owner, 2026-11-20: the copper bar on top of
+   the section-coloured edge looked like a glitch). Wide screens use the inset edge above; the phone bar's top line
+   takes the same colour. */
+.rail .nav-btn.rail-sec.active::before { background: var(--section-accent); box-shadow: none; }
+@media (min-width: 701px) {
+  .rail .nav-btn.rail-sec.active::before { display: none; }
+}
+.rail .nav-btn.rail-sec.active svg { background: none; }

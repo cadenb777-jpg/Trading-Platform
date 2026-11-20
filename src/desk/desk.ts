@@ -35,7 +35,7 @@ export const TILE_TYPES: { type: TileType; title: string; span: Span; needs?: 'o
   { type: 'quotes', title: 'Quote monitor', span: 4, needs: 'many', about: 'Live prices for the tickers you list' },
   { type: 'news', title: 'News', span: 4, about: 'Top headlines, or news on the tickers you list' },
   { type: 'world', title: 'World equities', span: 6, about: 'Stock markets by region today' },
-  { type: 'sectors', title: 'Nasdaq-100 by sector', span: 4, about: 'Sector sunburst, live' },
+  { type: 'sectors', title: 'Nasdaq-100 by sector', span: 4, about: 'Market map: blocks sized by market cap, live' },
   { type: 'movers', title: 'S&P 500 movers', span: 4, about: 'Biggest gainers and losers today' },
   { type: 'events', title: 'Economic events', span: 4, about: 'The next releases and their forecasts' },
   { type: 'fed', title: 'Fed rate odds', span: 6, about: 'Cut / hold / hike odds by meeting and the rate path' },

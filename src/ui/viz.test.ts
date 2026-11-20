@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arcPath, flowWidth, gaugeAngle, heatShare, mixSegments, petalPoints, polar, ringSlice, sunburstLayout, trackPos } from './viz';
+import { arcPath, flowWidth, gaugeAngle, heatShare, mixSegments, petalPoints, polar, ringSlice, squarify, sunburstLayout, trackPos } from './viz';
 
 describe('viz geometry', () => {
   it('places points clockwise from the top', () => {
@@ -57,5 +57,39 @@ describe('sunburst', () => {
     const d = ringSlice(100, 100, 50, 90, 0, 90);
     expect(d.startsWith('M 100.00 10.00 A 90 90 0 0 1 190.00 100.00 L 150.00 100.00 A 50 50 0 0 0 100.00 50.00')).toBe(true);
     expect(d.endsWith('Z')).toBe(true);
+  });
+});
+
+describe('squarified treemap', () => {
+  const rect = { x: 0, y: 0, w: 600, h: 400 };
+  const items = [6, 6, 4, 3, 2, 2, 1].map((weight, i) => ({ id: i, weight }));
+  const out = squarify(items, rect);
+  it('gives every block an area proportional to its weight and fills the rectangle', () => {
+    const total = 24;
+    for (const b of out) expect(b.w * b.h).toBeCloseTo((b.weight / total) * 600 * 400, 6);
+    expect(out.reduce((s, b) => s + b.w * b.h, 0)).toBeCloseTo(600 * 400, 6);
+  });
+  it('keeps every block inside and none overlapping', () => {
+    for (const b of out) {
+      expect(b.x).toBeGreaterThanOrEqual(-1e-9);
+      expect(b.y).toBeGreaterThanOrEqual(-1e-9);
+      expect(b.x + b.w).toBeLessThanOrEqual(600 + 1e-6);
+      expect(b.y + b.h).toBeLessThanOrEqual(400 + 1e-6);
+    }
+    for (let i = 0; i < out.length; i++)
+      for (let j = i + 1; j < out.length; j++) {
+        const a = out[i];
+        const b = out[j];
+        const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+        const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+        expect(ox <= 1e-6 || oy <= 1e-6).toBe(true);
+      }
+  });
+  it('keeps blocks close to square (the reference example: worst ratio under 3)', () => {
+    for (const b of out) expect(Math.max(b.w / b.h, b.h / b.w)).toBeLessThan(3);
+  });
+  it('leaves out zero weights and handles nothing to draw', () => {
+    expect(squarify([{ weight: 0 }, { weight: 2 }], rect)).toHaveLength(1);
+    expect(squarify([], rect)).toEqual([]);
   });
 });

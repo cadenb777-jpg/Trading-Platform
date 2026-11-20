@@ -363,3 +363,181 @@ export function sunburst(o: {
     },
   };
 }
+
+// ---------- treemap (market map) ----------
+
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Squarified treemap (Bruls, Huizing and van Wijk 2000): areas proportional to weight, rows chosen so blocks stay as
+ * close to square as possible. Biggest first; zero or missing weights are left out (pure, tested).
+ */
+export function squarify<T extends { weight: number }>(items: T[], r: Rect): (T & Rect)[] {
+  const list = items.filter((i) => Number.isFinite(i.weight) && i.weight > 0).sort((a, b) => b.weight - a.weight);
+  const total = list.reduce((s, i) => s + i.weight, 0);
+  if (!total || r.w <= 0 || r.h <= 0) return [];
+  const scale = (r.w * r.h) / total;
+  const out: (T & Rect)[] = [];
+  const free = { ...r };
+  const worst = (areas: number[], side: number) => {
+    const s = areas.reduce((a, b) => a + b, 0);
+    const mx = Math.max(...areas);
+    const mn = Math.min(...areas);
+    return Math.max((side * side * mx) / (s * s), (s * s) / (side * side * mn));
+  };
+  const place = (row: T[]) => {
+    const areas = row.map((i) => i.weight * scale);
+    const s = areas.reduce((a, b) => a + b, 0);
+    if (free.w >= free.h) {
+      const w = free.h ? s / free.h : 0;
+      let y = free.y;
+      row.forEach((it, k) => {
+        const hh = w ? areas[k] / w : 0;
+        out.push({ ...it, x: free.x, y, w, h: hh });
+        y += hh;
+      });
+      free.x += w;
+      free.w -= w;
+    } else {
+      const hh = free.w ? s / free.w : 0;
+      let x = free.x;
+      row.forEach((it, k) => {
+        const w = hh ? areas[k] / hh : 0;
+        out.push({ ...it, x, y: free.y, w, h: hh });
+        x += w;
+      });
+      free.y += hh;
+      free.h -= hh;
+    }
+  };
+  let row: T[] = [];
+  for (const it of list) {
+    const side = Math.min(free.w, free.h);
+    const areas = row.map((i) => i.weight * scale);
+    if (!row.length || worst([...areas, it.weight * scale], side) <= worst(areas, side)) row.push(it);
+    else {
+      place(row);
+      row = [it];
+    }
+  }
+  if (row.length) place(row);
+  return out;
+}
+
+/** Tone scale of the market map: a 3% move (or more) is the deepest shade, so colours stay calm and comparable. */
+const MAP_FULL = 0.03;
+
+/**
+ * A market map: one square-ish block per stock, area = market cap (equal when caps aren't known), grouped by sector,
+ * coloured green/red by today's move. `update` recolours in place (live quotes); `setWeights` re-lays the blocks.
+ */
+export function treemap(o: {
+  groups: SunGroup[];
+  title: string;
+  format: (v: number) => string;
+  onItem?: (label: string) => void;
+  caption?: Node | string;
+  height?: number;
+}) {
+  const H = o.height ?? 360;
+  const art = h('div', { class: 'tm-art', role: 'img', 'aria-label': o.title, style: `height:${H}px` });
+  const el = figure('viz-treemap', art, o.caption, o.title);
+  let weights: (label: string) => number | null | undefined = () => 1;
+  let values: (label: string) => number | null | undefined = () => null;
+  const cells = new Map<string, { el: HTMLElement; chg: HTMLElement; group: string }>();
+  const heads = new Map<string, { el: HTMLElement; chg: HTMLElement }>();
+  let lastW = 0;
+
+  const groupWeight = (g: SunGroup) => g.items.reduce((s, it) => s + (weights(it) ?? 0), 0);
+
+  function layout() {
+    const W = art.clientWidth;
+    if (!W) return;
+    lastW = W;
+    art.replaceChildren();
+    cells.clear();
+    heads.clear();
+    const total = o.groups.reduce((s, g) => s + groupWeight(g), 0);
+    const gl = squarify(o.groups.map((g) => ({ g, weight: groupWeight(g) })), { x: 0, y: 0, w: W, h: H });
+    for (const { g, x, y, w, h: gh } of gl) {
+      const head = gh > 44 && w > 56;
+      const top = head ? 18 : 0;
+      const box = h('div', { class: 'tm-group', style: `left:${x}px;top:${y}px;width:${w}px;height:${gh}px` });
+      if (head) {
+        const chg = h('span', { class: 'tm-head-chg' });
+        const hd = h('div', { class: 'tm-head', title: g.label }, h('span', { class: 'tm-head-name' }, g.label), chg);
+        heads.set(g.label, { el: hd, chg });
+        box.append(hd);
+      }
+      const inner = squarify(g.items.map((label) => ({ label, weight: weights(label) ?? 0 })), { x: 1, y: top + 1, w: Math.max(0, w - 2), h: Math.max(0, gh - top - 2) });
+      for (const it of inner) {
+        const side = Math.min(it.w, it.h);
+        const size = side < 22 || it.w < 30 ? 'tm-xs' : side < 34 || it.w < 46 ? 'tm-sm' : '';
+        const font = Math.max(11, Math.min(20, Math.round(side / 4)));
+        const chg = h('span', { class: 'tm-chg' });
+        const share = total ? (100 * (weights(it.label) ?? 0)) / total : 0;
+        const cell = h(
+          'button',
+          {
+            type: 'button',
+            class: `tm-cell ${size}`,
+            style: `left:${it.x}px;top:${it.y}px;width:${Math.max(0, it.w - 1)}px;height:${Math.max(0, it.h - 1)}px;font-size:${font}px`,
+            'data-share': share.toFixed(2),
+            onclick: () => o.onItem?.(it.label),
+          },
+          h('span', { class: 'tm-sym' }, it.label),
+          chg,
+        );
+        cells.set(it.label, { el: cell, chg, group: g.label });
+        box.append(cell);
+      }
+      art.append(box);
+    }
+    paint();
+  }
+
+  function paint() {
+    const sums = new Map<string, { wv: number; w: number }>();
+    for (const [label, c] of cells) {
+      const v = values(label);
+      const ok = v != null && Number.isFinite(v);
+      c.el.style.background = ok ? `color-mix(in srgb, ${v! >= 0 ? 'var(--up-fill)' : 'var(--down-fill)'} ${heatShare(v!, MAP_FULL)}%, var(--surface))` : 'var(--raised)';
+      c.chg.textContent = ok ? o.format(v!) : '';
+      c.el.title = `${label} (${c.group}): ${ok ? o.format(v!) : 'no price yet'} · ${c.el.dataset.share}% of the map by size`;
+      if (ok) {
+        const wt = weights(label) ?? 0;
+        const s = sums.get(c.group) ?? { wv: 0, w: 0 };
+        s.wv += wt * v!;
+        s.w += wt;
+        sums.set(c.group, s);
+      }
+    }
+    for (const [label, hd] of heads) {
+      const s = sums.get(label);
+      const avg = s && s.w ? s.wv / s.w : null;
+      hd.chg.textContent = avg == null ? '' : o.format(avg);
+      hd.chg.className = `tm-head-chg ${avg == null ? '' : avg >= 0 ? 'up' : 'down'}`;
+    }
+  }
+
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => art.clientWidth !== lastW && layout()).observe(art);
+  queueMicrotask(layout);
+  return {
+    el,
+    /** Recolours every block from the members' values; sector headers show the size-weighted average. */
+    update(value: (label: string) => number | null | undefined) {
+      values = value;
+      paint();
+    },
+    /** Sets block sizes (market caps) and re-lays the map. */
+    setWeights(weight: (label: string) => number | null | undefined) {
+      weights = (l) => weight(l) ?? 0;
+      layout();
+    },
+  };
+}
