@@ -37,3 +37,44 @@ class SearchRanking(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class QuickKindAndMemory(unittest.TestCase):
+    def test_kind_from_one_quote_and_search_not_remembering_empty(self):
+        import asyncio
+        from unittest import mock
+
+        class Ctx:
+            store = {}
+            schwab = None
+
+            async def cached(self, key, ttl, load, **kw):
+                if key in self.store:
+                    return self.store[key]
+                v = await load()
+                self.store[key] = v
+                return v
+
+        async def quotes(ctx, syms):
+            return {'QYLD': {'assetType': 'EQUITY', 'assetSubType': 'ETF', 'name': 'GLOBAL X NASDAQ 100 COVERED CALL ETF'}}
+        ctx = Ctx()
+        with mock.patch.object(invest, 'quotes', quotes):
+            got = asyncio.run(invest.kind(ctx, {'symbol': 'qyld'}))
+        self.assertEqual((got['assetType'], got['assetSubType']), ('EQUITY', 'ETF'))
+
+        calls = []
+
+        async def empty(client, asks, query):
+            calls.append(query)
+            return {'results': []}
+
+        class Client:
+            class Instrument:
+                class Projection:
+                    SYMBOL_SEARCH = 's'
+                    DESCRIPTION_SEARCH = 'd'
+        ctx.schwab = Client()
+        with mock.patch.object(invest, '_search', empty):
+            self.assertEqual(asyncio.run(invest.search(ctx, {'query': 'zzzz'})), {'results': []})
+            asyncio.run(invest.search(ctx, {'query': 'zzzz'}))
+        self.assertEqual(len(calls), 2)  # nothing remembered, so asked again

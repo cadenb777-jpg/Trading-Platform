@@ -347,10 +347,27 @@ async def search(ctx, msg):
         raise EngineError('Type at least 2 letters')
     client = ctx.schwab
     projection = client.Instrument.Projection
-    found = {}
     asks = [(query.upper(), projection.SYMBOL_SEARCH)] if ' ' not in query and len(query) <= 10 else []
-    # Schwab keeps names in capitals ("APPLE INC"): the name search is sent that way, plus as typed when different
-    asks += [(text, projection.DESCRIPTION_SEARCH) for text in dict.fromkeys((query.upper(), query))]
+    # Schwab keeps names in capitals ("APPLE INC"): one name search, in capitals (sending it as typed too only doubled
+    # the wait). The answer is remembered a day per query, so a repeat search is instant.
+    asks.append((query.upper(), projection.DESCRIPTION_SEARCH))
+    async def load():
+        out = await _search(client, asks, query)
+        if not out['results']:
+            raise _NoMatches()  # an empty answer (or a hiccup) is not remembered
+        return out
+    try:
+        return await ctx.cached(('invest-search', query.upper()), 86400, load, persist=True, stale_ok=True)
+    except _NoMatches:
+        return {'results': []}
+
+
+class _NoMatches(EngineError):
+    pass
+
+
+async def _search(client, asks, query):
+    found = {}
     for text, proj in asks:
         try:
             response = await client.get_instruments([text], proj)
@@ -367,6 +384,20 @@ async def search(ctx, msg):
         except Exception:
             continue
     return {'results': rank_results(query, list(found.values()))[:30]}
+
+
+@handler('invest.kind')
+async def kind(ctx, msg):
+    """What a symbol is (stock, ETF, mutual fund, index ...) from one live quote: the security page picks its layout
+    from this instead of waiting for a whole board row (a year of closes and dividends)."""
+    symbol = str(msg.get('symbol', '')).upper().strip()
+    if not SYMBOL.match(symbol):
+        raise EngineError(f'Invalid symbol "{symbol}"')
+
+    async def load():
+        row = (await quotes(ctx, [symbol])).get(symbol) or {}
+        return {'symbol': symbol, 'assetType': row.get('assetType', ''), 'assetSubType': row.get('assetSubType', ''), 'name': row.get('name', '')}
+    return await ctx.cached(('invest-kind', symbol), 7 * 86400, load, persist=True, stale_ok=True)
 
 
 # ---------- Bonds ----------

@@ -3,6 +3,7 @@
  * draws into the tab body from the shared loaders (data.ts), degrades panel by panel when a request fails ("—" with
  * the reason), and says where every figure comes from and when.
  */
+import { isFundSymbol } from './kind';
 import { brief } from '../ui/brief';
 import { hpTab } from './hpTab';
 import { holderWords, holdersTable, sellersList } from './holdersView';
@@ -98,8 +99,8 @@ function numTable(headers: string[], rows: { label: string | Node; cells: (strin
 /** Overview: a fund (ETF or mutual fund, by Schwab's type) gets the fund overview; anything else the company one. */
 export function desTab(ctx: TabCtx) {
   ctx.body.replaceChildren(loadingNote('overview'));
-  loadBoard(ctx.symbol)
-    .then((b) => isFundRow(b?.row), () => false)
+  isFundSymbol(ctx.symbol) // quick: search hint or one quote's type, not a whole board row
+    .catch(() => false)
     .then((fund) => ctx.still() && (fund ? fundDes(ctx) : companyDes(ctx)));
 }
 

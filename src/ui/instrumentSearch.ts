@@ -9,6 +9,7 @@
  * Used by Security -> Search (src/pages/findPage.ts) and the Investments page; the command bar uses the same helper
  * search (invest.search) for names.
  */
+import { rememberKind } from '../security/kind';
 import { engineRequest, helper } from '../data/schwab';
 import { searchCatalog } from '../invest/catalog';
 import { secHash } from '../security/codes';
@@ -181,6 +182,7 @@ export function instrumentSearch(o: { placeholder?: string; autofocus?: boolean;
         (r) => {
           if (mine !== seq) return;
           remote = schwabHits(r.results);
+          for (const x of remote) if (x.kind !== 'other' && x.kind !== 'ticker') rememberKind(x.id, x.kind === 'etf' || x.kind === 'mutual_fund');
           status = remote.length ? '' : 'No matches at Schwab.';
           render();
         },
