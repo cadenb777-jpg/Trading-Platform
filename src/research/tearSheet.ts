@@ -2,7 +2,9 @@
  * Research → Overview tear sheet (Fincept "Equity Research" layout, the platform's colours): what the company does
  * (Wikipedia via its SEC CIK, helper research.about) above three columns.
  * - left: valuation and share figures as label-value lists;
- * - centre: the pictures (52-week range track, quality gauge, margin rings);
+ * - centre: the price chart, the 52-week range and the four margins, each its own panel (owner, 2026-11-20: one tall
+ *   centre box left empty space beside it); balance sheet on the left, the F-score gauge on the right, so the three
+ *   columns end level;
  * - right: growth, returns and balance-sheet lists.
  * Every picture carries a plain-words line made from the numbers by rules (no AI cost, tested); the page's AI
  * summary button gives the full read.
@@ -117,7 +119,12 @@ function priceBlock(symbol: string): HTMLElement {
     }),
   );
   void show('1Y');
-  return h('div', { class: 'ts-price-block' }, h('div', { class: 'ts-chart-head' }, h('span', { class: 'viz-title' }, 'Price'), row), box, note);
+  return h('div', { class: 'ts-price-block' }, h('div', { class: 'ts-chart-head' }, h('span', { class: 'viz-title muted small' }, `${symbol} · daily close`), row), box, note);
+}
+
+/** A titled panel around any content (same frame as the lists). */
+function pane(title: string, cls: string, ...children: (Node | null)[]) {
+  return h('section', { class: `panel ts-list ${cls}` }, h('div', { class: 'panel-head' }, h('h3', {}, title)), ...children);
 }
 
 function kvList(title: string, rows: [string, string, ('up' | 'down' | '')?][]) {
@@ -154,7 +161,7 @@ export function tearSheet(d: CompanyData): HTMLElement {
 
   const fs = fScore(d.annual);
   const qualityGauge = gauge({
-    title: 'Financial strength (F-score)',
+    title: '',
     value: fs?.score ?? null,
     min: 0,
     max: 9,
@@ -185,7 +192,7 @@ export function tearSheet(d: CompanyData): HTMLElement {
 
   const range =
     q.low52 && q.high52
-      ? rangeTrack({ title: '52-week range', low: q.low52, high: q.high52, value: v.price ?? q.price ?? null, format: formatPrice, caption: rangeWords(v.price ?? q.price, q.low52, q.high52) })
+      ? rangeTrack({ title: '', low: q.low52, high: q.high52, value: v.price ?? q.price ?? null, format: formatPrice, caption: rangeWords(v.price ?? q.price, q.low52, q.high52) })
       : h('p', { class: 'muted small' }, 'No 52-week range yet.');
 
   return h(
@@ -215,8 +222,12 @@ export function tearSheet(d: CompanyData): HTMLElement {
           ['Cash', money(v.cash)],
           ['Debt', money(v.debt)],
         ]),
+        kvList('Balance sheet', [
+          ['Current ratio', last(r.currentRatio)?.toFixed(2) ?? '—'],
+          ['Debt / equity', last(r.debtToEquity)?.toFixed(2) ?? '—'],
+        ]),
       ),
-      h('div', { class: 'ts-col ts-centre panel' }, priceBlock(d.symbol), range, qualityGauge, rings),
+      h('div', { class: 'ts-col ts-centre' }, pane('Price', 'ts-price', priceBlock(d.symbol)), pane('52-week range', 'ts-range', range), pane('Margins (latest year)', 'ts-margins', rings)),
       h(
         'div',
         { class: 'ts-col' },
@@ -233,10 +244,7 @@ export function tearSheet(d: CompanyData): HTMLElement {
           ['Return on equity', pct(last(r.roe), 1), tone(last(r.roe))],
           ['Return on assets', pct(last(r.roa), 1), tone(last(r.roa))],
         ]),
-        kvList('Balance sheet', [
-          ['Current ratio', last(r.currentRatio)?.toFixed(2) ?? '—'],
-          ['Debt / equity', last(r.debtToEquity)?.toFixed(2) ?? '—'],
-        ]),
+        pane('Financial strength (F-score)', 'ts-fscore', qualityGauge),
       ),
     ),
   );

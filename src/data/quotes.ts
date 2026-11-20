@@ -41,15 +41,55 @@ export function quoteChange(q: Quote | undefined): { change: number; percent: nu
   return { change, percent: (change / q.prevClose) * 100 };
 }
 
-/** Calls `onQuote` with the latest price whenever it changes. Returns a function that stops it. */
+/** How often one on-screen price may change (ms). Schwab streams several prices a second per symbol; repainting
+ * dozens of figures that often all over the screen read as constant flicker (owner, 2026-11-20). The latest price is
+ * always the one shown: a quote that arrives in between is held and shown at the next step. Charts use the trade
+ * stream, not this, so candles still move tick by tick. */
+export const QUOTE_STEP_MS = 1000;
+
+/** Delivers at most one value per `stepMs`, always the newest (leading and trailing); pure timing, tested. */
+export function throttleLatest<T>(fn: (v: T) => void, stepMs: number, now = () => Date.now(), later: (f: () => void, ms: number) => unknown = setTimeout) {
+  let last = -Infinity;
+  let held: { v: T } | null = null;
+  let waiting = false;
+  const flush = () => {
+    waiting = false;
+    if (!held) return;
+    const v = held.v;
+    held = null;
+    last = now();
+    fn(v);
+  };
+  return (v: T) => {
+    const gap = now() - last;
+    if (gap >= stepMs && !waiting) {
+      last = now();
+      fn(v);
+      return;
+    }
+    held = { v };
+    if (!waiting) {
+      waiting = true;
+      later(flush, Math.max(0, stepMs - gap));
+    }
+  };
+}
+
+/** Calls `onQuote` with the latest price whenever it changes (at most once a second). Returns a function that stops it. */
 export function subscribeQuote(ref: MarketRef, onQuote: (q: Quote) => void): () => void {
-  if (ref.provider === 'coinbase') return coinbaseQuotes.listen(ref.symbol, onQuote);
+  let stopped = false;
+  const show = throttleLatest<Quote>((q) => !stopped && onQuote(q), QUOTE_STEP_MS);
+  if (ref.provider === 'coinbase') {
+    const stop = coinbaseQuotes.listen(ref.symbol, show);
+    return () => ((stopped = true), stop());
+  }
   let latest: Quote | undefined;
   const deliver = (q: Quote) => {
     latest = q;
-    onQuote(withSessionChange(q, () => latest && onQuote(withSessionChange(latest, null))));
+    show(withSessionChange(q, () => latest && show(withSessionChange(latest, null))));
   };
-  return helper.listen(ref.symbol, { onQuote: deliver });
+  const stop = helper.listen(ref.symbol, { onQuote: deliver });
+  return () => ((stopped = true), stop());
 }
 
 // ----- Latest session's change between sessions -----

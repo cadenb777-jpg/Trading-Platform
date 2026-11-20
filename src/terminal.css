@@ -493,3 +493,9 @@
 :root[data-look='terminal'] :is(.cal-header, .desk-page > header, .tr-top) h1 { font-size: 14px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-strong); margin: 0; }
 :root[data-look='terminal'] :is(.cal-header, .desk-page > header) p { font-size: 12px; margin: 2px 0 0; }
 :root[data-look='terminal'] .cal-header { margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+
+/* status bar: fixed widths for figures that change, so the bar never shifts */
+.status-bar .sb-lat { min-width: 16ch; justify-content: flex-start; }
+.status-bar .sb-updated { min-width: 19ch; justify-content: flex-start; }
+.status-bar .sb-session { min-width: 0; }
+.status-bar :is(.sb-lat, .sb-updated) { font-variant-numeric: tabular-nums; }

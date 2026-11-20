@@ -51,8 +51,20 @@ export function marketMood(): HTMLElement {
   const gaugeBox = h('div', { class: 'mood-gauge' });
   const heatBox = h('div', { class: 'mood-heat' });
   let frame = 0;
+  let lastSig = '';
+  let lastAt = 0;
   const draw = () => {
     frame = 0;
+    // rebuilt at most every 3 s, and only when a shown figure changed (it was rebuilt on every price: it blinked)
+    const sig = `${vix?.toFixed(1)}|${SECTORS.map((s) => moves.get(s.symbol)?.toFixed(2) ?? '-').join(',')}`;
+    if (sig === lastSig) return;
+    const wait = 3000 - (Date.now() - lastAt);
+    if (lastSig && wait > 0) {
+      frame = window.setTimeout(draw, wait) as unknown as number;
+      return;
+    }
+    lastSig = sig;
+    lastAt = Date.now();
     gaugeBox.replaceChildren(
       gauge({
         title: 'Fear gauge (VIX)',
@@ -73,7 +85,7 @@ export function marketMood(): HTMLElement {
     heatBox.replaceChildren(heatGrid({ title: 'Sectors today', items, format: (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}%`, caption: sectorWords(items) }));
   };
   const later = () => {
-    if (!frame) frame = requestAnimationFrame(draw);
+    if (!frame) frame = requestAnimationFrame(draw) || 1;
   };
   subscribeQuote({ provider: 'schwab', symbol: '$VIX' } as MarketRef, (q) => {
     if (q.last != null) {
