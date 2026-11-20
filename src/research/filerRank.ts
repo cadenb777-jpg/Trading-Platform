@@ -30,7 +30,7 @@ export interface FilerRank {
   company: { end: string; accn: string; assets: number | null; small: boolean; noAssets?: boolean } | null;
   metrics: Partial<Record<MetricKey, Ranked | null>>;
   minAssets: number;
-  /** the SEC frames its figures came from (helper 93; helper 88-89 sent bare URLs) */
+  /** the SEC frames its figures came from (helper 94; helper 88-89 sent bare URLs) */
   frames?: ({ label: string; url: string } | string)[];
 }
 
@@ -56,7 +56,7 @@ export const METRICS: MetricInfo[] = [
   { key: 'assetGrowth', label: 'Asset growth', term: 'assetGrowth', format: (v) => pc(v, 1, true), note: 'Higher has come before lower returns (Cooper, Gulen and Schill 2008).' },
   { key: 'accruals', label: 'Accruals', term: 'accruals', format: (v) => pc(v, 1, true), note: '(Net income − operating cash flow) ÷ average assets; higher has come before lower returns (Sloan 1996).' },
   { key: 'inventoryVsSales', label: 'Inventory vs sales growth', term: 'inventoryVsSales', format: pts, note: 'Higher has come before weaker profits and returns (Thomas and Zhang 2002).' },
-  // helper 93: log change of diluted shares, shown as the % change it equals
+  // helper 94: log change of diluted shares, shown as the % change it equals
   { key: 'shareIssuance', label: 'Share count change', term: 'shareIssuance', format: (v) => pc(Math.expm1(v), 1, true), note: 'Higher (more shares issued) has come before lower returns (Pontiff and Woodgate 2008).' },
   { key: 'rdIntensity', label: 'R&D per $ of sales', term: 'rdIntensity', format: (v) => pc(v, 1), note: 'Research and development spending ÷ sales (Chan, Lakonishok and Sougiannis 2001).' },
 ];
