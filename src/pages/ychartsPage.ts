@@ -5,10 +5,13 @@
  *   - their history over the chosen dates as lines (one chart, each metric scaled to start at 100 when several are
  *     compared, so different units fit), and the table of points with filters and CSV;
  *   - several ids at once (comma-separated) to compare one metric across companies or funds.
- * Codes are YCharts' own (its API documentation lists them all); examples per kind fill the boxes.
+ *   - YCharts' own calculations over a period (average, highest and when, % change, standard deviation ...) and
+ *     resampling (weekly, monthly ...), with the Excel add-in;
+ *   - "Find a metric": search every code in the owner's YCharts reference workbook (loaded once, kept in this browser).
+ * Codes are YCharts' own; examples per kind fill the boxes.
  */
 import { helper, HELPER_NOT_RUNNING } from '../data/schwab';
-import { EXAMPLES, KIND_LABELS, YCHARTS_HELPER_VERSION, yFormat, yPoints, ySeries, yStatus, ychartsKeySet, type YKind } from '../data/ycharts';
+import { CALCULATIONS, EXAMPLES, FREQUENCIES, KIND_LABELS, YCHARTS_EXCEL_HELPER_VERSION, YCHARTS_HELPER_VERSION, importCatalog, loadCatalog, searchCatalog, yCalc, yFormat, yPoints, ySeries, yStatus, ychartsReady, type YKind } from '../data/ycharts';
 import { createLineChart, pageFrame, type LineSpec } from '../ui/charts';
 import { h } from '../ui/dom';
 import { tableTools } from '../ui/tableTools';
@@ -32,8 +35,19 @@ export function createYchartsPage() {
   const metrics = h('input', { class: 'input yc-metrics', 'aria-label': 'Metric codes (comma-separated)', placeholder: 'price, pe_ratio' });
   const start = h('input', { class: 'input', type: 'date', 'aria-label': 'From', value: yearsAgo(5) });
   const end = h('input', { class: 'input', type: 'date', 'aria-label': 'To' });
+  const freq = h('select', { class: 'input', 'aria-label': 'Frequency' }, ...FREQUENCIES.map(([v, l]) => h('option', { value: v }, l)));
   const go = h('button', { type: 'button', class: 'btn primary' }, 'Show');
-  const test = h('button', { type: 'button', class: 'btn' }, 'Test my key');
+  const test = h('button', { type: 'button', class: 'btn' }, 'Test YCharts');
+  // Find a metric: every code in the owner's YCharts reference workbook
+  const find = h('input', { class: 'input yc-find', type: 'search', 'aria-label': 'Find a YCharts metric by name', placeholder: 'Find a metric by name, e.g. free cash flow, sharpe, expense' });
+  const found = h('div', { class: 'yc-found', role: 'list' });
+  const fileIn = h('input', { type: 'file', accept: '.xlsx', class: 'visually-hidden', 'aria-label': 'YCharts reference workbook' }) as HTMLInputElement;
+  const loadRef = h('button', { type: 'button', class: 'btn' }, 'Load my YCharts reference sheet');
+  const catNote = h('span', { class: 'muted small' });
+  // Calculate: YCharts' own statistic of each metric over the dates
+  const calcSel = h('select', { class: 'input', 'aria-label': 'Calculation' }, ...CALCULATIONS.map(([v, l]) => h('option', { value: v }, l)));
+  const calcGo = h('button', { type: 'button', class: 'btn' }, 'Calculate');
+  const calcOut = h('div', { class: 'yc-calc-out' });
   const examples = h('div', { class: 'chip-row yc-examples' });
   const frame = pageFrame('YCharts', 'Any YCharts figure for companies, ETFs, mutual funds, indexes and economic indicators, with your YCharts API key.', [test]);
   const latest = h('div', { class: 'panel yc-latest' });
@@ -42,10 +56,58 @@ export function createYchartsPage() {
   const tableBox = h('div', { class: 'panel yc-table' });
   const status = h('p', { class: 'muted small yc-status', role: 'status' });
   frame.body.append(
-    h('div', { class: 'panel yc-form' }, h('div', { class: 'yc-row' }, kind, ids, metrics, start, end, go), examples, status),
+    h('div', { class: 'panel yc-form' }, h('div', { class: 'yc-row' }, kind, ids, metrics, start, end, freq, go), examples, status),
+    h('div', { class: 'panel yc-find-panel' }, h('div', { class: 'yc-row' }, find, loadRef, fileIn), catNote, found),
     h('div', { class: 'yc-grid' }, latest, chartPanel),
+    h('div', { class: 'panel yc-calc' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Calculate over the dates above')), h('div', { class: 'yc-row' }, calcSel, calcGo), calcOut),
     tableBox,
   );
+  let catalog = loadCatalog();
+  const showCatNote = () =>
+    (catNote.textContent = catalog.length
+      ? `${catalog.length.toLocaleString('en-US')} YCharts metrics from your reference sheet (kept in this browser). Click one to add it.`
+      : 'Load your YCharts Excel reference workbook once to search every metric YCharts offers by name.');
+  showCatNote();
+  const kindGroup = () => ({ companies: 'Company', mutual_funds: 'Mutual Fund', indices: 'Company', indicators: 'Macroeconomic' })[kind.value as YKind];
+  find.addEventListener('input', () => {
+    const hits = searchCatalog(catalog, find.value.trim(), kindGroup());
+    found.replaceChildren(
+      ...hits.map((e) =>
+        h(
+          'button',
+          {
+            type: 'button',
+            class: 'chip yc-hit',
+            role: 'listitem',
+            title: `${e.name} · ${e.group}`,
+            onclick: () => {
+              const now = metrics.value.split(',').map((x) => x.trim()).filter(Boolean);
+              if (!now.includes(e.code)) metrics.value = [...now, e.code].join(', ');
+            },
+          },
+          h('b', {}, e.name),
+          h('span', { class: 'muted' }, ` ${e.code} · ${e.group}`),
+        ),
+      ),
+      ...(find.value.trim() && !hits.length ? [h('p', { class: 'muted small' }, catalog.length ? 'No metric matches.' : 'Load your reference sheet first.')] : []),
+    );
+  });
+  loadRef.addEventListener('click', () => fileIn.click());
+  fileIn.addEventListener('change', async () => {
+    const file = fileIn.files?.[0];
+    if (!file) return;
+    catNote.textContent = 'Reading the workbook…';
+    try {
+      const n = await importCatalog(file);
+      catalog = loadCatalog();
+      catNote.textContent = `Loaded ${n.toLocaleString('en-US')} metrics.`;
+      find.dispatchEvent(new Event('input'));
+    } catch (err) {
+      catNote.textContent = (err as Error).message;
+    }
+    fileIn.value = '';
+  });
+  calcGo.addEventListener('click', () => void calculate());
   let chart: ReturnType<typeof createLineChart> | null = null;
 
   const fillExamples = () => {
@@ -65,19 +127,55 @@ export function createYchartsPage() {
     }
   }
 
-  async function run() {
-    if (!helper.isConnected) return void (status.textContent = HELPER_NOT_RUNNING);
-    if ((helper.version ?? 0) < YCHARTS_HELPER_VERSION) return void (status.textContent = `YCharts needs helper ${YCHARTS_HELPER_VERSION} or newer (it installs by itself).`);
-    if (!(await ychartsKeySet())) return void (status.textContent = 'Add your YCharts API key in Settings > Data connections > YCharts first.');
+  /** The ids and codes to ask for, or null after saying why not. */
+  async function ask(): Promise<{ k: YKind; idList: string[]; codes: string[] } | null> {
+    if (!helper.isConnected) return void (status.textContent = HELPER_NOT_RUNNING), null;
+    if ((helper.version ?? 0) < YCHARTS_HELPER_VERSION) return void (status.textContent = `YCharts needs helper ${YCHARTS_EXCEL_HELPER_VERSION} or newer (it installs by itself).`), null;
+    const ready = await ychartsReady();
+    if (!ready.ready) return void (status.textContent = 'YCharts works through the YCharts Excel add-in on Windows, or add a YCharts API key in Settings > Data connections.'), null;
     const k = kind.value as YKind;
     const idList = list(ids.value || EXAMPLES[k].id, true);
     const codes = list(metrics.value || EXAMPLES[k].metrics.slice(0, 2).join(','));
-    if (!idList.length || !codes.length) return void (status.textContent = 'Type at least one id and one metric code.');
+    if (!idList.length || !codes.length) return void (status.textContent = 'Type at least one id and one metric code.'), null;
+    return { k, idList, codes };
+  }
+
+  async function calculate() {
+    const a = await ask();
+    if (!a) return;
+    if ((helper.version ?? 0) < YCHARTS_EXCEL_HELPER_VERSION) return void (calcOut.textContent = `Calculations need helper ${YCHARTS_EXCEL_HELPER_VERSION} (it installs by itself).`);
+    if (!start.value) return void (calcOut.textContent = 'Pick a start date above.');
+    const label = CALCULATIONS.find(([v]) => v === calcSel.value)?.[1] ?? calcSel.value;
+    calcOut.textContent = 'Asking YCharts (Excel)…';
+    try {
+      const r = await yCalc(a.k, a.idList, a.codes, start.value, end.value || undefined, calcSel.value);
+      calcOut.replaceChildren(
+        h(
+          'table',
+          { class: 'data-table' },
+          h('thead', {}, h('tr', {}, h('th', {}, 'Id'), h('th', {}, 'Metric'), h('th', { class: 'num' }, label), h('th', {}, 'Date'))),
+          h('tbody', {}, ...a.idList.flatMap((id) => a.codes.map((c) => {
+            const v = r.results[id]?.[c];
+            const pctLike = calcSel.value === 'pct_change';
+            return h('tr', {}, h('td', {}, id), h('td', {}, c), h('td', { class: 'num' }, v?.value != null ? yFormat(v.value, pctLike ? 'pct' : 'num') : h('span', { class: 'muted small' }, v?.error ?? 'no value')), h('td', { class: 'muted small' }, v?.date ?? ''));
+          }))),
+        ),
+        h('p', { class: 'muted small' }, `${label} from ${start.value} to ${end.value || 'today'}, calculated by YCharts.`),
+      );
+    } catch (err) {
+      calcOut.textContent = `YCharts: ${(err as Error).message}`;
+    }
+  }
+
+  async function run() {
+    const a = await ask();
+    if (!a) return;
+    const { k, idList, codes } = a;
     remember();
     location.hash = `#ycharts/${k}/${encodeURIComponent(idList.join(','))}`;
     status.textContent = 'Asking YCharts…';
     try {
-      const [p, s] = await Promise.all([yPoints(k, idList, codes), ySeries(k, idList, codes, start.value || undefined, end.value || undefined)]);
+      const [p, s] = await Promise.all([yPoints(k, idList, codes), ySeries(k, idList, codes, start.value || undefined, end.value || undefined, freq.value || undefined)]);
       // latest values
       latest.replaceChildren(
         h('div', { class: 'panel-head' }, h('h3', {}, 'Latest values')),
@@ -141,7 +239,7 @@ export function createYchartsPage() {
   go.addEventListener('click', () => void run());
   for (const input of [ids, metrics]) input.addEventListener('keydown', (e) => (e as KeyboardEvent).key === 'Enter' && void run());
   test.addEventListener('click', async () => {
-    status.textContent = 'Testing your YCharts key…';
+    status.textContent = 'Testing YCharts (through Excel this can take a minute the first time)…';
     const r = await yStatus().catch((err: Error) => ({ ok: false, message: err.message }));
     status.textContent = r.message;
   });

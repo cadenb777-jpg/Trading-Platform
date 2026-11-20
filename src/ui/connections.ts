@@ -86,10 +86,11 @@ export const CONNECTIONS: Connection[] = [
     fields: [key('finnhubKey', 'Finnhub API key', '20 letters and numbers')], isSet: (s) => s.finnhubKeySet, refreshes: ['finnhub.'],
   },
   {
-    id: 'ycharts', name: 'YCharts (paid API)', optional: true,
-    unlocks: 'YCharts figures on every stock and fund overview, and the YCharts explorer (Markets > YCharts): any metric YCharts has for companies, ETFs, mutual funds, indexes and economic indicators, as a chart and table.',
-    signup: 'https://ycharts.com/accounts/my_account', signupLabel: 'Your YCharts account (API key)', limit: 'Your YCharts API plan',
-    fields: [key('ychartsKey', 'YCharts API key', 'From YCharts > My Account > API')], isSet: (s) => s.ychartsKeySet, refreshes: ['ycharts.'],
+    id: 'ycharts', name: 'YCharts', optional: true,
+    unlocks: 'On Windows it works through your YCharts Excel add-in (no key here: the helper asks Excel in the background, starting it minimised if needed; keep Excel signed in to YCharts). It adds YCharts figures to stock and fund overviews, YCharts as a source in price and NAV cross-checks, and Markets > YCharts for any metric, calculations and charts. A YCharts web API key below is only for computers without Excel.',
+    signup: 'https://ycharts.com/accounts/my_account', signupLabel: 'Your YCharts account', limit: 'Your YCharts plan',
+    fields: [key('ychartsKey', 'YCharts web API key (not needed with the Excel add-in)', 'Only for the web API; leave empty with Excel')],
+    isSet: (s) => (s.ychartsSource === 'excel' ? true : s.ychartsKeySet), refreshes: ['ycharts.', 'crosscheck.'],
   },
   {
     id: 'alpaca', name: 'Alpaca (price history)', optional: true,
@@ -126,16 +127,19 @@ export interface RowModel {
 export function rowModel(c: Connection, s: PlatformSettings, test: TestState = null, testable = true): RowModel {
   const set = c.isSet(s);
   const supported = set !== undefined;
-  const placeholders = c.fields.map((f) => (f.secret ? (set ? 'Saved ✓ (paste a new one to replace it)' : f.placeholder) : f.placeholder));
+  // YCharts through the Excel add-in counts as set without any key saved: the box then shows its own hint
+  const keySaved = c.id === 'ycharts' ? !!s.ychartsKeySet : set;
+  const placeholders = c.fields.map((f) => (f.secret ? (keySaved ? 'Saved ✓ (paste a new one to replace it)' : f.placeholder) : f.placeholder));
   if (!supported)
     return { dot: 'off', status: 'Needs the updated helper', placeholders, canTest: false, canRemove: false, supported, message: 'Download the project ZIP again and restart the helper to use this.' };
   const canTest = !!set && testable;
-  if (test === 'testing') return { dot: 'testing', status: 'Testing…', placeholders, canTest: false, canRemove: !!set, supported, message: '' };
-  if (test) return { dot: test.ok ? 'ok' : 'bad', status: test.ok ? '✓ Connected' : '✗ Not working', placeholders, canTest, canRemove: !!set, supported, message: test.message };
+  const removable = !!set && !!keySaved;
+  if (test === 'testing') return { dot: 'testing', status: 'Testing…', placeholders, canTest: false, canRemove: removable, supported, message: '' };
+  if (test) return { dot: test.ok ? 'ok' : 'bad', status: test.ok ? '✓ Connected' : '✗ Not working', placeholders, canTest, canRemove: removable, supported, message: test.message };
   return {
     dot: set ? 'ok' : 'off',
     status: set ? (c.id === 'sec' ? '● Set' : '● Saved') : c.optional ? '○ Optional, not set' : '○ Not set',
-    placeholders, canTest, canRemove: !!set && c.id !== 'sec', supported, message: '',
+    placeholders, canTest, canRemove: removable && c.id !== 'sec', supported, message: '',
   };
 }
 
@@ -151,7 +155,8 @@ async function runTest(c: Connection): Promise<{ ok: boolean; message: string }>
     const r = await engineRequest<{ ok: boolean; message: string }>('alpaca.status', {}, 20000);
     return { ok: r.ok, message: r.message };
   }
-  return engineRequest<{ ok: boolean; message: string }>('connections.test', { connection: c.id }, 25000);
+  // YCharts through Excel may first wait for Excel to start
+  return engineRequest<{ ok: boolean; message: string }>('connections.test', { connection: c.id }, c.id === 'ycharts' ? 240000 : 25000);
 }
 
 /** One connection's row. */

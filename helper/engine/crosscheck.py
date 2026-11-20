@@ -11,6 +11,8 @@ Sources (one adapter each; free endpoints only, no logins, no paid APIs):
   nasdaq         Nasdaq.com's public quote API (info + summary)
   yahoo          Yahoo Finance chart data (last price, previous close; trailing dividends for a yield)
   yahoo_summary  Yahoo Finance quoteSummary (yield, net expense ratio; needs Yahoo's free cookie + crumb)
+  ycharts        the owner's YCharts (paid data vendor) through the YCharts Excel add-in, only when that route is on
+                 (Windows): price, NAV (mutual funds as M:TICKER), trailing dividend yield, net expense ratio, with dates
 Left out on purpose: the Google Finance page (scraping fragile CSS class names, never a NAV, and no value Schwab,
 Nasdaq and Yahoo don't already give) and Stooq (last price only, often end-of-day, and its CSV may need a key).
 There is no free official source for an expense ratio that is cheap to read (the SEC's risk/return XBRL sits inside
@@ -60,11 +62,11 @@ from .core import NYSE_EARLY_CLOSES, NYSE_HOLIDAYS, EngineError, handler, market
 NY = ZoneInfo('America/New_York')
 SYMBOL = re.compile(r'^[A-Z0-9.\-]{1,12}$')
 
-RELIABILITY = {'sec_xbrl': 0.95, 'sec_nav': 0.95, 'schwab': 0.90, 'nasdaq': 0.80, 'yahoo': 0.70, 'yahoo_summary': 0.65}
+RELIABILITY = {'sec_xbrl': 0.95, 'sec_nav': 0.95, 'schwab': 0.90, 'nasdaq': 0.80, 'ycharts': 0.75, 'yahoo': 0.70, 'yahoo_summary': 0.65}
 SOURCE_NAMES = {'sec_xbrl': 'SEC (10-K/10-Q data)', 'sec_nav': 'SEC (fund NAV filing)', 'schwab': 'Schwab', 'nasdaq': 'Nasdaq.com',
-                'yahoo': 'Yahoo Finance', 'yahoo_summary': 'Yahoo Finance (summary)'}
+                'yahoo': 'Yahoo Finance', 'yahoo_summary': 'Yahoo Finance (summary)', 'ycharts': 'YCharts (your Excel add-in)'}
 KINDS = {'sec_xbrl': 'official filing', 'sec_nav': 'official filing', 'schwab': 'broker (exchange data)', 'nasdaq': 'exchange website',
-         'yahoo': 'aggregator', 'yahoo_summary': 'aggregator'}
+         'yahoo': 'aggregator', 'yahoo_summary': 'aggregator', 'ycharts': 'data vendor (paid)'}
 #: sources that are not independent of each other count once
 FAMILY = {'sec_xbrl': 'sec', 'sec_nav': 'sec', 'yahoo': 'yahoo', 'yahoo_summary': 'yahoo'}
 OFFICIAL = {'sec_xbrl', 'sec_nav'}
@@ -76,15 +78,15 @@ DAY = 86400
 #: ttl = how long one source's answer is cached, sources = which adapters can give it.
 FIELDS = {
     'last': {'label': 'Last price', 'unit': 'usd', 'cadence': 15 * 60, 'tolerance': 0.005, 'ttl': 60,
-             'sources': ('schwab', 'nasdaq', 'yahoo')},
+             'sources': ('schwab', 'nasdaq', 'ycharts', 'yahoo')},
     'prevClose': {'label': 'Previous close', 'unit': 'usd', 'cadence': 4 * DAY, 'tolerance': 0.002, 'ttl': 3600,
                   'sources': ('schwab', 'nasdaq', 'yahoo')},
     'nav': {'label': 'NAV per share', 'unit': 'usd', 'cadence': 35 * DAY, 'tolerance': 0.01, 'ttl': 6 * 3600,
-            'sources': ('sec_nav', 'sec_xbrl', 'schwab', 'yahoo')},
+            'sources': ('sec_nav', 'sec_xbrl', 'schwab', 'ycharts', 'yahoo')},
     'divYield': {'label': 'Dividend yield', 'unit': 'pct', 'cadence': 7 * DAY, 'tolerance': 0.10, 'ttl': 12 * 3600,
-                 'sources': ('schwab', 'nasdaq', 'yahoo_summary', 'yahoo')},
+                 'sources': ('schwab', 'nasdaq', 'ycharts', 'yahoo_summary', 'yahoo')},
     'expenseRatio': {'label': 'Expense ratio', 'unit': 'pct', 'cadence': 400 * DAY, 'tolerance': 0.05, 'ttl': 7 * DAY,
-                     'sources': ('yahoo_summary',)},
+                     'sources': ('ycharts', 'yahoo_summary')},
 }
 SCALE = 0.8
 SINGLE_CAP = 0.60
@@ -553,7 +555,38 @@ async def fetch_sec_nav(ctx, cik, field, hint):
     return parse_sec_nav((data or {}).get('history'), (hint or {}).get('cls')), (notes[0]['url'] if notes else f'https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK={cik}')
 
 
-ADAPTERS = {'schwab': fetch_schwab, 'yahoo': fetch_yahoo, 'yahoo_summary': fetch_yahoo_summary, 'nasdaq': fetch_nasdaq,
+#: crosscheck field -> (YCharts metric code, basis); YCharts percentages arrive in percent units (0.42 = 0.42%)
+YCHARTS_CODES = {'last': ('price', None), 'nav': ('net_asset_value', None), 'divYield': ('dividend_yield', 'trailing'),
+                 'expenseRatio': ('expense_ratio', 'net')}
+
+
+def ycharts_on():
+    from . import ycharts
+    return ycharts.source() == 'excel'
+
+
+def parse_ycharts(field, value, date):
+    """{field: (value, asOf[, basis])} from one YCharts reading (pure, tested)."""
+    code, basis = YCHARTS_CODES[field]
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return {}
+    v = value / 100 if field in ('divYield', 'expenseRatio') else float(value)
+    as_of = dt.datetime.combine(dt.date.fromisoformat(date), dt.time(16), NY).timestamp() if date else None
+    return {field: (v, as_of, basis) if basis else (v, as_of)}
+
+
+async def fetch_ycharts(ctx, symbol, field, hint):
+    from . import ycharts_excel as xl
+    if field not in YCHARTS_CODES:
+        return {}, None
+    sid = f'M:{symbol}' if (hint or {}).get('assetType') == 'MUTUAL_FUND' else symbol
+    code = YCHARTS_CODES[field][0]
+    got = await xl.dated_points(xl.check_id(sid), [code])
+    value, date = got[code]
+    return parse_ycharts(field, value, date), f'https://ycharts.com/{"mutual_funds" if sid.startswith("M:") else "companies"}/{sid}'
+
+
+ADAPTERS = {'ycharts': fetch_ycharts, 'schwab': fetch_schwab, 'yahoo': fetch_yahoo, 'yahoo_summary': fetch_yahoo_summary, 'nasdaq': fetch_nasdaq,
             'sec_xbrl': fetch_sec_xbrl, 'sec_nav': fetch_sec_nav}
 SEC_SOURCES = ('sec_xbrl', 'sec_nav')
 
@@ -590,6 +623,8 @@ async def gather(ctx, field, symbol=None, cik=None, now=None):
     """Asks every source that can give `field` (Schwab first, for the asset type and share class) and scores the answers."""
     spec = FIELDS[field]
     sources = [s for s in spec['sources'] if (s in SEC_SOURCES and cik) or (s not in SEC_SOURCES and symbol)]
+    if 'ycharts' in sources and not ycharts_on():
+        sources.remove('ycharts')
     if not sources:
         raise EngineError('Give a ticker (or, for a fund\'s NAV, its SEC CIK) to check.')
     readings, hint = [], {}

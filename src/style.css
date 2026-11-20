@@ -14732,3 +14732,11 @@ select.input,
 .seg-table td.seg-bar-cell { width: 28%; min-width: 60px; }
 .seg-table .seg-bar { display: block; }
 @media (max-width: 640px) { .seg-table td.seg-bar-cell, .seg-table th:nth-child(2) { display: none; } }
+
+/* YCharts page: metric search and calculations */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.yc-row .yc-find { flex: 1 1 260px; }
+.yc-found { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; max-height: 220px; overflow: auto; }
+.yc-hit { text-align: left; }
+.yc-calc { margin-bottom: 8px; }
+.yc-calc-out { margin-top: 8px; }
