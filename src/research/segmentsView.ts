@@ -6,7 +6,8 @@
  */
 import { ARRIVES_WITH_UPDATE, engineRequest, helper } from '../data/schwab';
 import { h } from '../ui/dom';
-import { flower } from '../ui/viz';
+import { treemap } from '../ui/viz';
+import { tableTools } from '../ui/tableTools';
 import { money, pct } from '../ui/charts';
 
 export const SEGMENTS_HELPER_VERSION = 57;
@@ -74,41 +75,67 @@ export function segmentWords(s: SegmentSection): string {
   return `${lead} Fastest growing: ${fast.name} ${sign(fast.growth!)}${grown.length > 1 && slow.growth! < 0 ? `; shrinking: ${slow.name} ${sign(slow.growth!)}` : ''}.`;
 }
 
-const short = (name: string) => (name.length > 14 ? `${name.slice(0, 13)}…` : name);
 
-function section(s: SegmentSection, symbol: string): HTMLElement {
+function section(s: SegmentSection, key: string): HTMLElement {
   const anyMargin = s.items.some((i) => i.margin != null);
-  // the picture: one flow per part, thicker for bigger sales, green when it grew and red when it shrank
-  const picture = flower({
-    centre: symbol,
+  const items = s.items.filter((i) => i.value > 0);
+  const byName = new Map(items.map((i) => [i.name, i]));
+  // the picture: one block per part, area = sales, green when it grew and red when it shrank (deepest at +/-25%)
+  const map = treemap({
+    groups: [{ label: '', items: items.map((i) => i.name) }],
     title: s.heading,
-    format: money,
-    items: s.items.slice(0, 10).map((i) => ({ label: short(i.name), value: i.value, title: i.name, tone: i.growth == null ? 'accent' : i.growth >= 0 ? 'up' : 'down' })),
+    format: (v) => pct(v, 1),
+    full: 0.25,
+    height: 240,
     caption: segmentWords(s),
-    size: 260,
-    hideTitle: true, // the block's own heading names it
+    describe: (name) => {
+      const i = byName.get(name)!;
+      return `${name}: ${money(i.value)}${i.share != null ? `, ${share(i.share)} of sales` : ''}${i.growth != null ? `, ${pct(i.growth, 1)} on a year earlier` : ''}`;
+    },
   });
+  map.setWeights((n) => byName.get(n)?.value);
+  map.update((n) => byName.get(n)?.growth);
+  const table = h(
+    'table',
+    { class: 'data-table seg-table', 'aria-label': s.heading },
+    h(
+      'thead',
+      {},
+      h(
+        'tr',
+        {},
+        h('th', {}, 'Part'),
+        h('th', { 'aria-hidden': 'true' }, ''),
+        h('th', { class: 'num' }, 'Sales'),
+        h('th', { class: 'num', title: 'Share of total sales' }, 'Share'),
+        h('th', { class: 'num', title: 'Change on a year earlier' }, 'Growth'),
+        anyMargin ? h('th', { class: 'num', title: 'Segment operating margin' }, 'Margin') : '',
+      ),
+    ),
+    h(
+      'tbody',
+      {},
+      ...segmentRows(s).map((r) =>
+        h(
+          'tr',
+          {},
+          h('td', { class: 'seg-name' }, r.name),
+          h('td', { class: 'seg-bar-cell' }, h('span', { class: 'seg-bar', 'aria-hidden': 'true' }, h('i', { style: `width:${(r.bar * 100).toFixed(1)}%` }))),
+          h('td', { class: 'num', 'data-value': String(r.value) }, money(r.value)),
+          h('td', { class: 'num muted', 'data-value': r.share == null ? '' : String(r.share) }, share(r.share)),
+          h('td', { class: `num ${r.growth == null ? 'muted' : r.growth >= 0 ? 'up' : 'down'}`, 'data-value': r.growth == null ? '' : String(r.growth) }, r.growth == null ? '—' : pct(r.growth, 1)),
+          anyMargin ? h('td', { class: 'num', 'data-value': r.margin == null ? '' : String(r.margin) }, share(r.margin)) : '',
+        ),
+      ),
+    ),
+  ) as HTMLTableElement;
+  tableTools(table, { id: `segments:${key}`, columns: { '': 'none' }, minRowsForFilters: 1 });
   return h(
     'div',
     { class: 'seg-block' },
     h('h4', { class: 'seg-head' }, s.heading),
-    h('div', { class: 'seg-split' }, picture, h(
-      'div',
-      { class: 'seg-rows', role: 'table', 'aria-label': s.heading },
-      ...segmentRows(s).map((r) =>
-        h(
-          'div',
-          { class: 'seg-row', role: 'row' },
-          h('span', { class: 'seg-name', role: 'cell' }, r.name),
-          h('span', { class: 'seg-bar', role: 'cell', 'aria-hidden': 'true' }, h('i', { style: `width:${(r.bar * 100).toFixed(1)}%` })),
-          h('span', { class: 'seg-num num', role: 'cell' }, money(r.value)),
-          h('span', { class: 'seg-num num muted', role: 'cell', title: 'Share of total sales' }, share(r.share)),
-          h('span', { class: `seg-num num ${r.growth == null ? 'muted' : r.growth >= 0 ? 'up' : 'down'}`, role: 'cell', title: 'Change on a year earlier' }, r.growth == null ? '—' : pct(r.growth, 1)),
-          anyMargin ? h('span', { class: 'seg-num num', role: 'cell', title: 'Segment operating margin' }, share(r.margin)) : '',
-        ),
-      ),
-    )),
-    h('p', { class: 'muted small seg-note' }, coverageNote(s), anyMargin ? ' Last column: segment operating margin.' : ''),
+    h('div', { class: 'seg-split' }, map.el, h('div', { class: 'seg-rows table-scroll' }, table)),
+    h('p', { class: 'muted small seg-note' }, coverageNote(s)),
   );
 }
 
@@ -132,7 +159,7 @@ export function segmentsPanel(symbol: string): HTMLElement {
         return;
       }
       body.replaceChildren(
-        ...d.sections.map((sec) => section(sec, d.symbol)),
+        ...d.sections.map((sec) => section(sec, sec.axis)),
         h(
           'p',
           { class: 'muted small seg-source' },

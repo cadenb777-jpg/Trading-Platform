@@ -443,8 +443,13 @@ export function treemap(o: {
   onItem?: (label: string) => void;
   caption?: Node | string;
   height?: number;
+  /** The move that gets the deepest shade (default 3%). */
+  full?: number;
+  /** Hover text for a block (default: label, group, value and share of the map). */
+  describe?: (label: string, value: number | null | undefined, sharePct: number) => string;
 }) {
   const H = o.height ?? 360;
+  const full = o.full ?? MAP_FULL;
   const art = h('div', { class: 'tm-art', role: 'img', 'aria-label': o.title, style: `height:${H}px` });
   const el = figure('viz-treemap', art, o.caption, o.title);
   let weights: (label: string) => number | null | undefined = () => 1;
@@ -465,7 +470,7 @@ export function treemap(o: {
     const total = o.groups.reduce((s, g) => s + groupWeight(g), 0);
     const gl = squarify(o.groups.map((g) => ({ g, weight: groupWeight(g) })), { x: 0, y: 0, w: W, h: H });
     for (const { g, x, y, w, h: gh } of gl) {
-      const head = gh > 44 && w > 56;
+      const head = !!g.label && gh > 44 && w > 56;
       const top = head ? 18 : 0;
       const box = h('div', { class: 'tm-group', style: `left:${x}px;top:${y}px;width:${w}px;height:${gh}px` });
       if (head) {
@@ -506,9 +511,9 @@ export function treemap(o: {
     for (const [label, c] of cells) {
       const v = values(label);
       const ok = v != null && Number.isFinite(v);
-      c.el.style.background = ok ? `color-mix(in srgb, ${v! >= 0 ? 'var(--up-fill)' : 'var(--down-fill)'} ${heatShare(v!, MAP_FULL)}%, var(--surface))` : 'var(--raised)';
+      c.el.style.background = ok ? `color-mix(in srgb, ${v! >= 0 ? 'var(--up-fill)' : 'var(--down-fill)'} ${heatShare(v!, full)}%, var(--surface))` : 'var(--raised)';
       c.chg.textContent = ok ? o.format(v!) : '';
-      c.el.title = `${label} (${c.group}): ${ok ? o.format(v!) : 'no price yet'} · ${c.el.dataset.share}% of the map by size`;
+      c.el.title = o.describe ? o.describe(label, v, Number(c.el.dataset.share)) : `${label} (${c.group}): ${ok ? o.format(v!) : 'no price yet'} · ${c.el.dataset.share}% of the map by size`;
       if (ok) {
         const wt = weights(label) ?? 0;
         const s = sums.get(c.group) ?? { wv: 0, w: 0 };
