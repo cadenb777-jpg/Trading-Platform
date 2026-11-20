@@ -99,6 +99,7 @@ export function createMonitorPage() {
     view = v;
     grid.dataset.view = v;
     drawTabs();
+    if (v === 'equities') requestAnimationFrame(() => burst.update((s) => changes.get(s)));
     if (futRows.length) drawFut();
   };
   drawTabs();
@@ -220,7 +221,8 @@ export function createMonitorPage() {
       g.items.map((sym) =>
         subscribeQuote({ provider: 'schwab', symbol: sym }, (q) => {
           if (q.last != null && q.prevClose) changes.set(sym, q.last / q.prevClose - 1);
-          if (!heatFrame) heatFrame = requestAnimationFrame(() => ((heatFrame = 0), burst.update((s) => changes.get(s)), heat.source(`live · ${changes.size} priced`)));
+          // only while the heat map is on screen (the Equities tab); it catches up when shown
+          if (!heatFrame && heat.el.offsetParent) heatFrame = requestAnimationFrame(() => ((heatFrame = 0), burst.update((s) => changes.get(s)), heat.source(`live · ${changes.size} priced`)));
         }),
       ),
     );

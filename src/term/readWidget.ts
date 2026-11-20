@@ -24,6 +24,7 @@ export function createMarketReadWidget() {
   let futures: FutRow[] = [];
   let curve: CurvePoint[] = [];
   let fed: { change: number; by: string } | null = null;
+  let shown = '';
 
   const draw = () => {
     const spy = board.get('SPY')?.change ?? null;
@@ -37,6 +38,9 @@ export function createMarketReadWidget() {
       markets,
     });
     if (!lines.length) return;
+    const sig = lines.map((l) => l.label + l.text).join('|');
+    if (sig === shown) return; // same words: leave it alone (no redraw, no jump)
+    shown = sig;
     body.replaceChildren(h('dl', { class: 'term-read' }, ...lines.flatMap((l) => [h('dt', {}, l.label), h('dd', {}, l.text)])));
   };
 
