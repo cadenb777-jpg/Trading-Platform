@@ -76,7 +76,7 @@
 }
 
 /* glass on every panel: frosted, a faint top highlight and depth; the title band stays crisp */
-:root[data-look='terminal'] :is(.panel, .sv-panel, .fn-tile, .tp, .stat-cards .stat-card, .mm-tile, .acct-hero, .mon-clock) {
+:root[data-look='terminal'] :is(.panel, .sv-panel, .sv-headcard, .fn-tile, .tp, .stat-cards .stat-card, .mm-tile, .acct-hero, .mon-clock) {
   /* no live blur on page panels: re-blurring behind every panel flickered on some graphics chips (only floating
      windows keep it); the panel colour is a little more solid instead, so the glass reads the same */
   background: var(--bb-panel);

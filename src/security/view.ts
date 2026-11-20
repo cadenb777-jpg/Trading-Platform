@@ -5,6 +5,7 @@
  * accounts. Then the action bar, the tabs with their mnemonics, the tab body and the Related row.
  * Trade only pre-fills the Trade page's ticket; nothing is ever placed from here.
  */
+import { isFundSymbol } from './kind';
 import { paintTone } from '../ui/steadyTone';
 import { insightButton } from '../ai/insight';
 import { openCotOnFutures } from '../futures/cot';
@@ -21,7 +22,7 @@ import { DEFAULT_TAB, SEC_TABS, tabDef, type SecTab } from './codes';
 import { cancelExcept, forget, loadBoard, loadCompany, loadDaily, loadDividends, loadPortfolios } from './data';
 import { DASH, fmtChange, fmtCompact, fmtNum, fmtPct, fmtPrice, fmtX, ok, tone } from './format';
 import { relatedFor } from './related';
-import { FUND_HELPER_VERSION, isFundRow, loadFund } from './fund';
+import { FUND_HELPER_VERSION, loadFund } from './fund';
 import { dividendSummary, keyLevels } from './stats';
 import { TAB_RENDER, isCompanyLike, type SecurityDeps } from './tabs';
 import { asOfText, fig } from './ui';
@@ -107,16 +108,21 @@ export function createSecurityView(o: ViewOptions) {
     'div',
     { class: `sv sv-${o.mode}` },
     h('div', { class: 'sv-top' }, backBtn, fwdBtn, recent, input, link.chip, h('span', { class: 'spacer' }), ...(o.extra ?? [])),
+    // name, price, key figures, actions and the tabs sit on one card, like every panel below (they floated on the page)
     h(
-      'header',
-      { class: 'sv-head' },
-      h('div', { class: 'sv-title' }, nameEl, metaEl),
-      h('div', { class: 'sv-quote' }, lastEl, chgEl, asOfEl),
-      statsEl,
-      posEl,
+      'section',
+      { class: 'sv-headcard' },
+      h(
+        'header',
+        { class: 'sv-head' },
+        h('div', { class: 'sv-title' }, nameEl, metaEl),
+        h('div', { class: 'sv-quote' }, lastEl, chgEl, asOfEl),
+        statsEl,
+        posEl,
+      ),
+      actions,
+      tabsEl,
     ),
-    actions,
-    tabsEl,
     body,
     ai.panel,
     related,
@@ -180,16 +186,17 @@ export function createSecurityView(o: ViewOptions) {
         h('span', { class: 'sv-num tiny' }, fmtPrice(hi)),
       );
     };
-    const boardFirst = await loadBoard(symbol).catch(() => null);
+    // the layout (fund or company) is known fast; the board row (a year of closes) loads with everything else below
+    const boardFirst = loadBoard(symbol).catch(() => null);
+    const fundNow = await isFundSymbol(symbol).catch(() => false);
     if (!still()) return;
-    const fundNow = isFundRow(boardFirst?.row);
     if (fundNow !== isFund) {
       isFund = fundNow;
       if (isFund && tabDef(tab).company) setTab(DEFAULT_TAB);
       else paintTabs();
     }
     const [board, bars, company, divs, fund] = await Promise.all([
-      Promise.resolve(boardFirst),
+      boardFirst,
       loadDaily(symbol).catch(() => null),
       // a fund has no SEC company record: don't ask (it only adds a failure to the Data panel)
       !isFund && isCompanyLike(symbol) ? loadCompany(symbol).catch((err: Error) => err) : Promise.resolve(null),

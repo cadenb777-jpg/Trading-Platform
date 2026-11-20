@@ -21,10 +21,13 @@ export function fig(text: string, opts: { tone?: string; title?: string; reason?
 export type KV = [label: string | Node, value: Node | string, hint?: string];
 
 /** A two-column list of label / figure rows. */
+/** Lists longer than this show as two pairs of columns in a double-width card (see style.css .sv-kv-2). */
+export const KV_SPLIT = 9;
+
 export function kvGrid(rows: KV[], cls = ''): HTMLElement {
   return h(
     'dl',
-    { class: `sv-kv ${cls}` },
+    { class: `sv-kv ${cls}${rows.length > KV_SPLIT && !cls.includes('sv-kv-plain') ? ' sv-kv-2' : ''}` },
     ...rows.flatMap(([label, value, hint]) => [h('dt', { title: hint ?? '' }, label), h('dd', {}, typeof value === 'string' ? fig(value) : value)]),
   );
 }

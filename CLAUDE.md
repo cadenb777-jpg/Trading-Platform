@@ -510,6 +510,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   #invest/alts/search/<words>), used by Security -> Search (#find, src/pages/findPage.ts: tabs + links to existing pages)
   and the Investments page. invest.search sends Schwab's name search in capitals, ranks (search_kind, rank_results) and
   labels kinds; the command bar searches names with spaces too.
+  Fund speed (v102): invest.kind {symbol} = one quote's assetType/assetSubType (cached 7 days); src/security/kind.ts
+  isFundSymbol (search hints in sessionStorage, then invest.kind, else loadBoard) picks the fund layout without waiting
+  for a full board row; invest.search answers are cached a day (empty ones never). Security cards: .sv-grid auto-fill
+  290px, long kv lists split in two columns (KV_SPLIT 9) and span 2, reports span the row, sv-span2 for row balance,
+  header + actions + tabs in one .sv-headcard. No card scrolls inside.
   Desk (src/pages/deskPage.ts): drag title bar to move, right/bottom/corner grips resize (snapSpan, snapRows), dense grid.
   Calm UI (owner): nothing expands on hover (no line-clamp that unclamps); long text is cut to whole sentences where it
   is written (src/ui/brief.ts). Live up/down colours use src/ui/steadyTone.ts (flat under 0.01%, hysteresis) so a flat
