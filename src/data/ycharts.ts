@@ -3,13 +3,18 @@
  * (engine/ycharts.py). Used by the security overview (a YCharts panel for stocks, ETFs and mutual funds) and the
  * YCharts explorer page (any metric of any company, fund, index or economic indicator, as a chart and table).
  *
- * The metric codes below are YCharts' names as its own pages and sample clients use them; YCharts' full list is in its
- * API documentation (behind its login). A code the owner's plan doesn't include comes back as an error for that metric
- * and is listed as not available, never estimated.
+ * Where the data comes from: on Windows the owner's YCharts Excel add-in (the helper asks Excel in the background,
+ * helper 98), elsewhere YCharts' web API with a key. The metric codes below were checked against YCharts' own Excel
+ * reference sheet. The full catalog (thousands of codes) is not in this public repository: the owner loads their copy of
+ * the reference sheet on the YCharts page and it stays in this browser. A code with no value is listed as missing,
+ * never estimated.
  */
 import { engineRequest } from './schwab';
+import { xlsxRows } from '../ai/files';
 
 export const YCHARTS_HELPER_VERSION = 95;
+/** The Excel add-in route, calculations, holdings and the cross-check source. */
+export const YCHARTS_EXCEL_HELPER_VERSION = 98;
 
 export type YKind = 'companies' | 'mutual_funds' | 'indices' | 'indicators';
 
@@ -62,46 +67,70 @@ export const COMPANY_METRICS: YMetric[] = [
     ['return_on_invested_capital', 'Return on invested capital', 'pct'],
   ]),
   ...m('Size and growth', [
-    ['revenues', 'Revenue (quarter)', 'money'],
-    ['net_income', 'Net income (quarter)', 'money'],
-    ['eps', 'EPS (quarter)', 'price'],
-    ['free_cash_flow', 'Free cash flow (quarter)', 'money'],
+    ['revenues_ttm', 'Revenue (TTM)', 'money'],
+    ['net_income_cf_ttm', 'Net income (TTM)', 'money'],
+    ['eps_ttm', 'EPS diluted (TTM)', 'price'],
+    ['free_cash_flow_ttm', 'Free cash flow (TTM)', 'money'],
     ['shares_outstanding', 'Shares outstanding', 'num'],
+    ['one_year_total_return', 'Total return, 1 year', 'pct'],
   ]),
   ...m('Risk and balance sheet', [
-    ['beta', 'Beta', 'num'],
+    ['market_beta_60_month', 'Beta (5 years)', 'num'],
     ['current_ratio', 'Current ratio', 'num'],
     ['debt_equity_ratio', 'Debt / equity', 'num'],
     ['short_interest', 'Short interest (shares)', 'num'],
+    ['days_to_cover', 'Days to cover short', 'num'],
+  ]),
+];
+
+/** ETF and closed-end fund metrics (plain tickers). */
+export const ETF_METRICS: YMetric[] = [
+  ...m('Fund', [
+    ['net_asset_value', 'NAV', 'price'],
+    ['discount_or_premium_to_nav', 'Premium / discount to NAV', 'pct'],
+    ['assets_under_management', 'Assets (this share class)', 'money'],
+    ['expense_ratio', 'Net expense ratio', 'pct'],
+    ['gross_expense_ratio_generic', 'Gross expense ratio', 'pct'],
+    ['distribution_yield', 'Distribution yield', 'pct'],
+    ['dividend_yield', 'Dividend yield', 'pct'],
+    ['turnover_ratio', 'Turnover', 'pct'],
+  ]),
+  ...m('Returns and risk', [
+    ['one_year_total_return', 'Total return, 1 year', 'pct'],
+    ['annualized_daily_three_year_total_return', 'Total return, 3 years (a year)', 'pct'],
+    ['annualized_daily_five_year_total_return', 'Total return, 5 years (a year)', 'pct'],
+    ['monthly_standard_deviation_annualized_3y', 'Volatility, 3 years', 'pct'],
+    ['historical_sharpe_3y', 'Sharpe ratio, 3 years', 'num'],
+    ['max_drawdown_5y', 'Max drawdown, 5 years', 'pct'],
   ]),
 ];
 
 /** Mutual fund metrics (ids are M:TICKER). */
 export const FUND_METRICS: YMetric[] = [
   ...m('Fund', [
-    ['nav', 'NAV', 'price'],
-    ['net_assets', 'Net assets', 'money'],
-    ['net_expense_ratio', 'Net expense ratio', 'pct'],
-    ['gross_expense_ratio', 'Gross expense ratio', 'pct'],
+    ['net_asset_value', 'NAV', 'price'],
+    ['assets_under_management', 'Assets (this share class)', 'money'],
+    ['expense_ratio', 'Net expense ratio', 'pct'],
+    ['gross_expense_ratio_generic', 'Gross expense ratio', 'pct'],
     ['turnover_ratio', 'Turnover', 'pct'],
     ['distribution_yield', 'Distribution yield', 'pct'],
   ]),
   ...m('Returns and risk', [
-    ['total_return_1y', 'Total return 1 year', 'pct'],
-    ['total_return_3y', 'Total return 3 years (a year)', 'pct'],
-    ['total_return_5y', 'Total return 5 years (a year)', 'pct'],
-    ['standard_deviation_3y', 'Standard deviation 3 years', 'pct'],
-    ['sharpe_ratio_3y', 'Sharpe ratio 3 years', 'num'],
-    ['max_drawdown_5y', 'Max drawdown 5 years', 'pct'],
+    ['one_year_total_return', 'Total return, 1 year', 'pct'],
+    ['annualized_daily_three_year_total_return', 'Total return, 3 years (a year)', 'pct'],
+    ['annualized_daily_five_year_total_return', 'Total return, 5 years (a year)', 'pct'],
+    ['monthly_standard_deviation_annualized_3y', 'Volatility, 3 years', 'pct'],
+    ['historical_sharpe_3y', 'Sharpe ratio, 3 years', 'num'],
+    ['max_drawdown_5y', 'Max drawdown, 5 years', 'pct'],
   ]),
 ];
 
 /** Examples for the explorer (any code YCharts has can be typed). */
 export const EXAMPLES: Record<YKind, { id: string; metrics: string[] }> = {
   companies: { id: 'AAPL', metrics: ['price', 'pe_ratio', 'market_cap', 'dividend_yield', 'revenues', 'profit_margin'] },
-  mutual_funds: { id: 'M:VFIAX', metrics: ['nav', 'net_expense_ratio', 'net_assets', 'total_return_1y'] },
-  indices: { id: '^SPX', metrics: ['level', 'pe_ratio', 'dividend_yield'] },
-  indicators: { id: 'I:USCPI', metrics: ['value'] },
+  mutual_funds: { id: 'M:VFIAX', metrics: ['net_asset_value', 'expense_ratio', 'assets_under_management', 'one_year_total_return'] },
+  indices: { id: '^SPX', metrics: ['price', 'pe_ratio', 'dividend_yield'] },
+  indicators: { id: 'I:USCPI', metrics: ['value'] }, // indicators have one value: the code is ignored
 };
 
 export const KIND_LABELS: Record<YKind, string> = { companies: 'Company or ETF', mutual_funds: 'Mutual fund', indices: 'Index', indicators: 'Economic indicator' };
@@ -134,15 +163,93 @@ export function yFormat(v: number | string | null | undefined, f: YFormat): stri
   }
 }
 
+// Through Excel a first request may wait for Excel to start (up to a minute and a half), so the waits are long.
 export const yPoints = (kind: YKind, ids: string[], metrics: string[], date?: string) =>
-  engineRequest<YPoints>('ycharts.points', { kind, ids, metrics, ...(date ? { date } : {}) }, 45_000);
-export const ySeries = (kind: YKind, ids: string[], metrics: string[], start?: string, end?: string) =>
-  engineRequest<YSeries>('ycharts.series', { kind, ids, metrics, ...(start ? { start } : {}), ...(end ? { end } : {}) }, 60_000);
-export const yStatus = () => engineRequest<{ ok: boolean; message: string }>('ycharts.status', {}, 30_000);
+  engineRequest<YPoints>('ycharts.points', { kind, ids, metrics, ...(date ? { date } : {}) }, 240_000);
+export const ySeries = (kind: YKind, ids: string[], metrics: string[], start?: string, end?: string, frequency?: string) =>
+  engineRequest<YSeries>('ycharts.series', { kind, ids, metrics, ...(start ? { start } : {}), ...(end ? { end } : {}), ...(frequency ? { frequency } : {}) }, 300_000);
+export const yStatus = () => engineRequest<{ ok: boolean; message: string }>('ycharts.status', {}, 240_000);
+export const yCalc = (kind: YKind, ids: string[], metrics: string[], start: string, end: string | undefined, aggregate: string) =>
+  engineRequest<{ results: Record<string, Record<string, YPoint>>; fetched: string }>('ycharts.calc', { kind, ids, metrics, start, ...(end ? { end } : {}), aggregate }, 300_000);
+export const yHoldings = (symbol: string) =>
+  engineRequest<{ holdings: { holding: string; weight: number | null }[]; fetched: string }>('ycharts.holdings', { symbol }, 300_000);
 
-let keyKnown: Promise<boolean> | null = null;
-/** Whether a YCharts key is saved (Settings), asked once per page load. */
-export function ychartsKeySet(): Promise<boolean> {
-  keyKnown ??= engineRequest<{ ychartsKeySet?: boolean }>('settings.get', {}, 15_000).then((s) => !!s.ychartsKeySet, () => false);
-  return keyKnown;
+/** YCharts' resampling frequencies and calculations (its "YCS Parameter Options"), in plain words. */
+export const FREQUENCIES: [string, string][] = [['', 'As reported'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['quarterly', 'Quarterly'], ['yearly', 'Yearly']];
+export const CALCULATIONS: [string, string][] = [
+  ['pct_change', '% change over the period'], ['mean', 'Average'], ['median', 'Median'], ['max', 'Highest (and when)'],
+  ['min', 'Lowest (and when)'], ['std', 'Standard deviation'], ['first', 'First value'], ['last', 'Last value'], ['sum', 'Sum'],
+];
+
+let readyKnown: Promise<{ ready: boolean; source: 'excel' | 'api' }> | null = null;
+/** Whether YCharts can be asked: through the Excel add-in (Windows) or with a saved API key. Asked once per page load. */
+export function ychartsReady(): Promise<{ ready: boolean; source: 'excel' | 'api' }> {
+  readyKnown ??= engineRequest<{ ychartsKeySet?: boolean; ychartsSource?: 'excel' | 'api' }>('settings.get', {}, 15_000).then(
+    (s) => ({ ready: s.ychartsSource === 'excel' || !!s.ychartsKeySet, source: s.ychartsSource ?? 'api' }),
+    () => ({ ready: false, source: 'api' as const }),
+  );
+  return readyKnown;
+}
+/** Kept for older callers: true when YCharts can be asked. */
+export const ychartsKeySet = () => ychartsReady().then((r) => r.ready);
+
+// ---------- the owner's YCharts reference sheet (stays in this browser) ----------
+
+export interface CatalogEntry {
+  code: string;
+  name: string;
+  /** Company, ETF & CEF, Mutual Fund, Macroeconomic ... and Metrics or Info */
+  group: string;
+}
+const CATALOG_KEY = 'tp-ycharts-catalog';
+
+/** Metric codes and names from YCharts' Excel reference workbook: every sheet with a "Metric Code" column (pure, tested). */
+export function catalogFromRows(sheets: { name: string; rows: string[][] }[]): CatalogEntry[] {
+  const out: CatalogEntry[] = [];
+  for (const sheet of sheets) {
+    // client privacy: YCharts Portfolios and the user's account data are never offered (owner's rule)
+    if (/portfolio|user info/i.test(sheet.name)) continue;
+    const head = sheet.rows.findIndex((r) => r.some((c) => (c ?? '').trim() === 'Metric Code'));
+    if (head < 0) continue;
+    const ci = sheet.rows[head].findIndex((c) => (c ?? '').trim() === 'Metric Code');
+    const ni = sheet.rows[head].findIndex((c) => (c ?? '').trim() === 'Metric Name');
+    for (const r of sheet.rows.slice(head + 1)) {
+      const code = (r[ci] ?? '').trim();
+      if (/^[a-z0-9_]{1,80}$/.test(code)) out.push({ code, name: (r[ni >= 0 ? ni : 0] ?? code).trim(), group: sheet.name.trim() });
+    }
+  }
+  return out;
+}
+
+export async function importCatalog(file: File): Promise<number> {
+  const entries = catalogFromRows(await xlsxRows(await file.arrayBuffer()));
+  if (!entries.length) throw new Error('No "Metric Code" column found: is this the YCharts Excel reference workbook?');
+  try {
+    localStorage.setItem(CATALOG_KEY, JSON.stringify(entries.map((e) => [e.code, e.name, e.group])));
+  } catch {
+    throw new Error('This browser could not keep the list (storage full or blocked).');
+  }
+  return entries.length;
+}
+
+export function loadCatalog(): CatalogEntry[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CATALOG_KEY) ?? '[]') as [string, string, string][];
+    return raw.map(([code, name, group]) => ({ code, name, group }));
+  } catch {
+    return [];
+  }
+}
+
+/** Catalog entries matching every word of `q` in the code, name or sheet, best first (pure, tested). */
+export function searchCatalog(entries: CatalogEntry[], q: string, kindGroup?: string, limit = 40): CatalogEntry[] {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const hits = entries.filter((e) => {
+    const t = `${e.code} ${e.name} ${e.group}`.toLowerCase();
+    return words.every((w) => t.includes(w));
+  });
+  const score = (e: CatalogEntry) => (e.code === q ? 0 : 1) + (kindGroup && e.group.startsWith(kindGroup) ? 0 : 2) + e.name.length / 1000;
+  const seen = new Set<string>();
+  return hits.sort((a, b) => score(a) - score(b)).filter((e) => !seen.has(e.code) && seen.add(e.code)).slice(0, limit);
 }

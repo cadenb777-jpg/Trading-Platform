@@ -72,7 +72,7 @@ def public():
         'eiaKeySet': bool(data.get('eia_key')),
         'censusKeySet': bool(data.get('census_key')),
         'finnhubKeySet': bool(data.get('finnhub_key')),
-        'ychartsKeySet': bool(data.get('ycharts_key')),
+        'ychartsKeySet': bool(data.get('ycharts_key')), 'ychartsSource': _ycharts_source(data),
         'githubKeySet': bool(data.get('github_token')),
         'alpacaSet': bool(data.get('alpaca_key_id') and data.get('alpaca_secret')),
         'webullSet': bool(data.get('webull_app_key') and data.get('webull_app_secret')),
@@ -236,3 +236,12 @@ async def set_settings(ctx, msg):
     save(changes)
     ctx.apply_settings()
     return public()
+
+
+def _ycharts_source(data):
+    """Where YCharts comes from: 'excel' (the Excel add-in, Windows) or 'api' (a web API key). Mirrors ycharts.source()."""
+    import sys
+    chosen = data.get('ycharts_source')
+    if chosen in ('excel', 'api'):
+        return chosen
+    return 'excel' if sys.platform == 'win32' else 'api'

@@ -24,3 +24,38 @@ describe('YCharts', () => {
     }
   });
 });
+
+import { catalogFromRows, searchCatalog, ETF_METRICS } from './ycharts';
+
+describe('YCharts reference workbook', () => {
+  const sheets = [
+    { name: 'Company | Metrics', rows: [['YCharts Excel Add-In Company Metrics'], ['Metric Name', 'Financial Statement', 'Metric Code', 'Syntax'], ['Free Cash Flow', '', 'free_cash_flow_ttm', 'YCP("MSFT","free_cash_flow_ttm")'], ['PE Ratio', '', 'pe_ratio', '']] },
+    { name: 'Mutual Fund | Metrics', rows: [['Metric Name', 'Metric Code', 'Syntax'], ['Net Expense Ratio', 'expense_ratio', ''], ['bad', 'Not A Code', '']] },
+    { name: 'YCS Parameter Options', rows: [['Param Name', 'Param Option'], ['start_date', 'YYYY-MM-DD']] },
+  ];
+  it('reads every sheet with a Metric Code column', () => {
+    const cat = catalogFromRows(sheets);
+    expect(cat.map((e) => e.code)).toEqual(['free_cash_flow_ttm', 'pe_ratio', 'expense_ratio']);
+    expect(cat[0]).toEqual({ code: 'free_cash_flow_ttm', name: 'Free Cash Flow', group: 'Company | Metrics' });
+  });
+  it('finds metrics by words in any order, the right kind first', () => {
+    const cat = catalogFromRows(sheets);
+    expect(searchCatalog(cat, 'cash free').map((e) => e.code)).toEqual(['free_cash_flow_ttm']);
+    expect(searchCatalog(cat, 'ratio', 'Mutual Fund')[0].code).toBe('expense_ratio');
+    expect(searchCatalog(cat, '')).toEqual([]);
+  });
+  it('has valid ETF codes too', () => {
+    expect(ETF_METRICS.every((m) => /^[a-z0-9_]+$/.test(m.code))).toBe(true);
+  });
+});
+
+describe('YCharts client privacy', () => {
+  it('leaves Model Portfolio and User Info sheets out of the catalog', () => {
+    const cat = catalogFromRows([
+      { name: 'Model Portfolio | Metrics', rows: [['Metric Name', 'Metric Code'], ['1 Day Returns', 'roc_1']] },
+      { name: 'User Info', rows: [['Metric Name', 'Metric Code'], ['Clients', 'client']] },
+      { name: 'Company | Metrics', rows: [['Metric Name', 'Metric Code'], ['Price', 'price']] },
+    ]);
+    expect(cat.map((e) => e.code)).toEqual(['price']);
+  });
+});

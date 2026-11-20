@@ -150,6 +150,9 @@ async def test_connection(ctx, msg):
         return {'ok': out['ok'], 'keySet': out['keysSet'], 'message': out['message']}
     if name == 'ycharts':  # the key goes in a header, so YCharts keeps its own test (engine/ycharts.py)
         from . import ycharts
+        if ycharts.source() == 'excel':
+            out = await ycharts.status(ctx, {})
+            return {'ok': out['ok'], 'keySet': True, 'message': out['message']}
         if not settings.get('ycharts_key'):
             return {'ok': False, 'keySet': False, 'message': 'No YCharts key saved yet.'}
         out = await ycharts.status(ctx, {})

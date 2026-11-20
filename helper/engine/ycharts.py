@@ -11,13 +11,17 @@ kind: companies (stocks and ETFs, by ticker), mutual_funds (M:VFIAX), indices (^
 YCharts' full list of metric codes is in its own documentation (ycharts.com/api/docs, behind the login); any code can
 be asked for here, and a code the plan doesn't include comes back as a per-metric error, shown as such, never guessed.
 
-Requests: ycharts.status (is the key accepted?), ycharts.points, ycharts.series, ycharts.info. The key is read from
-settings each call and sent only to ycharts.com.
+Requests: ycharts.status (is the key accepted?), ycharts.points, ycharts.series, ycharts.info, ycharts.holdings. The
+key is read from settings each call and sent only to ycharts.com.
+
+Source: on Windows the owner's YCharts Excel add-in (engine/ycharts_excel.py: the formulas YCP/YCS/YCI/YCH in a hidden
+scratch workbook), elsewhere the web API above. settings 'ycharts_source' ('excel' or 'api') overrides.
 """
 import datetime as dt
 import re
 
 from . import settings
+from . import ycharts_excel as xl
 from .core import EngineError, handler
 
 BASE = 'https://ycharts.com/api/v3/'
@@ -25,6 +29,18 @@ HEADER = 'X-YCHARTSAUTHORIZATION'
 KINDS = {'companies', 'mutual_funds', 'indices', 'indicators'}
 ID = re.compile(r'^[A-Za-z0-9^:._\-]{1,24}$')
 CODE = re.compile(r'^[a-z0-9_]{1,64}$')
+
+
+def source():
+    """'excel' (the YCharts Excel add-in, Windows) or 'api' (the web API with a key)."""
+    chosen = settings.load().get('ycharts_source')
+    if chosen in ('excel', 'api'):
+        return chosen
+    return 'excel' if xl.available() else 'api'
+
+
+def _now():
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')
 
 
 def _key():
@@ -39,6 +55,8 @@ def _clean(kind, ids, codes, what='metric'):
         raise EngineError(f'Unknown YCharts kind "{kind}".')
     ids = [str(i).strip() for i in (ids if isinstance(ids, list) else [ids]) if str(i).strip()]
     codes = [str(c).strip().lower() for c in (codes if isinstance(codes, list) else [codes]) if str(c).strip()]
+    for i in ids:
+        xl.check_id(i)  # also refuses YCharts portfolios (P:), the owner's client data
     if not ids or len(ids) > 25 or not all(ID.match(i) for i in ids):
         raise EngineError('Give 1 to 25 YCharts ids (tickers, M:FUND, ^INDEX or I:INDICATOR).')
     if not codes or len(codes) > 40 or not all(CODE.match(c) for c in codes):
@@ -125,7 +143,17 @@ def _date(v):
 
 @handler('ycharts.status')
 async def status(ctx, msg):
-    """Is the key there and accepted? One cheap request (Apple's price)."""
+    """Is the key (or the Excel add-in) working? One cheap request (Apple's price)."""
+    if source() == 'excel':
+        try:
+            got, data = await xl.points(['AAPL'], ['price'])
+        except EngineError as err:
+            return {'ok': False, 'source': 'excel', 'message': str(err)}
+        p = got['AAPL']['price']
+        ok = p['value'] is not None
+        started = ' (the helper started Excel minimised in the background)' if data.get('launched') else ''
+        return {'ok': ok, 'source': 'excel', 'checked': _now(),
+                'message': f"YCharts works through your Excel add-in{started}." if ok else f"Excel answered, but YCharts gave no price for Apple ({p['error']})."}
     try:
         data = await _get(ctx, 'companies/AAPL/points/price')
     except EngineError as err:
@@ -141,10 +169,15 @@ async def points(ctx, msg):
     ids, codes = _clean(kind, msg.get('ids'), msg.get('metrics'))
     date = _date(msg.get('date'))
 
+    via = source()
+
     async def load():
+        if via == 'excel':
+            results, _ = await xl.points(ids, codes, date)
+            return {'kind': kind, 'results': results, 'fetched': _now(), 'source': 'excel'}
         data = await _get(ctx, f"{kind}/{','.join(ids)}/points/{','.join(codes)}", {'date': date} if date else None)
-        return {'kind': kind, 'results': parse_points(data), 'fetched': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')}
-    return await ctx.cached(('ycharts', 'points', kind, tuple(ids), tuple(codes), date), 3600, load, persist=True, stale_ok=True)
+        return {'kind': kind, 'results': parse_points(data), 'fetched': _now(), 'source': 'api'}
+    return await ctx.cached(('ycharts', via, 'points', kind, tuple(ids), tuple(codes), date), 3600, load, persist=True, stale_ok=True)
 
 
 @handler('ycharts.series')
@@ -154,10 +187,33 @@ async def series(ctx, msg):
     start, end = _date(msg.get('start')), _date(msg.get('end'))
     params = {k: v for k, v in (('start_date', start), ('end_date', end)) if v}
 
+    via = source()
+
     async def load():
+        if via == 'excel':
+            first = start or (dt.date.today() - dt.timedelta(days=5 * 365)).isoformat()
+            results, _ = await xl.series(ids, codes, first, end, msg.get('frequency'), msg.get('resample'))
+            return {'kind': kind, 'results': results, 'fetched': _now(), 'source': 'excel'}
         data = await _get(ctx, f"{kind}/{','.join(ids)}/series/{','.join(codes)}", params)
-        return {'kind': kind, 'results': parse_series(data), 'fetched': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds')}
-    return await ctx.cached(('ycharts', 'series', kind, tuple(ids), tuple(codes), start, end), 6 * 3600, load, persist=True, stale_ok=True)
+        return {'kind': kind, 'results': parse_series(data), 'fetched': _now(), 'source': 'api'}
+    return await ctx.cached(('ycharts', via, 'series', kind, tuple(ids), tuple(codes), start, end, msg.get('frequency'), msg.get('resample')), 6 * 3600, load, persist=True, stale_ok=True)
+
+
+@handler('ycharts.calc')
+async def calc(ctx, msg):
+    """One YCharts statistic (mean, max, % change, standard deviation ...) of each metric over a period (Excel add-in)."""
+    kind = str(msg.get('kind') or 'companies')
+    ids, codes = _clean(kind, msg.get('ids'), msg.get('metrics'))
+    start, end = _date(msg.get('start')), _date(msg.get('end'))
+    if not start:
+        raise EngineError('Pick a start date.')
+    if source() != 'excel':
+        raise EngineError('YCharts calculations need the YCharts Excel add-in (Windows).')
+    agg = str(msg.get('aggregate') or '')
+
+    async def load():
+        return {'kind': kind, 'aggregate': agg, 'results': await xl.calc(ids, codes, start, end, agg), 'fetched': _now(), 'source': 'excel'}
+    return await ctx.cached(('ycharts', 'excel', 'calc', kind, tuple(ids), tuple(codes), start, end, agg), 6 * 3600, load, persist=True, stale_ok=True)
 
 
 @handler('ycharts.info')
@@ -165,7 +221,25 @@ async def info(ctx, msg):
     kind = str(msg.get('kind') or 'companies')
     ids, fields = _clean(kind, msg.get('ids'), msg.get('fields'), 'info field')
 
+    via = source()
+
     async def load():
+        if via == 'excel':
+            results, _ = await xl.info(ids, fields)
+            return {'kind': kind, 'results': results, 'source': 'excel'}
         data = await _get(ctx, f"{kind}/{','.join(ids)}/info/{','.join(fields)}")
-        return {'kind': kind, 'results': parse_info(data)}
-    return await ctx.cached(('ycharts', 'info', kind, tuple(ids), tuple(fields)), 86400, load, persist=True, stale_ok=True)
+        return {'kind': kind, 'results': parse_info(data), 'source': 'api'}
+    return await ctx.cached(('ycharts', via, 'info', kind, tuple(ids), tuple(fields)), 86400, load, persist=True, stale_ok=True)
+
+
+@handler('ycharts.holdings')
+async def holdings(ctx, msg):
+    """A fund's holdings with weights (YCH, Excel add-in only)."""
+    sid = xl.check_id(msg.get('symbol'))
+    if source() != 'excel':
+        raise EngineError('Fund holdings from YCharts need the YCharts Excel add-in (Windows).')
+
+    async def load():
+        rows, _ = await xl.holdings(sid)
+        return {'symbol': sid, 'holdings': rows, 'fetched': _now(), 'source': 'excel'}
+    return await ctx.cached(('ycharts', 'excel', 'holdings', sid), 86400, load, persist=True, stale_ok=True)

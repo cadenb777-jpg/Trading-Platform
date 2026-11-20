@@ -488,6 +488,15 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   mutual_funds (M:X), indices (^X), indicators (I:X). Metric codes were taken from YCharts' sample clients (its docs are
   behind its login): a code the plan lacks is listed as missing, never estimated. Security Overview shows a YCharts panel
   (nothing without a key); Markets > YCharts (#ycharts/<kind>/<ids>, src/pages/ychartsPage.ts) charts any codes.
+  YCharts Excel add-in (v98, engine/ycharts_excel.py): the owner's YCharts is an Excel add-in (XLL: YCP/YCS/YCI/YCH).
+  On Windows (ycharts.source() 'excel'; settings ycharts_source overrides) the helper drives Excel through Windows
+  PowerShell (-EncodedCommand, request JSON in ~/.trading-platform, no install): attaches to the running Excel or starts
+  it minimised with its own scratch workbook ycharts-bridge.xlsx (window hidden, cells cleared, Saved = true), waits while
+  cells say "Loading...", reads values. Adds ycharts.calc (YCS aggregate), ycharts.holdings (YCH), frequency on series,
+  and a 'ycharts' source in crosscheck (price, NAV as M:, trailing yield, net expense ratio). The full metric catalog is the
+  owner's reference workbook loaded on the YCharts page into localStorage (not in this public repo).
+  CLIENT PRIVACY (owner's rule): never read YCharts Portfolios (P: tickers refused by check_id/guard_formula) or account
+  data (YCU is never built; guard_formula allows only YCP/YCS/YCI/YCH); the catalog skips Model Portfolio and User Info.
   Market map (v96): Monitor HEAT and the Desk sectors tile are src/markets/marketMap.ts, a squarified treemap
   (src/ui/viz.ts squarify/treemap) sized by invest.caps (Schwab instruments fundamental marketCap, cached a day; only
   relative sizes are used) and coloured by live quotes, deepest shade at +/-3%. Equal sizes when caps are missing.

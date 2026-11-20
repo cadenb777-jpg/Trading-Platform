@@ -30,8 +30,25 @@ function columnIndex(ref: string): number {
   return n - 1;
 }
 
+/** Every sheet of an .xlsx workbook as rows of cell text (cells keep their column position). */
+export async function xlsxRows(buffer: ArrayBuffer): Promise<{ name: string; rows: string[][] }[]> {
+  const out: { name: string; rows: string[][] }[] = [];
+  await xlsxWalk(buffer, (name, rows) => out.push({ name, rows }));
+  return out;
+}
+
 /** Converts an .xlsx workbook (a zip of XML files) into CSV text, one block per sheet. */
 export async function xlsxToCsv(buffer: ArrayBuffer): Promise<{ text: string; sheets: number; rows: number }> {
+  let rows = 0;
+  const blocks: string[] = [];
+  const sheets = await xlsxWalk(buffer, (name, sheetRows) => {
+    rows += sheetRows.length;
+    blocks.push(`# Sheet: ${name}\n${sheetRows.map((r) => Array.from(r, (v) => csvCell(v ?? '')).join(',')).join('\n')}`);
+  });
+  return { text: blocks.join('\n\n'), sheets, rows };
+}
+
+async function xlsxWalk(buffer: ArrayBuffer, onSheet: (name: string, rows: string[][]) => void): Promise<number> {
   const { unzipSync, strFromU8 } = await import('fflate');
   const files = unzipSync(new Uint8Array(buffer));
   const xml = (path: string) => (files[path] ? new DOMParser().parseFromString(strFromU8(files[path]), 'application/xml') : null);
@@ -44,12 +61,10 @@ export async function xlsxToCsv(buffer: ArrayBuffer): Promise<{ text: string; sh
     const t = (rid && target.get(rid)) || `worksheets/sheet${i + 1}.xml`;
     return { name: s.getAttribute('name') ?? `Sheet${i + 1}`, path: t.startsWith('/') ? t.slice(1) : `xl/${t.replace(/^\.\//, '')}` };
   });
-  let rows = 0;
-  const blocks: string[] = [];
   for (const sheet of sheets) {
     const doc = xml(sheet.path);
     if (!doc) continue;
-    const lines: string[] = [];
+    const rows: string[][] = [];
     for (const row of doc.getElementsByTagName('row')) {
       const values: string[] = [];
       for (const c of row.getElementsByTagName('c')) {
@@ -59,18 +74,15 @@ export async function xlsxToCsv(buffer: ArrayBuffer): Promise<{ text: string; sh
         if (type === 's') value = shared[Number(raw)] ?? '';
         else if (type === 'inlineStr') value = [...c.getElementsByTagName('t')].map((t) => t.textContent ?? '').join('');
         else if (type === 'b') value = raw === '1' ? 'TRUE' : 'FALSE';
-        const idx = columnIndex(c.getAttribute('r') ?? '') ;
+        const idx = columnIndex(c.getAttribute('r') ?? '');
         if (idx >= 0) values[idx] = value;
         else values.push(value);
       }
-      if (values.some((v) => v)) {
-        lines.push(Array.from(values, (v) => csvCell(v ?? '')).join(','));
-        rows++;
-      }
+      if (values.some((v) => v)) rows.push(Array.from(values, (v) => v ?? ''));
     }
-    blocks.push(`# Sheet: ${sheet.name}\n${lines.join('\n')}`);
+    onSheet(sheet.name, rows);
   }
-  return { text: blocks.join('\n\n'), sheets: sheets.length, rows };
+  return sheets.length;
 }
 
 export async function readAttachment(file: File): Promise<Attachment> {

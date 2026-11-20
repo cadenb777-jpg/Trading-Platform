@@ -28,6 +28,8 @@ export interface PlatformSettings {
   censusKeySet?: boolean;
   finnhubKeySet?: boolean;
   ychartsKeySet?: boolean;
+  /** 'excel' = the YCharts Excel add-in on this Windows PC (no key needed), 'api' = a web API key */
+  ychartsSource?: 'excel' | 'api';
   /** Both Alpaca keys are saved (missing from helpers without Alpaca support; the keys themselves are never sent back). */
   alpacaSet?: boolean;
   /** Webull App Key + Secret saved (helper 26+); the keys themselves are never sent back. */
@@ -576,12 +578,19 @@ function buddyBlock(): HTMLElement {
 export async function openSettings(focus?: string) {
   const body = h('div', { class: 'settings' }, h('div', { class: 'muted pad' }, 'Loading…'));
   const close = openModal('Settings', body, { wide: true });
+  let first = true;
   async function render() {
+    // A redraw (Save, Test, Remove) keeps the tab you're on and where you scrolled to; only the first draw follows
+    // `focus` (owner, 2026-11-20: Test on YCharts jumped to another tab).
+    const scroller = body.closest<HTMLElement>('.modal-body');
+    const scroll = body.querySelector<HTMLElement>('.settings-pane')?.scrollTop ?? 0;
+    const outer = scroller?.scrollTop ?? 0;
+    const want = first ? tabFor(focus) : undefined;
     let s: PlatformSettings;
     try {
       s = await getSettings(true);
     } catch (err) {
-      body.replaceChildren(tabbed([['General', [...updatesSection(), ...appearanceRow(), buddyBlock()]], ['Help', [connectionCheck(), h('div', { class: 'ap-error' }, `${(err as Error).message}`), diagnosticsRow(), aboutSection()]]], tabFor(focus)));
+      body.replaceChildren(tabbed([['General', [...updatesSection(), ...appearanceRow(), buddyBlock()]], ['Help', [connectionCheck(), h('div', { class: 'ap-error' }, `${(err as Error).message}`), diagnosticsRow(), aboutSection()]]], want));
       return;
     }
     const model = h('select', { class: 'input' }, ...s.models.map((m) => h('option', { value: m.id, selected: m.id === s.model }, m.name)));
@@ -637,9 +646,16 @@ export async function openSettings(focus?: string) {
             aboutSection(),
           ]],
         ],
-        tabFor(focus),
+        want,
       ),
     );
+    if (!first) {
+      const pane = body.querySelector<HTMLElement>('.settings-pane');
+      if (pane) pane.scrollTop = scroll;
+      if (scroller) scroller.scrollTop = outer;
+      return;
+    }
+    first = false;
     if (focus === 'ai' && !s.aiKeySet) body.querySelector<HTMLInputElement>('[data-connection=ai] input')?.focus();
     if (focus === 'data') body.querySelector('#settings-data')?.scrollIntoView({ block: 'start' });
     if (focus === 'alerts') body.querySelector('#settings-alerts')?.scrollIntoView({ block: 'start' });
