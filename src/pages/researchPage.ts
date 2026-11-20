@@ -1,3 +1,6 @@
+import { loadBoard } from '../security/data';
+import { isFundRow } from '../security/fund';
+import { secHash } from '../security/codes';
 import { toneVsPrev } from '../research/tone';
 /** Research: a company's financial statements, ratios, valuation (DCF) and SEC filings. */
 import { debtDilutionPanel } from '../research/debtDilutionView';
@@ -26,7 +29,7 @@ import { engineRequest } from '../data/schwab';
 import { dcf, impliedGrowth, sensitivity, wacc, type DcfInputs } from '../research/dcf';
 import { compsView, lboView, mergerView } from '../research/valuationTools';
 import { compact, dataTable, money, numberField, pageFrame, pct, statCards } from '../ui/charts';
-import { formatPrice, h } from '../ui/dom';
+import { formatPrice, h, toast } from '../ui/dom';
 import { termLabel } from '../ui/glossary';
 import { tickerAttr } from '../ui/tickerCard';
 import { asOfStamp } from '../ui/dataHealth';
@@ -191,7 +194,18 @@ export function createResearchPage() {
       render();
     } catch (err) {
       data = null;
+      // Research reads a company's SEC accounts. An ETF or mutual fund has none: it opens the fund's own page instead
+      // (what it is, how it invests, costs, holdings, sectors, performance and risk, YCharts figures).
+      const board = await loadBoard(symbol).catch(() => null);
+      if (isFundRow(board?.row ?? null)) {
+        toast(`${symbol} is a ${(board?.row?.assetType ?? '').toUpperCase() === 'MUTUAL_FUND' ? 'mutual fund' : 'fund (ETF)'}: opening its fund page`);
+        location.hash = secHash(symbol);
+        return;
+      }
       frame.error(err);
+      frame.body.append(
+        h('p', { class: 'muted small' }, 'Research covers companies that file accounts with the SEC. ', h('a', { href: secHash(symbol) }, `Open ${symbol}’s page`), ' for its price, chart, news and statistics.'),
+      );
     }
   }
 
