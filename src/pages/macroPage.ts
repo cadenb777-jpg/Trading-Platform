@@ -14,6 +14,7 @@ import { fedOddsPanel } from '../edge/fedOdds';
 import { netLiquidityPanel } from '../edge/netLiquidity';
 import { sahmPanel } from '../macro/sahmView';
 import { rightNowPanels } from '../macro/conditionsView';
+import { expectationPanels } from '../macro/expectationsView';
 import { percentileNow, regime, sparkPoints, valueAgo, type Point, type RegimeInput } from '../macro/monitor';
 import { createWorldTab } from './macroWorld';
 
@@ -380,7 +381,7 @@ export function createMacroPage() {
         catalog = (await engineRequest<{ series: CatalogEntry[] }>('macro.catalog', {}, 15000)).series;
         skeleton();
       }
-      if (rebuild || !fredSlot.childElementCount) fredSlot.replaceChildren(sahmPanel(), rightNowPanels());
+      if (rebuild || !fredSlot.childElementCount) fredSlot.replaceChildren(sahmPanel(), rightNowPanels(), expectationPanels());
       note.textContent = '';
       const failures: string[] = [];
       await Promise.all([
