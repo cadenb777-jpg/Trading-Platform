@@ -61,10 +61,10 @@ class Requests(unittest.TestCase):
 
             async def cached(self, key, ttl, load, persist=False, stale_ok=False):
                 return await load()
-        with mock.patch.object(yc.settings, 'load', return_value={'ycharts_key': 'abc123def456'}):
+        with mock.patch.object(yc.settings, 'load', return_value={'ycharts_key': 'fake-test-key'}):
             out = asyncio.run(yc.points(Ctx(), {'kind': 'companies', 'ids': ['AAPL'], 'metrics': ['price', 'pe_ratio']}))
         self.assertEqual(seen['url'], 'https://ycharts.com/api/v3/companies/AAPL/points/price,pe_ratio')
-        self.assertEqual(seen['headers']['X-YCHARTSAUTHORIZATION'], 'abc123def456')
+        self.assertEqual(seen['headers']['X-YCHARTSAUTHORIZATION'], 'fake-test-key')
         self.assertEqual(out['results']['AAPL']['pe_ratio']['value'], 31.4)
 
     def test_no_key_says_where_to_add_it(self):
