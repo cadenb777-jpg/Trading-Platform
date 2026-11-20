@@ -200,3 +200,30 @@ class Census(Base):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class YChartsConnection(Base):
+    """The YCharts Test button (its key goes in a header, so it has its own test)."""
+    KEY = 'ycharts-test-value'  # pragma: allowlist secret
+
+    def setUp(self):
+        super().setUp()
+        settings._cache = {'ycharts_key': self.KEY}
+
+    def test_good_key(self):
+        self.replies = {r'ycharts\.com/api/v3/companies/AAPL/points/price': {'response': {'AAPL': {'meta': {'status': 'ok'}, 'results': {'price': {'meta': {'status': 'ok'}, 'data': ['2026-11-19', 270.1]}}}}}}
+        out = self.run_async(lambda c: connections.test_connection(c, {'connection': 'ycharts'}))
+        self.assertEqual((out['ok'], out['keySet']), (True, True), out)
+        self.assertFalse(connections.leaks(out, [self.KEY]))
+
+    def test_refused_key_is_explained(self):
+        self.replies = {r'ycharts\.com': 401}
+        out = self.run_async(lambda c: connections.test_connection(c, {'connection': 'ycharts'}))
+        self.assertFalse(out['ok'])
+        self.assertIn('refused the key', out['message'])
+
+    def test_no_key_makes_no_call(self):
+        settings._cache = {}
+        out = self.run_async(lambda c: connections.test_connection(c, {'connection': 'ycharts'}))
+        self.assertEqual((out['ok'], out['keySet']), (False, False))
+        self.assertEqual(self.hits, [])

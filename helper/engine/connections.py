@@ -148,6 +148,12 @@ async def test_connection(ctx, msg):
         from . import alpaca
         out = await alpaca.status(ctx, {})
         return {'ok': out['ok'], 'keySet': out['keysSet'], 'message': out['message']}
+    if name == 'ycharts':  # the key goes in a header, so YCharts keeps its own test (engine/ycharts.py)
+        from . import ycharts
+        if not settings.get('ycharts_key'):
+            return {'ok': False, 'keySet': False, 'message': 'No YCharts key saved yet.'}
+        out = await ycharts.status(ctx, {})
+        return {'ok': out['ok'], 'keySet': True, 'message': _clean(out['message'], settings.get('ycharts_key'))}
     if name not in TESTS:
         raise EngineError('Unknown connection')
     field, test, label = TESTS[name]
