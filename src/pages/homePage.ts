@@ -2,6 +2,8 @@
  * The start screen: the greeting hero with the overnight strip, then a widget dashboard the owner arranges (indexes,
  * my accounts, what needs attention, setups, news, the week's calendar, the watchlist; src/home/widgets.ts).
  */
+import { paintTone } from '../ui/steadyTone';
+import { brief as shorten } from '../ui/brief';
 import { CandlestickSeries, LineStyle, TickMarkType, createChart, type IPriceLine, type UTCTimestamp } from 'lightweight-charts';
 import { CHART_FONT } from '../chart/axisChrome';
 import { quoteChange, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
@@ -192,8 +194,7 @@ function indexCard(index: { symbol: string; name: string }, onOpen: () => void) 
     const delta = quoteChange(q);
     price.textContent = formatPrice(q.last);
     change.textContent = delta ? `${signed(delta.change)} (${signed(delta.percent)}%)` : '';
-    card.classList.toggle('up', !!delta && delta.change >= 0);
-    card.classList.toggle('down', !!delta && delta.change < 0);
+    paintTone(card, delta ? delta.percent : null); // steady colour: no green-red flicker near unchanged
     drawTimer ??= setTimeout(draw, 1000);
   };
 
@@ -319,7 +320,7 @@ export function createHomePage(onOpenChart: (ref: MarketRef) => void, onOpenCale
         ),
       ),
       h('div', { class: 'news-title' }, item.title),
-      item.summary && item.summary !== item.title ? h('div', { class: 'news-summary' }, item.summary) : null,
+      item.summary && item.summary !== item.title ? h('div', { class: 'news-summary' }, shorten(item.summary, 220)) : null,
     );
   }
 

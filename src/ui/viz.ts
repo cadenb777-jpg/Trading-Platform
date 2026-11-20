@@ -6,6 +6,7 @@
  *
  * The geometry is pure and tested (viz.test.ts); the builders only draw.
  */
+import { paintTone } from './steadyTone';
 import { h } from './dom';
 
 export type Tone = 'up' | 'down' | 'warn' | 'accent' | 'copper' | 'muted';
@@ -511,8 +512,14 @@ export function treemap(o: {
     for (const [label, c] of cells) {
       const v = values(label);
       const ok = v != null && Number.isFinite(v);
-      c.el.style.background = ok ? `color-mix(in srgb, ${v! >= 0 ? 'var(--up-fill)' : 'var(--down-fill)'} ${heatShare(v!, full)}%, var(--surface))` : 'var(--raised)';
-      c.chg.textContent = ok ? o.format(v!) : '';
+      // only what changed is written (live quotes repaint every second; unchanged blocks are left alone)
+      const bg = ok ? `color-mix(in srgb, ${v! >= 0 ? 'var(--up-fill)' : 'var(--down-fill)'} ${heatShare(v!, full)}%, var(--surface))` : 'var(--raised)';
+      if (c.el.dataset.bg !== bg) {
+        c.el.dataset.bg = bg;
+        c.el.style.background = bg;
+      }
+      const txt = ok ? o.format(v!) : '';
+      if (c.chg.textContent !== txt) c.chg.textContent = txt;
       c.el.title = o.describe ? o.describe(label, v, Number(c.el.dataset.share)) : `${label} (${c.group}): ${ok ? o.format(v!) : 'no price yet'} · ${c.el.dataset.share}% of the map by size`;
       if (ok) {
         const wt = weights(label) ?? 0;
@@ -525,8 +532,9 @@ export function treemap(o: {
     for (const [label, hd] of heads) {
       const s = sums.get(label);
       const avg = s && s.w ? s.wv / s.w : null;
-      hd.chg.textContent = avg == null ? '' : o.format(avg);
-      hd.chg.className = `tm-head-chg ${avg == null ? '' : avg >= 0 ? 'up' : 'down'}`;
+      const txt = avg == null ? '' : o.format(avg);
+      if (hd.chg.textContent !== txt) hd.chg.textContent = txt;
+      paintTone(hd.chg, avg == null ? null : avg * 100); // the values are fractions; steady colour, no flicker near 0
     }
   }
 

@@ -511,6 +511,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   and the Investments page. invest.search sends Schwab's name search in capitals, ranks (search_kind, rank_results) and
   labels kinds; the command bar searches names with spaces too.
   Desk (src/pages/deskPage.ts): drag title bar to move, right/bottom/corner grips resize (snapSpan, snapRows), dense grid.
+  Calm UI (owner): nothing expands on hover (no line-clamp that unclamps); long text is cut to whole sentences where it
+  is written (src/ui/brief.ts). Live up/down colours use src/ui/steadyTone.ts (flat under 0.01%, hysteresis) so a flat
+  price never blinks green/red. html.touch-input (src/ui/touch.ts) is set while the last tap was a finger: hover glows and
+  transitions are off then. The security view (.sv) uses one accent: the amber of its panel titles.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).
   Data hub (v44, helper/engine/datahub.py; audit in docs/research/data-aggregation-audit.md): every outside call goes
   through `datahub.get(ctx.http, '<source>', url, params=...)` or `datahub.call('<source>', fn, key=...)`, never a bare

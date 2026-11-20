@@ -5,6 +5,7 @@
  * accounts. Then the action bar, the tabs with their mnemonics, the tab body and the Related row.
  * Trade only pre-fills the Trade page's ticket; nothing is ever placed from here.
  */
+import { paintTone } from '../ui/steadyTone';
 import { insightButton } from '../ai/insight';
 import { openCotOnFutures } from '../futures/cot';
 import { subscribeQuote } from '../data/quotes';
@@ -131,7 +132,7 @@ export function createSecurityView(o: ViewOptions) {
     const chg = ok(last) && ok(prevClose) ? last - prevClose : null;
     const pc = ok(chg) && prevClose ? chg / prevClose : null;
     chgEl.textContent = chg == null ? DASH : `${fmtChange(chg)}  ${fmtPct(pc, 2, true)}`;
-    chgEl.className = `sv-chg sv-num ${tone(chg)}`;
+    paintTone(chgEl, ok(pc) ? pc * 100 : null);
     asOfEl.textContent = quoteAt ? `Schwab · ${asOfText(quoteAt)}` : '';
   }
 

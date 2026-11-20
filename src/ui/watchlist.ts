@@ -1,4 +1,5 @@
 /** Your list of symbols with live prices. Click one to open its chart. */
+import { paintTone } from './steadyTone';
 import { guessMarket, quoteChange, refKey, sourceTitle, subscribeQuote, type MarketRef, type Quote } from '../data/quotes';
 import { onStateChange, persist, state } from '../state';
 import { formatPrice, h, toast } from './dom';
@@ -55,7 +56,7 @@ export function createWatchlist(opts: { onSelect: (ref: MarketRef) => void; isAc
     const title = sourceTitle(q);
     if (title) last.setAttribute('title', title);
     chg.textContent = change ? `${change.percent >= 0 ? '+' : ''}${change.percent.toFixed(2)}%` : '—';
-    chg.className = `wl-chg ${change ? (change.percent >= 0 ? 'up' : 'down') : ''}`;
+    paintTone(chg, change ? change.percent : null);
     chg.setAttribute('title', q?.lastSession ? 'Change in the latest session (the market is closed)' : 'Change today');
   };
 

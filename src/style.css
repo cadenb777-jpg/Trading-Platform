@@ -14820,3 +14820,74 @@ select.input,
 .find-links { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 8px; }
 .find-link { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); text-decoration: none; }
 .find-link:hover { border-color: var(--accent-border, var(--accent)); background: var(--row-hover); }
+
+/* ===== Owner, 2026-11-20: no hover-to-expand, one accent on the security view, calm on touch screens ===== */
+
+/* Text never grows on hover: captions, the company blurb, launchpad notes, news summaries and headlines show in full
+   (long text is shortened to whole sentences where it is written, src/ui/brief.ts), so nothing drops open. */
+.viz-cap,
+.ts-about,
+.pl-note,
+.news-summary,
+.mon-headline {
+  display: block;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  overflow: visible;
+}
+
+/* No "lift" nudges on hover anywhere (they stutter on touch and under a resting cursor). */
+.idx-card:hover,
+.brief-chip:hover,
+.fut-tile:hover,
+.div-cell:hover,
+.pl-card:hover,
+.pl-card:focus-visible,
+.nav-btn:hover svg {
+  transform: none;
+}
+
+/* The security view (page and slide-over) uses one accent: the amber of its panel titles, for links, tabs, sub-heads,
+   chips and the section colour too (it mixed blue, amber and violet). */
+.sv {
+  --accent: var(--accent-2);
+  --accent-text: var(--accent-2-text);
+  --accent-soft: color-mix(in srgb, var(--accent-2) 14%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent-2) 45%, transparent);
+  --section-accent: var(--accent-2);
+  --link: var(--accent-2-text);
+  --focus: var(--accent-2-text);
+}
+.sv .ai-spark { color: var(--accent-2-text); }
+
+/* Touch screens (html.touch-input is set while the last tap was a finger, src/ui/touch.ts): a tap must not leave hover
+   looks switched on, and nothing fades or glows in after it, so nothing blinks. */
+html.touch-input .panel:hover,
+html.touch-input .sv-panel:hover,
+html.touch-input .fn-tile:hover,
+html.touch-input .card:hover {
+  box-shadow: none;
+}
+html.touch-input .info-tip:hover:not(.open) .info-tip-text {
+  display: none;
+}
+html.touch-input *,
+html.touch-input *::before,
+html.touch-input *::after {
+  transition-duration: 0s !important;
+}
+html.touch-input body {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Label/value rows on the security view: two fair columns, long values wrap inside the panel (a long sector name
+   squeezed its label and ran past the panel's edge). */
+.sv-kv { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+.sv-kv dd { min-width: 0; overflow-wrap: anywhere; }
+/* the AI button on the security view in the same amber (it was violet) */
+.sv {
+  --ai-border: color-mix(in srgb, var(--accent-2) 45%, transparent);
+  --ai-bg: color-mix(in srgb, var(--accent-2) 10%, transparent);
+  --ai-hover: color-mix(in srgb, var(--accent-2) 18%, transparent);
+}
+.sv-kv dd .sv-num, .sv-kv dd > span, .sv-kv dd > a { white-space: normal; overflow-wrap: anywhere; overflow: visible; text-overflow: clip; }

@@ -5,6 +5,7 @@
  * feed as the ticker tape (subscribeQuote); updates change text in place (no layout work on scroll). Hidden on Today,
  * which already shows all of it (tape, market mood, watchlist): the rail only adds what the page doesn't show.
  */
+import { paintTone, steadyTone } from './steadyTone';
 import { subscribeQuote, type MarketRef } from '../data/quotes';
 import { state } from '../state';
 import { runId } from './command';
@@ -26,7 +27,7 @@ const WATCH_MAX = 6;
 export function changeText(last: number | null | undefined, prev: number | null | undefined): { text: string; tone: 'up' | 'down' | '' } {
   if (last == null || prev == null || !prev) return { text: '—', tone: '' };
   const pct = (last / prev - 1) * 100;
-  return { text: `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(2)}%`, tone: pct > 0 ? 'up' : pct < 0 ? 'down' : '' };
+  return { text: `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(2)}%`, tone: steadyTone(pct) };
 }
 
 /** The core list plus watchlist names not already in it (pure, tested). */
@@ -54,7 +55,7 @@ export function railPulse(): HTMLElement {
       if (q.last != null) last.textContent = price(q.last);
       const c = changeText(q.last, q.prevClose);
       chg.textContent = c.text;
-      chg.className = `rp-chg ${c.tone}`;
+      paintTone(chg, q.last != null && q.prevClose ? (q.last / q.prevClose - 1) * 100 : null);
     });
     return el;
   };

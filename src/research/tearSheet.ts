@@ -9,6 +9,7 @@
  * Every picture carries a plain-words line made from the numbers by rules (no AI cost, tested); the page's AI
  * summary button gives the full read.
  */
+import { brief } from '../ui/brief';
 import { getProvider } from '../data';
 import { engineRequest, helper } from '../data/schwab';
 import type { Bar } from '../types';
@@ -146,12 +147,12 @@ function aboutBlock(d: CompanyData) {
     const about = y ? String(y.info.long_description ?? y.info.description ?? '').trim() : '';
     if (!about) return;
     fromYCharts = true;
-    box.replaceChildren(about, ' ', h('span', { class: 'muted small' }, '(YCharts)'));
+    box.replaceChildren(brief(about, 360), ' ', h('span', { class: 'muted small' }, '(YCharts)'));
   });
   if ((helper.version ?? 0) >= ABOUT_HELPER_VERSION && d.profile.cik) {
     engineRequest<{ about: string | null; source?: string; url?: string }>('research.about', { cik: d.profile.cik }, 30000).then(
       (r) => {
-        if (r.about && !fromYCharts) box.replaceChildren(r.about, ' ', h('a', { href: r.url, target: '_blank', rel: 'noopener noreferrer', class: 'muted small' }, `(${r.source})`));
+        if (r.about && !fromYCharts) box.replaceChildren(brief(r.about, 360), ' ', h('a', { href: r.url, target: '_blank', rel: 'noopener noreferrer', class: 'muted small' }, `(${r.source})`));
       },
       () => undefined,
     );
