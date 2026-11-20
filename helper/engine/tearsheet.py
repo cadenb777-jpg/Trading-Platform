@@ -184,6 +184,12 @@ def _sample(values, step):
     return idx
 
 
+async def _young(ctx, symbols, years):
+    """Holdings with less than about 7 months of daily history (or none that loads)."""
+    got = await asyncio.gather(*(ctx.daily_bars(s, years) for s in symbols), return_exceptions=True)
+    return {s for s, bars in zip(symbols, got) if isinstance(bars, Exception) or len(bars) < ROLL + 21}
+
+
 @handler('quant.tearsheet')
 async def tearsheet(ctx, msg):
     symbols, weights = _clean(msg)
@@ -194,7 +200,22 @@ async def tearsheet(ctx, msg):
         value = 100000.0
     priced = [s for s in symbols if s != CASH]
     fetch = priced + (['SPY'] if 'SPY' not in priced else [])
-    (dates, prices, info), rf = await asyncio.gather(quant.price_matrix(ctx, fetch, years), quant.risk_free(ctx))
+    rf = await quant.risk_free(ctx)
+    left_out = []
+    try:
+        dates, prices, info = await quant.price_matrix(ctx, fetch, years)
+    except EngineError:
+        dates = []
+    if len(dates) < ROLL + 20 and len(priced) > 1:
+        # one young holding (a recent listing) would shorten everything: measure the others and say which was left out
+        young = await _young(ctx, priced, years)
+        if young and len(young) < len(priced):
+            keep = [i for i, s in enumerate(symbols) if s not in young]
+            left_out = [s for s in symbols if s in young]
+            symbols, weights = [symbols[i] for i in keep], weights[keep] / weights[keep].sum()
+            priced = [s for s in symbols if s != CASH]
+            fetch = priced + (['SPY'] if 'SPY' not in priced else [])
+            dates, prices, info = await quant.price_matrix(ctx, fetch, years)
     if len(dates) < ROLL + 20:
         raise EngineError('Not enough shared daily history for these holdings (needs about 7 months). The youngest holding sets the start.')
     rets = prices[1:] / prices[:-1] - 1
@@ -215,6 +236,7 @@ async def tearsheet(ctx, msg):
         'symbols': symbols, 'weights': weights.round(6).tolist(), 'value': value,
         'start': dates[0].isoformat(), 'end': dates[-1].isoformat(), 'days': len(port), 'riskFree': rf,
         'priceOnly': [s for s, d in zip(fetch, info['dividends']) if not d],
+        'leftOut': left_out,
         'volatility': vol, 'var': var_table(port),
         'correlation': {'symbols': corr_syms, 'matrix': np.atleast_2d(corr).round(3).tolist()},
         'rolling': {'window': ROLL, 'dates': [roll_dates[i].isoformat() for i in keep], 'beta': [betas[i] for i in keep], 'sharpe': [sharpes[i] for i in keep]},
