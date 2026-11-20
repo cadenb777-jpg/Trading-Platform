@@ -37,7 +37,7 @@ import { sectorOf } from './related';
 import { COMPANY_METRICS, ETF_METRICS, FUND_METRICS, YCHARTS_EXCEL_HELPER_VERSION, YCHARTS_HELPER_VERSION, fundFactRows, headquarters, yFormat, yHoldings, yPoints, yProfile, ychartsId, ychartsReady, type YMetric, type YProfile } from '../data/ycharts';
 import { FUND_HELPER_VERSION, costBand, costWords, isFundRow, loadFund, riskWords, stars, versusCategory, type FundProfile } from './fund';
 import { dayKey, dividendSummary, keyLevels, pairedReturns, portfolioReturns, correlation, beta, riskWindow, type Close, type RiskWindow } from './stats';
-import { fig, kvGrid, loadingNote, note, panel, reasonOf, type KV } from './ui';
+import { fig, kvGrid, KV_SPLIT, loadingNote, note, panel, reasonOf, type KV } from './ui';
 
 export interface SecurityDeps {
   openChart(ref: { provider: 'schwab' | 'coinbase'; symbol: string }): void;
@@ -243,17 +243,20 @@ function fillRows(el: HTMLElement, rows: [string, string, string?][]) {
     }
     dl.append(h('dt', { title: hint ?? '' }, label), h('dd', {}, fig(value)));
   }
+  if (dl.querySelectorAll('dt').length > KV_SPLIT) dl.classList.add('sv-kv-2');
 }
 
 const yAsset = (f: FundProfile) => (f.kind === 'etf' ? 'etf' : 'mutual_fund') as 'etf' | 'mutual_fund';
 const yPct = (v: unknown) => (typeof v === 'number' ? yFormat(v, 'pct') : '');
 const yText = (v: unknown) => (v == null ? '' : String(v));
 
+/** A card twice as wide as the others (one row stays flush instead of leaving a hole). */
+const span2 = (el: HTMLElement) => (el.classList.add('sv-span2'), el);
+
 function fundDes(ctx: TabCtx) {
   const s = ctx.symbol;
   ctx.body.replaceChildren(
     grid(
-      priceStatsSlot(ctx),
       fundSlot(ctx, 'fund profile', (f) => {
         const band = costBand(f.expenseRatio);
         const el = panel(
@@ -306,6 +309,18 @@ function fundDes(ctx: TabCtx) {
           if (strategy && strategy !== objective) title?.parentElement?.insertBefore(h('div', {}, h('h4', { class: 'fd-sub' }, 'How it invests'), h('p', { class: 'sv-desc' }, brief(strategy, 320))), el.querySelector('.sv-source'));
         });
       }),
+      fundSlot(ctx, 'asset mix and sectors', (f) =>
+        panel(
+          'Asset mix and sectors',
+          YAHOO,
+          f.fetched,
+          f.mix.length ? h('div', { class: 'fd-bars' }, ...f.mix.map((m) => h('div', { class: 'fd-row' }, h('span', {}, m.label), weightBar(m.weight)))) : note('No asset mix in the data.'),
+          f.sectors.length
+            ? h('div', { class: 'fd-bars' }, h('h4', { class: 'fd-sub' }, 'Sectors (stocks)'), ...f.sectors.map((x) => h('div', { class: 'fd-row' }, h('span', {}, x.sector), weightBar(x.weight, f.sectors[0].weight))))
+            : null,
+        ),
+      ),
+      priceStatsSlot(ctx),
       wideSlot(
         fundSlot(ctx, 'top holdings', (f) => {
           if (!f.holdings.length) return panel('Top holdings', YAHOO, f.fetched, note('No holdings in the data for this fund.'));
@@ -340,17 +355,6 @@ function fundDes(ctx: TabCtx) {
             f.holdingsShare ? h('p', { class: 'muted small' }, `These ${f.holdings.length} make up ${fmtPct(f.holdingsShare, 1)} of the fund.`) : null,
           );
         }),
-      ),
-      fundSlot(ctx, 'asset mix and sectors', (f) =>
-        panel(
-          'Asset mix and sectors',
-          YAHOO,
-          f.fetched,
-          f.mix.length ? h('div', { class: 'fd-bars' }, ...f.mix.map((m) => h('div', { class: 'fd-row' }, h('span', {}, m.label), weightBar(m.weight)))) : note('No asset mix in the data.'),
-          f.sectors.length
-            ? h('div', { class: 'fd-bars' }, h('h4', { class: 'fd-sub' }, 'Sectors (stocks)'), ...f.sectors.map((x) => h('div', { class: 'fd-row' }, h('span', {}, x.sector), weightBar(x.weight, f.sectors[0].weight))))
-            : null,
-        ),
       ),
       fundSlot(ctx, 'characteristics', (f) => {
         const e = f.equity;
@@ -401,6 +405,7 @@ function fundDes(ctx: TabCtx) {
             )
           : null,
       ),
+      span2(
       fundSlot(ctx, 'risk against the category', (f) => {
         const r = f.risk.find((x) => x.years === '3y') ?? f.risk[0];
         if (!r) return null;
@@ -419,10 +424,10 @@ function fundDes(ctx: TabCtx) {
           ]),
           h('p', { class: 'muted small' }, 'Standard deviation: how much returns swing (yearly). Sharpe: return per unit of that swing. Alpha: return beyond what its beta would give. R-squared: how closely it follows its benchmark (100 = exactly).'),
         );
-      }),
+      })),
       liquiditySlot(ctx),
       ychartsSlot(ctx),
-      eventsSlot(ctx, true),
+      span2(eventsSlot(ctx, true)),
     ),
   );
   void s;
@@ -449,20 +454,25 @@ function ychartsSlot(ctx: TabCtx) {
     const groups = [...new Set(have.map((x) => x.group))];
     // a fund's biggest holdings from YCharts (YCH; Excel add-in only)
     const top = (mf || etf) && excel ? await yHoldings(id).then((r) => r.holdings.slice(0, 10), () => []) : [];
-    return panel(
+    // a full-width card with its sections side by side (one long column made the page scroll for screens)
+    const el = panel(
       mf || etf ? 'Performance, risk and costs' : 'More figures',
       excel ? 'YCharts (your Excel add-in)' : 'YCharts API (your key)',
       r.fetched,
-      ...(have.length
-        ? groups.map((g) =>
-            h('div', {}, h('h4', { class: 'fd-sub' }, g), kvGrid(have.filter((x) => x.group === g).map((x) => [x.label, fig(yFormat(row[x.code].value, x.format), { title: row[x.code].date ? `as of ${row[x.code].date}` : '' })] as KV))),
+      have.length
+        ? h(
+            'div',
+            { class: 'sv-groups' },
+            ...groups.map((g) =>
+              h('div', { class: 'sv-group' }, h('h4', { class: 'fd-sub' }, g), kvGrid(have.filter((x) => x.group === g).map((x) => [x.label, fig(yFormat(row[x.code].value, x.format), { title: row[x.code].date ? `as of ${row[x.code].date}` : '' })] as KV), 'sv-kv-plain')),
+            ),
+            top.length ? h('div', { class: 'sv-group' }, h('h4', { class: 'fd-sub' }, 'Biggest holdings'), kvGrid(top.map((t) => [t.holding, t.weight == null ? '—' : yFormat(t.weight, 'pct')] as KV), 'sv-kv-plain')) : null,
           )
-        : [note(`YCharts returned none of these figures for ${id}: ${row[list[0].code]?.error ?? 'no data'}.`)]),
-      top.length
-        ? h('div', {}, h('h4', { class: 'fd-sub' }, 'Biggest holdings'), kvGrid(top.map((t) => [t.holding, t.weight == null ? '—' : yFormat(t.weight, 'pct')] as KV)))
-        : null,
+        : note(`YCharts returned none of these figures for ${id}: ${row[list[0].code]?.error ?? 'no data'}.`),
       // figures YCharts has no value for are simply left out (a stock fund has no duration, a bond fund no P/E)
     );
+    el.classList.add('sv-report');
+    return el;
   });
 }
 

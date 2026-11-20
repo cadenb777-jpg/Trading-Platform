@@ -52,7 +52,7 @@ from engine.safexml import fromstring as safe_fromstring  # noqa: E402  (refuses
 warnings.showwarning = _show_warning
 
 # Bump when the browser needs new helper features, so it can ask you to download the new copy.
-HELPER_VERSION = 101
+HELPER_VERSION = 102
 
 HOST = '127.0.0.1'
 PORT = 8765
