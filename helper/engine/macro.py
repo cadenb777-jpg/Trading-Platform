@@ -105,6 +105,40 @@ async def fred(ctx, series_id):
     return await ctx.cached(('fred', series_id), FRESH_SECONDS, load, persist=True, stale_ok=True)
 
 
+EARLIEST = '1850-01-01'
+
+
+def history_start(value):
+    """A raw request's `since` (YYYY-MM-DD) as the download start: None when absent or on/after START (the default
+    download covers it), else January 1 of its year (so a page can't make a saved copy per day: at most one per year
+    since EARLIEST). Anything that isn't a clean YYYY-MM-DD date on or after EARLIEST is refused, so the cache key and
+    FRED's cosd only ever hold a clean date."""
+    if value in (None, ''):
+        return None
+    text = str(value)
+    try:
+        day = dt.date.fromisoformat(text)
+    except ValueError:
+        raise EngineError('Bad history start (use YYYY-MM-DD)') from None
+    if len(text) != 10 or day.isoformat() != text or text < EARLIEST:
+        raise EngineError('Bad history start (use YYYY-MM-DD)')
+    return None if text >= START else f'{day.year:04d}-01-01'
+
+
+async def fred_from(ctx, series_id, start):
+    """Full history from `start` (helper 103: recession records need 1959 onwards, not START). Cached under its own
+    key, shared with ratesdesk._full."""
+    async def load():
+        try:
+            rows = await _fred_download(ctx, series_id, start=start)
+        except Exception as err:
+            raise EngineError(f'Could not reach FRED for {series_id} ({type(err).__name__}).') from err
+        if not rows:
+            raise EngineError(f'FRED returned no data for {series_id}')
+        return rows
+    return await ctx.cached(('fred', series_id, 'from', start), FRESH_SECONDS, load, persist=True, stale_ok=True)
+
+
 def _shift_back(rows, i, days):
     """Index of the last observation at least `days` before rows[i]."""
     target = dt.date.fromisoformat(rows[i][0]) - dt.timedelta(days=days)
@@ -181,7 +215,11 @@ async def one_series(ctx, msg):
         raise EngineError('Bad series id')
     if _definition(sid) and not msg.get('raw'):
         return await series_payload(ctx, sid)
-    rows = await fred(ctx, sid)
+    start = history_start(msg.get('since'))
+    rows = await (fred_from(ctx, sid, start) if start else fred(ctx, sid))
+    if not rows:
+        # a saved empty copy (ratesdesk._full shares fred_from's key and keeps []) is refused plainly
+        raise EngineError(f'FRED returned no data for {sid}')
     return {'id': sid, **summarise(rows), 'data': [{'time': day, 'value': v} for day, v in rows[-int(msg.get('limit', 1000)):]]}
 
 

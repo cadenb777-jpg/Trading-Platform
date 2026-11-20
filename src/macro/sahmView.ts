@@ -8,9 +8,11 @@ import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { openFredWindow } from '../ui/fredWindow';
 import { rangeTrack } from '../ui/viz';
-import { missedRecessions, month, nowWords, recordWords, sahmSignals, sahmState, TRIGGER, WATCH, type MonthPoint } from './sahm';
+import { HISTORY_SINCE, missedRecessions, month, nowWords, recordWords, sahmSignals, sahmState, TRIGGER, WATCH, type MonthPoint } from './sahm';
 
 type Raw = { data: MonthPoint[]; date?: string };
+/** Full history (helper 103; SAHMREALTIME begins in 1959): older helpers send 2006 onwards and the record says so. */
+const SINCE = HISTORY_SINCE;
 
 const STATE_LABEL = { triggered: 'Triggered', watch: 'Watch', calm: 'Calm' } as const;
 
@@ -24,8 +26,8 @@ export function sahmPanel(): HTMLElement {
     body,
   );
   // the recession dates only feed the record: if they fail, the reading still shows
-  const dates = engineRequest<Raw>('macro.series', { series: 'USREC', raw: true, limit: 2000 }, 45_000).catch(() => null);
-  Promise.all([engineRequest<Raw>('macro.series', { series: 'SAHMREALTIME', raw: true, limit: 2000 }, 45_000), dates]).then(
+  const dates = engineRequest<Raw>('macro.series', { series: 'USREC', raw: true, limit: 2000, since: SINCE }, 45_000).catch(() => null);
+  Promise.all([engineRequest<Raw>('macro.series', { series: 'SAHMREALTIME', raw: true, limit: 2000, since: SINCE }, 45_000), dates]).then(
     ([s, u]) => {
       stampSlot.replaceChildren(asOfStamp('fred', { reply: s, source: 'FRED' }).el);
       const sahm = s.data.filter((p) => Number.isFinite(p.value));
