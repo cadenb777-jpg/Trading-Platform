@@ -454,3 +454,15 @@ async def calc(ids, codes, start, end, aggregate):
         out.setdefault(sid, {})[code] = {'value': value, 'date': date,
                                          'error': None if value is not None else ('still loading in Excel' if cell.get('pending') else cell_error(first) or 'no data')}
     return out
+
+
+async def profile(security_id, info_fields, codes):
+    """Text facts (YCI) and figures (YCP) for one security in one Excel pass: info in column 1, figures in column 2."""
+    sid = check_id(security_id)
+    cells = [{'r': i + 1, 'c': 1, 'f': info_formula(sid, check_code(f))} for i, f in enumerate(info_fields)]
+    cells += [{'r': j + 1, 'c': 2, 'f': point_formula(sid, check_code(c))} for j, c in enumerate(codes)]
+    data = await run(cells, timeout=75)
+    got = _by_pos(data['cells'])
+    info = {f: point_value(got.get((i + 1, 1)))['value'] for i, f in enumerate(info_fields)}
+    figures = {c: point_value(got.get((j + 1, 2)))['value'] for j, c in enumerate(codes)}
+    return {k: v for k, v in info.items() if v is not None}, {k: v for k, v in figures.items() if v is not None}

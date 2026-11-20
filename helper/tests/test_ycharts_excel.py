@@ -210,3 +210,34 @@ class ClientPrivacy(unittest.TestCase):
         for f in engine.glob('*.py'):
             text = f.read_text(encoding='utf-8')
             self.assertNotRegex(text.replace('YCU (', '').replace("'YCU'", ''), r'=YCU\(|"YCU\(', f.name)
+
+
+class Profiles(unittest.TestCase):
+    def test_profile_codes_are_valid_and_portfolios_refused(self):
+        for group in ('stock', 'fund'):
+            for c in ycharts.PROFILE_INFO[group] + ycharts.PROFILE_FIGURES[group]:
+                self.assertEqual(xl.check_code(c), c)
+        self.assertEqual(ycharts.profile_id('vfiax', 'mutual_fund'), 'M:VFIAX')
+        self.assertEqual(ycharts.profile_id('SPY', 'etf'), 'SPY')
+        with self.assertRaises(EngineError):
+            ycharts.profile_id('P:1234', 'stock')
+
+    def test_profile_one_excel_pass(self):
+        settings._cache = {'ycharts_source': 'excel'}
+        self.addCleanup(lambda: setattr(settings, '_cache', None))
+        n_info, n_fig = len(ycharts.PROFILE_INFO['stock']), len(ycharts.PROFILE_FIGURES['stock'])
+        cells = [{'r': 1, 'c': 1, 'v': 'Apple designs phones.'}, {'r': 3, 'c': 1, 'v': 'Technology'}, {'r': 1, 'c': 2, 'v': 3.9e12}]
+        sent = []
+
+        async def fake_run(c, timeout=60):
+            sent.append(c)
+            return {'ok': True, 'cells': cells}
+
+        class Ctx:
+            async def cached(self, key, ttl, load, **kw):
+                return await load()
+        with mock.patch.object(xl, 'run', fake_run):
+            out = asyncio.run(ycharts.profile(Ctx(), {'symbol': 'aapl', 'asset': 'stock'}))
+        self.assertEqual(len(sent[0]), n_info + n_fig)
+        self.assertEqual(out['info'], {'long_description': 'Apple designs phones.', 'sector': 'Technology'})
+        self.assertEqual(out['figures'], {'market_cap': 3.9e12})

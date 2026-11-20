@@ -32,7 +32,7 @@ import {
 } from './data';
 import { DASH, fmtChange, fmtCompact, fmtDate, fmtNum, fmtPct, fmtPrice, fmtX, ok, tone } from './format';
 import { sectorOf } from './related';
-import { COMPANY_METRICS, ETF_METRICS, FUND_METRICS, YCHARTS_EXCEL_HELPER_VERSION, YCHARTS_HELPER_VERSION, yFormat, yHoldings, yPoints, ychartsId, ychartsReady, type YMetric } from '../data/ycharts';
+import { COMPANY_METRICS, ETF_METRICS, FUND_METRICS, YCHARTS_EXCEL_HELPER_VERSION, YCHARTS_HELPER_VERSION, fundFactRows, headquarters, yFormat, yHoldings, yPoints, yProfile, ychartsId, ychartsReady, type YMetric, type YProfile } from '../data/ycharts';
 import { FUND_HELPER_VERSION, costBand, costWords, isFundRow, loadFund, riskWords, stars, versusCategory, type FundProfile } from './fund';
 import { dayKey, dividendSummary, keyLevels, pairedReturns, portfolioReturns, correlation, beta, riskWindow, type Close, type RiskWindow } from './stats';
 import { fig, kvGrid, loadingNote, note, panel, reasonOf, type KV } from './ui';
@@ -180,6 +180,40 @@ function fundSlot(ctx: TabCtx, what: string, draw: (f: FundProfile) => Node | nu
 const YAHOO = 'Yahoo Finance fund data';
 
 /** The fund overview: profile and costs, objective, holdings, mix and sectors, characteristics, returns and risk. */
+/**
+ * YCharts behind the panels: when YCharts (Excel add-in) answers, its facts fill the gaps of a panel already on screen
+ * and add its own rows, without waiting for it first (a cold Excel start can take a minute).
+ */
+function withYCharts(el: HTMLElement, ask: () => Promise<YProfile | null>, apply: (y: YProfile, el: HTMLElement) => void): HTMLElement {
+  void ask().then((y) => {
+    if (!y || !el.isConnected) return;
+    apply(y, el);
+    const src = el.querySelector('.sv-source');
+    if (src && !/YCharts/.test(src.textContent ?? '')) src.textContent = (src.textContent ?? '').replace(/^Source: /, 'Source: YCharts (your Excel add-in); ');
+  });
+  return el;
+}
+
+/** Fills a kvGrid row whose value is empty ("—") and appends rows that aren't there yet. */
+function fillRows(el: HTMLElement, rows: [string, string, string?][]) {
+  const dl = el.querySelector('dl.sv-kv');
+  if (!dl) return;
+  for (const [label, value, hint] of rows) {
+    if (!value) continue;
+    const dt = [...dl.querySelectorAll('dt')].find((d) => d.textContent?.trim() === label);
+    if (dt) {
+      const dd = dt.nextElementSibling as HTMLElement | null;
+      if (dd && /^\s*—\s*$/.test(dd.textContent ?? '')) dd.replaceChildren(fig(value));
+      continue;
+    }
+    dl.append(h('dt', { title: hint ?? '' }, label), h('dd', {}, fig(value)));
+  }
+}
+
+const yAsset = (f: FundProfile) => (f.kind === 'etf' ? 'etf' : 'mutual_fund') as 'etf' | 'mutual_fund';
+const yPct = (v: unknown) => (typeof v === 'number' ? yFormat(v, 'pct') : '');
+const yText = (v: unknown) => (v == null ? '' : String(v));
+
 function fundDes(ctx: TabCtx) {
   const s = ctx.symbol;
   ctx.body.replaceChildren(
@@ -187,7 +221,7 @@ function fundDes(ctx: TabCtx) {
       priceStatsSlot(ctx),
       fundSlot(ctx, 'fund profile', (f) => {
         const band = costBand(f.expenseRatio);
-        return panel(
+        const el = panel(
           'Fund profile',
           `${YAHOO}; Morningstar ratings as Yahoo shows them`,
           f.fetched,
@@ -210,10 +244,33 @@ function fundDes(ctx: TabCtx) {
             ['Beta (3 years)', fig(f.beta3y != null ? f.beta3y.toFixed(2) : DASH, { reason: 'needs 3 years' }), 'Moves against the S&P 500: 1.0 = in step'],
           ]),
         );
+        // YCharts fills what Yahoo left empty and adds its own facts (benchmark, style, share class ...)
+        return withYCharts(el, () => yProfile(s, yAsset(f), helper.version ?? 0), (y) =>
+          fillRows(el, [
+            ['Family', yText(y.info.fund_family)],
+            ['Category', yText(y.info.category_name)],
+            ['Inception', yText(y.info.inception_date)],
+            ['Net assets', typeof y.figures.assets_under_management === 'number' ? yFormat(y.figures.assets_under_management, 'money') : ''],
+            ['NAV', typeof y.figures.net_asset_value === 'number' ? yFormat(y.figures.net_asset_value, 'price') : ''],
+            ['Expense ratio', yPct(y.figures.expense_ratio)],
+            ['Turnover', yPct(y.figures.turnover_ratio)],
+            ['Yield (12 months)', yPct(y.figures.distribution_yield)],
+            ['Premium / discount to NAV', yPct(y.figures.discount_or_premium_to_nav), 'Price above (+) or below (−) the value of what the fund holds'],
+            ...fundFactRows(y.info),
+          ]),
+        );
       }),
-      fundSlot(ctx, 'objective', (f) =>
-        panel('Objective', YAHOO, f.fetched, f.objective ? h('p', { class: 'sv-desc' }, f.objective) : note('The fund’s objective isn’t in the data. It is in the prospectus (the fund family’s website).'), h('p', { class: 'muted small' }, h('a', { href: f.url, target: '_blank', rel: 'noopener' }, 'Full fund page on Yahoo Finance ↗'))),
-      ),
+      fundSlot(ctx, 'objective', (f) => {
+        const el = panel('Objective', YAHOO, f.fetched, f.objective ? h('p', { class: 'sv-desc' }, f.objective) : note('The fund’s objective isn’t in the data. It is in the prospectus (the fund family’s website).'), h('p', { class: 'muted small' }, h('a', { href: f.url, target: '_blank', rel: 'noopener' }, 'Full fund page on Yahoo Finance ↗')));
+        // YCharts: the prospectus objective when Yahoo has none, and how the fund invests
+        return withYCharts(el, () => yProfile(s, yAsset(f), helper.version ?? 0), (y) => {
+          const objective = yText(y.info.prospectus_objective);
+          const strategy = yText(y.info.investment_strategy);
+          const title = el.querySelector('.sv-panel-title');
+          if (!f.objective && objective) el.querySelector('.sv-desc, .note, .sv-note')?.replaceWith(h('p', { class: 'sv-desc' }, objective));
+          if (strategy && strategy !== objective) title?.parentElement?.insertBefore(h('div', {}, h('h4', { class: 'fd-sub' }, 'How it invests'), h('p', { class: 'sv-desc' }, strategy)), el.querySelector('.sv-source'));
+        });
+      }),
       wideSlot(
         fundSlot(ctx, 'top holdings', (f) => {
           if (!f.holdings.length) return panel('Top holdings', YAHOO, f.fetched, note('No holdings in the data for this fund.'));
@@ -358,7 +415,7 @@ function ychartsSlot(ctx: TabCtx) {
     // a fund's biggest holdings from YCharts (YCH; Excel add-in only)
     const top = (mf || etf) && excel ? await yHoldings(id).then((r) => r.holdings.slice(0, 10), () => []) : [];
     return panel(
-      'YCharts',
+      'More figures',
       excel ? 'YCharts (your Excel add-in)' : 'YCharts API (your key)',
       r.fetched,
       ...(have.length
@@ -408,7 +465,7 @@ function companyDes(ctx: TabCtx) {
             const d = await loadCompany(s);
             const tenK = d.filings.find((f) => f.form === '10-K');
             const fye = d.profile.fiscalYearEnd;
-            return panel(
+            const el = panel(
               'Description',
               SEC,
               d.filings?.[0]?.filed,
@@ -421,6 +478,26 @@ function companyDes(ctx: TabCtx) {
               ]),
               note('A full business description is in Item 1 of the 10-K (link above). Free data has no ready-made summary.'),
             );
+            // YCharts: the company's business description and facts SEC data doesn't have
+            return withYCharts(el, () => yProfile(s, 'stock', helper.version ?? 0), (y) => {
+              const about = yText(y.info.long_description) || yText(y.info.description);
+              if (about) {
+                el.querySelector('.sv-desc')?.after(h('p', { class: 'sv-desc' }, about));
+                [...el.querySelectorAll('.note, .sv-note, p.muted')].find((n) => /Item 1 of the 10-K/.test(n.textContent ?? ''))?.remove();
+              }
+              const site = yText(y.info.url);
+              fillRows(el, [
+                ['Sector', yText(y.info.sector)],
+                ['Industry', [yText(y.info.industry), yText(y.info.sub_industry)].filter(Boolean).join(' · ')],
+                ['Headquarters', headquarters(y.info)],
+                ['IPO date', yText(y.info.ipo_date)],
+                ['Next earnings', yText(y.info.next_earnings_release)],
+                ['Next ex-dividend', yText(y.info.next_ex_dividend_date)],
+                ['Analyst consensus', yText(y.info.consensus_recommendation_label)],
+              ]);
+              const dl = el.querySelector('dl.sv-kv');
+              if (site && /^https?:\/\//.test(site) && dl) dl.append(h('dt', {}, 'Website'), h('dd', {}, h('a', { href: site, target: '_blank', rel: 'noopener noreferrer' }, site.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))));
+            });
           })
         : panel('Description', 'this platform', null, note('Indexes, funds without SEC company filings and crypto have no company description; the price, chart and risk tabs still work.')),
       company

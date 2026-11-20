@@ -14740,3 +14740,20 @@ select.input,
 .yc-hit { text-align: left; }
 .yc-calc { margin-bottom: 8px; }
 .yc-calc-out { margin-top: 8px; }
+
+/* The expand arrow sits beside the name in the normal flow, never on top of it (owner, 2026-11-20: it was drawn
+   over the ticker when a later rule trimmed the cell's left padding). */
+.inv-table td.inv-has-chev,
+.data-table td.inv-has-chev { padding-left: 6px; white-space: nowrap; }
+.inv-table .inv-chev,
+.data-table .inv-chev { position: static; transform: none; display: inline-grid; vertical-align: middle; margin-right: 6px; }
+.inv-has-chev > .inv-name { display: inline-flex; vertical-align: middle; white-space: normal; }
+
+/* Home: the Actions button takes its own place in the greeting's flow at every width, never on top of the price chips
+   (owner, 2026-11-20: it covered the EURO chip). */
+.home-hero > .fn-bar {
+  position: static;
+  align-self: flex-start;
+  order: 5;
+  margin-top: var(--sp-2);
+}

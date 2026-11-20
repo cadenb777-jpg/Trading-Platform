@@ -19,6 +19,7 @@ import { formatPrice, h } from '../ui/dom';
 import { gauge, rangeTrack, ring, type Tone } from '../ui/viz';
 import { fScore, fScoreWords } from './quality';
 import type { CompanyData } from '../pages/researchPage';
+import { yProfile } from '../data/ycharts';
 
 export const ABOUT_HELPER_VERSION = 81;
 
@@ -139,10 +140,18 @@ function kvList(title: string, rows: [string, string, ('up' | 'down' | '')?][]) 
 function aboutBlock(d: CompanyData) {
   const fallback = `${d.profile.name} · ${d.profile.industry || 'industry not reported'}${d.profile.exchange ? ` · ${d.profile.exchange}` : ''}.`;
   const box = h('p', { class: 'ts-about' }, fallback);
+  // YCharts' business description first (Excel add-in); Wikipedia when YCharts has none
+  let fromYCharts = false;
+  void yProfile(d.symbol, 'stock', helper.version ?? 0).then((y) => {
+    const about = y ? String(y.info.long_description ?? y.info.description ?? '').trim() : '';
+    if (!about) return;
+    fromYCharts = true;
+    box.replaceChildren(about, ' ', h('span', { class: 'muted small' }, '(YCharts)'));
+  });
   if ((helper.version ?? 0) >= ABOUT_HELPER_VERSION && d.profile.cik) {
     engineRequest<{ about: string | null; source?: string; url?: string }>('research.about', { cik: d.profile.cik }, 30000).then(
       (r) => {
-        if (r.about) box.replaceChildren(r.about, ' ', h('a', { href: r.url, target: '_blank', rel: 'noopener noreferrer', class: 'muted small' }, `(${r.source})`));
+        if (r.about && !fromYCharts) box.replaceChildren(r.about, ' ', h('a', { href: r.url, target: '_blank', rel: 'noopener noreferrer', class: 'muted small' }, `(${r.source})`));
       },
       () => undefined,
     );
