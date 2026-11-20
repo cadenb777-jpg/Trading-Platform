@@ -12,10 +12,9 @@ import { WORLD, boardSymbols, leaders } from '../markets/monitor';
 import { createUpcomingPanel } from '../pages/calendarPage';
 import { loadDaily } from '../security/data';
 import { openSecurity } from '../security/open';
-import { SECTOR_LISTS } from '../security/related';
 import { pct } from '../ui/charts';
 import { formatPrice, h } from '../ui/dom';
-import { sunburst } from '../ui/viz';
+import { nasdaqMap } from '../markets/marketMap';
 import { curveTable, yieldCurve, type CurvePoint } from '../ui/yieldCurve';
 import type { Tile } from './desk';
 
@@ -159,23 +158,10 @@ function worldTile(body: HTMLElement) {
 }
 
 function sectorsTile(body: HTMLElement) {
-  const groups = Object.entries(SECTOR_LISTS).map(([label, syms]) => ({ label, items: syms.split(' ') }));
-  const changes = new Map<string, number>();
-  const burst = sunburst({ groups, title: 'Nasdaq-100 by sector', centre: 'Nasdaq-100', format: (v) => pct(v, 2), onItem: (s) => void openSecurity(s), size: 300, hideTitle: true });
-  body.replaceChildren(burst.el);
-  let frame = 0;
-  const stops = groups.flatMap((g) =>
-    g.items.map((sym) =>
-      subscribeQuote({ provider: 'schwab', symbol: sym }, (q) => {
-        if (q.last != null && q.prevClose) changes.set(sym, q.last / q.prevClose - 1);
-        if (!frame) frame = requestAnimationFrame(() => ((frame = 0), burst.update((s) => changes.get(s))));
-      }),
-    ),
-  );
-  return () => {
-    stops.forEach((s) => s());
-    cancelAnimationFrame(frame);
-  };
+  const map = nasdaqMap({ height: 300 });
+  body.replaceChildren(map.el);
+  map.start();
+  return () => map.stop();
 }
 
 function moversTile(body: HTMLElement) {

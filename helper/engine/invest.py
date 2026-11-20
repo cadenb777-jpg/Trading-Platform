@@ -222,6 +222,40 @@ async def board(ctx, msg):
     return {'rows': rows, 'asOf': time.time()}
 
 
+def parse_caps(data):
+    """{symbol: market cap} from a Schwab instruments reply with the fundamental projection (pure, tested). Only the
+    sizes relative to each other are used (the heat map's block areas), so the unit Schwab uses doesn't matter."""
+    out = {}
+    for item in (data or {}).get('instruments') or []:
+        f = item.get('fundamental') or {}
+        sym = str(item.get('symbol') or f.get('symbol') or '').upper()
+        cap = _num(f.get('marketCap'))
+        if sym and cap and cap > 0:
+            out[sym] = cap
+    return out
+
+
+@handler('invest.caps')
+async def caps(ctx, msg):
+    """Market caps for up to 150 symbols (Schwab instruments, fundamental projection), cached a day."""
+    symbols = sorted({str(s).upper().strip() for s in msg.get('symbols') or [] if SYMBOL.match(str(s).upper().strip())})[:150]
+    if not symbols:
+        raise EngineError('No symbols')
+    client = ctx.schwab
+
+    async def load():
+        out = {}
+        projection = datahub.raw(client).Instrument.Projection.FUNDAMENTAL
+        for i in range(0, len(symbols), 50):
+            response = await client.get_instruments(symbols[i:i + 50], projection)
+            _login_check(response)
+            if response.status_code != 200:
+                raise EngineError(f'Schwab returned {response.status_code}')
+            out.update(parse_caps(response.json()))
+        return {'caps': out, 'asOf': time.time()}
+    return await ctx.cached(('caps', tuple(symbols)), 86400, load, persist=True, stale_ok=True)
+
+
 @handler('invest.history')
 async def history(ctx, msg):
     """About a year of daily closes for one symbol (for the detail chart)."""

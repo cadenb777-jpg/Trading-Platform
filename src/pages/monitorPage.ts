@@ -14,12 +14,11 @@ import { engineRequest, HELPER_NOT_RUNNING, helper, loadNews, type NewsItem } fr
 import { subscribeQuote } from '../data/quotes';
 import { rememberReply, savedReply, savedThenFresh } from '../data/saved';
 import { EXCHANGES, WORLD, boardSymbols, sessionState } from '../markets/monitor';
-import { SECTOR_LISTS } from '../security/related';
 import { openSecurity } from '../security/open';
 import type { BoardRow } from '../invest/shared';
 import type { FedOdds } from '../edge/fedOdds';
 import { formatPrice, h } from '../ui/dom';
-import { sunburst } from '../ui/viz';
+import { nasdaqMap } from '../markets/marketMap';
 import { bp, pc, sgn, termPanel, termTable, toneOf, type TermPanel } from '../term/kit';
 import { marketRead, spread, type CurvePoint, type FutRow } from '../term/read';
 import { alignedReturns, corrMatrix, type Closes } from '../term/corr';
@@ -99,7 +98,7 @@ export function createMonitorPage() {
     view = v;
     grid.dataset.view = v;
     drawTabs();
-    if (v === 'equities') requestAnimationFrame(() => burst.update((s) => changes.get(s)));
+    if (v === 'equities') requestAnimationFrame(() => burst.repaint());
     if (futRows.length) drawFut();
   };
   drawTabs();
@@ -208,25 +207,10 @@ export function createMonitorPage() {
     );
   };
 
-  // ---------- HEAT: Nasdaq-100 sunburst (Equities tab) ----------
-  const groups = Object.entries(SECTOR_LISTS).map(([label, syms]) => ({ label, items: syms.split(' ') }));
-  const changes = new Map<string, number>();
-  const burst = sunburst({ groups, title: 'Today by stock and sector', centre: 'Nasdaq-100', format: (v) => sgn(v * 100, 2) + '%', onItem: (s) => void openSecurity(s), caption: 'Inner ring: sectors. Outer ring: each stock (equal weight).', size: 300, hideTitle: true });
+  // ---------- HEAT: Nasdaq-100 market map (Equities tab) ----------
+  // only paints while on screen (the Equities tab); it catches up when shown
+  const burst = nasdaqMap({ title: 'Today by stock and sector', height: 340, visible: () => !!heat.el.offsetParent, onLive: (n) => heat.source(`live · ${n} priced`) });
   heat.body.append(burst.el);
-  let heatUnsubs: (() => void)[] = [];
-  let heatFrame = 0;
-  const listenHeat = () => {
-    if (heatUnsubs.length) return;
-    heatUnsubs = groups.flatMap((g) =>
-      g.items.map((sym) =>
-        subscribeQuote({ provider: 'schwab', symbol: sym }, (q) => {
-          if (q.last != null && q.prevClose) changes.set(sym, q.last / q.prevClose - 1);
-          // only while the heat map is on screen (the Equities tab); it catches up when shown
-          if (!heatFrame && heat.el.offsetParent) heatFrame = requestAnimationFrame(() => ((heatFrame = 0), burst.update((s) => changes.get(s)), heat.source(`live · ${changes.size} priced`)));
-        }),
-      ),
-    );
-  };
 
   // ---------- FUT: futures across assets ----------
   let futRows: Fut[] = [];
@@ -462,7 +446,7 @@ export function createMonitorPage() {
       document.addEventListener('keydown', onKey);
       void Promise.allSettled([loadBoard(), loadFutures(), loadCurve(), loadFed(), loadCorr(), loadMovers(), loadTop()]).then(clearSkel);
       listenQuotes();
-      listenHeat();
+      burst.start();
       timers = [
         window.setInterval(drawClocks, 30_000),
         window.setInterval(() => void loadBoard(), 60_000),
@@ -477,9 +461,9 @@ export function createMonitorPage() {
       document.removeEventListener('keydown', onKey);
       timers.forEach(clearInterval);
       timers = [];
-      [...quoteUnsubs, ...heatUnsubs].forEach((u) => u());
+      quoteUnsubs.forEach((u) => u());
+      burst.stop();
       quoteUnsubs = [];
-      heatUnsubs = [];
     },
   };
 }
