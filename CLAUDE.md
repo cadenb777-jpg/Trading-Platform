@@ -718,6 +718,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   FRED SAHMREALTIME (published real-time Sahm rule) and USREC via macro.series raw; a signal = first month >= 0.50 after
   6+ months below (QUIET_MONTHS; 12 hid the Aug 1981 recession), matched to an NBER start within 6 months; the record
   says hits, recessions missed and false alarms (Nov 1976, Jul 2024). Neutral track: low is good.
+- Macro → Growth this quarter + Financial conditions (no helper change; src/macro/conditions.ts pure + conditionsView.ts,
+  classes cond-*, under the recession check): FRED GDPNOW (latest estimate per quarter; running when newer than the
+  newest A191RL1Q225SBEA quarter; record = median |nowcast - today's official| over the quarters with both) and NFCI /
+  ANFCI (zero = the index's 1971 average, below = looser; share of weeks looser/tighter over the weeks loaded, which
+  start in 2006 because macro.fred does; 13-week change by position). A failing comparison series never hides the
+  reading; both panels and the recession check sit in macroPage's fredSlot, rebuilt on every load, with Retry.
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per

@@ -3,6 +3,7 @@
  * through the helper's existing raw request (macro.series {raw}); no helper change. Maths and words in sahm.ts.
  */
 import { engineRequest } from '../data/schwab';
+import { asOfStamp } from '../ui/dataHealth';
 import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { openFredWindow } from '../ui/fredWindow';
@@ -15,16 +16,18 @@ const STATE_LABEL = { triggered: 'Triggered', watch: 'Watch', calm: 'Calm' } as 
 
 export function sahmPanel(): HTMLElement {
   const body = h('div', {}, h('p', { class: 'muted small' }, 'Loading the Sahm rule and recession dates from FRED…'));
+  const stampSlot = h('span', {});
   const section = h(
     'section',
     { class: 'panel sahm-panel' },
-    h('div', { class: 'panel-head' }, h('h3', {}, 'Recession check'), h('span', { class: 'muted small' }, 'The Sahm rule: has unemployment risen enough to say a recession has begun?')),
+    h('div', { class: 'panel-head' }, h('h3', {}, 'Recession check'), h('span', { class: 'muted small' }, 'The Sahm rule: has unemployment risen enough to say a recession has begun?'), h('span', { class: 'spacer' }), stampSlot),
     body,
   );
   // the recession dates only feed the record: if they fail, the reading still shows
   const dates = engineRequest<Raw>('macro.series', { series: 'USREC', raw: true, limit: 2000 }, 45_000).catch(() => null);
   Promise.all([engineRequest<Raw>('macro.series', { series: 'SAHMREALTIME', raw: true, limit: 2000 }, 45_000), dates]).then(
     ([s, u]) => {
+      stampSlot.replaceChildren(asOfStamp('fred', { reply: s, source: 'FRED' }).el);
       const sahm = s.data.filter((p) => Number.isFinite(p.value));
       const usrec = (u?.data ?? []).filter((p) => Number.isFinite(p.value));
       if (!sahm.length) {
@@ -97,7 +100,15 @@ export function sahmPanel(): HTMLElement {
         ),
       );
     },
-    (e: unknown) => body.replaceChildren(h('p', { class: 'muted small' }, `The Sahm rule couldn’t be loaded from FRED right now${e instanceof Error && e.message ? ` (${e.message})` : ''}.`)),
+    (e: unknown) =>
+      body.replaceChildren(
+        h(
+          'p',
+          { class: 'muted small' },
+          `The Sahm rule couldn’t be loaded from FRED right now${e instanceof Error && e.message ? ` (${e.message})` : ''}. `,
+          h('button', { class: 'btn small', type: 'button', onclick: () => section.replaceWith(sahmPanel()) }, 'Retry'),
+        ),
+      ),
   );
   return section;
 }

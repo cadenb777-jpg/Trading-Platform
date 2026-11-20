@@ -239,4 +239,13 @@ whenever the owner repeats or adds one.
   last year's share count from the newest filing (already split-restated), so a whole-multiple split filter wrongly
   dropped ~590 real issuers; it now applies only when the two years come from different filings, and only to the usual
   split ratios within 3% (an 8.3x de-SPAC jump is issuance). R&D prefers the line without acquired in-process R&D.
-
+- 2026-11-19 · #62 Growth this quarter + Financial conditions on Macro (no helper change, stacked on #61): the Atlanta
+  Fed's GDPNow (3.2% for Q4 2026; median miss 1.2 points against today's official figures over 61 quarters) and the
+  Chicago Fed's NFCI (-0.48 in the week to Nov 13, 2026: looser than the 1971 average, yet 42% of weeks were looser, so
+  within its usual range; ANFCI -0.50), from FRED via macro.series raw · proposed · backlog A36-A37. Lessons: "below the
+  average" and "unusual" are different claims: say both (zero vs the share of weeks); a model's record against revised
+  official figures includes revisions it couldn't know, so say so and give the median miss, not a hit rate; the
+  comparison series failing must not hide the reading itself. Review: macro.series raw reads FRED from 2006 (macro.fred START),
+  so "share of weeks" is since 2006 and must say so; panels built once in skeleton() never refreshed (now rebuilt on
+  Refresh, with Retry; the 30-minute timer leaves them alone so nothing jumps); ties count as neither looser nor tighter;
+  one rounding rule (rounded()) for figure, sign, side and badge, so -0.005 is -0.01 everywhere.

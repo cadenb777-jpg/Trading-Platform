@@ -13,6 +13,7 @@ import { infoTip } from '../ui/glossary';
 import { fedOddsPanel } from '../edge/fedOdds';
 import { netLiquidityPanel } from '../edge/netLiquidity';
 import { sahmPanel } from '../macro/sahmView';
+import { rightNowPanels } from '../macro/conditionsView';
 import { percentileNow, regime, sparkPoints, valueAgo, type Point, type RegimeInput } from '../macro/monitor';
 import { createWorldTab } from './macroWorld';
 
@@ -135,6 +136,7 @@ export function createMacroPage() {
   let catalog: CatalogEntry[] = [];
   const curvePanel = h('section', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Treasury yield curve')), h('div', { class: 'skeleton', style: 'height:260px' }));
   const readPanel = h('section', { class: 'panel mm-read' }, h('div', { class: 'skeleton', style: 'height:150px' }));
+  const fredSlot = h('div', { class: 'mm-fred' });
   // sized like the finished board, so nothing below jumps when it fills in
   const boardPanel = h('section', { class: 'panel mm-board-panel' }, h('div', { class: 'skeleton', style: 'height:300px' }));
   function renderBoard() {
@@ -166,7 +168,7 @@ export function createMacroPage() {
   const frame = pageFrame('Macro', 'The economy the way macro desks read it: the regime, the Fed, liquidity, the curve and every key series. From FRED and the US Treasury.', [
     stamp,
     ai.button,
-    h('button', { class: 'btn', title: 'Load fresh data now', onclick: () => (clearEngineCache('macro.'), load()) }, 'Refresh'),
+    h('button', { class: 'btn', title: 'Load fresh data now', onclick: () => (clearEngineCache('macro.'), load(true)) }, 'Refresh'),
   ]);
 
   // Tabs: the US dashboard (FRED) and World (macroWorld.ts). The choice is remembered in this browser.
@@ -328,8 +330,8 @@ export function createMacroPage() {
     frame.body.replaceChildren(
       ai.panel,
       readPanel,
-      // the Sahm rule, real time, with its record against NBER recession dates
-      sahmPanel(),
+      // the recession check, this quarter's growth and financial conditions: rebuilt on every load (Refresh, timer)
+      fredSlot,
       boardPanel,
       h('div', { class: 'xe-grid' }, fedOddsPanel(), netLiquidityPanel()),
       curvePanel,
@@ -368,7 +370,8 @@ export function createMacroPage() {
   }
 
   let loading = false;
-  async function load() {
+  /** rebuild: the owner pressed Refresh (the 30-minute timer leaves the FRED panels as they are, so nothing jumps). */
+  async function load(rebuild = false) {
     if (loading) return;
     loading = true;
     try {
@@ -377,6 +380,7 @@ export function createMacroPage() {
         catalog = (await engineRequest<{ series: CatalogEntry[] }>('macro.catalog', {}, 15000)).series;
         skeleton();
       }
+      if (rebuild || !fredSlot.childElementCount) fredSlot.replaceChildren(sahmPanel(), rightNowPanels());
       note.textContent = '';
       const failures: string[] = [];
       await Promise.all([
@@ -403,7 +407,7 @@ export function createMacroPage() {
     start() {
       setTab(tab);
       // Economic data changes at most daily; check again every 30 minutes while the page is open.
-      timer ??= setInterval(load, 30 * 60 * 1000);
+      timer ??= setInterval(() => load(), 30 * 60 * 1000);
     },
     stop() {
       clearInterval(timer);
