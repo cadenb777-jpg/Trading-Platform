@@ -505,6 +505,12 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   Market map (v96): Monitor HEAT and the Desk sectors tile are src/markets/marketMap.ts, a squarified treemap
   (src/ui/viz.ts squarify/treemap) sized by invest.caps (Schwab instruments fundamental marketCap, cached a day; only
   relative sizes are used) and coloured by live quotes, deepest shade at +/-3%. Equal sizes when caps are missing.
+  Research search (v100): one search box, src/ui/instrumentSearch.ts (name or ticker, kinds stock/etf/mutual_fund/index/
+  bond CUSIP/private fund; Enter opens #sec/SYM, #invest/bonds/lookup/<CUSIP>, #invest/alts/fund/<id> or
+  #invest/alts/search/<words>), used by Security -> Search (#find, src/pages/findPage.ts: tabs + links to existing pages)
+  and the Investments page. invest.search sends Schwab's name search in capitals, ranks (search_kind, rank_results) and
+  labels kinds; the command bar searches names with spaces too.
+  Desk (src/pages/deskPage.ts): drag title bar to move, right/bottom/corner grips resize (snapSpan, snapRows), dense grid.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).
   Data hub (v44, helper/engine/datahub.py; audit in docs/research/data-aggregation-audit.md): every outside call goes
   through `datahub.get(ctx.http, '<source>', url, params=...)` or `datahub.call('<source>', fn, key=...)`, never a bare
