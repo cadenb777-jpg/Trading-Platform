@@ -151,7 +151,8 @@ export function createTradePage() {
   /** Redraws the plan, and the chart's plan lines when the levels changed. */
   function drawPlan() {
     plan.draw();
-    planPanel.hidden = plan.el.hidden || asset === 'futures';
+    const hidePlan = plan.el.hidden || asset === 'futures';
+    if (planPanel.hidden !== hidePlan) planPanel.hidden = hidePlan; // written only on change: quiet on every tick
     const lv = plan.levels();
     const key = lv ? `${lv.symbol}|${lv.entry}|${lv.stop}|${lv.target}` : '';
     if (key !== planKey) {

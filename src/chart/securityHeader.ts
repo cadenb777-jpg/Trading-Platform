@@ -4,6 +4,7 @@
  * previous close, volume and volume against normal, dollar value, distance from VWAP and the session clock.
  * Built once; update() only changes text in place, so live ticks cost almost nothing.
  */
+import { steadyTone, type Tone } from '../ui/steadyTone';
 import { h } from '../ui/dom';
 import { chartTimeZone, zoneTag, zonedClock } from './clock';
 import { formatCompact, formatPrice, sessionClock, type DaySummary } from './summary';
@@ -80,8 +81,9 @@ export function createSecurityHeader() {
     if (/^[A-Z][A-Z.]{0,5}$/.test(input.symbol)) sym.setAttribute('data-ticker', input.symbol);
     else sym.removeAttribute('data-ticker');
     el.classList.toggle('cf-empty', !s);
-    const dir = !s || s.change === null ? '' : s.change >= 0 ? 'up' : 'down';
-    el.dataset.dir = dir;
+    // the day's direction with a steady colour (no ↑↓ flicker while the price sits near unchanged)
+    const dir = !s || s.change === null || s.changePct == null ? '' : steadyTone(s.changePct, (el.dataset.dir ?? '') as Tone);
+    if (el.dataset.dir !== dir) el.dataset.dir = dir;
     set(arrow, dir === 'up' ? '↑' : dir === 'down' ? '↓' : '');
     set(last, p(s?.last));
     set(chg, s && s.change !== null ? `${s.change >= 0 ? '+' : '−'}${px(Math.abs(s.change))}  ${s.changePct! >= 0 ? '+' : '−'}${Math.abs(s.changePct!).toFixed(2)}%` : '');
@@ -100,20 +102,24 @@ export function createSecurityHeader() {
       const dist = s && ref ? ((s.last - ref) / ref) * 100 : null;
       items[key].dataset.none = String(dist === null);
       set(values[key], dist === null ? '—' : `${dist >= 0 ? '+' : '−'}${Math.abs(dist).toFixed(2)}%`);
-      values[key].dataset.dir = dist === null ? '' : dist >= 0 ? 'up' : 'down';
+      const d = dist === null ? '' : steadyTone(dist, (values[key].dataset.dir ?? '') as Tone);
+      if (values[key].dataset.dir !== d) values[key].dataset.dir = d;
     };
     distance('vwap', s?.vwap);
     distance('pre', s?.preVwap);
     const clock = sessionClock(Date.now() / 1000, input.market);
-    items.clock.hidden = clock === null;
     set(values.clock, clock ?? '');
-    values.clock.dataset.open = String(!!clock?.startsWith('Closes'));
+    const open = String(!!clock?.startsWith('Closes'));
+    if (values.clock.dataset.open !== open) values.clock.dataset.open = open;
+    // each item's visibility is worked out once and written only when it changes (writing it twice per repaint, or on
+    // every tick, could flash on a slow frame)
+    const show = (el: HTMLElement, hidden: boolean) => el.hidden !== hidden && (el.hidden = hidden);
+    show(items.clock, clock === null || (!!input.fields && !input.fields.includes('clock')));
     for (const f of FIELDS) {
       if (f.key === 'clock') continue;
       // hidden: not asked for, or no VWAP to show (bars above 1 hour; no pre-market)
-      items[f.key].hidden = (!!input.fields && !input.fields.includes(f.key)) || ((f.key === 'vwap' || f.key === 'pre') && items[f.key].dataset.none === 'true');
+      show(items[f.key], (!!input.fields && !input.fields.includes(f.key)) || ((f.key === 'vwap' || f.key === 'pre') && items[f.key].dataset.none === 'true'));
     }
-    if (input.fields && !input.fields.includes('clock')) items.clock.hidden = true;
   }
 
   // The session clock moves on its own: repaint every 30 s while the header is on screen.
