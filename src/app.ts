@@ -123,6 +123,7 @@ const LOADERS: Record<PageRoute, () => Page | Promise<Page>> = {
   flow: async () => (await import('./pages/flowPage')).createFlowPage(),
   // Chart | Multi | Scripts are modes of one page (#chart, #chart/multi, #chart/scripts; #multi and #scripts redirect)
   chart: async () => (await import('./pages/chartWorkspace')).createChartWorkspace(getChartPage(), openChart, openResearch),
+  find: async () => (await import('./pages/findPage')).createFindPage(),
   research: async () => (await import('./pages/researchPage')).createResearchPage(),
   setups: async () => (await import('./pages/setupsPage')).createSetupsPage(openChart),
   screener: async () => (await import('./pages/screenerPage')).createScreenerPage(),

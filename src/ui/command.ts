@@ -959,7 +959,8 @@ export function openPalette(opts: { scope?: { id: string; label: string } | null
     clearTimeout(searchTimer);
     const mine = ++searchSeq; // first, so a reply for older text is dropped even when no new search starts
     const q = input.value.trim();
-    if (q.length < 2 || q.includes(' ') || !helper.isConnected) return;
+    // names may have several words ("bank of america"); "AAPL GP" (ticker + code) just finds nothing extra
+    if (q.length < 2 || !helper.isConnected) return;
     searchTimer = setTimeout(() => {
       engineRequest<{ results: { symbol: string; name: string }[] }>('invest.search', { query: q }, 15000).then(
         (r) => {
