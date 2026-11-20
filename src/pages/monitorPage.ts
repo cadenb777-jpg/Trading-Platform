@@ -128,7 +128,7 @@ export function createMonitorPage() {
     rowTitle: ([s, n]) => `${n} (${s}): open it`,
     cols: [
       { label: 'Market', left: true, text: ([, n]) => n },
-      { label: 'Last', text: ([s]) => (board.get(s)?.price != null ? formatPrice(board.get(s)!.price!) : '—'), value: ([s]) => board.get(s)?.price, minMove: 0.0002 },
+      { label: 'Last', text: ([s]) => (board.get(s)?.price != null ? formatPrice(board.get(s)!.price!) : '—'), value: ([s]) => board.get(s)?.price, minMove: 0.0005 },
       { label: '%Chg', text: ([s]) => pc(board.get(s)?.change), tone: ([s]) => toneOf(board.get(s)?.change) },
       { label: '1M%', text: ([s]) => pc(board.get(s)?.m1, 1), tone: ([s]) => toneOf(board.get(s)?.m1) },
       { label: 'YTD%', text: ([s]) => pc(board.get(s)?.ytd, 1), tone: ([s]) => toneOf(board.get(s)?.ytd) },
@@ -151,16 +151,18 @@ export function createMonitorPage() {
     open: ([s]) => void openSecurity(s),
     cols: [
       { label: 'Sector', left: true, text: ([, n]) => n },
-      { label: '%1D', text: ([s]) => pc(board.get(s)?.change), tone: ([s]) => toneOf(board.get(s)?.change), value: ([s]) => board.get(s)?.price, minMove: 0.0002 },
+      { label: '%1D', text: ([s]) => pc(board.get(s)?.change), tone: ([s]) => toneOf(board.get(s)?.change), value: ([s]) => board.get(s)?.price, minMove: 0.0005 },
       { label: 'vs SPX', text: ([s]) => pc(rel(s)), tone: ([s]) => toneOf(rel(s)) },
       { label: '%1M', text: ([s]) => pc(board.get(s)?.m1, 1), tone: ([s]) => toneOf(board.get(s)?.m1) },
       { label: '3M vs SPX', text: ([s]) => pc(rel3(s), 1), tone: ([s]) => toneOf(rel3(s)), title: '3-month return relative to the S&P 500' },
     ],
   });
   sec.body.append(secTable.el);
-  const drawSec = () => {
-    const rows = [...SECTORS].sort((a, b) => (rel(b[0]) ?? -9) - (rel(a[0]) ?? -9));
-    secTable.set([{ title: '', rows }]);
+  // ranked when the board refreshes (every minute), not on every live tick: rows that jump around read as blinking
+  let secOrder = [...SECTORS];
+  const drawSec = (rerank = false) => {
+    if (rerank) secOrder = [...SECTORS].sort((a, b) => (rel(b[0]) ?? -9) - (rel(a[0]) ?? -9));
+    secTable.set([{ title: '', rows: secOrder }]);
   };
 
   async function loadBoard() {
@@ -169,7 +171,7 @@ export function createMonitorPage() {
       await savedThenFresh<{ rows: BoardRow[]; asOf?: number }>('invest.board', { symbols }, 90000, ({ rows, asOf }, _at, old) => {
         for (const r of rows) board.set(r.symbol, { ...board.get(r.symbol), ...r });
         drawWei();
-        drawSec();
+        drawSec(true);
         wei.source(`Schwab · ${clock(asOf ?? Date.now() / 1000)}`);
         sec.source(`ranked vs S&P · ${clock(asOf ?? Date.now() / 1000)}`);
         wei.note('');
@@ -234,7 +236,7 @@ export function createMonitorPage() {
     rowTitle: (r) => `${r.full ?? r.name} (${r.symbol})${r.positioning?.date ? ` · CFTC ${r.positioning.date}` : ''}`,
     cols: [
       { label: 'Market', left: true, text: (r) => r.name },
-      { label: 'Last', text: (r) => (r.price != null ? formatPrice(r.price) : '—'), value: (r) => r.price, minMove: 0.0002 },
+      { label: 'Last', text: (r) => (r.price != null ? formatPrice(r.price) : '—'), value: (r) => r.price, minMove: 0.0005 },
       { label: '%Chg', text: (r) => pc(r.change), tone: (r) => toneOf(r.change) },
       { label: 'σ', text: (r) => sgn(r.sigma), tone: (r) => (r.sigma != null && Math.abs(r.sigma) >= 2 ? toneOf(r.sigma) : ''), title: 'Today’s move in daily standard deviations (2 or more is unusual)' },
       { label: '1W%', text: (r) => pc(r.w1, 1), tone: (r) => toneOf(r.w1) },

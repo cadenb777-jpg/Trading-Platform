@@ -47,7 +47,7 @@
   --faint: #67717c;
   --accent-2: var(--term-amber);
   --accent-2-text: var(--term-amber);
-  --glass-panel: color-mix(in srgb, #0d1014 70%, transparent);
+  --glass-panel: color-mix(in srgb, #0d1014 88%, transparent);
   --glass-band: color-mix(in srgb, #ffffff 4%, transparent);
   --glass-edge: inset 0 1px 0 #ffffff0d, 0 0 0 1px #ffffff10, 0 12px 32px #00000066;
   --bb-panel: var(--glass-panel);
@@ -77,9 +77,9 @@
 
 /* glass on every panel: frosted, a faint top highlight and depth; the title band stays crisp */
 :root[data-look='terminal'] :is(.panel, .sv-panel, .fn-tile, .tp, .stat-cards .stat-card, .mm-tile, .acct-hero, .mon-clock) {
+  /* no live blur on page panels: re-blurring behind every panel flickered on some graphics chips (only floating
+     windows keep it); the panel colour is a little more solid instead, so the glass reads the same */
   background: var(--bb-panel);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
-  backdrop-filter: blur(22px) saturate(160%);
   box-shadow: var(--glass-edge);
   border-color: transparent;
 }
@@ -212,9 +212,7 @@
   text-align: right;
   font-weight: 500;
   color: var(--term-label, var(--accent-text));
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
@@ -273,8 +271,6 @@
   border-radius: var(--bb-radius, 7px);
   background: var(--bb-panel, var(--surface));
   box-shadow: var(--glass-edge, none);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
-  backdrop-filter: blur(22px) saturate(160%);
   flex: none;
 }
 .term-fn {

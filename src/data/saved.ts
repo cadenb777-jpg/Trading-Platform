@@ -7,6 +7,7 @@
  * and warms these requests when it starts (schwab_helper.WARM_UP).
  */
 import { engineRequest, stableKey } from './schwab';
+import { quietFlashes } from '../term/flash';
 
 export const SAVED_TYPES = new Set(['invest.board', 'futures.board', 'macro.curve', 'macro.fedodds', 'invest.movers', 'invest.history', 'bonds.market']);
 const PREFIX = 'tp-saved:';
@@ -80,6 +81,7 @@ export async function savedThenFresh<T>(type: string, params: Record<string, unk
   }
   const data = await engineRequest<T>(type, params, timeoutMs);
   rememberReply(type, params, data);
+  if (s) quietFlashes(); // the saved copy turning into the fresh one is not a price change worth flashing
   draw(data, Date.now(), false);
   return data;
 }
