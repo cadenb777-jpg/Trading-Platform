@@ -119,7 +119,10 @@ export class LegendBox {
     const bars = this.view.allBars();
     const range = this.view.visibleLogicalRange();
     const s = range ? visibleStats(bars as never, range.from, range.to) : null;
-    this.stats.hidden = !s;
+    // A live bar can leave the visible range empty for a frame: keep the last numbers rather than hide and re-show
+    // the box (that blinked). It hides only when the chart has no bars at all.
+    const hide = !s && !bars.length;
+    if (this.stats.hidden !== hide && (s || hide)) this.stats.hidden = hide;
     if (s) {
       const daily = TIMEFRAME_SECONDS[this.view.currentTimeframe] >= 86400;
       const when = (t: number) => (daily ? dailyDate.format(t * 1000) : intradayDate.format(t * 1000, chartTimeZone(this.view.market)));

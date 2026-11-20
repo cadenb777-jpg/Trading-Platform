@@ -455,9 +455,12 @@ export function createChartPage() {
     const prev = chart.barAt(index - 1);
     if (ohlcValues) {
       // The bar under the crosshair, or the latest bar at rest: always shown, so the box never grows or shrinks.
-      ohlcValues.hidden = !bar;
+      // a bar missing for a frame (a live tick, a scroll) keeps the last numbers; it hides only on an empty chart
+      const hide = !bar && chart.barCount === 0;
+      if (ohlcValues.hidden !== hide && (bar || hide)) ohlcValues.hidden = hide;
       if (bar) {
-        ohlcValues.style.setProperty('--c', bar.close >= bar.open ? THEME.up : THEME.down);
+        const c = bar.close >= bar.open ? THEME.up : THEME.down;
+        if (ohlcValues.style.getPropertyValue('--c') !== c) ohlcValues.style.setProperty('--c', c);
         const change = prev ? ((bar.close - prev.close) / prev.close) * 100 : 0;
         [bar.open, bar.high, bar.low, bar.close].forEach((v, i) => setText(ohlcNums[i], formatNumber(v)));
         setText(ohlcNums[4], `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`);

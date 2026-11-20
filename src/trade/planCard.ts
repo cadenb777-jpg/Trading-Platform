@@ -70,13 +70,18 @@ export function createPlanCard(host: PlanCardHost) {
   function draw() {
     const st = planState();
     if (!st) {
-      el.hidden = true;
-      return el.replaceChildren();
+      if (!el.hidden) el.hidden = true;
+      if (el.childNodes.length) el.replaceChildren();
+      return;
     }
     const snap = host.snapshot();
     const p = tradePlan({ entry: st.entry, stop: st.stop, target: st.setup?.target, account: st.account, riskPct: st.riskPct, buyingPower: snap?.balances?.buyingPower, maxOrder: snap?.limits.maxOrder });
-    el.hidden = !p || !st.symbol;
-    if (!p) return el.replaceChildren();
+    const hide = !p || !st.symbol;
+    if (el.hidden !== hide) el.hidden = hide;
+    if (!p) {
+      if (el.childNodes.length) el.replaceChildren();
+      return;
+    }
     const shares = st.shares;
     const risk = shares * p.perShare;
     const cost = shares * p.entry;

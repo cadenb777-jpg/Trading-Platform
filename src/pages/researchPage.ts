@@ -1,3 +1,4 @@
+import { paintTone } from '../ui/steadyTone';
 import { loadBoard } from '../security/data';
 import { isFundRow } from '../security/fund';
 import { secHash } from '../security/codes';
@@ -211,7 +212,7 @@ export function createResearchPage() {
 
   function setChange(change: number | null) {
     liveChange.textContent = change == null ? '' : `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
-    liveChange.className = change == null ? '' : change >= 0 ? 'up' : 'down';
+    paintTone(liveChange, change); // steady colour; written only when it changes
   }
 
   function render() {
