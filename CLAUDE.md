@@ -701,14 +701,23 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   percentile (ratesdesk.percentile_rank); gap rounded to 0.1 point before words/sign (Asness 2003). Rates side by side
   use panelBlock.rateBars (classes rb-*), shared with Taxes and operating leverage.
 - Research → Among US companies (helper 88, FILER_RANK_HELPER_VERSION/filerRankReady; engine/filerrank.py
-  `research.filerrank {cik}`; src/research/filerRank.ts pure + filerRankView.ts, class fr-*, first in the More fold): seven
-  readings (gross profit/assets, operating margin, ROA, sales growth, asset growth, accruals, inventory vs sales growth)
+  `research.filerrank {cik}`; src/research/filerRank.ts pure + filerRankView.ts, class fr-*, first in the More fold): nine
+  readings (gross profit/assets, operating margin, ROA, sales growth, asset growth, accruals, inventory vs sales growth;
+  helper 94: share count change = ln of weighted shares vs last year (diluted, else basic; one tag both years; a
+  whole-multiple move is skipped as a split only when the two years come from different filings), shown as the % change;
+  R&D (excluding acquired IPR&D, else plain) / revenue; a reading absent from a reply says it arrives with the update
+  (ARRIVES_WITH_UPDATE in schwab.ts, one text everywhere); on helper 94+ a pre-update saved reply is asked again with
+  refresh; the reply's `frames` = [{label, url}] of the exact SEC files used (filerrank.sources))
   ranked among every filer with total assets >= $100M from SEC XBRL frames (one file per concept and calendar period,
-  cached a week as 'sec-frame'; field cached a day as 'sec-filerrank'). Fiscal year = the company's row in the CY duration
+  cached a week as 'sec-frame'; field cached a day as 'sec-filerrank-v2', helper 88's 'sec-filerrank' removed by datahub migration filerrank-v1). Fiscal year = the company's row in the CY duration
   frame (net income, else operating cash flow); balances from the quarter frame nearest that year-end, dated within 10
   days; revenue = the contract-revenue tag unless Revenues is > 2x it, growth only from that tag; a CY frame under 4,000 net-income rows is skipped for the year
   before. Percentile = ratesdesk.percentile_rank against the others. Inventory against sales (src/research/inventory.ts,
   no helper change) is the third block of Cash health: flagged > 10 points ahead of sales and >= 1% of sales.
+- Macro → Recession check (no helper change; src/macro/sahm.ts pure + sahmView.ts, class sahm-*, after Today's read):
+  FRED SAHMREALTIME (published real-time Sahm rule) and USREC via macro.series raw; a signal = first month >= 0.50 after
+  6+ months below (QUIET_MONTHS; 12 hid the Aug 1981 recession), matched to an NBER start within 6 months; the record
+  says hits, recessions missed and false alarms (Nov 1976, Jul 2024). Neutral track: low is good.
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per

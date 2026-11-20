@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT_MS = 10000;
 const REQUEST_TIMEOUT_MS = 30000;
 
 /** The newest helper version. Must match HELPER_VERSION in helper/schwab_helper.py. */
-export const LATEST_HELPER_VERSION = 93;
+export const LATEST_HELPER_VERSION = 94;
 /** The "Log in to Schwab" request (schwab_login) and the in-place re-login need this version. */
 export const SCHWAB_LOGIN_HELPER_VERSION = 47;
 /** Charts, quotes, news and the calendar work with any helper from this version on. */
@@ -119,6 +119,9 @@ export const realYieldReady = () => !helper.tooOld && (helper.version ?? 0) >= R
 /** Research → Among US companies: research.filerrank ranks a company's readings against every SEC filer (XBRL frames). */
 export const FILER_RANK_HELPER_VERSION = 88;
 export const filerRankReady = () => !helper.tooOld && (helper.version ?? 0) >= FILER_RANK_HELPER_VERSION;
+/** Among US companies adds share count change and R&D per $ of sales. */
+export const FILER_RANK_V2_HELPER_VERSION = 94;
+export const filerRankV2Ready = () => !helper.tooOld && (helper.version ?? 0) >= FILER_RANK_V2_HELPER_VERSION;
 export const healthReady = () => !helper.tooOld && (helper.version ?? 0) >= HEALTH_HELPER_VERSION;
 /** The Strategy Lab's game.* requests and the Equilibrium-Prime assistant mode (ai.chat with `mode`) need this version. */
 export const GAME_HELPER_VERSION = 44;
@@ -133,6 +136,9 @@ export const quantReady = () => !helper.tooOld && (helper.version ?? 0) >= QUANT
 export const DATAHUB_HELPER_VERSION = 44;
 /** True when the connected helper has the data hub (v44+). */
 export const datahubReady = () => !helper.tooOld && (helper.version ?? 0) >= DATAHUB_HELPER_VERSION;
+
+/** A reading an older helper doesn't send (one text for every page). */
+export const ARRIVES_WITH_UPDATE = 'Arrives with the next helper update (it installs by itself).';
 
 export const HELPER_OUTDATED =
   'Your Schwab helper is an old copy. Download the project ZIP from GitHub again, replace your helper folder, and restart the helper.';

@@ -12,6 +12,7 @@ import { asOfStamp } from '../ui/dataHealth';
 import { infoTip } from '../ui/glossary';
 import { fedOddsPanel } from '../edge/fedOdds';
 import { netLiquidityPanel } from '../edge/netLiquidity';
+import { sahmPanel } from '../macro/sahmView';
 import { percentileNow, regime, sparkPoints, valueAgo, type Point, type RegimeInput } from '../macro/monitor';
 import { createWorldTab } from './macroWorld';
 
@@ -327,6 +328,8 @@ export function createMacroPage() {
     frame.body.replaceChildren(
       ai.panel,
       readPanel,
+      // the Sahm rule, real time, with its record against NBER recession dates
+      sahmPanel(),
       boardPanel,
       h('div', { class: 'xe-grid' }, fedOddsPanel(), netLiquidityPanel()),
       curvePanel,

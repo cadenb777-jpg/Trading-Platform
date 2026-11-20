@@ -3,7 +3,7 @@
  * maturity's distance from the curve against its own usual range, forward rates, inflation breakevens and the
  * yield-curve recession odds. Every block names its source and date. Readings and maths: curveFit.ts / engine/curvefit.py.
  */
-import { engineRequest, helper } from '../data/schwab';
+import { ARRIVES_WITH_UPDATE, engineRequest, helper } from '../data/schwab';
 import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { openFredWindow } from '../ui/fredWindow';
@@ -242,7 +242,7 @@ export function createCurveView(): { el: HTMLElement; load: (force?: boolean) =>
   function load(force = false) {
     if (loading) return;
     if (!curveReady()) {
-      body.replaceChildren(h('p', { class: 'muted small' }, helper.isConnected ? 'Arrives with the next helper update (it installs by itself).' : 'Start the helper to see the fitted curve.'));
+      body.replaceChildren(h('p', { class: 'muted small' }, helper.isConnected ? ARRIVES_WITH_UPDATE : 'Start the helper to see the fitted curve.'));
       // load as soon as a (new enough) helper says hello, while the tab is on screen
       waiting ??= helper.onStatusChange(() => {
         if (!curveReady()) return;

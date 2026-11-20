@@ -221,9 +221,22 @@ whenever the owner repeats or adds one.
 - 2026-11-18 · #58 Among US companies + inventory against sales (helper 88): seven Research readings ranked against
   every US SEC filer with $100M+ of assets from the SEC's free XBRL frames (Coca-Cola's gross profit per dollar of assets
   $0.28 = 54.7th percentile of 1,474; Microsoft's operating margin 45.6% higher than 96% of 2,539), and inventory growth
-  against sales growth on Cash health (Apple FY2026 +154.3% vs +15.1%) · proposed · backlog A31-A32. Lessons: frames
+  against sales growth on Cash health (Apple FY2026 +154.3% vs +15.1%) · approved (merged 2026-11-18) · backlog A31-A32. Lessons: frames
   calendarise fiscal years loosely (Microsoft's July-June year sits in CY2025), so balances are read from the quarter frame
   nearest each company's own year-end and must be dated within 10 days of it; growth only when both years use the same
   revenue tag; a frame still filling up (CY2026: 353 companies in November) is skipped for the year before. Also fixed on
   main: the Taxes and Against bonds gates still said helper 84/85 after #49/#50 were renumbered 85/86, so a helper 84 or
   85 was told to refresh instead of update.
+- 2026-11-19 · #61 Share count change + R&D per $ of sales ranked among US filers (helper 93) and the Sahm rule on Macro:
+  two more rows of Among US companies from SEC frames (diluted shares, else basic, 3,619 filers: Apple -2.6% after buybacks, 16th
+  percentile; R&D, 1,327 filers: Microsoft 11.5%, the middle) and Macro → Recession check from FRED SAHMREALTIME + USREC
+  (0.00 for October 2026; since 1959 it fired 11 times, 9 within 3 months of a recession's start, all 9 recessions caught,
+  false alarms Nov 1976 and Jul 2024) · proposed · backlog A33-A35. Lessons: a "12 quiet months" rule for a new Sahm
+  signal hid the Aug 1981 recession's own signal (Nov 1981, six months after the 1980 one ended): six months separates
+  episodes; a red-to-green track is wrong where low is good; the ranking field saved by helper 88 is removed by a datahub
+  migration (filerrank-v1) rather than left to show seven rows for a day; a reading an older helper doesn't send says
+  "arrives with the update" (or "saved before your update" on helper 93+), never "not tagged". Review: the SEC frames take
+  last year's share count from the newest filing (already split-restated), so a whole-multiple split filter wrongly
+  dropped ~590 real issuers; it now applies only when the two years come from different filings, and only to the usual
+  split ratios within 3% (an 8.3x de-SPAC jump is issuance). R&D prefers the line without acquired in-process R&D.
+

@@ -501,16 +501,20 @@ class Review(HubTest):
     def test_cache_migrations_back_up_then_run_once(self):
         disk = core.DiskCache(Path(tempfile.mkdtemp()) / 'c.db')
         for key in (('alpaca', 'AAPL', '1h'), ('alpaca', 'AAPL', '1h', 'split'), ('scan-30m', 'AAPL', '2026-01'),
-                    ('scan-daily-15y', 'AAPL'), ('fred', 'X')):
+                    ('scan-daily-15y', 'AAPL'), ('fred', 'X'), ('sec-filerrank', 2025), ('sec-filerrank-v2', 2025),
+                    ('sec-frame', 'Assets', 'CY2025Q4I')):
             disk.put(repr(key), 1.0, [1])
         with self.assertLogs('engine.datahub', 'INFO'):
             done = datahub.run_migrations(disk)
-        self.assertEqual(done, {'alpaca-split-only': 1})
+        self.assertEqual(done, {'alpaca-split-only': 1, 'filerrank-v1': 1})
         self.assertIsNone(disk.get(repr(('alpaca', 'AAPL', '1h'))))
-        for key in (('alpaca', 'AAPL', '1h', 'split'), ('scan-30m', 'AAPL', '2026-01'), ('scan-daily-15y', 'AAPL'), ('fred', 'X')):
+        # helper 88's seven-reading ranking field goes; the new field and the downloaded SEC frames stay
+        self.assertIsNone(disk.get(repr(('sec-filerrank', 2025))))
+        for key in (('alpaca', 'AAPL', '1h', 'split'), ('scan-30m', 'AAPL', '2026-01'), ('scan-daily-15y', 'AAPL'), ('fred', 'X'),
+                    ('sec-filerrank-v2', 2025), ('sec-frame', 'Assets', 'CY2025Q4I')):
             self.assertIsNotNone(disk.get(repr(key)), key)  # nothing else touched (the 30-minute record never deleted)
         backup = disk.db().execute('SELECT key, migration FROM cache_backup').fetchall()
-        self.assertEqual(backup, [(repr(('alpaca', 'AAPL', '1h')), 'alpaca-split-only')])
+        self.assertEqual(backup, [(repr(('alpaca', 'AAPL', '1h')), 'alpaca-split-only'), (repr(('sec-filerrank', 2025)), 'filerrank-v1')])
         disk.put(repr(('alpaca', 'MSFT', '1h')), 2.0, [2])
         self.assertEqual(datahub.run_migrations(disk), {})  # once only: new rows stay
         self.assertIsNotNone(disk.get(repr(('alpaca', 'MSFT', '1h'))))
@@ -557,7 +561,7 @@ class ThirtyMinuteMigration(unittest.TestCase):
 
     def test_alpaca_bars_rescaled_and_old_schwab_bars_survive_unchanged(self):
         done = self.migrate()
-        self.assertEqual(done, {'scan-30m-split-only': len(self.alp), 'alpaca-split-only': 1})
+        self.assertEqual(done, {'scan-30m-split-only': len(self.alp), 'alpaca-split-only': 1, 'filerrank-v1': 0})
         rows = self.rows()
         self.assertEqual(len(rows), len(self.alp) + len(self.sch))  # nothing deleted
         self.assertEqual([r for r in rows if r[0] >= self.sch[0][0]], sorted(self.sch))  # Schwab's, 700 days old too
@@ -594,7 +598,7 @@ class ThirtyMinuteMigration(unittest.TestCase):
         marks = self.disk.db().execute("SELECT key FROM cache WHERE key LIKE '(''migration''%'").fetchall()
         self.assertEqual(marks, [])
         done = self.migrate()  # the retry redoes everything in order
-        self.assertEqual(set(done), {'scan-30m-split-only', 'alpaca-split-only'})
+        self.assertEqual(set(done), {'scan-30m-split-only', 'alpaca-split-only', 'filerrank-v1'})
         self.assertAlmostEqual(self.rows()[0][4], 100.0)
 
     def test_runs_once(self):

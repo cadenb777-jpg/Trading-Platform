@@ -1,5 +1,6 @@
 /** Shared pieces of the Research overview's reading panels (Debt and dilution, Earnings quality, Cash health,
  * Balance-sheet quality). */
+import { ARRIVES_WITH_UPDATE } from '../data/schwab';
 import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { pc } from './debtDilution';
@@ -15,7 +16,7 @@ export function savedBeforeUpdate(helperReady: boolean): HTMLElement {
   return h(
     'p',
     { class: 'muted small' },
-    helperReady ? 'This page is showing data saved before your helper update. It fills in when the company’s data next refreshes (Refresh, or within 5 minutes).' : 'Arrives with the next helper update (it installs by itself).',
+    helperReady ? 'This page is showing data saved before your helper update. It fills in when the company’s data next refreshes (Refresh, or within 5 minutes).' : ARRIVES_WITH_UPDATE,
   );
 }
 

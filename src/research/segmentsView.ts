@@ -4,7 +4,7 @@
  * growth on a year ago and, where the company reports it, segment operating margin. A breakdown whose parts don't add up
  * to the reported total says so. Source and filing date shown; nothing estimated.
  */
-import { engineRequest, helper } from '../data/schwab';
+import { ARRIVES_WITH_UPDATE, engineRequest, helper } from '../data/schwab';
 import { h } from '../ui/dom';
 import { flower } from '../ui/viz';
 import { money, pct } from '../ui/charts';
@@ -122,7 +122,7 @@ export function segmentsPanel(symbol: string): HTMLElement {
     body,
   );
   if ((helper.version ?? 0) < SEGMENTS_HELPER_VERSION) {
-    body.replaceChildren(h('p', { class: 'muted small' }, 'Arrives with the next helper update (it installs by itself).'));
+    body.replaceChildren(h('p', { class: 'muted small' }, ARRIVES_WITH_UPDATE));
     return el;
   }
   engineRequest<Segments>('research.segments', { symbol }, 90000).then(
