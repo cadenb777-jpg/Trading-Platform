@@ -167,6 +167,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   operator operand, ALL/ANY) from state.indicators via suggestRules(); the chart's Backtest button fires
   `tp:backtest-chart`. Research tabs: Monte Carlo (trade bootstrap), random-walk test (shuffled daily moves, p-value),
   parameter sweep (overrides keyed `uid.inputKey`), monthly returns, deep stats. Seeded RNG so results repeat.
+  Funds (v93): ETFs and mutual funds (Schwab assetSubType ETF / assetType MUTUAL_FUND, src/security/fund.ts isFundRow) get
+  a fund Overview in the security view (tabs.ts fundDes) and hide the company-only tabs (FA, RV, HDS); the header shows net
+  assets and expense ratio. Data: helper fund.profile (engine/funds.py parse_fund, tested) from Yahoo quoteSummary fund modules
+  (crosscheck._yahoo_crumb session), kept 12 h on disk, stale_ok. Never estimated: missing fields say so.
   Dividends (v24, engine/dividends.py `dividends.portfolio`, src/portfolio/dividendsView.ts): shares-mode portfolio ->
   yields, yield on cost, income, 5y growth, 12-month calendar; forward = last regular payment x frequency (1-2x a year:
   last 12 months summed); special = > 1.5x the 4 before and the next drops back (newest: off-schedule or > 3x); ex/pay dates are estimates (pay = ex + 21 days; Yahoo has no pay dates). Statement import
