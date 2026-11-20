@@ -14655,3 +14655,15 @@ select.input,
 .update-check-result[data-tone='ok'] { color: var(--up); }
 .update-check-result[data-tone='warn'] { color: var(--warn); }
 .update-check-result[data-tone='bad'] { color: var(--down); }
+
+/* Funds (src/security/fund.ts): weight bars for holdings, asset mix, sectors and ratings */
+.fd-bar { display: inline-flex; align-items: center; gap: 8px; min-width: 140px; justify-content: flex-end; }
+.fd-bar i { display: block; flex: 1; max-width: 120px; height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, transparent)); }
+.fd-bar b { font-weight: 500; min-width: 6ch; text-align: right; font-variant-numeric: tabular-nums; }
+.fd-bars { display: grid; gap: 4px; margin: 4px 0 8px; }
+.fd-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
+.fd-row > span:first-child { color: var(--muted); }
+.fd-sub { margin: 8px 0 2px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-2-text); }
+.fd-holdings td.sym { color: var(--accent-text); font-family: var(--font-mono); }
+.fd-holdings tr.tt-open { cursor: pointer; }
+.fd-holdings tr.tt-open:hover td { background: var(--row-hover); }

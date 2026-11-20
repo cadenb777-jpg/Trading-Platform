@@ -167,6 +167,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   operator operand, ALL/ANY) from state.indicators via suggestRules(); the chart's Backtest button fires
   `tp:backtest-chart`. Research tabs: Monte Carlo (trade bootstrap), random-walk test (shuffled daily moves, p-value),
   parameter sweep (overrides keyed `uid.inputKey`), monthly returns, deep stats. Seeded RNG so results repeat.
+  Funds (v93): ETFs and mutual funds (Schwab assetSubType ETF / assetType MUTUAL_FUND, src/security/fund.ts isFundRow) get
+  a fund Overview in the security view (tabs.ts fundDes) and hide the company-only tabs (FA, RV, HDS); the header shows net
+  assets and expense ratio. Data: helper fund.profile (engine/funds.py parse_fund, tested) from Yahoo quoteSummary fund modules
+  (crosscheck._yahoo_crumb session), kept 12 h on disk, stale_ok. Never estimated: missing fields say so.
   Dividends (v24, engine/dividends.py `dividends.portfolio`, src/portfolio/dividendsView.ts): shares-mode portfolio ->
   yields, yield on cost, income, 5y growth, 12-month calendar; forward = last regular payment x frequency (1-2x a year:
   last 12 months summed); special = > 1.5x the 4 before and the next drops back (newest: off-schedule or > 3x); ex/pay dates are estimates (pay = ex + 21 days; Yahoo has no pay dates). Statement import
@@ -699,10 +703,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 - Research → Among US companies (helper 88, FILER_RANK_HELPER_VERSION/filerRankReady; engine/filerrank.py
   `research.filerrank {cik}`; src/research/filerRank.ts pure + filerRankView.ts, class fr-*, first in the More fold): nine
   readings (gross profit/assets, operating margin, ROA, sales growth, asset growth, accruals, inventory vs sales growth;
-  helper 93: share count change = ln of weighted shares vs last year (diluted, else basic; one tag both years; a
+  helper 94: share count change = ln of weighted shares vs last year (diluted, else basic; one tag both years; a
   whole-multiple move is skipped as a split only when the two years come from different filings), shown as the % change;
   R&D (excluding acquired IPR&D, else plain) / revenue; a reading absent from a reply says it arrives with the update
-  (ARRIVES_WITH_UPDATE in schwab.ts, one text everywhere); on helper 93+ a pre-update saved reply is asked again with
+  (ARRIVES_WITH_UPDATE in schwab.ts, one text everywhere); on helper 94+ a pre-update saved reply is asked again with
   refresh; the reply's `frames` = [{label, url}] of the exact SEC files used (filerrank.sources))
   ranked among every filer with total assets >= $100M from SEC XBRL frames (one file per concept and calendar period,
   cached a week as 'sec-frame'; field cached a day as 'sec-filerrank-v2', helper 88's 'sec-filerrank' removed by datahub migration filerrank-v1). Fiscal year = the company's row in the CY duration
