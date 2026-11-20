@@ -14940,3 +14940,6 @@ html.touch-input body {
 @media (max-width: 760px) { .sv-grid > .sv-slot:has(table th:nth-child(4)) { grid-column: 1 / -1; } }
 .sv-drawer .sv-grid > .sv-slot:has(table th:nth-child(4)) { grid-column: 1 / -1; }
 .sv-grid > .sv-span2 { grid-column: span 2; } @media (max-width: 760px) { .sv-grid > .sv-span2 { grid-column: 1 / -1; } } .sv-drawer .sv-grid > .sv-span2 { grid-column: 1 / -1; }
+/* an outside source's figures that stopped updating (said in words, amber) */
+.sv-stale { color: var(--label, #e0a040); margin: 0 0 6px; }
+.sv-grid > .sv-full { grid-column: 1 / -1; }
