@@ -227,25 +227,37 @@ whenever the owner repeats or adds one.
   revenue tag; a frame still filling up (CY2026: 353 companies in November) is skipped for the year before. Also fixed on
   main: the Taxes and Against bonds gates still said helper 84/85 after #49/#50 were renumbered 85/86, so a helper 84 or
   85 was told to refresh instead of update.
-- 2026-11-19 · #61 Share count change + R&D per $ of sales ranked among US filers (helper 93) and the Sahm rule on Macro:
+- 2026-11-19 · #61 Share count change + R&D per $ of sales ranked among US filers (helper 94) and the Sahm rule on Macro:
   two more rows of Among US companies from SEC frames (diluted shares, else basic, 3,619 filers: Apple -2.6% after buybacks, 16th
   percentile; R&D, 1,327 filers: Microsoft 11.5%, the middle) and Macro → Recession check from FRED SAHMREALTIME + USREC
   (0.00 for October 2026; since 1959 it fired 11 times, 9 within 3 months of a recession's start, all 9 recessions caught,
-  false alarms Nov 1976 and Jul 2024) · proposed · backlog A33-A35. Lessons: a "12 quiet months" rule for a new Sahm
+  false alarms Nov 1976 and Jul 2024) · approved (merged 2026-11-20) · backlog A33-A35. Lessons: a "12 quiet months" rule for a new Sahm
   signal hid the Aug 1981 recession's own signal (Nov 1981, six months after the 1980 one ended): six months separates
   episodes; a red-to-green track is wrong where low is good; the ranking field saved by helper 88 is removed by a datahub
   migration (filerrank-v1) rather than left to show seven rows for a day; a reading an older helper doesn't send says
-  "arrives with the update" (or "saved before your update" on helper 93+), never "not tagged". Review: the SEC frames take
+  "arrives with the update" (or "saved before your update" on helper 94+), never "not tagged". Review: the SEC frames take
   last year's share count from the newest filing (already split-restated), so a whole-multiple split filter wrongly
   dropped ~590 real issuers; it now applies only when the two years come from different filings, and only to the usual
   split ratios within 3% (an 8.3x de-SPAC jump is issuance). R&D prefers the line without acquired in-process R&D.
 - 2026-11-19 · #62 Growth this quarter + Financial conditions on Macro (no helper change, stacked on #61): the Atlanta
   Fed's GDPNow (3.2% for Q4 2026; median miss 1.2 points against today's official figures over 61 quarters) and the
   Chicago Fed's NFCI (-0.48 in the week to Nov 13, 2026: looser than the 1971 average, yet 42% of weeks were looser, so
-  within its usual range; ANFCI -0.50), from FRED via macro.series raw · proposed · backlog A36-A37. Lessons: "below the
+  within its usual range; ANFCI -0.50), from FRED via macro.series raw · approved (merged 2026-11-20) · backlog A36-A37. Lessons: "below the
   average" and "unusual" are different claims: say both (zero vs the share of weeks); a model's record against revised
   official figures includes revisions it couldn't know, so say so and give the median miss, not a hit rate; the
   comparison series failing must not hide the reading itself. Review: macro.series raw reads FRED from 2006 (macro.fred START),
   so "share of weeks" is since 2006 and must say so; panels built once in skeleton() never refreshed (now rebuilt on
   Refresh, with Retry; the 30-minute timer leaves them alone so nothing jumps); ties count as neither looser nor tighter;
   one rounding rule (rounded()) for figure, sign, side and badge, so -0.005 is -0.01 everywhere.
+- 2026-11-20 · Inflation expected + Jobs market on Macro (no helper change): the Cleveland Fed's expected inflation 1-30
+  years (3.04% over the next year and 2.66% over 30 years in November 2026, each 0.2-0.4 points above a year earlier)
+  against the market's breakevens, and the Kansas City Fed's labour market level (0.37, October 2026) and momentum
+  (0.27), from FRED via macro.series raw · proposed · backlog A38-A39. Finding: October 2026's 10-year breakeven averaged
+  0.32 points below the model's November estimate while the median gap since 2006 is 0.07 points above it; only 5% of
+  months had a lower gap (late 2008, early 2016): TIPS cheap against normal Treasuries, shown as a reading of risk and
+  liquidity premia, not a trade. Lessons: a monthly model estimate published early in its month (FRED's 'updated'
+  stamp: Nov 10) is built from data before it, so it is paired with the month before's market average, never the same
+  label; a month counts as whole only when the daily series has a reading in a later month (a stale saved copy can
+  stop mid-month); share words never print 0% or 100% for some (sharePct); negative momentum is "losing momentum",
+  not "getting worse". Review fixed: tilt and changes read from the figures as printed; ranking words follow the gap's
+  own side; a single failed breakeven is named; drawing errors fall to Retry, not a stuck "Loading".

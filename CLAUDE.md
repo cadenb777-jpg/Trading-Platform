@@ -753,6 +753,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   ANFCI (zero = the index's 1971 average, below = looser; share of weeks looser/tighter over the weeks loaded, which
   start in 2006 because macro.fred does; 13-week change by position). A failing comparison series never hides the
   reading; both panels and the recession check sit in macroPage's fredSlot, rebuilt on every load, with Retry.
+- Macro → Inflation expected + Jobs market (no helper change; src/macro/expectations.ts pure + expectationsView.ts,
+  classes exp-*, under Growth / Financial conditions): Cleveland Fed EXPINF1YR..EXPINF30YR (month with every horizon,
+  and twelve months earlier) and model vs market: each model month against the whole month BEFORE it of daily T5YIE /
+  T10YIE (the estimate is published early in its month; a month is whole once the series has a later reading), with
+  the median gap and the share of months with a lower/higher gap (sharePct: never 0%/100% for some); Kansas City Fed
+  FRBKCLMCILA level / FRBKCLMCIM momentum, four Hakkio-Willis states from the figures as printed (stateWords), two
+  range tracks over the months loaded. raw() asks for 8,000 readings so daily series since 2006 are whole.
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per
