@@ -7,8 +7,9 @@ import { subscribeQuote, quoteChange, type MarketRef } from '../data/quotes';
 import { clearEngineCache, engineRequest, helper } from '../data/schwab';
 import { createAltsView } from '../invest/altsView';
 import { createBondsView } from '../invest/bondsView';
-import { BOARDS, CRYPTO_COINS, SECTIONS, searchCatalog, type Section } from '../invest/catalog';
-import { boardInsight, boardItem, boardTable, errorBox, loadBoard, openSymbol, showSymbol, skeletonBoard, tone, type BoardRow, type InvestContext } from '../invest/shared';
+import { BOARDS, CRYPTO_COINS, PRIVATE_FUNDS, SECTIONS, type Section } from '../invest/catalog';
+import { instrumentSearch } from '../ui/instrumentSearch';
+import { boardInsight, boardItem, boardTable, errorBox, loadBoard, openSymbol, skeletonBoard, tone, type BoardRow, type InvestContext } from '../invest/shared';
 import { closeFloating, interactive, resetInteractions, type MiniItem } from '../invest/rowInteract';
 import { coinActions } from '../invest/goTo';
 import { pageFrame, pct } from '../ui/charts';
@@ -43,11 +44,10 @@ export function createInvestmentsPage(ctx: InvestContext) {
   const alts = createAltsView(ctx);
 
   // ----- Search -----
-  const search = h('input', { class: 'input inv-search', type: 'search', placeholder: 'Search stocks, ETFs, bonds, funds, Blackstone, Blue Owl…', spellcheck: false, 'aria-label': 'Search investments' });
-  const results = h('div', { class: 'inv-search-results', hidden: true, role: 'listbox' });
-  const searchWrap = h('div', { class: 'inv-search-wrap' }, search, results);
-  let searchTimer: ReturnType<typeof setTimeout> | undefined;
-  let searchSeq = 0;
+  // the one research search (src/ui/instrumentSearch.ts, also Security -> Search): name or ticker, every kind
+  const finder = instrumentSearch({ placeholder: 'Search by name or ticker: stocks, ETFs, funds, bonds, Blackstone, Blue Owl…' });
+  const search = finder.input;
+  const searchWrap = h('div', { class: 'inv-search-wrap' }, finder.el);
 
   const frame = pageFrame('Investments', 'Stocks, ETFs, bonds, alternatives and private funds, with live market data. Click a section to see how that market is doing.', [
     searchWrap,
@@ -80,76 +80,6 @@ export function createInvestmentsPage(ctx: InvestContext) {
   const view = h('div', { class: 'inv-view' });
   frame.body.replaceChildren(cards, view);
 
-  function resultItem(main: string, sub: string, onPick: () => void) {
-    return h(
-      'button',
-      {
-        class: 'inv-result',
-        role: 'option',
-        onmousedown: (e: Event) => e.preventDefault(),
-        onclick: () => {
-          results.hidden = true;
-          onPick();
-        },
-      },
-      h('b', {}, main),
-      h('span', { class: 'muted small' }, sub),
-    );
-  }
-
-  function renderResults(query: string, remote?: { symbol: string; name: string; assetType: string }[] | 'loading' | Error) {
-    const { symbols, funds } = searchCatalog(query);
-    const groups: Node[] = [];
-    if (symbols.length)
-      groups.push(
-        h('div', { class: 'inv-result-group' }, 'On this page'),
-        ...symbols.map((s) =>
-          resultItem(`${showSymbol(s.symbol)} · ${s.label}`, SECTIONS.find((x) => x.id === s.section)?.label ?? '', () =>
-            s.section === 'crypto' && s.symbol.includes('-') ? ctx.openChart({ provider: 'coinbase', symbol: s.symbol }) : openSymbol(s.symbol, s.label, headlineRows.get(s.symbol), ctx),
-          ),
-        ),
-      );
-    if (funds.length)
-      groups.push(
-        h('div', { class: 'inv-result-group' }, 'Private & evergreen funds'),
-        ...funds.map((f) => resultItem(`${f.short} · ${f.name}`, `${f.manager} · ${f.structure}`, () => (showSection('alts', false), alts.openFund(f)))),
-      );
-    groups.push(h('div', { class: 'inv-result-group' }, 'Everything at Schwab'));
-    if (remote === 'loading') groups.push(h('div', { class: 'muted small inv-result-note' }, 'Searching Schwab…'));
-    else if (remote instanceof Error) groups.push(h('div', { class: 'muted small inv-result-note' }, remote.message));
-    else if (remote?.length)
-      groups.push(
-        ...remote.slice(0, 10).map((r) =>
-          resultItem(`${r.symbol} · ${r.name}`, r.assetType.replace('_', ' ').toLowerCase(), () => openSymbol(r.symbol, r.name || r.symbol, undefined, ctx)),
-        ),
-      );
-    else if (remote) groups.push(h('div', { class: 'muted small inv-result-note' }, 'No matches at Schwab.'));
-    groups.push(resultItem(`Search private funds for "${query}"`, 'Every Form D filed with the SEC (hedge, PE, venture, feeder funds)', () => (showSection('alts', false), alts.searchPrivate(query))));
-    results.replaceChildren(...groups);
-    results.hidden = false;
-  }
-
-  search.addEventListener('input', () => {
-    const q = search.value.trim();
-    clearTimeout(searchTimer);
-    if (q.length < 2) {
-      results.hidden = true;
-      return;
-    }
-    renderResults(q, 'loading');
-    const mine = ++searchSeq;
-    searchTimer = setTimeout(() => {
-      engineRequest<{ results: { symbol: string; name: string; assetType: string }[] }>('invest.search', { query: q }, 20000)
-        .then((r) => mine === searchSeq && renderResults(q, r.results))
-        .catch((err) => mine === searchSeq && renderResults(q, err as Error));
-    }, 350);
-  });
-  search.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') results.hidden = true;
-    if (e.key === 'Enter') results.querySelector<HTMLButtonElement>('.inv-result')?.click();
-  });
-  search.addEventListener('blur', () => setTimeout(() => (results.hidden = true), 150));
-  search.addEventListener('focus', () => search.value.trim().length >= 2 && renderResults(search.value.trim()));
 
   // ----- Section cards (headline numbers) -----
 
@@ -332,13 +262,20 @@ export function createInvestmentsPage(ctx: InvestContext) {
       // link changes, so coming Back to the page keeps the section and tab the person moved to since.
       const fresh = sub !== appliedSub;
       appliedSub = sub;
-      const [want, tab] = sub.split('/');
+      const [want, tab, arg] = sub.split('/');
       const deep = fresh && SECTIONS.some((s) => s.id === want) ? (want as Section) : null;
       const bondTab = deep === 'bonds' && bonds.hasTab(tab) ? tab : null;
+      const value = arg ? decodeURIComponent(arg) : '';
       if (deep) {
         started = true;
-        showSection(deep, !bondTab);
-        if (bondTab) bonds.openTab(bondTab);
+        // the research search opens a bond by CUSIP (#invest/bonds/lookup/<CUSIP>), a private fund
+        // (#invest/alts/fund/<catalog id>) or a search of every Form D (#invest/alts/search/<words>)
+        const altFund = deep === 'alts' && tab === 'fund' ? PRIVATE_FUNDS.find((f) => f.id === value) : undefined;
+        showSection(deep, !bondTab && !altFund && !(deep === 'alts' && tab === 'search' && value));
+        if (bondTab === 'lookup' && value) bonds.lookup(value);
+        else if (bondTab) bonds.openTab(bondTab);
+        if (altFund) void alts.openFund(altFund);
+        else if (deep === 'alts' && tab === 'search' && value) alts.searchPrivate(value);
       } else if (!started) {
         started = true;
         showSection(section);

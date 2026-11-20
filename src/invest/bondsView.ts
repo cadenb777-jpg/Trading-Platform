@@ -465,6 +465,12 @@ export function createBondsView(ctx: InvestContext) {
     openTab(t: string) {
       if (TABS.some(([id]) => id === t)) setTab(t as Tab);
     },
+    /** Opens the CUSIP lookup with a CUSIP filled in and looked up (deep link #invest/bonds/lookup/<CUSIP>). */
+    lookup(cusip: string) {
+      lookupCusip = cusip.trim().toUpperCase();
+      setTab('lookup' as Tab);
+      queueMicrotask(() => body.querySelector<HTMLInputElement>('input[aria-label="CUSIP"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' })));
+    },
     refresh() {
       if (tab === 'market') renderMarket();
     },

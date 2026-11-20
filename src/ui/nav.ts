@@ -57,6 +57,7 @@ export const PAGES = [
   { route: 'ycharts', section: 'markets', label: 'YCharts', title: 'YCharts', code: '', icon: 'chart', keywords: 'ycharts metrics fundamentals funds indicators economic api', about: 'Any YCharts figure, with your YCharts key', hidden: true },
   { route: 'macro', section: 'markets', label: 'Macro', title: 'Macro', code: 'MACRO', icon: 'macro', keywords: 'economy fred rates inflation yields', about: 'The economy at a glance (FRED, Treasury)' },
   { route: 'calendar', section: 'markets', label: 'Calendar', title: 'Economic calendar', code: 'ECO', icon: 'calendar', keywords: 'economic releases fomc events', about: 'This week’s economic releases and FOMC dates' },
+  { route: 'find', section: 'security', label: 'Search', title: 'Search', code: 'FIND', icon: 'search', keywords: 'search find lookup name ticker stocks etfs mutual funds bonds cusip private funds research', about: 'Find any stock, ETF, mutual fund, bond or private fund by name or ticker' },
   { route: 'research', section: 'security', label: 'Research', title: 'Research', code: 'RES', icon: 'research', keywords: 'company financials sec valuation ratios', about: 'Company financials, ratios and valuation' },
   // Analyze
   { route: 'chart', section: 'charts', label: 'Chart', title: '', code: 'GP', icon: 'chart', keywords: 'graph price candles indicators drawings', about: 'The full chart with indicators and drawings' },

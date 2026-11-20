@@ -304,16 +304,54 @@ async def movers(ctx, msg):
     return out
 
 
+#: Schwab's instrument types in plain kinds (the browser's research search groups and routes by these)
+KINDS = {'EQUITY': 'stock', 'ETF': 'etf', 'MUTUAL_FUND': 'mutual_fund', 'BOND': 'bond', 'INDEX': 'index', 'FUTURE': 'future',
+         'OPTION': 'option', 'FOREX': 'forex', 'FUND': 'mutual_fund'}
+
+
+def search_kind(item):
+    """'stock', 'etf', 'mutual_fund', 'bond', 'index' ... for one Schwab instrument (pure, tested)."""
+    t = str(item.get('assetType') or '').upper()
+    if t == 'EQUITY' and re.search(r'\b(ETF|ETN|TRUST|FUND)\b', str(item.get('description') or '').upper()) and 'INC' not in str(item.get('description') or '').upper():
+        return 'etf'
+    return KINDS.get(t, 'other')
+
+
+def rank_results(query, items):
+    """Best first: the exact ticker, tickers starting with the query, names starting with it, names with every word,
+    then the rest; stocks, ETFs and funds before other kinds (pure, tested)."""
+    q = query.strip().upper()
+    words = q.split()
+
+    def score(r):
+        sym, name = r['symbol'].upper(), r['name'].upper()
+        if sym == q:
+            s = 0
+        elif sym.startswith(q):
+            s = 1
+        elif name.startswith(q):
+            s = 2
+        elif all(w in name for w in words):
+            s = 3
+        else:
+            s = 4
+        return (s, 0 if r['kind'] in ('stock', 'etf', 'mutual_fund') else 1, len(sym), sym)
+    return sorted(items, key=score)
+
+
 @handler('invest.search')
 async def search(ctx, msg):
-    """Finds stocks, ETFs and funds at Schwab by ticker or by name."""
-    query = str(msg.get('query') or '').strip()
+    """Finds stocks, ETFs, mutual funds and indexes at Schwab by ticker or by name (any case, several words)."""
+    query = re.sub(r'\s+', ' ', str(msg.get('query') or '')).strip()
     if len(query) < 2:
         raise EngineError('Type at least 2 letters')
     client = ctx.schwab
     projection = client.Instrument.Projection
     found = {}
-    for text, proj in ((query.upper(), projection.SYMBOL_SEARCH), (query, projection.DESCRIPTION_SEARCH)):
+    asks = [(query.upper(), projection.SYMBOL_SEARCH)] if ' ' not in query and len(query) <= 10 else []
+    # Schwab keeps names in capitals ("APPLE INC"): the name search is sent that way, plus as typed when different
+    asks += [(text, projection.DESCRIPTION_SEARCH) for text in dict.fromkeys((query.upper(), query))]
+    for text, proj in asks:
         try:
             response = await client.get_instruments([text], proj)
             _login_check(response)
@@ -323,12 +361,12 @@ async def search(ctx, msg):
                 sym = item.get('symbol')
                 if sym and sym not in found:
                     found[sym] = {'symbol': sym, 'name': item.get('description', ''), 'assetType': item.get('assetType', ''),
-                                  'exchange': item.get('exchange', '')}
+                                  'exchange': item.get('exchange', ''), 'kind': search_kind(item)}
         except EngineError:
             raise
         except Exception:
             continue
-    return {'results': list(found.values())[:30]}
+    return {'results': rank_results(query, list(found.values()))[:30]}
 
 
 # ---------- Bonds ----------
