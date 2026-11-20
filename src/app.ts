@@ -1,3 +1,5 @@
+import { paintTone } from './ui/steadyTone';
+import { initTouchMode } from './ui/touch';
 import './installLocaleGuard';
 import './style.css';
 import './terminal.css';
@@ -378,6 +380,7 @@ if (isAiWindow) {
   });
 
   initSecurity({ openChart, openPage: openPageWith });
+  initTouchMode();
   initTickerCards({ openChart, openResearch, openSecurity: (s) => void openSecurity(s) });
 
   // ---------- the shell: section rail, sub-tabs, command field, launchpad, status bar ----------
@@ -554,7 +557,7 @@ if (isAiWindow) {
           if (q.last == null) return;
           const chg = q.prevClose ? (q.last / q.prevClose - 1) * 100 : null;
           secPx.textContent = `${q.last.toFixed(2)}${chg == null ? '' : ` ${chg >= 0 ? '+' : '−'}${Math.abs(chg).toFixed(2)}%`}`;
-          secPx.className = `sec-ticker-px ${chg == null ? '' : chg >= 0 ? 'up' : 'down'}`;
+          paintTone(secPx, chg);
         })
       : null;
   };

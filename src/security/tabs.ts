@@ -3,6 +3,7 @@
  * draws into the tab body from the shared loaders (data.ts), degrades panel by panel when a request fails ("—" with
  * the reason), and says where every figure comes from and when.
  */
+import { brief } from '../ui/brief';
 import { hpTab } from './hpTab';
 import { holderWords, holdersTable, sellersList } from './holdersView';
 import { faGraph, togglePick } from './faGraph';
@@ -261,14 +262,14 @@ function fundDes(ctx: TabCtx) {
         );
       }),
       fundSlot(ctx, 'objective', (f) => {
-        const el = panel('Objective', YAHOO, f.fetched, f.objective ? h('p', { class: 'sv-desc' }, f.objective) : note('The fund’s objective isn’t in the data. It is in the prospectus (the fund family’s website).'), h('p', { class: 'muted small' }, h('a', { href: f.url, target: '_blank', rel: 'noopener' }, 'Full fund page on Yahoo Finance ↗')));
+        const el = panel('Objective', YAHOO, f.fetched, f.objective ? h('p', { class: 'sv-desc' }, brief(f.objective, 320)) : note('The fund’s objective isn’t in the data. It is in the prospectus (the fund family’s website).'), h('p', { class: 'muted small' }, h('a', { href: f.url, target: '_blank', rel: 'noopener' }, 'Full fund page on Yahoo Finance ↗')));
         // YCharts: the prospectus objective when Yahoo has none, and how the fund invests
         return withYCharts(el, () => yProfile(s, yAsset(f), helper.version ?? 0), (y) => {
           const objective = yText(y.info.prospectus_objective);
           const strategy = yText(y.info.investment_strategy);
           const title = el.querySelector('.sv-panel-title');
-          if (!f.objective && objective) el.querySelector('.sv-desc, .note, .sv-note')?.replaceWith(h('p', { class: 'sv-desc' }, objective));
-          if (strategy && strategy !== objective) title?.parentElement?.insertBefore(h('div', {}, h('h4', { class: 'fd-sub' }, 'How it invests'), h('p', { class: 'sv-desc' }, strategy)), el.querySelector('.sv-source'));
+          if (!f.objective && objective) el.querySelector('.sv-desc, .note, .sv-note')?.replaceWith(h('p', { class: 'sv-desc' }, brief(objective, 320)));
+          if (strategy && strategy !== objective) title?.parentElement?.insertBefore(h('div', {}, h('h4', { class: 'fd-sub' }, 'How it invests'), h('p', { class: 'sv-desc' }, brief(strategy, 320))), el.querySelector('.sv-source'));
         });
       }),
       wideSlot(
@@ -482,7 +483,7 @@ function companyDes(ctx: TabCtx) {
             return withYCharts(el, () => yProfile(s, 'stock', helper.version ?? 0), (y) => {
               const about = yText(y.info.long_description) || yText(y.info.description);
               if (about) {
-                el.querySelector('.sv-desc')?.after(h('p', { class: 'sv-desc' }, about));
+                el.querySelector('.sv-desc')?.after(h('p', { class: 'sv-desc', title: about.length > 420 ? about : '' }, brief(about, 420)));
                 [...el.querySelectorAll('.note, .sv-note, p.muted')].find((n) => /Item 1 of the 10-K/.test(n.textContent ?? ''))?.remove();
               }
               const site = yText(y.info.url);
