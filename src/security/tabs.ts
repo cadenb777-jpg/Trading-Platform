@@ -129,6 +129,39 @@ function priceStatsSlot(ctx: TabCtx) {
       });
 }
 
+/** Interval and tender-offer funds (helper 101): when you can sell back, from the fund's own SEC notices. */
+export const LIQUIDITY_HELPER_VERSION = 101;
+interface Liquidity {
+  kind: 'interval' | 'tender' | null;
+  name?: string;
+  offers: { form: string; filed: string; url: string }[];
+  latest: { deadline: string | null; pricingDate: string | null; percent: number | null; filed: string; form: string; url: string } | null;
+  nextEstimate: string | null;
+}
+function liquiditySlot(ctx: TabCtx) {
+  return slot(ctx, 'repurchase offers', async () => {
+    if ((helper.version ?? 0) < LIQUIDITY_HELPER_VERSION) return [];
+    const r = await engineRequest<Liquidity>('funds.liquidity', { symbol: ctx.symbol }, 60_000).catch(() => null);
+    if (!r?.kind || !r.offers.length) return []; // an ordinary fund: you sell any business day, nothing to show
+    const l = r.latest;
+    const what = r.kind === 'interval' ? 'Interval fund: it buys back shares on a fixed schedule' : 'Tender-offer fund: it buys back shares when its board offers to';
+    return panel(
+      'When you can sell',
+      'SEC EDGAR (the fund’s repurchase notices)',
+      l?.filed ?? null,
+      h('p', { class: 'sv-desc' }, `${what}. You can only sell during an offer, and the fund may buy back less than you ask for.`),
+      kvGrid([
+        ...(l?.deadline ? ([['Latest offer: ask by', fmtDate(l.deadline), 'The repurchase request deadline in the newest notice']] as KV[]) : []),
+        ...(l?.pricingDate ? ([['Priced on', fmtDate(l.pricingDate), 'The NAV date used for the repurchase']] as KV[]) : []),
+        ...(l?.percent != null ? ([['Offer size', `up to ${l.percent}% of the fund`]] as KV[]) : []),
+        ...(r.nextEstimate ? ([['Next notice (estimate)', fmtDate(r.nextEstimate), 'From the usual gap between past notices; not announced yet']] as KV[]) : []),
+        ['Notices on file', String(r.offers.length)],
+      ]),
+      h('p', { class: 'muted small' }, 'Past notices: ', ...r.offers.slice(0, 6).flatMap((o, i) => [i ? ' · ' : '', h('a', { href: o.url, target: '_blank', rel: 'noopener' }, fmtDate(o.filed))])),
+    );
+  });
+}
+
 function eventsSlot(ctx: TabCtx, fund = false) {
   const s = ctx.symbol;
   return slot(ctx, 'events', async () => {
@@ -386,6 +419,7 @@ function fundDes(ctx: TabCtx) {
           h('p', { class: 'muted small' }, 'Standard deviation: how much returns swing (yearly). Sharpe: return per unit of that swing. Alpha: return beyond what its beta would give. R-squared: how closely it follows its benchmark (100 = exactly).'),
         );
       }),
+      liquiditySlot(ctx),
       ychartsSlot(ctx),
       eventsSlot(ctx, true),
     ),
@@ -411,12 +445,11 @@ function ychartsSlot(ctx: TabCtx) {
     const row = r.results[id] ?? Object.values(r.results)[0] ?? {};
     ctx.share('ycharts', row);
     const have = list.filter((x) => row[x.code]?.value != null);
-    const missing = list.filter((x) => row[x.code]?.value == null);
     const groups = [...new Set(have.map((x) => x.group))];
     // a fund's biggest holdings from YCharts (YCH; Excel add-in only)
     const top = (mf || etf) && excel ? await yHoldings(id).then((r) => r.holdings.slice(0, 10), () => []) : [];
     return panel(
-      'More figures',
+      mf || etf ? 'Performance, risk and costs' : 'More figures',
       excel ? 'YCharts (your Excel add-in)' : 'YCharts API (your key)',
       r.fetched,
       ...(have.length
@@ -427,8 +460,7 @@ function ychartsSlot(ctx: TabCtx) {
       top.length
         ? h('div', {}, h('h4', { class: 'fd-sub' }, 'Biggest holdings'), kvGrid(top.map((t) => [t.holding, t.weight == null ? '—' : yFormat(t.weight, 'pct')] as KV)))
         : null,
-      missing.length && have.length ? h('p', { class: 'muted small' }, `Not in your YCharts plan or not reported for ${id}: ${missing.map((x) => x.label).join(', ')}.`) : null,
-      h('p', { class: 'muted small' }, h('a', { href: `#ycharts/${encodeURIComponent(kind)}/${encodeURIComponent(id)}` }, 'Chart any YCharts metric for it →')),
+      // figures YCharts has no value for are simply left out (a stock fund has no duration, a bond fund no P/E)
     );
   });
 }
@@ -483,7 +515,7 @@ function companyDes(ctx: TabCtx) {
             return withYCharts(el, () => yProfile(s, 'stock', helper.version ?? 0), (y) => {
               const about = yText(y.info.long_description) || yText(y.info.description);
               if (about) {
-                el.querySelector('.sv-desc')?.after(h('p', { class: 'sv-desc', title: about.length > 420 ? about : '' }, brief(about, 420)));
+                el.querySelector('.sv-desc')?.after(h('p', { class: 'sv-desc' }, brief(about, 260))); // fits the panel: no hover text, nothing drops open
                 [...el.querySelectorAll('.note, .sv-note, p.muted')].find((n) => /Item 1 of the 10-K/.test(n.textContent ?? ''))?.remove();
               }
               const site = yText(y.info.url);

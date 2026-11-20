@@ -515,6 +515,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   is written (src/ui/brief.ts). Live up/down colours use src/ui/steadyTone.ts (flat under 0.01%, hysteresis) so a flat
   price never blinks green/red. html.touch-input (src/ui/touch.ts) is set while the last tap was a finger: hover glows and
   transitions are off then. The security view (.sv) uses one accent: the amber of its panel titles.
+  Research (v101): Security -> Research (#find, code RES) is the one-ticker front door (instrumentSearch); the SEC company
+  deep dive (#research) is "Company analysis", hidden from the menu, opened from a stock's page. Markets = broad data.
+  Fund pages: YCharts fund report (src/data/ycharts.ts fundReport: returns, risk, income/costs, size/flows, portfolio) and
+  "When you can sell" (engine/liquidity.py funds.liquidity: N-23C3A/B/C and SC TO-I notices, latest deadline/pricing/
+  percent parsed, next notice only estimated). Fund tickers resolve via the SEC's company_tickers_mf.json.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).
   Data hub (v44, helper/engine/datahub.py; audit in docs/research/data-aggregation-audit.md): every outside call goes
   through `datahub.get(ctx.http, '<source>', url, params=...)` or `datahub.call('<source>', fn, key=...)`, never a bare

@@ -26,3 +26,18 @@ describe('research search', () => {
     expect(mergeHits([], remote, 'mutual_fund').map((g) => g.hits.map((x) => x.id))).toEqual([['VFIAX']]);
   });
 });
+
+import { looksLikeTicker } from './instrumentSearch';
+describe('an exact ticker always comes first', () => {
+  it('offers "Open QYLD" before anything else, replaced by Schwab’s own result when it comes', () => {
+    expect(looksLikeTicker('qyld')).toBe(true);
+    expect(looksLikeTicker('BRK.B')).toBe(true);
+    expect(looksLikeTicker('bank of america')).toBe(false);
+    const local = localHits('QYLD');
+    expect(local[0]).toMatchObject({ kind: 'ticker', id: 'QYLD' });
+    expect(mergeHits(local, [], 'all')[0].hits[0].id).toBe('QYLD');
+    const withSchwab = mergeHits(local, schwabHits([{ symbol: 'QYLD', name: 'GLOBAL X NASDAQ 100 COVERED CALL ETF', assetType: 'ETF' }]), 'all');
+    expect(withSchwab.map((g) => g.kind)).toEqual(['etf', 'alt']);
+    expect(hrefFor(local[0])).toBe('#sec/QYLD');
+  });
+});

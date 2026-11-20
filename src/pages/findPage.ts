@@ -16,11 +16,11 @@ const GUIDE: Record<'all' | Kind, { opens: string; tips: string; links: [string,
     links: [
       ['#screener', 'Stock screener', 'Filter stocks by valuation, growth and quality'],
       ['#invest', 'Investments', 'Every market at a glance: stocks, ETFs, bonds, alternatives, crypto, commodities'],
-      ['#research', 'Company research', 'Financial statements, valuation and quality for one company'],
+      ['#invest', 'Markets (big picture)', 'How each asset class is doing, with charts and statistics'],
     ],
   },
   stock: {
-    opens: 'A stock opens its page: overview with the company description (YCharts when on), chart, financials, analysts, earnings, holders, options and news.',
+    opens: 'A stock opens its page: what the company does (YCharts), price and valuation, analysts, earnings, holders, options and news; “Company analysis” there has its SEC accounts, quality and valuation models.',
     tips: 'Try a name like “nvidia” or “bank of america”, or a ticker like MSFT.',
     links: [
       ['#screener', 'Stock screener', 'Filter stocks by valuation, growth and quality'],
@@ -29,12 +29,12 @@ const GUIDE: Record<'all' | Kind, { opens: string; tips: string; links: [string,
     ],
   },
   etf: {
-    opens: 'An ETF opens its fund page: costs in dollars, objective, benchmark and style, top holdings, asset mix and sectors, returns and risk against its category.',
+    opens: 'An ETF opens its fund page: what it is and how it invests, costs in dollars, benchmark and style, holdings, asset mix and sectors, returns, risk, income and money flows (YCharts), premium or discount to NAV.',
     tips: 'Try “s&p 500”, “total stock market”, “treasury” or a ticker like VOO.',
     links: [['#invest/etfs', 'ETF boards', 'Core, international, themes and income ETFs, live']],
   },
   mutual_fund: {
-    opens: 'A mutual fund opens the same fund page: expense ratio and loads, minimums, objective, holdings, returns and risk against its category, share class.',
+    opens: 'A mutual fund opens its fund page: what it is and how it invests, expense ratio and loads, minimums, share class, holdings, returns, risk, income and money flows (YCharts). Interval funds also show their repurchase dates.',
     tips: 'Mutual fund tickers have 5 letters ending in X (VFIAX). Names work too: “vanguard 500 index admiral”.',
     links: [],
   },
@@ -55,6 +55,7 @@ const GUIDE: Record<'all' | Kind, { opens: string; tips: string; links: [string,
   index: { opens: 'An index opens its page with the chart and statistics.', tips: 'Try “s&p 500” or “nasdaq”.', links: [] },
   crypto: { opens: 'A coin opens its page.', tips: 'Try bitcoin.', links: [] },
   other: { opens: '', tips: '', links: [] },
+  ticker: { opens: '', tips: '', links: [] },
 };
 
 export function createFindPage() {
@@ -113,7 +114,7 @@ export function createFindPage() {
   const el = h(
     'div',
     { class: 'analysis-page find-page' },
-    h('header', { class: 'ap-header' }, h('div', {}, h('h1', {}, 'Search'), h('p', { class: 'muted' }, 'Find any stock, ETF, mutual fund, bond or private fund by name or ticker. Enter opens its page.'))),
+    h('header', { class: 'ap-header' }, h('div', {}, h('h1', {}, 'Research'), h('p', { class: 'muted' }, 'One ticker in depth. Type a ticker or a name: the page knows whether it is a stock, ETF, mutual fund, bond or private fund and shows what matters for that kind. Markets has the big picture.'))),
     h('section', { class: 'panel find-panel' }, tabs, search.el, guide),
   );
   return {

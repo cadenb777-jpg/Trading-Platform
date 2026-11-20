@@ -12,7 +12,7 @@ import threading
 
 from .core import HANDLERS, EngineContext, EngineError, background, handler
 
-MODULES = ('diagnostics', 'datacheck', 'store', 'settings', 'alpaca', 'sec', 'flow', 'research', 'macro', 'quant', 'positioning', 'smartmoney', 'invest', 'worldmacro', 'predictions', 'finnhub', 'connections', 'futures_market', 'carry', 'boxrates', 'alts', 'crosscheck', 'funds', 'ycharts', 'dividends', 'webull', 'risk', 'tearsheet', 'options_math', 'comps', 'tax', 'scanner', 'alerts', 'prospect', 'prospect_perf', 'companies', 'company_about', 'journal', 'gametheory', 'selfcheck', 'segments', 'asreported', 'filerrank', 'rates', 'optedge', 'factors', 'offexchange', 'curvefit', 'ratesdesk', 'moneydesk', 'creditdesk', 'liveflow', 'pricehub', 'crypto', 'ai')
+MODULES = ('diagnostics', 'datacheck', 'store', 'settings', 'alpaca', 'sec', 'flow', 'research', 'macro', 'quant', 'positioning', 'smartmoney', 'invest', 'worldmacro', 'predictions', 'finnhub', 'connections', 'futures_market', 'carry', 'boxrates', 'alts', 'crosscheck', 'funds', 'liquidity', 'ycharts', 'dividends', 'webull', 'risk', 'tearsheet', 'options_math', 'comps', 'tax', 'scanner', 'alerts', 'prospect', 'prospect_perf', 'companies', 'company_about', 'journal', 'gametheory', 'selfcheck', 'segments', 'asreported', 'filerrank', 'rates', 'optedge', 'factors', 'offexchange', 'curvefit', 'ratesdesk', 'moneydesk', 'creditdesk', 'liveflow', 'pricehub', 'crypto', 'ai')
 #: module name -> why it couldn't load
 LOAD_ERRORS = {}
 #: set once every module has been imported (or failed to)

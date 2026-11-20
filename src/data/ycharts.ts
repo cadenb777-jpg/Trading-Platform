@@ -83,47 +83,58 @@ export const COMPANY_METRICS: YMetric[] = [
   ]),
 ];
 
-/** ETF and closed-end fund metrics (plain tickers). */
-export const ETF_METRICS: YMetric[] = [
-  ...m('Fund', [
-    ['net_asset_value', 'NAV', 'price'],
-    ['discount_or_premium_to_nav', 'Premium / discount to NAV', 'pct'],
-    ['assets_under_management', 'Assets (this share class)', 'money'],
+/**
+ * The fund report YCharts fills on an ETF's or mutual fund's page (codes checked against YCharts' Excel reference;
+ * premium/discount exists for ETFs and closed-end funds only). Grouped the way a fund factsheet reads.
+ */
+const fundReport = (etf: boolean): YMetric[] => [
+  ...m('Returns (with distributions)', [
+    ['one_month_total_return', '1 month', 'pct'],
+    ['three_month_total_return', '3 months', 'pct'],
+    ['one_year_total_return', '1 year', 'pct'],
+    ['annualized_daily_three_year_total_return', '3 years (a year)', 'pct'],
+    ['annualized_daily_five_year_total_return', '5 years (a year)', 'pct'],
+    ['annualized_daily_ten_year_total_return', '10 years (a year)', 'pct'],
+  ]),
+  ...m('Risk', [
+    ['monthly_standard_deviation_annualized_3y', 'Volatility (3 years)', 'pct'],
+    ['max_drawdown_5y', 'Worst drop (5 years)', 'pct'],
+    ['historical_sharpe_3y', 'Sharpe ratio (3 years)', 'num'],
+    ['historical_sortino_3y', 'Sortino ratio (3 years)', 'num'],
+    ['market_beta_36_month', 'Beta (3 years)', 'num'],
+    ['alpha_3y_vs_category', 'Alpha vs category (3 years)', 'pct'],
+    ['rsquared_3y', 'R² vs asset class (3 years)', 'num'],
+    ['tracking_error_3y', 'Tracking error (3 years)', 'pct'],
+  ]),
+  ...m('Income and costs', [
     ['expense_ratio', 'Net expense ratio', 'pct'],
     ['gross_expense_ratio_generic', 'Gross expense ratio', 'pct'],
+    ['sec_yield', '30-day SEC yield', 'pct'],
     ['distribution_yield', 'Distribution yield', 'pct'],
-    ['dividend_yield', 'Dividend yield', 'pct'],
     ['turnover_ratio', 'Turnover', 'pct'],
   ]),
-  ...m('Returns and risk', [
-    ['one_year_total_return', 'Total return, 1 year', 'pct'],
-    ['annualized_daily_three_year_total_return', 'Total return, 3 years (a year)', 'pct'],
-    ['annualized_daily_five_year_total_return', 'Total return, 5 years (a year)', 'pct'],
-    ['monthly_standard_deviation_annualized_3y', 'Volatility, 3 years', 'pct'],
-    ['historical_sharpe_3y', 'Sharpe ratio, 3 years', 'num'],
-    ['max_drawdown_5y', 'Max drawdown, 5 years', 'pct'],
+  ...m('Size and money flows', [
+    ['net_asset_value', 'NAV', 'price'],
+    ...(etf ? ([['discount_or_premium_to_nav', 'Premium / discount to NAV', 'pct']] as [string, string, YFormat][]) : []),
+    ['assets_under_management', 'Assets (this share class)', 'money'],
+    ['1_month_fund_level_flows', 'Money in or out (1 month)', 'money'],
+    ['1_year_fund_level_flows', 'Money in or out (1 year)', 'money'],
+    ['number_of_holdings', 'Number of holdings', 'num'],
+    ['percent_of_assets_in_top_10_holdings', 'In the top 10 holdings', 'pct'],
+  ]),
+  ...m('Portfolio', [
+    ['average_market_cap_generic', 'Average company size', 'money'],
+    ['forecasted_pe_ratio', 'Forward P/E', 'x'],
+    ['effective_duration', 'Duration (years)', 'num'],
+    ['yield_to_maturity_generic', 'Yield to maturity', 'pct'],
+    ['average_credit_quality_score', 'Credit quality score', 'num'],
   ]),
 ];
+/** ETF and closed-end fund report (plain tickers). */
+export const ETF_METRICS: YMetric[] = fundReport(true);
 
-/** Mutual fund metrics (ids are M:TICKER). */
-export const FUND_METRICS: YMetric[] = [
-  ...m('Fund', [
-    ['net_asset_value', 'NAV', 'price'],
-    ['assets_under_management', 'Assets (this share class)', 'money'],
-    ['expense_ratio', 'Net expense ratio', 'pct'],
-    ['gross_expense_ratio_generic', 'Gross expense ratio', 'pct'],
-    ['turnover_ratio', 'Turnover', 'pct'],
-    ['distribution_yield', 'Distribution yield', 'pct'],
-  ]),
-  ...m('Returns and risk', [
-    ['one_year_total_return', 'Total return, 1 year', 'pct'],
-    ['annualized_daily_three_year_total_return', 'Total return, 3 years (a year)', 'pct'],
-    ['annualized_daily_five_year_total_return', 'Total return, 5 years (a year)', 'pct'],
-    ['monthly_standard_deviation_annualized_3y', 'Volatility, 3 years', 'pct'],
-    ['historical_sharpe_3y', 'Sharpe ratio, 3 years', 'num'],
-    ['max_drawdown_5y', 'Max drawdown, 5 years', 'pct'],
-  ]),
-];
+/** Mutual fund report (ids are M:TICKER). */
+export const FUND_METRICS: YMetric[] = fundReport(false);
 
 /** Examples for the explorer (any code YCharts has can be typed). */
 export const EXAMPLES: Record<YKind, { id: string; metrics: string[] }> = {
