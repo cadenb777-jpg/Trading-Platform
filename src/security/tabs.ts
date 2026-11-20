@@ -32,6 +32,7 @@ import {
 } from './data';
 import { DASH, fmtChange, fmtCompact, fmtDate, fmtNum, fmtPct, fmtPrice, fmtX, ok, tone } from './format';
 import { sectorOf } from './related';
+import { COMPANY_METRICS, FUND_METRICS, YCHARTS_HELPER_VERSION, yFormat, yPoints, ychartsId, ychartsKeySet, type YMetric } from '../data/ycharts';
 import { FUND_HELPER_VERSION, costBand, costWords, isFundRow, loadFund, riskWords, stars, versusCategory, type FundProfile } from './fund';
 import { dayKey, dividendSummary, keyLevels, pairedReturns, portfolioReturns, correlation, beta, riskWindow, type Close, type RiskWindow } from './stats';
 import { fig, kvGrid, loadingNote, note, panel, reasonOf, type KV } from './ui';
@@ -327,10 +328,41 @@ function fundDes(ctx: TabCtx) {
           h('p', { class: 'muted small' }, 'Standard deviation: how much returns swing (yearly). Sharpe: return per unit of that swing. Alpha: return beyond what its beta would give. R-squared: how closely it follows its benchmark (100 = exactly).'),
         );
       }),
+      ychartsSlot(ctx),
       eventsSlot(ctx, true),
     ),
   );
   void s;
+}
+
+/** YCharts figures (the owner's paid key): grouped label/value lists of what the plan returns; hidden without a key. */
+function ychartsSlot(ctx: TabCtx) {
+  return slot(ctx, 'YCharts', async () => {
+    if ((helper.version ?? 0) < YCHARTS_HELPER_VERSION || !(await ychartsKeySet())) return [];
+    const b = await loadBoard(ctx.symbol).catch(() => null);
+    const mf = (b?.row?.assetType ?? '').toUpperCase() === 'MUTUAL_FUND';
+    const kind = mf ? 'mutual_funds' : 'companies';
+    const list: YMetric[] = mf ? FUND_METRICS : COMPANY_METRICS;
+    const id = ychartsId(ctx.symbol, kind);
+    const r = await yPoints(kind, [id], list.map((x) => x.code));
+    const row = r.results[id] ?? Object.values(r.results)[0] ?? {};
+    ctx.share('ycharts', row);
+    const have = list.filter((x) => row[x.code]?.value != null);
+    const missing = list.filter((x) => row[x.code]?.value == null);
+    const groups = [...new Set(have.map((x) => x.group))];
+    return panel(
+      'YCharts',
+      'YCharts API (your key)',
+      r.fetched,
+      ...(have.length
+        ? groups.map((g) =>
+            h('div', {}, h('h4', { class: 'fd-sub' }, g), kvGrid(have.filter((x) => x.group === g).map((x) => [x.label, fig(yFormat(row[x.code].value, x.format), { title: row[x.code].date ? `as of ${row[x.code].date}` : '' })] as KV))),
+          )
+        : [note(`YCharts returned none of these figures for ${id}: ${row[list[0].code]?.error ?? 'no data'}.`)]),
+      missing.length && have.length ? h('p', { class: 'muted small' }, `Not in your YCharts plan or not reported for ${id}: ${missing.map((x) => x.label).join(', ')}.`) : null,
+      h('p', { class: 'muted small' }, h('a', { href: `#ycharts/${encodeURIComponent(kind)}/${encodeURIComponent(id)}` }, 'Chart any YCharts metric for it →')),
+    );
+  });
 }
 
 function companyDes(ctx: TabCtx) {
@@ -401,6 +433,7 @@ function companyDes(ctx: TabCtx) {
             );
           })
         : null,
+      ychartsSlot(ctx),
       eventsSlot(ctx),
     ),
   );

@@ -483,6 +483,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   opens the holding's records.
   Pop-out charts: `openChartWindow` (src/ui/chartWindow.ts); `createLineChart` adds hover values and an expand button;
   `openFredWindow` opens a FRED series' full history.
+  YCharts (v95, engine/ycharts.py, src/data/ycharts.ts): the owner's paid key (settings ycharts_key, header
+  X-YCHARTSAUTHORIZATION, sent only to ycharts.com/api/v3). ycharts.status/points/series/info over kinds companies,
+  mutual_funds (M:X), indices (^X), indicators (I:X). Metric codes were taken from YCharts' sample clients (its docs are
+  behind its login): a code the plan lacks is listed as missing, never estimated. Security Overview shows a YCharts panel
+  (nothing without a key); Markets > YCharts (#ycharts/<kind>/<ids>, src/pages/ychartsPage.ts) charts any codes.
   Downloaded data is cached in ~/.trading-platform/cache.db (`ctx.cached(..., persist=True, stale_ok=True)`).
   Data hub (v44, helper/engine/datahub.py; audit in docs/research/data-aggregation-audit.md): every outside call goes
   through `datahub.get(ctx.http, '<source>', url, params=...)` or `datahub.call('<source>', fn, key=...)`, never a bare

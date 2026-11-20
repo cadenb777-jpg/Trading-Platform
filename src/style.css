@@ -14672,6 +14672,19 @@ select.input,
 .fd-holdings tr.tt-open { cursor: pointer; }
 .fd-holdings tr.tt-open:hover td { background: var(--row-hover); }
 
+/* a panel slot with nothing to show (e.g. YCharts without a key) takes no room */
+.sv-slot:empty { display: none; }
+
+/* YCharts explorer (src/pages/ychartsPage.ts) */
+.yc-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.yc-row .yc-ids { flex: 1 1 160px; }
+.yc-row .yc-metrics { flex: 2 1 220px; }
+.yc-row select, .yc-row input[type=date] { width: auto; }
+.yc-examples { margin-top: 8px; align-items: center; }
+.yc-grid { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 2fr); gap: 8px; margin: 8px 0; }
+.yc-chart { min-height: 320px; }
+.yc-table .table-scroll { max-height: 480px; overflow: auto; }
+@media (max-width: 900px) { .yc-grid { grid-template-columns: 1fr; } }
 /* Every chart keeps its own layers inside itself: the library's pane dividers (z-index 50) showed through pop-up
    windows (z-index 40) and could be dragged through them (owner, 2026-11-20). */
 .tv-lightweight-charts { isolation: isolate; }

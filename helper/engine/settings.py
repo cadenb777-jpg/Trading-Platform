@@ -13,7 +13,7 @@ from .core import EngineError, handler
 
 SETTINGS_PATH = Path.home() / '.trading-platform' / 'settings.json'
 SECRET_KEYS = {'anthropic_key', 'fred_key', 'alpaca_key_id', 'alpaca_secret', 'webull_app_key', 'webull_app_secret',
-               'ntfy_topic', 'ntfy_server', 'telegram_token', 'telegram_chat', 'bls_key', 'bea_key', 'eia_key', 'census_key', 'finnhub_key', 'github_token'}
+               'ntfy_topic', 'ntfy_server', 'telegram_token', 'telegram_chat', 'bls_key', 'bea_key', 'eia_key', 'census_key', 'finnhub_key', 'github_token', 'ycharts_key'}
 AI_MODELS = {
     'claude-opus-5-5': 'Best: Claude Opus 5.5',
     'claude-sonnet-5-5': 'Balanced: Claude Sonnet 5.5',
@@ -72,6 +72,7 @@ def public():
         'eiaKeySet': bool(data.get('eia_key')),
         'censusKeySet': bool(data.get('census_key')),
         'finnhubKeySet': bool(data.get('finnhub_key')),
+        'ychartsKeySet': bool(data.get('ycharts_key')),
         'githubKeySet': bool(data.get('github_token')),
         'alpacaSet': bool(data.get('alpaca_key_id') and data.get('alpaca_secret')),
         'webullSet': bool(data.get('webull_app_key') and data.get('webull_app_secret')),
@@ -118,6 +119,11 @@ async def set_settings(ctx, msg):
             if key and not re.fullmatch(r'[A-Za-z0-9-]{16,64}', key):
                 raise EngineError(f'That doesn’t look like a {label} key (16 to 64 letters, numbers or dashes). Copy it again from the email {site} sent you.')
             changes[name] = key
+    if 'ychartsKey' in msg:
+        key = str(msg['ychartsKey'] or '').strip()
+        if key and not re.fullmatch(r'[A-Za-z0-9._\-]{12,128}', key):
+            raise EngineError('That doesn’t look like a YCharts API key (letters and numbers, no spaces). Copy it again from YCharts (My Account > API).')
+        changes['ycharts_key'] = key
     if 'githubKey' in msg:
         key = str(msg['githubKey'] or '').strip()
         if key and not re.fullmatch(r'(github_pat_|ghp_)[A-Za-z0-9_]{20,250}', key):
