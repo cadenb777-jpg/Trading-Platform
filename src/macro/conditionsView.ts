@@ -12,12 +12,13 @@ import { rangeTrack } from '../ui/viz';
 import { conditions, conditionsWords, nowcast, nowcastWords, quarterLabel, rounded, signed, type Point } from './conditions';
 
 type Raw = { data: Point[] };
-/** One FRED series and its reply (the reply carries the fetch time for the as-of stamp). */
-const raw = (series: string) =>
-  engineRequest<Raw>('macro.series', { series, raw: true, limit: 5000 }, 45_000).then((reply) => ({ reply, data: reply.data.filter((p) => Number.isFinite(p.value)) }));
+/** One FRED series and its reply (the reply carries the fetch time for the as-of stamp). The helper loads FRED from
+ * 2006, so 8,000 readings keeps every daily reading it has (about 5,200 by 2026). */
+export const raw = (series: string) =>
+  engineRequest<Raw>('macro.series', { series, raw: true, limit: 8000 }, 45_000).then((reply) => ({ reply, data: reply.data.filter((p) => Number.isFinite(p.value)) }));
 type Prov = { provenance?: { fetchedAt?: number; stale?: boolean } };
 /** The older of two replies (or the stale saved one), so a panel's stamp never looks fresher than its oldest figure. */
-const older = (a: unknown, b: unknown) => {
+export const older = (a: unknown, b: unknown) => {
   const pa = (a as Prov)?.provenance;
   const pb = (b as Prov)?.provenance;
   if (!pb) return a;
@@ -27,14 +28,14 @@ const older = (a: unknown, b: unknown) => {
   return (pb.fetchedAt ?? Infinity) < (pa.fetchedAt ?? Infinity) ? b : a;
 };
 const day = (iso: string) => new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-const link = (id: string, name: string, unit: string) => h('button', { class: 'link-btn', type: 'button', onclick: () => openFredWindow(id, name, unit) }, id);
+export const link = (id: string, name: string, unit: string) => h('button', { class: 'link-btn', type: 'button', onclick: () => openFredWindow(id, name, unit) }, id);
 
-function panel(title: string, sub: string, body: HTMLElement, stamp: HTMLElement) {
+export function panel(title: string, sub: string, body: HTMLElement, stamp: HTMLElement) {
   return h('section', { class: 'panel cond-panel' }, h('div', { class: 'panel-head' }, h('h3', {}, title), h('span', { class: 'muted small' }, sub), h('span', { class: 'spacer' }), stamp), body);
 }
 
 /** A failure line with Retry, which builds the panel again in place. */
-function failed(section: () => HTMLElement, what: string, rebuild: () => HTMLElement): HTMLElement {
+export function failed(section: () => HTMLElement, what: string, rebuild: () => HTMLElement): HTMLElement {
   return h(
     'p',
     { class: 'muted small' },
