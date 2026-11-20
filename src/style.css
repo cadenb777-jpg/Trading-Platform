@@ -12243,7 +12243,7 @@ body[data-section='business'] { --section-accent: var(--hue-business); }
   text-overflow: ellipsis;
 }
 
-/* Research → Where the money comes from: the flower beside the rows */
+/* Research → Where the money comes from: the market-style map beside the table */
 .seg-split {
   display: grid;
   grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
@@ -14723,3 +14723,12 @@ select.input,
   .rail .nav-btn.rail-sec.active::before { display: none; }
 }
 .rail .nav-btn.rail-sec.active svg { background: none; }
+
+/* Where the money comes from: names in the map shorten with "…" (full name and figures on hover); table rows */
+.seg-split { align-items: start; }
+.tm-sym { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seg-table { width: 100%; }
+.seg-table td.seg-name { max-width: 240px; white-space: normal; }
+.seg-table td.seg-bar-cell { width: 28%; min-width: 60px; }
+.seg-table .seg-bar { display: block; }
+@media (max-width: 640px) { .seg-table td.seg-bar-cell, .seg-table th:nth-child(2) { display: none; } }
