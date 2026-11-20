@@ -4,11 +4,13 @@
  * try/catch: a blocked storage just means nothing is remembered).
  */
 import { TIMEFRAMES, type Timeframe } from '../types';
+import type { IndicatorInstance } from '../indicators/types';
+import type { ChartType } from '../chart/ChartView';
 import { LINK_COLORS, type LinkColor } from './linkGroups';
 
-export const PANEL_TYPES = ['chart', 'quote', 'news', 'facts', 'positions'] as const;
+export const PANEL_TYPES = ['chart', 'quote', 'stats', 'news', 'facts', 'fund', 'options', 'positions'] as const;
 export type PanelType = (typeof PANEL_TYPES)[number];
-export const PANEL_LABELS: Record<PanelType, string> = { chart: 'Chart', quote: 'Quote', news: 'News', facts: 'Research facts', positions: 'My position' };
+export const PANEL_LABELS: Record<PanelType, string> = { chart: 'Chart', quote: 'Quote', stats: 'Key stats', news: 'News', facts: 'Research facts', fund: 'Fund profile', options: 'Options', positions: 'My position' };
 
 export const GRIDS = ['1x1', '2x1', '2x2', '1+2', '3x2'] as const;
 export type Grid = (typeof GRIDS)[number];
@@ -24,6 +26,9 @@ export interface PanelConfig {
   /** The panel's own symbol (used when it isn't linked, or its group has none yet). */
   symbol: string;
   timeframe: Timeframe;
+  /** A chart panel's own indicators (default: volume) and chart type (default: candles). */
+  indicators?: IndicatorInstance[];
+  chartType?: ChartType;
 }
 
 export interface Layout {
@@ -43,6 +48,7 @@ export const PRESETS: Layout[] = [
 ];
 export const PRESET_NAMES = PRESETS.map((l) => l.name);
 
+const CHART_TYPE_IDS = ['candles', 'hollow', 'heikin', 'bars', 'line', 'area'] as const;
 const isOf = <T extends string>(list: readonly T[], v: unknown): v is T => typeof v === 'string' && (list as readonly string[]).includes(v);
 
 /** A layout read back from storage made safe: unknown values replaced, always MAX_PANELS panels. */
@@ -60,6 +66,10 @@ export function normalizeLayout(raw: unknown, fallback: Layout = PRESETS[0]): La
         link: isOf(LINK_COLORS, x.link) ? x.link : f.link,
         symbol: typeof x.symbol === 'string' && x.symbol.trim() ? x.symbol.trim().toUpperCase().slice(0, 16) : f.symbol,
         timeframe: isOf(TIMEFRAMES, x.timeframe) && !x.timeframe.endsWith('s') ? x.timeframe : f.timeframe,
+        ...(Array.isArray(x.indicators)
+          ? { indicators: x.indicators.filter((i): i is IndicatorInstance => !!i && typeof i === 'object' && typeof i.uid === 'string' && typeof i.defId === 'string' && !!i.params && typeof i.params === 'object').slice(0, 12) }
+          : {}),
+        ...(isOf(CHART_TYPE_IDS, x.chartType) ? { chartType: x.chartType } : {}),
       };
     }),
   };
