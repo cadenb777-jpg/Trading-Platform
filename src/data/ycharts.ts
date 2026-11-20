@@ -253,3 +253,65 @@ export function searchCatalog(entries: CatalogEntry[], q: string, kindGroup?: st
   const seen = new Set<string>();
   return hits.sort((a, b) => score(a) - score(b)).filter((e) => !seen.has(e.code) && seen.add(e.code)).slice(0, limit);
 }
+
+// ---------- YCharts woven into the platform's own panels (helper 99, Excel add-in) ----------
+
+export const YCHARTS_PROFILE_HELPER_VERSION = 99;
+export type YAsset = 'stock' | 'etf' | 'mutual_fund';
+export interface YProfile {
+  symbol: string;
+  asset: YAsset;
+  info: Record<string, string | number>;
+  figures: Record<string, number | string>;
+  fetched: string;
+}
+
+const profiles = new Map<string, Promise<YProfile | null>>();
+/**
+ * YCharts' facts about a stock, ETF or mutual fund, or null when YCharts can't be asked (no Excel add-in route, older
+ * helper, or YCharts has nothing). Never throws: panels just keep their own data. One request per symbol per page load.
+ */
+export function yProfile(symbol: string, asset: YAsset, helperVersion: number): Promise<YProfile | null> {
+  if (helperVersion < YCHARTS_PROFILE_HELPER_VERSION) return Promise.resolve(null);
+  const key = `${asset}:${symbol.toUpperCase()}`;
+  let p = profiles.get(key);
+  if (!p) {
+    p = ychartsReady()
+      .then((r) => (r.ready && r.source === 'excel' ? engineRequest<YProfile>('ycharts.profile', { symbol, asset }, 240_000) : null))
+      .catch(() => null);
+    profiles.set(key, p);
+  }
+  return p;
+}
+
+const text = (v: unknown) => (v == null ? '' : String(v).trim());
+const yesNo = (v: unknown) => {
+  const t = text(v).toLowerCase();
+  return t === 'true' || t === 'yes' || t === 'y' || t === '1' ? 'Yes' : t === 'false' || t === 'no' || t === 'n' || t === '0' ? 'No' : text(v);
+};
+
+/** "Cupertino, CA, United States" from YCharts' headquarters fields (pure, tested). */
+export function headquarters(info: Record<string, unknown>): string {
+  return [info.hq_city, info.hq_state_province, info.hq_country].map(text).filter(Boolean).join(', ');
+}
+
+/** The fund facts YCharts adds to the fund profile, as [label, value, hint] rows; empty ones left out (pure, tested). */
+export function fundFactRows(info: Record<string, unknown>): [string, string, string?][] {
+  const style = text(info.equity_style) || text(info.fixed_income_style);
+  const special = [yesNo(info.leveraged_fund) === 'Yes' ? 'leveraged' : '', yesNo(info.inverse_fund) === 'Yes' ? 'inverse' : ''].filter(Boolean);
+  const rows: [string, string, string?][] = [
+    ['Benchmark', text(info.prospectus_benchmark_index), 'The index the fund compares itself to in its prospectus'],
+    ['Style', style, 'Morningstar-style box: size and value/growth for stocks, quality and duration for bonds'],
+    ['Asset class', text(info.broad_asset_class)],
+    ['Index fund', info.index_fund == null ? '' : yesNo(info.index_fund), 'Tracks an index instead of picking investments'],
+    ['Leveraged / inverse', special.length ? `Yes: ${special.join(' and ')}` : '', 'Uses borrowing or bets against the index: meant for short holds'],
+    ['Legal structure', text(info.legal_structure)],
+    ['Share class', text(info.share_class)],
+    ['Open to new investors', info.open_to_new_investors == null ? '' : yesNo(info.open_to_new_investors)],
+    ['Pays out', text(info.dividend_frequency)],
+    ['Next ex-dividend', text(info.next_ex_dividend_date)],
+    ['Fee waiver ends', text(info.waiver_expiration_date), 'After this date the expense ratio can rise to the gross ratio'],
+    ['Holdings as of', text(info.latest_holdings_date)],
+  ];
+  return rows.filter(([, v]) => v);
+}

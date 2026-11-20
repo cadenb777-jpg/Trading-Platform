@@ -243,3 +243,49 @@ async def holdings(ctx, msg):
         rows, _ = await xl.holdings(sid)
         return {'symbol': sid, 'holdings': rows, 'fetched': _now(), 'source': 'excel'}
     return await ctx.cached(('ycharts', 'excel', 'holdings', sid), 86400, load, persist=True, stale_ok=True)
+
+
+#: What YCharts knows about each kind of security (codes from YCharts' Excel reference workbook). Text facts via YCI,
+#: figures via YCP. Used to fill the platform's own pages (company description, fund profile), not shown as a list.
+PROFILE_INFO = {
+    'stock': ('long_description', 'description', 'sector', 'industry', 'sub_industry', 'hq_city', 'hq_state_province',
+              'hq_country', 'ipo_date', 'fye', 'next_earnings_release', 'last_earnings_release', 'next_ex_dividend_date',
+              'consensus_recommendation_label', 'url', 'dividend_frequency'),
+    'fund': ('prospectus_objective', 'investment_strategy', 'category_name', 'fund_family', 'inception_date',
+             'legal_structure', 'prospectus_benchmark_index', 'equity_style', 'fixed_income_style', 'broad_asset_class',
+             'index_fund', 'leveraged_fund', 'inverse_fund', 'dividend_frequency', 'share_class', 'open_to_new_investors',
+             'latest_holdings_date', 'next_ex_dividend_date', 'expense_note', 'waiver_expiration_date', 'aum_usd'),
+}
+PROFILE_FIGURES = {
+    'stock': ('market_cap', 'pe_ratio', 'dividend_yield', 'market_beta_60_month', 'one_year_total_return'),
+    'fund': ('net_asset_value', 'assets_under_management', 'expense_ratio', 'gross_expense_ratio_generic', 'turnover_ratio',
+             'distribution_yield', 'discount_or_premium_to_nav', 'one_year_total_return',
+             'annualized_daily_three_year_total_return', 'annualized_daily_five_year_total_return',
+             'monthly_standard_deviation_annualized_3y', 'historical_sharpe_3y', 'max_drawdown_5y'),
+}
+
+
+def profile_id(symbol, asset):
+    """YCharts ticker for a symbol: mutual funds are M:TICKER; refuses portfolios (client data)."""
+    s = str(symbol or '').strip().upper().lstrip('$')
+    return xl.check_id(f'M:{s}' if asset == 'mutual_fund' and not s.startswith('M:') else s)
+
+
+@handler('ycharts.profile')
+async def profile(ctx, msg):
+    """YCharts' facts about one stock, ETF or mutual fund (Excel add-in), to fill the platform's own panels."""
+    asset = str(msg.get('asset') or 'stock')
+    if asset not in ('stock', 'etf', 'mutual_fund'):
+        raise EngineError('asset is stock, etf or mutual_fund')
+    if source() != 'excel':
+        raise EngineError('YCharts profiles come through the YCharts Excel add-in (Windows).')
+    sid = profile_id(msg.get('symbol'), asset)
+    group = 'stock' if asset == 'stock' else 'fund'
+    figures = PROFILE_FIGURES[group]
+    if group == 'fund' and asset == 'mutual_fund':
+        figures = tuple(c for c in figures if c != 'discount_or_premium_to_nav')  # a mutual fund trades at NAV
+
+    async def load():
+        info, figs = await xl.profile(sid, PROFILE_INFO[group], figures)
+        return {'symbol': sid, 'asset': asset, 'info': info, 'figures': figs, 'fetched': _now(), 'source': 'excel'}
+    return await ctx.cached(('ycharts', 'excel', 'profile', sid, asset), 12 * 3600, load, persist=True, stale_ok=True)

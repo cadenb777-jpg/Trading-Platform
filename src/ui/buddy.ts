@@ -36,8 +36,13 @@ export function petLine(percent: number | null, n: number): string {
 
 /** Areas he never sits in at all (the menu, the bars, toolbars and dialogs). */
 const OFF_LIMITS = '.rail, .shell-top, .status-bar, .fn-bar, .toolbar, .ticker-tape, .modal, [role="dialog"], .cmd-palette, .ai-drawer';
-/** Content: anything you read or press. Empty space (page gaps, padding, blank parts of a card) is fine. */
-const CONTENT = 'a, button, input, select, textarea, table, canvas, svg, img, li, p, h1, h2, h3, h4, label, [role="button"], [role="tab"], [data-ticker]';
+/**
+ * Content: anything you read or press, and every card, panel, table or chart as a whole (owner, 2026-11-20: even the
+ * blank part of a card must stay clear). He sits only in the gaps between them and the page margins.
+ */
+const CONTENT =
+  'a, button, input, select, textarea, table, canvas, svg, img, li, p, h1, h2, h3, h4, label, [role="button"], [role="tab"], [data-ticker], ' +
+  '.panel, .sv-panel, [class*="-panel"], [class*="card"], [class*="tile"], section, figure, dl, .chip-row, .tv-lightweight-charts';
 
 /** True when the top element at a point (under the dog) is empty space, not content. */
 export function isEmptyAt(el: Element | null): boolean {

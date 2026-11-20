@@ -59,3 +59,15 @@ describe('YCharts client privacy', () => {
     expect(cat.map((e) => e.code)).toEqual(['price']);
   });
 });
+
+import { fundFactRows, headquarters } from './ycharts';
+
+describe('YCharts facts in the platform panels', () => {
+  it('writes the headquarters and fund facts in plain words', () => {
+    expect(headquarters({ hq_city: 'Cupertino', hq_state_province: 'CA', hq_country: 'United States' })).toBe('Cupertino, CA, United States');
+    expect(headquarters({})).toBe('');
+    const rows = fundFactRows({ prospectus_benchmark_index: 'S&P 500 TR USD', equity_style: 'Large Blend', index_fund: 'True', leveraged_fund: 'False', inverse_fund: 'False', dividend_frequency: 'Quarterly' });
+    expect(rows.map((r) => [r[0], r[1]])).toEqual([['Benchmark', 'S&P 500 TR USD'], ['Style', 'Large Blend'], ['Index fund', 'Yes'], ['Pays out', 'Quarterly']]);
+    expect(fundFactRows({ leveraged_fund: 'True', inverse_fund: 'True' }).find((r) => r[0] === 'Leveraged / inverse')?.[1]).toBe('Yes: leveraged and inverse');
+  });
+});
