@@ -432,7 +432,7 @@ function connectionCheck(): HTMLElement {
     { class: 'settings-row', id: 'settings-connection' },
     h('div', { class: 'settings-label' }, h('b', {}, 'Connection check')),
     ...rows.map(([label, text, tone]) => h('div', { class: `check-row ${tone}` }, h('span', { class: 'check-dot' }), h('b', {}, label), h('span', {}, text))),
-    helper.isConnected ? updateCheckRow() : null,
+    null, // Check for updates lives at the top of General (updatesSection)
     loginBtn ? h('div', { class: 'ap-controls' }, loginBtn, h('span', { class: 'muted small' }, 'Opens Schwab’s login page on this computer; prices resume once you approve.')) : null,
     helper.problems.length ? h('p', { class: 'muted small' }, 'If something says unavailable, close the helper window and start it again. If that doesn’t help, send me the log file above.') : null,
   );
@@ -468,6 +468,18 @@ function aboutSection(): HTMLElement {
   );
 }
 
+/** First thing in Settings: which helper is running and the Check for updates button (owner: "I don't see it"). */
+function updatesSection(): HTMLElement[] {
+  const v = helper.version ?? 0;
+  const line = helper.isConnected
+    ? `Helper version ${v} is running. ${v >= LATEST_HELPER_VERSION ? 'That is the newest this page knows.' : `Version ${LATEST_HELPER_VERSION} is out: it installs by itself, or click Check for updates.`}`
+    : 'The helper isn’t running on this computer, so it can’t check for updates. Open Trading Terminal (or the start file) and come back here.';
+  return [
+    h('h3', { class: 'settings-section' }, 'Helper and updates'),
+    h('div', { class: 'settings-row', id: 'settings-updates' }, h('p', { class: 'muted small' }, line), helper.isConnected ? updateCheckRow() : null),
+  ];
+}
+
 /** Appearance: light or dark (saved in this browser, works without the helper). */
 function appearanceRow(): HTMLElement[] {
   const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Theme' });
@@ -492,7 +504,7 @@ function appearanceRow(): HTMLElement[] {
     h('h3', { class: 'settings-section' }, 'Appearance'),
     h('div', { class: 'settings-row' }, h('div', { class: 'settings-label' }, h('b', {}, 'Theme')), seg),
     h('div', { class: 'settings-row' }, h('div', { class: 'settings-label' }, h('b', {}, 'Look')), h('p', { class: 'muted small' }, 'Terminal: dense screens in one monospace font with glass panels. Classic: the earlier, roomier look.'), lookSeg),
-    h('div', { class: 'settings-row' }, h('label', { class: 'check-item' }, flashBox, h('b', {}, 'Flash prices when they change')), h('p', { class: 'muted small' }, 'One soft tint that fades, at most every 2 seconds per number. Off when your system asks for reduced motion.')),
+    h('div', { class: 'settings-row' }, h('label', { class: 'check-item' }, flashBox, h('b', {}, 'Flash prices when they change')), h('p', { class: 'muted small' }, 'One soft tint that fades, at most every 5 seconds per number. Off when your system asks for reduced motion.')),
     ...chartRows(),
   ];
 }
@@ -550,6 +562,7 @@ function tabFor(focus?: string): string | undefined {
   if (f === 'data' || f === 'ai') return 'Data connections';
   if (f === 'ai-model') return 'AI';
   if (f === 'alerts') return 'Alerts';
+  if (f === 'updates') return 'General';
   if (f === 'connection' || f === 'helper' || f === 'about') return 'Help';
   if (f === 'trading' || f === 'webull') return 'Trading';
   return 'General';
@@ -568,7 +581,7 @@ export async function openSettings(focus?: string) {
     try {
       s = await getSettings(true);
     } catch (err) {
-      body.replaceChildren(tabbed([['General', [...appearanceRow(), buddyBlock()]], ['Help', [connectionCheck(), h('div', { class: 'ap-error' }, `${(err as Error).message}`), diagnosticsRow(), aboutSection()]]], tabFor(focus)));
+      body.replaceChildren(tabbed([['General', [...updatesSection(), ...appearanceRow(), buddyBlock()]], ['Help', [connectionCheck(), h('div', { class: 'ap-error' }, `${(err as Error).message}`), diagnosticsRow(), aboutSection()]]], tabFor(focus)));
       return;
     }
     const model = h('select', { class: 'input' }, ...s.models.map((m) => h('option', { value: m.id, selected: m.id === s.model }, m.name)));
@@ -579,7 +592,7 @@ export async function openSettings(focus?: string) {
     body.replaceChildren(
       tabbed(
         [
-          ['General', [...appearanceRow(), buddyBlock(), h('h3', { class: 'settings-section' }, 'Helper'),
+          ['General', [...updatesSection(), ...appearanceRow(), buddyBlock(), h('h3', { class: 'settings-section' }, 'Helper'),
       (() => {
         const box = h('input', { type: 'checkbox', checked: s.openBrowser !== false });
         box.addEventListener('change', async () => {
