@@ -5,7 +5,7 @@ describe('desk layout', () => {
   it('falls back to the starter views on damaged data and keeps only valid tiles', () => {
     expect(parseDesk('not json').views.map((v) => v.name)).toEqual(['Morning', 'Trading']);
     expect(parseDesk(JSON.stringify({ views: [] })).views).toHaveLength(2);
-    const d = parseDesk(JSON.stringify({ current: 'x', views: [{ id: 'a', name: 'Mine', tiles: [{ id: '1', type: 'chart', span: 7, symbols: ['aapl', 'bad ticker!', 'AAPL'] }, { id: '2', type: 'nope', span: 4 }] }] }));
+    const d = parseDesk(JSON.stringify({ current: 'x', views: [{ id: 'a', name: 'Mine', tiles: [{ id: '1', type: 'chart', span: 13, symbols: ['aapl', 'bad ticker!', 'AAPL'] }, { id: '2', type: 'nope', span: 4 }] }] }));
     expect(d.current).toBe('a');
     expect(d.views[0].tiles).toEqual([{ id: '1', type: 'chart', span: 6, symbols: ['AAPL'] }]);
   });
@@ -37,5 +37,34 @@ describe('desk layout', () => {
     d = removeTile(d, t.id);
     expect(currentView(d).tiles.some((x) => x.id === t.id)).toBe(false);
     expect(nextSpan(12)).toBe(3);
+  });
+});
+
+import { moveTileTo, parseDesk as parse2, rowsOf, snapRows, snapSpan, starterDesk as starter2, currentView as cv2 } from './desk';
+
+describe('desk: drag to move, drag edges to resize', () => {
+  it('snaps a dragged width to whole columns of the 12-column grid', () => {
+    // grid 1210 px with 10 px gaps: each column 92.5 px
+    expect(snapSpan(92.5 * 6 + 50, 1210)).toBe(6);
+    expect(snapSpan(400, 1210)).toBe(4);
+    expect(snapSpan(10, 1210)).toBe(2); // never narrower than 2 columns
+    expect(snapSpan(5000, 1210)).toBe(12);
+  });
+  it('snaps a dragged height to whole rows', () => {
+    expect(snapRows(6 * 56 + 5 * 10)).toBe(6);
+    expect(snapRows(20)).toBe(3);
+    expect(snapRows(99999)).toBe(18);
+  });
+  it('moves a tile to any position and keeps sizes when saved and read back', () => {
+    const d = starter2();
+    const v = cv2(d);
+    const last = v.tiles[v.tiles.length - 1].id;
+    const moved = moveTileTo(d, last, 0);
+    expect(cv2(moved).tiles[0].id).toBe(last);
+    expect(cv2(moved).tiles.length).toBe(v.tiles.length);
+    const sized = { ...moved, views: moved.views.map((x) => ({ ...x, tiles: x.tiles.map((t, i) => (i === 0 ? { ...t, span: 7, rows: 9 } : t)) })) };
+    const back = cv2(parse2(JSON.stringify(sized))).tiles[0];
+    expect([back.span, rowsOf(back)]).toEqual([7, 9]);
+    expect(rowsOf({ id: 'x', type: 'notes', span: 4 })).toBe(5);
   });
 });

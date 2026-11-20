@@ -14740,3 +14740,66 @@ select.input,
 .yc-hit { text-align: left; }
 .yc-calc { margin-bottom: 8px; }
 .yc-calc-out { margin-top: 8px; }
+
+/* The expand arrow sits beside the name in the normal flow, never on top of it (owner, 2026-11-20: it was drawn
+   over the ticker when a later rule trimmed the cell's left padding). */
+.inv-table td.inv-has-chev,
+.data-table td.inv-has-chev { padding-left: 6px; white-space: nowrap; }
+.inv-table .inv-chev,
+.data-table .inv-chev { position: static; transform: none; display: inline-grid; vertical-align: middle; margin-right: 6px; }
+.inv-has-chev > .inv-name { display: inline-flex; vertical-align: middle; white-space: normal; }
+
+/* Home: the Actions button takes its own place in the greeting's flow at every width, never on top of the price chips
+   (owner, 2026-11-20: it covered the EURO chip). */
+.home-hero > .fn-bar {
+  position: static;
+  align-self: flex-start;
+  order: 5;
+  margin-top: var(--sp-2);
+}
+
+/* Desk like windows: tiles pack flush on a 12-column x 56 px row grid (dense: gaps fill in, like wrapped text), the
+   title bar drags a tile, the right/bottom edges and the corner resize it with snapping (src/pages/deskPage.ts). */
+.desk-grid {
+  grid-auto-rows: 56px;
+  grid-auto-flow: row dense;
+  align-items: stretch;
+}
+.desk-tile {
+  position: relative;
+  grid-row: span var(--rows, 6);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+}
+.desk-tile .fn-tile-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.desk-tile .fn-tile-head { cursor: grab; touch-action: none; }
+.desk-tile.dragging { opacity: 0.55; outline: 2px dashed var(--accent); outline-offset: 2px; }
+.desk-tile.dragging .fn-tile-head { cursor: grabbing; }
+.desk-tile.resizing { outline: 2px solid var(--accent); outline-offset: 2px; user-select: none; }
+.desk-rz { position: absolute; z-index: 2; touch-action: none; }
+.desk-rz-e { top: 0; right: -5px; bottom: 14px; width: 10px; cursor: ew-resize; }
+.desk-rz-s { left: 0; right: 14px; bottom: -5px; height: 10px; cursor: ns-resize; }
+.desk-rz-se { right: -3px; bottom: -3px; width: 16px; height: 16px; cursor: nwse-resize; }
+.desk-rz-se::after {
+  content: '';
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  opacity: 0.6;
+}
+.desk-tile:hover .desk-rz-se::after { opacity: 1; border-color: var(--accent-text); }
+@media (max-width: 760px) {
+  .desk-rz { display: none; }
+  .desk-tile .fn-tile-head { cursor: default; }
+}
+@media (prefers-reduced-motion: reduce) { .desk-tile { transition: none; } }

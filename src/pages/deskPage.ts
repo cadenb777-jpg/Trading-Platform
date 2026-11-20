@@ -1,9 +1,11 @@
 /**
  * Today → Desk (Bloomberg Launchpad, owner's spec 7.19): your own screens made of tiles (charts, quote monitors,
  * news, world markets, sectors, movers, events, Fed odds, the curve, notes), saved as named views you switch between
- * with the tabs. Tiles have a title bar with move, width, tickers and remove. Layout state: src/desk/desk.ts.
+ * with the tabs. Like windows on a computer: drag a tile's title bar to move it (the others slide over and everything
+ * packs flush), drag its right edge, bottom edge or corner to resize (snaps to the 12-column grid and to whole rows),
+ * pop it out with the window button. The buttons do the same from the keyboard. Layout state: src/desk/desk.ts.
  */
-import { addTile, addView, cleanSymbols, currentView, deleteView, DESK_KEY, moveTile, nextSpan, parseDesk, removeTile, renameView, TILE_TYPES, tileType, updateTile, type Desk, type Tile, type TileType } from '../desk/desk';
+import { addTile, addView, cleanSymbols, currentView, deleteView, DESK_KEY, moveTile, moveTileTo, nextSpan, parseDesk, removeTile, renameView, rowsOf, snapRows, snapSpan, TILE_TYPES, tileType, updateTile, type Desk, type Tile, type TileType } from '../desk/desk';
 import { mountTile } from '../desk/tiles';
 import { h, openModal } from '../ui/dom';
 import { fnTile } from '../ui/fnTile';
@@ -41,7 +43,7 @@ export function createDeskPage() {
     h(
       'header',
       { class: 'ap-header' },
-      h('div', {}, h('h1', {}, 'Desk'), h('p', { class: 'muted' }, 'Build your own screens from tiles and switch between them with the tabs. Saved on this computer.')),
+      h('div', {}, h('h1', {}, 'Desk'), h('p', { class: 'muted' }, 'Drag a tile by its title bar to move it; drag its right or bottom edge (or the corner) to resize, like a window. Tiles snap into the grid and pack flush. Saved on this computer.')),
       h('div', { class: 'ap-controls' }, h('button', { type: 'button', class: 'btn primary', onclick: () => openAdd() }, '+ Add tile')),
     ),
     tabs,
@@ -108,9 +110,88 @@ export function createDeskPage() {
       btn('×', 'Remove this tile', () => set(removeTile(desk, t.id))),
     ].filter((x): x is HTMLButtonElement => typeof x !== 'string');
     const tile = fnTile({ title: titleOf(t), cls: `desk-tile desk-t-${t.type}`, actions: [h('span', { class: 'desk-actions' }, ...actions)] });
+    tile.el.dataset.id = t.id;
     tile.el.style.setProperty('--span', String(t.span));
+    tile.el.style.setProperty('--rows', String(rowsOf(t)));
+    enableMove(tile.el, t);
+    enableResize(tile.el, t);
     stops.push(mountTile(t, tile.body, (text) => set(updateTile(desk, t.id, { text }), false)));
     return tile.el;
+  }
+
+  /** Drag the title bar: the tile follows the pointer through the grid, the others slide over, the order is saved. */
+  function enableMove(el: HTMLElement, t: Tile) {
+    const head = el.querySelector<HTMLElement>('.fn-tile-head');
+    if (!head) return;
+    head.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || (e.target as Element).closest('button, a, input, select, textarea')) return;
+      const sx = e.clientX;
+      const sy = e.clientY;
+      let dragging = false;
+      // listened on the document: moving the tile in the page would drop a pointer capture on its title bar
+      const move = (ev: PointerEvent) => {
+        if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
+        if (!dragging) {
+          dragging = true;
+          el.classList.add('dragging');
+        }
+        const over = document.elementsFromPoint(ev.clientX, ev.clientY).map((x) => x.closest<HTMLElement>('.desk-tile')).find((x) => x && x !== el);
+        if (!over) return;
+        const r = over.getBoundingClientRect();
+        const after = ev.clientX > r.left + r.width / 2;
+        if (after ? over.nextElementSibling !== el : over.previousElementSibling !== el) over[after ? 'after' : 'before'](el);
+      };
+      const up = () => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        document.removeEventListener('pointercancel', up);
+        el.classList.remove('dragging');
+        if (!dragging) return;
+        const ids = [...grid.querySelectorAll<HTMLElement>('.desk-tile')].map((x) => x.dataset.id);
+        set(moveTileTo(desk, t.id, ids.indexOf(t.id)), false);
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+      document.addEventListener('pointercancel', up);
+    });
+  }
+
+  /** Drag the right edge, bottom edge or corner: width snaps to the 12 columns, height to whole rows, then saved. */
+  function enableResize(el: HTMLElement, t: Tile) {
+    for (const dir of ['e', 's', 'se'] as const) {
+      const grip = h('div', { class: `desk-rz desk-rz-${dir}`, 'aria-hidden': 'true', title: dir === 'e' ? 'Drag to change the width' : dir === 's' ? 'Drag to change the height' : 'Drag to resize' });
+      grip.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        grip.setPointerCapture(e.pointerId);
+        const r0 = el.getBoundingClientRect();
+        const gridW = grid.getBoundingClientRect().width;
+        const sx = e.clientX;
+        const sy = e.clientY;
+        let span = t.span;
+        let rows = rowsOf(t);
+        el.classList.add('resizing');
+        const move = (ev: PointerEvent) => {
+          if (dir !== 's') span = snapSpan(r0.width + ev.clientX - sx, gridW);
+          if (dir !== 'e') rows = snapRows(r0.height + ev.clientY - sy);
+          el.style.setProperty('--span', String(span));
+          el.style.setProperty('--rows', String(rows));
+        };
+        const up = () => {
+          grip.removeEventListener('pointermove', move);
+          grip.removeEventListener('pointerup', up);
+          grip.removeEventListener('pointercancel', up);
+          el.classList.remove('resizing');
+          t.span = span;
+          t.rows = rows;
+          set(updateTile(desk, t.id, { span, rows }), false);
+          window.dispatchEvent(new Event('resize')); // charts inside fit their new size
+        };
+        grip.addEventListener('pointermove', move);
+        grip.addEventListener('pointerup', up);
+        grip.addEventListener('pointercancel', up);
+      });
+      el.append(grip);
+    }
   }
 
   function draw() {

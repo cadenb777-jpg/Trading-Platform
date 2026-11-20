@@ -6,13 +6,22 @@
  */
 
 export type TileType = 'read' | 'chart' | 'quotes' | 'news' | 'sectors' | 'world' | 'movers' | 'events' | 'fed' | 'curve' | 'notes';
+/** Widths the ⇔ button cycles through (keyboard); dragging an edge sets any width from MIN_SPAN to 12 columns. */
 export const SPANS = [3, 4, 6, 8, 12] as const;
-export type Span = (typeof SPANS)[number];
+export type Span = number;
+export const MIN_SPAN = 2;
+/** Heights in grid rows (ROW_PX tall each, GAP_PX between): dragging the bottom edge snaps to whole rows. */
+export const ROW_PX = 56;
+export const GAP_PX = 10;
+export const MIN_ROWS = 3;
+export const MAX_ROWS = 18;
 
 export interface Tile {
   id: string;
   type: TileType;
   span: Span;
+  /** Height in grid rows; missing = the tile type's own height. */
+  rows?: number;
   /** Ticker(s): one for a chart, several for a quote list, optional for news. */
   symbols?: string[];
   /** Notes text. */
@@ -97,8 +106,9 @@ export function parseDesk(raw: string | null | undefined): Desk {
       const tiles: Tile[] = [];
       for (const t of v.tiles) {
         if (!t || typeof t.id !== 'string' || !TILE_TYPES.some((x) => x.type === t.type)) continue;
-        const span = (SPANS as readonly number[]).includes(t.span) ? (t.span as Span) : tileType(t.type).span;
+        const span = Number.isInteger(t.span) && t.span >= MIN_SPAN && t.span <= 12 ? (t.span as Span) : tileType(t.type).span;
         const tile: Tile = { id: t.id, type: t.type, span };
+        if (Number.isInteger(t.rows) && t.rows >= MIN_ROWS && t.rows <= MAX_ROWS) tile.rows = t.rows;
         if (t.symbols) tile.symbols = cleanSymbols(t.symbols);
         if (typeof t.text === 'string') tile.text = t.text.slice(0, 5000);
         tiles.push(tile);
@@ -147,4 +157,31 @@ export function moveTile(d: Desk, tileId: string, dir: -1 | 1): Desk {
     return { ...v, tiles };
   });
 }
-export const nextSpan = (s: Span): Span => SPANS[(SPANS.indexOf(s) + 1) % SPANS.length];
+export const nextSpan = (s: Span): Span => SPANS.find((x) => x > s) ?? SPANS[0];
+
+/** Each tile type's starting height in rows. */
+const ROWS: Record<TileType, number> = { read: 6, chart: 6, quotes: 6, news: 7, sectors: 7, world: 6, movers: 6, events: 6, fed: 7, curve: 6, notes: 5 };
+export const rowsOf = (t: Tile) => t.rows ?? ROWS[t.type];
+
+/** Moves a tile to position `to` (0 = first) in the reading order (dragging a tile). */
+export function moveTileTo(d: Desk, tileId: string, to: number): Desk {
+  return mapView(d, d.current, (v) => {
+    const i = v.tiles.findIndex((t) => t.id === tileId);
+    if (i < 0) return v;
+    const tiles = v.tiles.filter((t) => t.id !== tileId);
+    tiles.splice(Math.max(0, Math.min(tiles.length, to)), 0, v.tiles[i]);
+    return { ...v, tiles };
+  });
+}
+
+/** Columns for a dragged width: the nearest whole number of the grid's 12 columns (pure, tested). */
+export function snapSpan(widthPx: number, gridPx: number, gap = GAP_PX): number {
+  const col = (gridPx - 11 * gap) / 12;
+  if (!(col > 0)) return 12;
+  return Math.max(MIN_SPAN, Math.min(12, Math.round((widthPx + gap) / (col + gap))));
+}
+
+/** Rows for a dragged height: the nearest whole number of grid rows (pure, tested). */
+export function snapRows(heightPx: number, row = ROW_PX, gap = GAP_PX): number {
+  return Math.max(MIN_ROWS, Math.min(MAX_ROWS, Math.round((heightPx + gap) / (row + gap))));
+}
