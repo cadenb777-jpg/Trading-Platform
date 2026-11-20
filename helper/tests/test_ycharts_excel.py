@@ -150,8 +150,10 @@ class CrossCheck(unittest.TestCase):
         self.assertEqual(xl.dated_point_formula('WMT', 'price'), '=YCP("WMT","price",,"Y",,"TP_NULL")')
         self.assertEqual(xl.dated_value({'spill': [['2026-01-31', 112.5]]}), (112.5, '2026-01-31'))
         self.assertEqual(xl.dated_value({'v': 'TP_NULL'}), (None, None))
-        got = cc.parse_ycharts('divYield', 0.42, '2026-11-19')
+        got = cc.parse_ycharts('divYield', 0.0042, '2026-11-19')  # Excel sends fractions
         self.assertAlmostEqual(got['divYield'][0], 0.0042)
+        self.assertAlmostEqual(cc.parse_ycharts('expenseRatio', 0.0169, None)['expenseRatio'][0], 0.0169)
+        self.assertAlmostEqual(cc.parse_ycharts('expenseRatio', 1.69, None)['expenseRatio'][0], 0.0169)  # percent units
         self.assertEqual(got['divYield'][2], 'trailing')
         self.assertEqual(cc.parse_ycharts('nav', None, None), {})
 

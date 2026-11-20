@@ -570,7 +570,11 @@ def parse_ycharts(field, value, date):
     code, basis = YCHARTS_CODES[field]
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         return {}
-    v = value / 100 if field in ('divYield', 'expenseRatio') else float(value)
+    v = float(value)
+    # the Excel add-in sends percents as fractions (an expense ratio of 1.69% arrives as 0.0169; seen on MMNIX against
+    # its prospectus). An expense ratio above 25% can only be percent units, so that one is still divided.
+    if field == 'expenseRatio' and v > 0.25:
+        v /= 100
     as_of = dt.datetime.combine(dt.date.fromisoformat(date), dt.time(16), NY).timestamp() if date else None
     return {field: (v, as_of, basis) if basis else (v, as_of)}
 
