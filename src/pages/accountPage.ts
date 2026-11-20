@@ -278,7 +278,19 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     /** Webull buying power per account, read once per load (the cards are redrawn when display choices change). */
     const buyingPower = new Map<string, Promise<number | null>>();
     const buyingPowerOf = (id: string) => {
-      if (!buyingPower.has(id)) buyingPower.set(id, loadSnapshot(id).then((s) => s.balances?.buyingPower ?? null, () => null));
+      // only US stock accounts have stock buying power: a futures account is skipped (asking Webull for it is an error)
+      if (!buyingPower.has(id))
+        buyingPower.set(
+          id,
+          loadSnapshot().then(
+            (status) => {
+              const acct = status.accounts?.find((a) => a.id === id);
+              if (acct && (acct.futures || acct.stocks === false)) return null;
+              return id === status.accountId ? (status.balances?.buyingPower ?? null) : loadSnapshot(id).then((s) => s.balances?.buyingPower ?? null, () => null);
+            },
+            () => null,
+          ),
+        );
       return buyingPower.get(id)!;
     };
     const drawHoldings = () => {

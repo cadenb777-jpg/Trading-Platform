@@ -171,7 +171,8 @@ async def box(ctx, msg):
                 'curve': [{'days': d, 'rate': r} for d, r in curve], 'curveDate': curve_date, 'sofr': sofr,
                 'feePerContract': FEE_PER_CONTRACT,
                 'note': None if out else 'Schwab’s chain had no monthly SPX expiry with all four quotes at two strikes.'}
-    return await ctx.cached(('schwab', 'rates-box'), 600, load)
+    # a Schwab hiccup (502) answers with the last good reading (kept on disk) while it retries in the background
+    return await ctx.cached(('schwab', 'rates-box'), 600, load, persist=True, stale_ok=True)
 
 
 async def _safe_fred(ctx, series):
