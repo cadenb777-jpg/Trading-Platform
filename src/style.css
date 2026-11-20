@@ -14671,3 +14671,16 @@ select.input,
 .fd-holdings td.sym { color: var(--accent-text); font-family: var(--font-mono); }
 .fd-holdings tr.tt-open { cursor: pointer; }
 .fd-holdings tr.tt-open:hover td { background: var(--row-hover); }
+
+/* Every chart keeps its own layers inside itself: the library's pane dividers (z-index 50) showed through pop-up
+   windows (z-index 40) and could be dragged through them (owner, 2026-11-20). */
+.tv-lightweight-charts { isolation: isolate; }
+
+/* Workspace panels: chart controls and list panels (fund holdings, option strikes) */
+.ws-head .ws-ct { width: auto; max-width: 104px; }
+.ws-head .ws-fx { font-style: italic; font-weight: 700; padding: 0 8px; }
+.ws-holdings { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; }
+.ws-holdings li { display: flex; justify-content: space-between; gap: 10px; padding: 2px 4px; border-bottom: 1px solid var(--line); }
+.ws-holdings li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-fact b.up { color: var(--up-text); }
+.ws-fact b.down { color: var(--down-text); }

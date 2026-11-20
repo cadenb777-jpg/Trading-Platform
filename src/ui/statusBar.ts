@@ -41,7 +41,7 @@ export function createStatusBar(d: StatusDeps): HTMLElement {
     h('button', { type: 'button', class: `sb-item ${cls}`, title, onclick }, ...children);
   const dot = (state: string) => h('span', { class: 'sb-dot', 'data-state': state, 'aria-hidden': 'true' });
 
-  const helperBtn = item('sb-helper', 'The helper on your computer: open the connection check', () => d.openSettings('connection'));
+  const helperBtn = item('sb-helper', 'The helper on your computer: its version and Check for updates', () => d.openSettings('updates'));
   const feeds = h('span', { class: 'sb-feeds' });
   const latency = item('sb-lat', 'How long the helper took to reply to the last request (sent to answered, including its own work, so not a network ping): open Data health', (e) => d.openHealth(e.currentTarget as HTMLElement));
   const session = item('sb-session', 'US stock market session, New York time', (e) => d.openHealth(e.currentTarget as HTMLElement));
