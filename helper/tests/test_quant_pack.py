@@ -260,6 +260,28 @@ class TearSheetRequest(unittest.TestCase):
         self.assertEqual(len(out['var']), 4)
         self.assertLessEqual(len(out['drawdowns']), 5)
 
+    def test_a_young_holding_is_left_out_not_fatal(self):
+        rng = np.random.default_rng(3)
+        days = [dt.date(2022, 1, 3) + dt.timedelta(days=i) for i in range(400)]
+
+        async def matrix(ctx, symbols, years):
+            if 'NEWCO' in symbols:
+                return days[-40:], np.ones((40, len(symbols))), {'last': [1.0] * len(symbols), 'dividends': [False] * len(symbols)}
+            p = np.cumprod(1 + rng.normal(0.0004, 0.01, (400, len(symbols))), axis=0) * 100
+            return days, p, {'last': p[-1].tolist(), 'dividends': [True] * len(symbols)}
+
+        class Ctx:
+            async def daily_bars(self, symbol, years):
+                return [{}] * (40 if symbol == 'NEWCO' else 400)
+
+        async def rf(ctx):
+            return 0.04
+        with mock.patch.object(ts.quant, 'price_matrix', matrix), mock.patch.object(ts.quant, 'risk_free', rf):
+            out = asyncio.run(ts.tearsheet(Ctx(), {'holdings': [{'symbol': 'AAPL', 'weight': 60}, {'symbol': 'NEWCO', 'weight': 40}]}))
+        self.assertEqual(out['leftOut'], ['NEWCO'])
+        self.assertEqual(out['symbols'], ['AAPL'])
+        self.assertAlmostEqual(sum(out['weights']), 1.0)
+
     def test_no_holdings(self):
         with self.assertRaises(Exception):
             asyncio.run(ts.tearsheet(None, {'holdings': [{'symbol': 'AAPL', 'weight': 0}]}))

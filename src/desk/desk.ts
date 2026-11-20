@@ -5,7 +5,7 @@
  * falls back to the starter views.
  */
 
-export type TileType = 'chart' | 'quotes' | 'news' | 'sectors' | 'world' | 'movers' | 'events' | 'fed' | 'curve' | 'notes';
+export type TileType = 'read' | 'chart' | 'quotes' | 'news' | 'sectors' | 'world' | 'movers' | 'events' | 'fed' | 'curve' | 'notes';
 export const SPANS = [3, 4, 6, 8, 12] as const;
 export type Span = (typeof SPANS)[number];
 
@@ -30,6 +30,7 @@ export interface Desk {
 }
 
 export const TILE_TYPES: { type: TileType; title: string; span: Span; needs?: 'one' | 'many'; about: string }[] = [
+  { type: 'read', title: 'Why it’s moving', span: 6, about: 'One read across stocks, bonds, the Fed, futures moves and positioning (rules, not AI)' },
   { type: 'chart', title: 'Chart', span: 6, needs: 'one', about: 'A one-year price chart of any ticker' },
   { type: 'quotes', title: 'Quote monitor', span: 4, needs: 'many', about: 'Live prices for the tickers you list' },
   { type: 'news', title: 'News', span: 4, about: 'Top headlines, or news on the tickers you list' },

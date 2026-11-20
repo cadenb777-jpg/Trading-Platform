@@ -1,5 +1,5 @@
 """
-Rank against every US filer (Research → Among US companies, helper 88; issuance and R&D rows helper 91): where a company's readings sit among all
+Rank against every US filer (Research → Among US companies, helper 88; issuance and R&D rows helper 93): where a company's readings sit among all
 companies that file with the SEC, not only against its own past. FactSet and Bloomberg's relative-value screens show
 the same kind of percentile; here it is built from the SEC's free XBRL "frames" API, which returns one value per
 company for one concept and one calendar period:

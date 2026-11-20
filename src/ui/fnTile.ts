@@ -5,6 +5,7 @@
  * the row (numberedOnPage / runNumbered).
  */
 import { h } from './dom';
+import { icon } from './icons';
 
 export interface FnTile {
   el: HTMLElement;
@@ -24,6 +25,10 @@ export function fnTile(o: { title: string; link?: string; open?: () => void; lin
       { class: 'fn-tile-head' },
       h('h3', { title: o.tip ?? '' }, o.title),
       ...(o.actions ?? []),
+      h('button', { type: 'button', class: 'icon-btn fn-tile-float', title: 'Pop out into a window', 'aria-label': `Pop out ${o.title}`, onclick: (e: Event) => {
+        const target = (e.currentTarget as HTMLElement).closest<HTMLElement>('.fn-tile');
+        if (target) void import('./floatPanel').then((m) => m.floatPanel(target, o.title));
+      } }, icon('float', 14)),
       o.link
         ? h('button', { type: 'button', class: 'fn-tile-link', title: o.linkTitle ?? `Open ${o.link.toLowerCase()}`, onclick: () => o.open?.() }, o.link, h('span', { 'aria-hidden': 'true' }, ' ›'))
         : '',

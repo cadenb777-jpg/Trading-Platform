@@ -11894,7 +11894,7 @@ button.viz-heat-tile:hover {
   min-width: 0;
 }
 .ts-centre {
-  gap: var(--sp-4);
+  gap: var(--sp-3);
 }
 .ts-note {
   margin: -4px 2px 0;
@@ -11903,9 +11903,13 @@ button.viz-heat-tile:hover {
 }
 .ts-rings {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--sp-3);
 }
+@media (max-width: 1300px) {
+  .ts-rings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.ts-fscore .viz, .ts-range .viz { margin: 0 auto; }
 .ts-rings .viz-cap {
   text-align: center;
 }

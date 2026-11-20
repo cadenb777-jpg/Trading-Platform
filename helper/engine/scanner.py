@@ -33,15 +33,16 @@ log = logging.getLogger('engine.scanner')
 EASTERN = ZoneInfo('America/New_York')
 
 # Nasdaq-100 members (2025-26 list; the index is rebalanced every December, so edit this when it changes).
-# GOOG is left out because GOOGL is the same company.
+# GOOG is left out because GOOGL is the same company. EA (taken private 4 Aug 2026) and WBD (bought by Paramount
+# Skydance, delisted 6 Oct 2026) are removed.
 NASDAQ_100 = [
     'AAPL', 'MSFT', 'NVDA', 'AMZN', 'META', 'GOOGL', 'AVGO', 'TSLA', 'COST', 'NFLX', 'TMUS', 'ASML', 'CSCO', 'AMD', 'PEP',
     'LIN', 'AZN', 'ADBE', 'INTU', 'QCOM', 'TXN', 'ISRG', 'BKNG', 'AMGN', 'AMAT', 'PDD', 'HON', 'CMCSA', 'ARM', 'GILD',
     'ADP', 'PANW', 'LRCX', 'VRTX', 'MU', 'SBUX', 'ADI', 'MELI', 'KLAC', 'INTC', 'APP', 'CRWD', 'PLTR', 'MSTR', 'CTAS',
     'MDLZ', 'CEG', 'SNPS', 'CDNS', 'ORLY', 'MAR', 'FTNT', 'PYPL', 'DASH', 'REGN', 'ABNB', 'ADSK', 'WDAY', 'CSX', 'ROP',
     'CHTR', 'MRVL', 'NXPI', 'PCAR', 'AEP', 'CPRT', 'PAYX', 'TTD', 'FANG', 'ROST', 'KDP', 'MNST', 'AXON', 'FAST', 'TEAM',
-    'ODFL', 'EA', 'XEL', 'DDOG', 'BKR', 'VRSK', 'CTSH', 'EXC', 'KHC', 'IDXX', 'CCEP', 'GEHC', 'ZS', 'CSGP', 'TTWO',
-    'LULU', 'DXCM', 'ON', 'MCHP', 'CDW', 'WBD', 'BIIB', 'GFS', 'MDB', 'SHOP', 'TRI',
+    'ODFL', 'XEL', 'DDOG', 'BKR', 'VRSK', 'CTSH', 'EXC', 'KHC', 'IDXX', 'CCEP', 'GEHC', 'ZS', 'CSGP', 'TTWO',
+    'LULU', 'DXCM', 'ON', 'MCHP', 'CDW', 'BIIB', 'GFS', 'MDB', 'SHOP', 'TRI',
 ]
 # A plain sector for each member (fixed like the list itself; edit at the December rebalance). Used only to show the
 # total open risk per sector: the Nasdaq-100 is mostly tech, so several setups can be one sector bet.
@@ -49,7 +50,7 @@ _SECTOR_LISTS = {
     'Semiconductors': 'NVDA AVGO AMD ASML QCOM TXN AMAT LRCX MU ADI KLAC INTC ARM MRVL NXPI MCHP ON GFS',
     'Software': 'MSFT ADBE INTU PANW CRWD SNPS CDNS FTNT ADSK WDAY ROP TEAM DDOG ZS MDB PLTR APP TTD MSTR SHOP',
     'Hardware & IT services': 'AAPL CSCO CTSH CDW',
-    'Communication': 'GOOGL META NFLX TMUS CMCSA CHTR EA TTWO WBD',
+    'Communication': 'GOOGL META NFLX TMUS CMCSA CHTR TTWO',
     'Consumer': 'AMZN TSLA COST PEP BKNG SBUX MELI PDD ABNB MAR ORLY ROST LULU DASH MDLZ KDP MNST KHC CCEP',
     'Health care': 'AZN ISRG AMGN GILD VRTX REGN IDXX DXCM BIIB GEHC',
     'Industrials': 'HON ADP CTAS CSX PCAR CPRT PAYX FAST ODFL VRSK AXON TRI',

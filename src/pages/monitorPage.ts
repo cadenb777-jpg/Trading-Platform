@@ -12,6 +12,7 @@
  */
 import { engineRequest, HELPER_NOT_RUNNING, helper, loadNews, type NewsItem } from '../data/schwab';
 import { subscribeQuote } from '../data/quotes';
+import { rememberReply, savedReply, savedThenFresh } from '../data/saved';
 import { EXCHANGES, WORLD, boardSymbols, sessionState } from '../markets/monitor';
 import { SECTOR_LISTS } from '../security/related';
 import { openSecurity } from '../security/open';
@@ -98,6 +99,7 @@ export function createMonitorPage() {
     view = v;
     grid.dataset.view = v;
     drawTabs();
+    if (v === 'equities') requestAnimationFrame(() => burst.update((s) => changes.get(s)));
     if (futRows.length) drawFut();
   };
   drawTabs();
@@ -127,7 +129,7 @@ export function createMonitorPage() {
     rowTitle: ([s, n]) => `${n} (${s}): open it`,
     cols: [
       { label: 'Market', left: true, text: ([, n]) => n },
-      { label: 'Last', text: ([s]) => (board.get(s)?.price != null ? formatPrice(board.get(s)!.price!) : '—'), value: ([s]) => board.get(s)?.price, minMove: 0.0002 },
+      { label: 'Last', text: ([s]) => (board.get(s)?.price != null ? formatPrice(board.get(s)!.price!) : '—'), value: ([s]) => board.get(s)?.price, minMove: 0.0005 },
       { label: '%Chg', text: ([s]) => pc(board.get(s)?.change), tone: ([s]) => toneOf(board.get(s)?.change) },
       { label: '1M%', text: ([s]) => pc(board.get(s)?.m1, 1), tone: ([s]) => toneOf(board.get(s)?.m1) },
       { label: 'YTD%', text: ([s]) => pc(board.get(s)?.ytd, 1), tone: ([s]) => toneOf(board.get(s)?.ytd) },
@@ -150,29 +152,33 @@ export function createMonitorPage() {
     open: ([s]) => void openSecurity(s),
     cols: [
       { label: 'Sector', left: true, text: ([, n]) => n },
-      { label: '%1D', text: ([s]) => pc(board.get(s)?.change), tone: ([s]) => toneOf(board.get(s)?.change), value: ([s]) => board.get(s)?.price, minMove: 0.0002 },
+      { label: '%1D', text: ([s]) => pc(board.get(s)?.change), tone: ([s]) => toneOf(board.get(s)?.change), value: ([s]) => board.get(s)?.price, minMove: 0.0005 },
       { label: 'vs SPX', text: ([s]) => pc(rel(s)), tone: ([s]) => toneOf(rel(s)) },
       { label: '%1M', text: ([s]) => pc(board.get(s)?.m1, 1), tone: ([s]) => toneOf(board.get(s)?.m1) },
       { label: '3M vs SPX', text: ([s]) => pc(rel3(s), 1), tone: ([s]) => toneOf(rel3(s)), title: '3-month return relative to the S&P 500' },
     ],
   });
   sec.body.append(secTable.el);
-  const drawSec = () => {
-    const rows = [...SECTORS].sort((a, b) => (rel(b[0]) ?? -9) - (rel(a[0]) ?? -9));
-    secTable.set([{ title: '', rows }]);
+  // ranked when the board refreshes (every minute), not on every live tick: rows that jump around read as blinking
+  let secOrder = [...SECTORS];
+  const drawSec = (rerank = false) => {
+    if (rerank) secOrder = [...SECTORS].sort((a, b) => (rel(b[0]) ?? -9) - (rel(a[0]) ?? -9));
+    secTable.set([{ title: '', rows: secOrder }]);
   };
 
   async function loadBoard() {
     const symbols = [...boardSymbols(WORLD), ...SECTORS.map(([s]) => s)];
     try {
-      const { rows, asOf } = await engineRequest<{ rows: BoardRow[]; asOf?: number }>('invest.board', { symbols }, 90000);
-      for (const r of rows) board.set(r.symbol, { ...board.get(r.symbol), ...r });
-      drawWei();
-      drawSec();
-      wei.source(`Schwab · ${clock(asOf ?? Date.now() / 1000)}`);
-      sec.source(`ranked vs S&P · ${clock(asOf ?? Date.now() / 1000)}`);
-      wei.note('');
-      drawRead();
+      await savedThenFresh<{ rows: BoardRow[]; asOf?: number }>('invest.board', { symbols }, 90000, ({ rows, asOf }, _at, old) => {
+        for (const r of rows) board.set(r.symbol, { ...board.get(r.symbol), ...r });
+        drawWei();
+        drawSec(true);
+        wei.source(`Schwab · ${clock(asOf ?? Date.now() / 1000)}`);
+        sec.source(`ranked vs S&P · ${clock(asOf ?? Date.now() / 1000)}`);
+        wei.note('');
+        drawRead();
+        if (old) wei.source('saved copy · refreshing…');
+      });
     } catch (err) {
       wei.note(errText(err));
     }
@@ -215,7 +221,8 @@ export function createMonitorPage() {
       g.items.map((sym) =>
         subscribeQuote({ provider: 'schwab', symbol: sym }, (q) => {
           if (q.last != null && q.prevClose) changes.set(sym, q.last / q.prevClose - 1);
-          if (!heatFrame) heatFrame = requestAnimationFrame(() => ((heatFrame = 0), burst.update((s) => changes.get(s)), heat.source(`live · ${changes.size} priced`)));
+          // only while the heat map is on screen (the Equities tab); it catches up when shown
+          if (!heatFrame && heat.el.offsetParent) heatFrame = requestAnimationFrame(() => ((heatFrame = 0), burst.update((s) => changes.get(s)), heat.source(`live · ${changes.size} priced`)));
         }),
       ),
     );
@@ -231,7 +238,7 @@ export function createMonitorPage() {
     rowTitle: (r) => `${r.full ?? r.name} (${r.symbol})${r.positioning?.date ? ` · CFTC ${r.positioning.date}` : ''}`,
     cols: [
       { label: 'Market', left: true, text: (r) => r.name },
-      { label: 'Last', text: (r) => (r.price != null ? formatPrice(r.price) : '—'), value: (r) => r.price, minMove: 0.0002 },
+      { label: 'Last', text: (r) => (r.price != null ? formatPrice(r.price) : '—'), value: (r) => r.price, minMove: 0.0005 },
       { label: '%Chg', text: (r) => pc(r.change), tone: (r) => toneOf(r.change) },
       { label: 'σ', text: (r) => sgn(r.sigma), tone: (r) => (r.sigma != null && Math.abs(r.sigma) >= 2 ? toneOf(r.sigma) : ''), title: 'Today’s move in daily standard deviations (2 or more is unusual)' },
       { label: '1W%', text: (r) => pc(r.w1, 1), tone: (r) => toneOf(r.w1) },
@@ -247,12 +254,14 @@ export function createMonitorPage() {
   };
   async function loadFutures() {
     try {
-      const b = await engineRequest<{ rows: Fut[]; asOf: number; errors: Record<string, string> }>('futures.board', {}, 90000);
-      futRows = b.rows.map((r) => ({ ...r, full: r.name, name: FUT_NAMES[r.root] ?? r.name }));
-      drawFut();
-      fut.source(`Schwab · CFTC · ${clock(b.asOf)}`);
-      fut.note(Object.values(b.errors ?? {}).join(' '));
-      drawRead();
+      await savedThenFresh<{ rows: Fut[]; asOf: number; errors: Record<string, string> }>('futures.board', {}, 90000, (b, _at, old) => {
+        futRows = b.rows.map((r) => ({ ...r, full: r.name, name: FUT_NAMES[r.root] ?? r.name }));
+        drawFut();
+        fut.source(`Schwab · CFTC · ${clock(b.asOf)}`);
+        fut.note(Object.values(b.errors ?? {}).join(' '));
+        drawRead();
+        if (old) fut.source('saved copy · refreshing…');
+      });
     } catch (err) {
       fut.note(errText(err));
     }
@@ -272,19 +281,21 @@ export function createMonitorPage() {
   gc.body.append(gcTable.el);
   async function loadCurve() {
     try {
-      const d = await engineRequest<{ curve: (CurvePoint & { date?: string })[] }>('macro.curve', {}, 60000);
-      curve = d.curve ?? [];
-      const diff = (a: number | null | undefined, b: number | null | undefined) => (a != null && b != null ? (a - b) * 100 : null);
-      const tenors = curve.map((c) => ({ label: c.label, now: c.now, m: diff(c.now, c.monthAgo), y: diff(c.now, c.yearAgo) }));
-      const sp = (a: string, b: string) => {
-        const n = spread(curve, a, b), m = spread(curve, a, b, 'monthAgo'), y = spread(curve, a, b, 'yearAgo');
-        const t = (x: string) => (x.endsWith('Y') ? `${x.slice(0, -1)}s` : x.toLowerCase());
-        return { label: `${t(a)}${t(b)}`, now: n, m: n != null && m != null ? n - m : null, y: n != null && y != null ? n - y : null, spread: true };
-      };
-      gcTable.set([{ title: '', rows: tenors }, { title: 'Spreads (bp)', rows: [sp('2Y', '10Y'), sp('3M', '10Y'), sp('5Y', '30Y')].filter((r) => r.now != null) }]);
-      gc.source(`Treasury · ${shortDate(curve[0]?.date ?? '')}`);
-      gc.note('');
-      drawRead();
+      await savedThenFresh<{ curve: (CurvePoint & { date?: string })[] }>('macro.curve', {}, 60000, (d, _at, old) => {
+        curve = d.curve ?? [];
+        const diff = (a: number | null | undefined, b: number | null | undefined) => (a != null && b != null ? (a - b) * 100 : null);
+        const tenors = curve.map((c) => ({ label: c.label, now: c.now, m: diff(c.now, c.monthAgo), y: diff(c.now, c.yearAgo) }));
+        const sp = (a: string, b: string) => {
+          const n = spread(curve, a, b), m = spread(curve, a, b, 'monthAgo'), y = spread(curve, a, b, 'yearAgo');
+          const t = (x: string) => (x.endsWith('Y') ? `${x.slice(0, -1)}s` : x.toLowerCase());
+          return { label: `${t(a)}${t(b)}`, now: n, m: n != null && m != null ? n - m : null, y: n != null && y != null ? n - y : null, spread: true };
+        };
+        gcTable.set([{ title: '', rows: tenors }, { title: 'Spreads (bp)', rows: [sp('2Y', '10Y'), sp('3M', '10Y'), sp('5Y', '30Y')].filter((r) => r.now != null) }]);
+        gc.source(`Treasury · ${shortDate(curve[0]?.date ?? '')}`);
+        gc.note('');
+        drawRead();
+        if (old) gc.source('saved copy · refreshing…');
+      });
     } catch (err) {
       gc.note(errText(err));
     }
@@ -305,23 +316,33 @@ export function createMonitorPage() {
   wirp.body.append(wirpTable.el);
   async function loadFed() {
     try {
-      const d = await engineRequest<FedOdds>('macro.fedodds', {}, 60000);
-      const ms = d.meetings.slice(0, 6).map((m) => ({ ...m, effr: d.effr }));
-      wirpTable.set([{ title: '', rows: ms }]);
-      const third = d.meetings[Math.min(2, d.meetings.length - 1)];
-      fedLine = third ? { change: third.expectedChange, by: new Date(`${third.date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) } : null;
-      wirp.source(`EFFR ${d.effr.toFixed(2)} · ${shortDate(d.asOf)}`);
-      wirp.note('');
-      drawRead();
+      await savedThenFresh<FedOdds>('macro.fedodds', {}, 60000, (d, _at, old) => {
+        const ms = d.meetings.slice(0, 6).map((m) => ({ ...m, effr: d.effr }));
+        wirpTable.set([{ title: '', rows: ms }]);
+        const third = d.meetings[Math.min(2, d.meetings.length - 1)];
+        fedLine = third ? { change: third.expectedChange, by: new Date(`${third.date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) } : null;
+        wirp.source(`EFFR ${d.effr.toFixed(2)} · ${shortDate(d.asOf)}`);
+        wirp.note('');
+        drawRead();
+        if (old) wirp.source('saved copy · refreshing…');
+      });
     } catch (err) {
       wirp.note(errText(err));
     }
   }
 
   // ---------- CORR: correlations ----------
+  /** Daily closes: the saved copy when it is from today (correlations barely move within a day), else the helper. */
+  const historyFast = async (symbol: string): Promise<Closes> => {
+    const s = savedReply<{ closes: Closes }>('invest.history', { symbol });
+    if (s && Date.now() - s.at < 12 * 3600_000) return s.data.closes;
+    const d = await engineRequest<{ closes: Closes }>('invest.history', { symbol }, 60000);
+    rememberReply('invest.history', { symbol }, d);
+    return d.closes;
+  };
   async function loadCorr() {
     try {
-      const got = await Promise.all(CORR_SET.map(([s]) => engineRequest<{ closes: Closes }>('invest.history', { symbol: s }, 60000).then((d) => d.closes).catch(() => [] as Closes)));
+      const got = await Promise.all(CORR_SET.map(([s]) => historyFast(s).catch(() => [] as Closes)));
       const series: Record<string, Closes> = {};
       CORR_SET.forEach(([, name], i) => got[i].length && (series[name] = got[i]));
       const { names, rows } = alignedReturns(series);
@@ -387,10 +408,12 @@ export function createMonitorPage() {
   mov.body.append(movTable.el);
   async function loadMovers() {
     try {
-      const m = await engineRequest<{ up?: BoardRow[]; down?: BoardRow[] }>('invest.movers', { index: '$SPX' }, 60000);
-      movTable.set([{ title: 'Up most', rows: (m.up ?? []).slice(0, 5) }, { title: 'Down most', rows: (m.down ?? []).slice(0, 5) }]);
-      mov.source(`Schwab · ${clock(Date.now() / 1000)}`);
-      mov.note(m.up?.length || m.down?.length ? '' : 'No movers yet (the market may not have opened).');
+      await savedThenFresh<{ up?: BoardRow[]; down?: BoardRow[] }>('invest.movers', { index: '$SPX' }, 60000, (m, _at, old) => {
+        movTable.set([{ title: 'Up most', rows: (m.up ?? []).slice(0, 5) }, { title: 'Down most', rows: (m.down ?? []).slice(0, 5) }]);
+        mov.source(`Schwab · ${clock(Date.now() / 1000)}`);
+        mov.note(m.up?.length || m.down?.length ? '' : 'No movers yet (the market may not have opened).');
+        if (old) mov.source('saved copy · refreshing…');
+      });
     } catch (err) {
       mov.note(errText(err));
     }
