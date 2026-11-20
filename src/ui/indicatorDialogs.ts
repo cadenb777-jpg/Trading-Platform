@@ -5,6 +5,7 @@ import { h, openModal, toast } from './dom';
 import { icon, type IconName } from './icons';
 import { openIndicatorInfo } from './indicatorInfo';
 import { buildIndex, favourites, recents, searchIndex } from './indicatorPicker';
+import { ESSENTIAL_SET } from '../indicators/essentials';
 import { presetRows } from './indicatorPresets';
 
 export interface IndicatorManagerOps {
@@ -17,14 +18,15 @@ export interface IndicatorManagerOps {
   togglePlot(uid: string, key: string): void;
 }
 
-type PickerFilter = 'all' | 'fav' | 'recent' | IndicatorCategory;
-const FILTER_KEY = 'tp.indicatorFilter';
+type PickerFilter = 'essentials' | 'all' | 'fav' | 'recent' | IndicatorCategory;
+// v2: the picker now opens on Essentials (a saved 'all' from before is not carried over)
+const FILTER_KEY = 'tp.indicatorFilter.v2';
 
 function savedFilter(): PickerFilter {
   try {
-    return (localStorage.getItem(FILTER_KEY) as PickerFilter | null) ?? 'all';
+    return (localStorage.getItem(FILTER_KEY) as PickerFilter | null) ?? 'essentials';
   } catch {
-    return 'all';
+    return 'essentials';
   }
 }
 
@@ -108,10 +110,12 @@ export function openIndicatorManager(ops: IndicatorManagerOps): { refresh: () =>
     const recentDefs = recent.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
     const favDefs = matches.filter((d) => favSet.has(d.id));
     const categories = [...new Set(index.map((e) => e.def.category))];
-    if (filter !== 'all' && filter !== 'fav' && filter !== 'recent' && !categories.includes(filter)) filter = 'all';
+    if (filter !== 'all' && filter !== 'essentials' && filter !== 'fav' && filter !== 'recent' && !categories.includes(filter)) filter = 'essentials';
+    const essentialDefs = matches.filter((d) => ESSENTIAL_SET.has(d.id)).sort((x, y) => categories.indexOf(x.category) - categories.indexOf(y.category));
 
     const focusedChip = chips.contains(document.activeElement) ? [...chips.children].indexOf(document.activeElement as Element) : -1;
     chips.replaceChildren(
+      chip('essentials', 'Essentials', essentialDefs.length),
       chip('all', 'All', matches.length),
       chip('fav', '★ Favourites', favDefs.length),
       chip('recent', 'Recent', recentDefs.length),
@@ -120,8 +124,8 @@ export function openIndicatorManager(ops: IndicatorManagerOps): { refresh: () =>
     );
     if (focusedChip >= 0) (chips.children[focusedChip] as HTMLElement | undefined)?.focus();
 
-    const shown = filter === 'all' ? matches : filter === 'fav' ? favDefs : filter === 'recent' ? recentDefs : (byCategory.get(filter) ?? []);
-    const grouped = filter === 'all' && !q;
+    const shown = filter === 'essentials' ? essentialDefs : filter === 'all' ? matches : filter === 'fav' ? favDefs : filter === 'recent' ? recentDefs : (byCategory.get(filter) ?? []);
+    const grouped = (filter === 'all' || filter === 'essentials') && !q;
     const onChart = new Map<string, number>();
     for (const i of ops.list()) onChart.set(i.defId, (onChart.get(i.defId) ?? 0) + 1);
     const frag = document.createDocumentFragment();

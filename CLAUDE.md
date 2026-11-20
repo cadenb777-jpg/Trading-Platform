@@ -616,6 +616,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
 ## Conventions
 
 - Indicators are data-driven: one `IndicatorDef` per entry in `src/indicators/library.ts`.
+  The picker opens on `src/indicators/essentials.ts` (about 50 everyday indicators); the rest stay under All and search.
   `compute()` returns arrays aligned with the bars, `NaN` for warm-up.
 - Data providers implement `DataProvider` (`src/data/provider.ts`): `loadHistory` returns bars,
   `subscribe` streams trades; `applyTrade` in `src/types.ts` folds trades into bars.
