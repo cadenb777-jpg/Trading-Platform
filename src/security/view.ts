@@ -20,6 +20,7 @@ import { DEFAULT_TAB, SEC_TABS, tabDef, type SecTab } from './codes';
 import { cancelExcept, forget, loadBoard, loadCompany, loadDaily, loadDividends, loadPortfolios } from './data';
 import { DASH, fmtChange, fmtCompact, fmtNum, fmtPct, fmtPrice, fmtX, ok, tone } from './format';
 import { relatedFor } from './related';
+import { FUND_HELPER_VERSION, isFundRow, loadFund } from './fund';
 import { dividendSummary, keyLevels } from './stats';
 import { TAB_RENDER, isCompanyLike, type SecurityDeps } from './tabs';
 import { asOfText, fig } from './ui';
@@ -41,6 +42,8 @@ export interface ViewOptions {
 export function createSecurityView(o: ViewOptions) {
   let symbol = '';
   let tab: SecTab = DEFAULT_TAB;
+  /** An ETF or mutual fund (Schwab's type): company-only tabs are hidden and the header shows fund figures. */
+  let isFund = false;
   let seq = 0;
   /** Counts security loads (the header's late replies are dropped; a tab switch doesn't cancel them). */
   let loadSeq = 0;
@@ -142,7 +145,7 @@ export function createSecurityView(o: ViewOptions) {
 
   function paintTabs() {
     tabsEl.replaceChildren(
-      ...SEC_TABS.map((t) =>
+      ...SEC_TABS.filter((t) => !(isFund && t.company)).map((t) =>
         h(
           'button',
           {
@@ -176,18 +179,30 @@ export function createSecurityView(o: ViewOptions) {
         h('span', { class: 'sv-num tiny' }, fmtPrice(hi)),
       );
     };
-    const [board, bars, company, divs] = await Promise.all([
-      loadBoard(symbol).catch(() => null),
+    const boardFirst = await loadBoard(symbol).catch(() => null);
+    if (!still()) return;
+    const fundNow = isFundRow(boardFirst?.row);
+    if (fundNow !== isFund) {
+      isFund = fundNow;
+      if (isFund && tabDef(tab).company) setTab(DEFAULT_TAB);
+      else paintTabs();
+    }
+    const [board, bars, company, divs, fund] = await Promise.all([
+      Promise.resolve(boardFirst),
       loadDaily(symbol).catch(() => null),
-      isCompanyLike(symbol) ? loadCompany(symbol).catch((err: Error) => err) : Promise.resolve(null),
+      // a fund has no SEC company record: don't ask (it only adds a failure to the Data panel)
+      !isFund && isCompanyLike(symbol) ? loadCompany(symbol).catch((err: Error) => err) : Promise.resolve(null),
       loadDividends(symbol).catch(() => null),
+      isFund && (helper.version ?? 0) >= FUND_HELPER_VERSION ? loadFund(symbol).catch(() => null) : Promise.resolve(null),
     ]);
     if (!still()) return;
     const row = board?.row ?? null;
     const k = bars?.length ? keyLevels(bars) : null;
     const co = company instanceof Error ? null : company;
-    nameEl.replaceChildren(h('span', { class: 'sv-sym' }, symbol.replace(/^\$/, '')), ' ', h('span', { class: 'sv-fullname' }, row?.name || co?.profile.name || ''));
-    metaEl.textContent = [co?.profile.exchange, row?.assetType, co?.profile.industry].filter(Boolean).join(' · ') || (helper.isConnected ? '' : 'Prices appear when the helper is running.');
+    nameEl.replaceChildren(h('span', { class: 'sv-sym' }, symbol.replace(/^\$/, '')), ' ', h('span', { class: 'sv-fullname' }, fund?.name || row?.name || co?.profile.name || ''));
+    metaEl.textContent =
+      (isFund ? [fund ? (fund.kind === 'etf' ? 'ETF' : 'Mutual fund') : row?.assetSubType || row?.assetType, fund?.family, fund?.category] : [co?.profile.exchange, row?.assetType, co?.profile.industry]).filter(Boolean).join(' · ') ||
+      (helper.isConnected ? '' : 'Prices appear when the helper is running.');
     if (last == null) {
       last = row?.price ?? bars?.[bars.length - 1]?.close ?? null;
       quoteAt = board?.asOf ?? null;
@@ -200,9 +215,16 @@ export function createSecurityView(o: ViewOptions) {
     statsEl.replaceChildren(
       stat('Day range', range(k?.dayLow ?? null, k?.dayHigh ?? null, last), 'The latest session’s low and high (Schwab daily bar)'),
       stat('52-week range', range(row?.low52 ?? k?.low52 ?? null, row?.high52 ?? k?.high52 ?? null, last)),
-      stat('Market cap', fig(fmtCompact(mc, { money: true }), { reason: company instanceof Error ? company.message : isCompanyLike(symbol) ? 'share count not in the SEC data' : 'not a company' }), 'Price × shares outstanding (SEC)'),
-      stat('P/E (TTM)', fig(fmtX(co?.valuation.pe), { reason: co ? 'no profit over the last 12 months' : 'needs SEC company data' }), 'Price ÷ the last 12 months of diluted earnings per share (SEC filings)'),
-      stat('Yield (TTM)', fig(fmtPct(dvd?.yield ?? null), { reason: divs ? 'no dividend in the last 12 months' : 'no dividend history' }), 'Dividends with an ex-date in the last 12 months ÷ the latest close (Yahoo dividends, Schwab price), as on the DVD tab'),
+      ...(isFund
+        ? [
+            stat('Net assets', fig(fmtCompact(fund?.netAssets, { money: true }), { reason: fund ? 'not given' : 'fund data not loaded' }), 'Money in the fund (Yahoo Finance)'),
+            stat('Expense ratio', fig(fmtPct(fund?.expenseRatio ?? null, 2), { reason: fund ? 'not given' : 'fund data not loaded' }), 'Yearly cost, taken out of the fund’s returns'),
+          ]
+        : [
+            stat('Market cap', fig(fmtCompact(mc, { money: true }), { reason: company instanceof Error ? company.message : isCompanyLike(symbol) ? 'share count not in the SEC data' : 'not a company' }), 'Price × shares outstanding (SEC)'),
+            stat('P/E (TTM)', fig(fmtX(co?.valuation.pe), { reason: co ? 'no profit over the last 12 months' : 'needs SEC company data' }), 'Price ÷ the last 12 months of diluted earnings per share (SEC filings)'),
+          ]),
+      stat('Yield (TTM)', fig(fmtPct(dvd?.yield ?? fund?.yield ?? null), { reason: divs ? 'no dividend in the last 12 months' : 'no dividend history' }), 'Dividends with an ex-date in the last 12 months ÷ the latest close (Yahoo dividends, Schwab price), as on the DVD tab'),
     );
     // your position, across your own accounts (client portfolios left out)
     const pfs = await loadPortfolios().catch(() => []);

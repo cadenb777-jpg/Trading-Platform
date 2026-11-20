@@ -32,6 +32,7 @@ import {
 } from './data';
 import { DASH, fmtChange, fmtCompact, fmtDate, fmtNum, fmtPct, fmtPrice, fmtX, ok, tone } from './format';
 import { sectorOf } from './related';
+import { FUND_HELPER_VERSION, costBand, costWords, isFundRow, loadFund, riskWords, stars, versusCategory, type FundProfile } from './fund';
 import { dayKey, dividendSummary, keyLevels, pairedReturns, portfolioReturns, correlation, beta, riskWindow, type Close, type RiskWindow } from './stats';
 import { fig, kvGrid, loadingNote, note, panel, reasonOf, type KV } from './ui';
 
@@ -92,12 +93,17 @@ function numTable(headers: string[], rows: { label: string | Node; cells: (strin
 
 // ---------- DES ----------
 
+/** Overview: a fund (ETF or mutual fund, by Schwab's type) gets the fund overview; anything else the company one. */
 export function desTab(ctx: TabCtx) {
+  ctx.body.replaceChildren(loadingNote('overview'));
+  loadBoard(ctx.symbol)
+    .then((b) => isFundRow(b?.row), () => false)
+    .then((fund) => ctx.still() && (fund ? fundDes(ctx) : companyDes(ctx)));
+}
+
+function priceStatsSlot(ctx: TabCtx) {
   const s = ctx.symbol;
-  const company = isCompanyLike(s);
-  ctx.body.replaceChildren(
-    grid(
-      slot(ctx, 'price statistics', async () => {
+  return slot(ctx, 'price statistics', async () => {
         const [b, bars] = await Promise.all([loadBoard(s).catch(() => null), loadDaily(s)]);
         const k = keyLevels(bars);
         const row = b?.row;
@@ -118,7 +124,221 @@ export function desTab(ctx: TabCtx) {
         ];
         ctx.share('keyLevels', k);
         return panel('Price statistics', `${SCHWAB} (daily bars and quotes)`, b?.asOf ?? (bars.length ? dayKey(bars[bars.length - 1].time) : null), kvGrid(rows));
+      });
+}
+
+function eventsSlot(ctx: TabCtx, fund = false) {
+  const s = ctx.symbol;
+  return slot(ctx, 'events', async () => {
+        const [company, divs, scan] = await Promise.all([
+          !fund && isCompanyLike(s) ? loadCompany(s).catch(() => null) : Promise.resolve(null),
+          loadDividends(s).catch(() => null),
+          loadScan().catch(() => null),
+        ]);
+        let earn: { date?: string; time?: string } | null | undefined = setupsFor(scan, s).map((x) => x.setup.earnings).find((e) => e?.date);
+        if (!earn && worldReady()) {
+          // Finnhub's earnings calendar (free key) fills the date for companies the scanner doesn't cover.
+          const f = await engineRequest<{ events?: { date: string; hour: string }[] }>('finnhub.earnings', { symbol: s, days: 31 }, 30000).catch(() => null);
+          const next = f?.events?.[0];
+          if (next) earn = { date: next.date, time: next.hour };
+        }
+        const dv = divs ? dividendSummary(divs.dividends, divs.closes[divs.closes.length - 1]?.[1] ?? null, new Date().toISOString().slice(0, 10)) : null;
+        const lastDiv = divs?.dividends[divs.dividends.length - 1];
+        return panel(
+          'Events',
+          'Scanner earnings check (Nasdaq-100) or Finnhub, SEC filings, Yahoo dividends',
+          null,
+          kvGrid([
+...(fund ? [] : ([            ['Next earnings', fig(earn?.date ? `${fmtDate(earn.date)}${earn.time ? ` (${earn.time})` : ''}` : DASH, { reason: NASDAQ_100.includes(s) ? 'the scanner has no date for it yet' : 'free data has no earnings calendar; the scanner checks Nasdaq-100 members only' })],
+            ['Last earnings filed', fig(company?.quote.lastEarnings ? fmtDate(company.quote.lastEarnings) : DASH, { reason: 'no 10-Q/10-K date in the reply' })]] as KV[])),
+            ['Next ex-dividend (estimate)', fig(dv?.nextEx ? `~${fmtDate(dv.nextEx)}` : DASH, { reason: dv && dv.ttm ? 'too few payments to estimate' : 'no regular dividend' })],
+            ['Last dividend', fig(lastDiv ? `$${fmtNum(lastDiv[1], 4)} · ex ${fmtDate(lastDiv[0])}` : DASH, { reason: 'no dividend history' })],
+          ]),
+        );
+      });
+}
+
+/** A weight bar (0-100%) with its figure. */
+const weightBar = (w: number | null | undefined, max = 1) =>
+  h('span', { class: 'fd-bar' }, h('i', { style: `width:${Math.max(0, Math.min(100, ((w ?? 0) / (max || 1)) * 100)).toFixed(1)}%` }), h('b', {}, fmtPct(w, 1)));
+
+/** Fund return figures: a signed percent; the gap to the category in points. */
+const fp = (v: number | null | undefined) => fig(fmtPct(v, 2, true), { tone: tone(v), reason: 'not given for this period' });
+const gapCell = (a: number | null | undefined, b: number | null | undefined) =>
+  a == null || b == null ? fig(DASH, { reason: 'needs both figures' }) : fig(`${a - b >= 0 ? '+' : '−'}${Math.abs((a - b) * 100).toFixed(1)}`, { tone: tone(a - b), title: 'Percentage points ahead of (+) or behind (−) the category' });
+
+function fundSlot(ctx: TabCtx, what: string, draw: (f: FundProfile) => Node | null) {
+  return slot(ctx, what, async () => {
+    if ((helper.version ?? 0) < FUND_HELPER_VERSION) throw new Error('fund information needs helper 93 (it installs by itself)');
+    const f = await loadFund(ctx.symbol);
+    ctx.share('fund', f);
+    return draw(f) ?? h('span', {});
+  });
+}
+
+const YAHOO = 'Yahoo Finance fund data';
+
+/** The fund overview: profile and costs, objective, holdings, mix and sectors, characteristics, returns and risk. */
+function fundDes(ctx: TabCtx) {
+  const s = ctx.symbol;
+  ctx.body.replaceChildren(
+    grid(
+      priceStatsSlot(ctx),
+      fundSlot(ctx, 'fund profile', (f) => {
+        const band = costBand(f.expenseRatio);
+        return panel(
+          'Fund profile',
+          `${YAHOO}; Morningstar ratings as Yahoo shows them`,
+          f.fetched,
+          kvGrid([
+            ['Type', f.legalType || (f.kind === 'etf' ? 'Exchange-traded fund' : 'Mutual fund')],
+            ['Family', fig(f.family ?? DASH, { reason: 'not given' })],
+            ['Category', fig(f.category ?? DASH, { reason: 'not given' })],
+            ['Inception', fig(f.inception ? fmtDate(f.inception) : DASH, { reason: 'not given' })],
+            ['Net assets', fig(money(f.netAssets), { reason: 'not given' })],
+            ...(f.kind === 'mutualfund' || f.nav != null ? ([['NAV', fig(fmtPrice(f.nav), { reason: 'not given' })]] as KV[]) : []),
+            ['Yield (12 months)', fig(fmtPct(f.yield, 2), { reason: 'no distributions in the last 12 months' })],
+            ['Expense ratio', h('span', {}, fig(fmtPct(f.expenseRatio, 2), { reason: 'not given' }), band ? h('span', { class: 'muted small' }, ` · ${band}`) : ''), costWords(f.expenseRatio)],
+            ...(f.grossExpenseRatio != null && f.grossExpenseRatio !== f.expenseRatio ? ([['Gross expense ratio', fmtPct(f.grossExpenseRatio, 2), 'Before fee waivers']] as KV[]) : []),
+            ['Turnover', fig(fmtPct(f.turnover, 0), { reason: 'not given' }), 'Share of the portfolio replaced in a year: higher means more trading costs and taxable gains'],
+            ...(f.frontLoad || f.deferredLoad ? ([['Sales loads', `${f.frontLoad ? `front ${fmtPct(f.frontLoad, 2)}` : ''}${f.frontLoad && f.deferredLoad ? ' · ' : ''}${f.deferredLoad ? `deferred ${fmtPct(f.deferredLoad, 2)}` : ''}`]] as KV[]) : []),
+            ...(f.twelveB1 ? ([['12b-1 fee', fmtPct(f.twelveB1, 2), 'Yearly marketing fee inside the expense ratio']] as KV[]) : []),
+            ...(f.minInvestment ? ([['Minimum investment', money(f.minInvestment)]] as KV[]) : []),
+            ['Morningstar rating', fig(stars(f.morningstarRating) ?? DASH, { reason: 'not rated (needs 3 years of history)' })],
+            ['Morningstar risk', fig(riskWords(f.morningstarRisk) ?? DASH, { reason: 'not rated' }), 'Downside risk against its category'],
+            ['Beta (3 years)', fig(f.beta3y != null ? f.beta3y.toFixed(2) : DASH, { reason: 'needs 3 years' }), 'Moves against the S&P 500: 1.0 = in step'],
+          ]),
+        );
       }),
+      fundSlot(ctx, 'objective', (f) =>
+        panel('Objective', YAHOO, f.fetched, f.objective ? h('p', { class: 'sv-desc' }, f.objective) : note('The fund’s objective isn’t in the data. It is in the prospectus (the fund family’s website).'), h('p', { class: 'muted small' }, h('a', { href: f.url, target: '_blank', rel: 'noopener' }, 'Full fund page on Yahoo Finance ↗'))),
+      ),
+      wideSlot(
+        fundSlot(ctx, 'top holdings', (f) => {
+          if (!f.holdings.length) return panel('Top holdings', YAHOO, f.fetched, note('No holdings in the data for this fund.'));
+          const max = Math.max(...f.holdings.map((x) => x.weight));
+          return panel(
+            `Top ${f.holdings.length} holdings`,
+            `${YAHOO} (from the fund's latest published portfolio)`,
+            f.fetched,
+            h(
+              'div',
+              { class: 'sv-table-wrap' },
+              h(
+                'table',
+                { class: 'sv-table fd-holdings' },
+                h('thead', {}, h('tr', {}, h('th', {}, '#'), h('th', {}, 'Holding'), h('th', {}, 'Symbol'), h('th', { class: 'num' }, 'Weight'))),
+                h(
+                  'tbody',
+                  {},
+                  ...f.holdings.map((x, i) =>
+                    h(
+                      'tr',
+                      x.symbol ? { class: 'tt-open', tabindex: 0, title: `Open ${x.symbol}`, onclick: () => ctx.open(x.symbol.split('.')[0]), onkeydown: (e: Event) => (e as KeyboardEvent).key === 'Enter' && ctx.open(x.symbol.split('.')[0]) } : {},
+                      h('td', { class: 'muted' }, String(i + 1)),
+                      h('td', {}, x.name || x.symbol),
+                      h('td', { class: 'sym' }, x.symbol || DASH),
+                      h('td', { class: 'num' }, weightBar(x.weight, max)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            f.holdingsShare ? h('p', { class: 'muted small' }, `These ${f.holdings.length} make up ${fmtPct(f.holdingsShare, 1)} of the fund.`) : null,
+          );
+        }),
+      ),
+      fundSlot(ctx, 'asset mix and sectors', (f) =>
+        panel(
+          'Asset mix and sectors',
+          YAHOO,
+          f.fetched,
+          f.mix.length ? h('div', { class: 'fd-bars' }, ...f.mix.map((m) => h('div', { class: 'fd-row' }, h('span', {}, m.label), weightBar(m.weight)))) : note('No asset mix in the data.'),
+          f.sectors.length
+            ? h('div', { class: 'fd-bars' }, h('h4', { class: 'fd-sub' }, 'Sectors (stocks)'), ...f.sectors.map((x) => h('div', { class: 'fd-row' }, h('span', {}, x.sector), weightBar(x.weight, f.sectors[0].weight))))
+            : null,
+        ),
+      ),
+      fundSlot(ctx, 'characteristics', (f) => {
+        const e = f.equity;
+        const hasEq = Object.values(e).some((v) => v != null);
+        const hasBd = f.bonds.duration != null || f.bonds.maturity != null || f.ratings.length > 0;
+        if (!hasEq && !hasBd) return null;
+        return panel(
+          hasBd && !hasEq ? 'Bond characteristics' : 'Portfolio characteristics',
+          YAHOO,
+          f.fetched,
+          hasEq
+            ? kvGrid([
+                ['Price / earnings', fig(fmtX(e.priceToEarnings), { reason: 'not given' })],
+                ['Price / book', fig(fmtX(e.priceToBook), { reason: 'not given' })],
+                ['Price / sales', fig(fmtX(e.priceToSales), { reason: 'not given' })],
+                ['Price / cash flow', fig(fmtX(e.priceToCashflow), { reason: 'not given' })],
+                ['Median market cap', fig(e.medianMarketCap != null ? money(e.medianMarketCap * 1e6) : DASH, { reason: 'not given' }), 'Of the stocks it holds (Yahoo reports it in millions)'],
+                ['Earnings growth (3 years)', fig(fmtPct(e.threeYearEarningsGrowth, 1, true), { tone: tone(e.threeYearEarningsGrowth), reason: 'not given' })],
+              ])
+            : null,
+          hasBd
+            ? kvGrid([
+                ['Duration', fig(f.bonds.duration != null ? `${f.bonds.duration.toFixed(1)} years` : DASH, { reason: 'not given' }), 'About how much prices fall (in %) if rates rise 1 point'],
+                ['Average maturity', fig(f.bonds.maturity != null ? `${f.bonds.maturity.toFixed(1)} years` : DASH, { reason: 'not given' })],
+              ])
+            : null,
+          f.ratings.length ? h('div', { class: 'fd-bars' }, h('h4', { class: 'fd-sub' }, 'Credit ratings'), ...f.ratings.map((r) => h('div', { class: 'fd-row' }, h('span', {}, r.rating), weightBar(r.weight)))) : null,
+        );
+      }),
+      fundSlot(ctx, 'returns against the category', (f) => {
+        if (!f.trailing.length) return panel('Returns', YAHOO, f.fetched, note('No return history in the data.'));
+        return panel(
+          'Returns against its category',
+          `${YAHOO}${f.trailingAsOf ? `, total returns to ${fmtDate(f.trailingAsOf)}` : ''}`,
+          f.fetched,
+          numTable(['Period', 'Fund', 'Category', '+/− pts'], f.trailing.map((t) => ({ label: t.period, cells: [fp(t.fund), fp(t.category), gapCell(t.fund, t.category)] }))),
+          versusCategory(f.trailing) ? h('p', { class: 'muted small' }, versusCategory(f.trailing)!) : null,
+        );
+      }),
+      fundSlot(ctx, 'calendar years', (f) =>
+        f.annual.length
+          ? panel(
+              'Calendar-year returns',
+              YAHOO,
+              f.fetched,
+              numTable(['Year', 'Fund', 'Category'], f.annual.map((a) => ({ label: a.year, cells: [fp(a.fund), fp(a.category)] }))),
+              f.yearsUp != null ? h('p', { class: 'muted small' }, `${f.yearsUp} years up, ${f.yearsDown ?? 0} down${f.best.oneYear != null ? `; best 12 months ${fmtPct(f.best.oneYear, 1, true)}, worst ${fmtPct(f.worst.oneYear, 1, true)}` : ''}.`) : null,
+            )
+          : null,
+      ),
+      fundSlot(ctx, 'risk against the category', (f) => {
+        const r = f.risk.find((x) => x.years === '3y') ?? f.risk[0];
+        if (!r) return null;
+        const c = r.category ?? {};
+        const n = (v: number | null | undefined, d = 2, unit = '') => fig(v == null ? DASH : `${v.toFixed(d)}${unit}`, { reason: 'not given' });
+        return panel(
+          `Risk (${r.years.replace('y', ' years')})`,
+          `${YAHOO} (Morningstar risk statistics)`,
+          f.fetched,
+          numTable(['Measure', 'Fund', 'Category'], [
+            { label: 'Standard deviation', cells: [n(r.stdDev, 2, '%'), n(c.stdDev, 2, '%')] },
+            { label: 'Sharpe ratio', cells: [n(r.sharpeRatio), n(c.sharpeRatio)] },
+            { label: 'Alpha', cells: [n(r.alpha), n(c.alpha)] },
+            { label: 'Beta', cells: [n(r.beta), n(c.beta)] },
+            { label: 'R-squared', cells: [n(r.rSquared, 1), n(c.rSquared, 1)] },
+          ]),
+          h('p', { class: 'muted small' }, 'Standard deviation: how much returns swing (yearly). Sharpe: return per unit of that swing. Alpha: return beyond what its beta would give. R-squared: how closely it follows its benchmark (100 = exactly).'),
+        );
+      }),
+      eventsSlot(ctx, true),
+    ),
+  );
+  void s;
+}
+
+function companyDes(ctx: TabCtx) {
+  const s = ctx.symbol;
+  const company = isCompanyLike(s);
+  ctx.body.replaceChildren(
+    grid(
+      priceStatsSlot(ctx),
       company
         ? slot(ctx, 'valuation', async () => {
             const d = await loadCompany(s);
@@ -181,33 +401,7 @@ export function desTab(ctx: TabCtx) {
             );
           })
         : null,
-      slot(ctx, 'events', async () => {
-        const [company, divs, scan] = await Promise.all([
-          isCompanyLike(s) ? loadCompany(s).catch(() => null) : Promise.resolve(null),
-          loadDividends(s).catch(() => null),
-          loadScan().catch(() => null),
-        ]);
-        let earn: { date?: string; time?: string } | null | undefined = setupsFor(scan, s).map((x) => x.setup.earnings).find((e) => e?.date);
-        if (!earn && worldReady()) {
-          // Finnhub's earnings calendar (free key) fills the date for companies the scanner doesn't cover.
-          const f = await engineRequest<{ events?: { date: string; hour: string }[] }>('finnhub.earnings', { symbol: s, days: 31 }, 30000).catch(() => null);
-          const next = f?.events?.[0];
-          if (next) earn = { date: next.date, time: next.hour };
-        }
-        const dv = divs ? dividendSummary(divs.dividends, divs.closes[divs.closes.length - 1]?.[1] ?? null, new Date().toISOString().slice(0, 10)) : null;
-        const lastDiv = divs?.dividends[divs.dividends.length - 1];
-        return panel(
-          'Events',
-          'Scanner earnings check (Nasdaq-100) or Finnhub, SEC filings, Yahoo dividends',
-          null,
-          kvGrid([
-            ['Next earnings', fig(earn?.date ? `${fmtDate(earn.date)}${earn.time ? ` (${earn.time})` : ''}` : DASH, { reason: NASDAQ_100.includes(s) ? 'the scanner has no date for it yet' : 'free data has no earnings calendar; the scanner checks Nasdaq-100 members only' })],
-            ['Last earnings filed', fig(company?.quote.lastEarnings ? fmtDate(company.quote.lastEarnings) : DASH, { reason: 'no 10-Q/10-K date in the reply' })],
-            ['Next ex-dividend (estimate)', fig(dv?.nextEx ? `~${fmtDate(dv.nextEx)}` : DASH, { reason: dv && dv.ttm ? 'too few payments to estimate' : 'no regular dividend' })],
-            ['Last dividend', fig(lastDiv ? `$${fmtNum(lastDiv[1], 4)} · ex ${fmtDate(lastDiv[0])}` : DASH, { reason: 'no dividend history' })],
-          ]),
-        );
-      }),
+      eventsSlot(ctx),
     ),
   );
 }
