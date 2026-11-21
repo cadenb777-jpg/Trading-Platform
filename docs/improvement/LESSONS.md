@@ -273,3 +273,13 @@ whenever the owner repeats or adds one.
   inside an uncaught recession is late, neither is a false alarm; "50%" is our reading line, not the authors' dating rule.
   Review fixed: since rounded to the year (no saved copy per day), week dates refused, an empty saved copy refused
   plainly, recessions counted (not crossings), "both" and "same month" wording, one USREC start for every panel.
+- 2026-11-21 · Pay (Jobs market) + Activity across the economy (Growth this quarter) on Macro, stacked on #87 (no helper
+  change beyond its 104): Atlanta Fed wage growth tracker 3.9% for September 2026 (down from 4.2% a year before), about
+  1.3 points ahead of median CPI averaged over the same three months; Chicago Fed activity index 3-month average 0.03,
+  about trend; the Jobs market level now reads its full history from 1992 · proposed · backlog A42-A43. Lessons: compare
+  like with like (a 3-month average against the same three months of prices, not one month); a median minus a median
+  is a rough gap, said as such; the chip and the words share one value rounded as printed (the review found 635 in
+  200,000 cases where rounding twice differed); a threshold that can't be read at its source isn't drawn (the
+  Chicago Fed's recession line); our own "about trend" band is labelled as our choice. Review fixed: each block has its
+  own as-of stamp, shared FRED plumbing moved to src/macro/fred.ts (no panel module imports another), one Retry helper.
+

@@ -790,6 +790,11 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (CORESTICKM159/158), Dallas trimmed PCE (PCETRIM12M159/1M158): published 12-month rate + 3-month pace compounded from
   three consecutive monthly annual rates (FRED unit 158); headline/core CPI from index levels by date (FRED has no Oct
   2025 CPI: the 12-month rate shows a dash and the gap is named, never filled).
+- Macro → Pay (in Jobs market) and Activity across the economy (in Growth this quarter) (no helper change beyond 104;
+  src/macro/wagesActivity.ts pure + wagesActivityView.ts, class wa-block, appended to the panel and loading on its own
+  with its own Retry): Atlanta Fed FRBATLWGT3MMAUMHWGO, real = tracker - median CPI 12-month of the same month (never
+  filled); Chicago Fed CFNAIMA3 (+ CFNAI month), within NEAR_TREND 0.10 of zero = about trend, no recession line (the
+  Chicago Fed's threshold is unchecked).
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per

@@ -8,7 +8,7 @@ import { asOfStamp } from '../ui/dataHealth';
 import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { rangeTrack } from '../ui/viz';
-import { failed, link, older, panel, raw } from './conditionsView';
+import { failed, link, older, panel, raw } from './fred';
 import { HISTORY_SINCE, month } from './sahm';
 import { MEASURES, PROB_TRIGGER, probRecord, probWords, row, underlyingWords, type Row } from './underlying';
 
