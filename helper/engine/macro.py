@@ -126,7 +126,7 @@ def history_start(value):
 
 
 async def fred_from(ctx, series_id, start):
-    """Full history from `start` (helper 103: recession records need 1959 onwards, not START). Cached under its own
+    """Full history from `start` (helper 104: recession records need 1959 onwards, not START). Cached under its own
     key, shared with ratesdesk._full."""
     async def load():
         try:

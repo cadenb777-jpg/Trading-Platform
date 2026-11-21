@@ -515,6 +515,13 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   for a full board row; invest.search answers are cached a day (empty ones never). Security cards: .sv-grid auto-fill
   290px, long kv lists split in two columns (KV_SPLIT 9) and span 2, reports span the row, sv-span2 for row balance,
   header + actions + tabs in one .sv-headcard. No card scrolls inside.
+  Fund returns (v103; src/security/totalReturn.ts pure, tested): the fund Overview's "Total return" card = Schwab daily
+  closes + Yahoo distributions reinvested on the ex-date (YTD, 1 year, 3 years a year; a period the history doesn't
+  reach is left out), with price only and the payouts' share; for a mutual fund the price is its NAV (Morningstar's
+  basis). Price statistics rows say "(price only)" on funds. Figures over more years than the fund has existed are
+  left out (coversFundLife; feeds print 0.00%), and Yahoo's category table says when its as-of date is 45+ days old.
+  YCharts percent units: the Excel add-in sends fractions (MMNIX expense 0.0169 = 1.69%), the API percent units;
+  ychartsPctScale checks against Yahoo's expense ratio when it has one; crosscheck.parse_ycharts takes fractions.
   Desk (src/pages/deskPage.ts): drag title bar to move, right/bottom/corner grips resize (snapSpan, snapRows), dense grid.
   Calm UI (owner): nothing expands on hover (no line-clamp that unclamps); long text is cut to whole sentences where it
   is written (src/ui/brief.ts). Live up/down colours use src/ui/steadyTone.ts (flat under 0.01%, hysteresis) so a flat
@@ -758,7 +765,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   before. Percentile = ratesdesk.percentile_rank against the others. Inventory against sales (src/research/inventory.ts,
   no helper change) is the third block of Cash health: flagged > 10 points ahead of sales and >= 1% of sales.
 - Macro → Recession check (src/macro/sahm.ts pure + sahmView.ts, class sahm-*, after Today's read):
-  FRED SAHMREALTIME (published real-time Sahm rule) and USREC via macro.series raw with `since` HISTORY_SINCE (helper 103:
+  FRED SAHMREALTIME (published real-time Sahm rule) and USREC via macro.series raw with `since` HISTORY_SINCE (helper 104:
   macro.history_start rounds to January 1 and refuses anything but YYYY-MM-DD >= 1850; macro.fred_from shares
   ratesdesk._full's cache key; older helpers send 2006 onwards); crossings(series, usrec, trigger) is the shared finder; a signal = first month >= 0.50 after
   6+ months below (QUIET_MONTHS; 12 hid the Aug 1981 recession), matched to an NBER start within 6 months; the record

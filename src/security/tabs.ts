@@ -37,6 +37,7 @@ import { sectorOf } from './related';
 import { COMPANY_METRICS, ETF_METRICS, FUND_METRICS, YCHARTS_EXCEL_HELPER_VERSION, YCHARTS_HELPER_VERSION, fundFactRows, headquarters, yFormat, yHoldings, yPoints, yProfile, ychartsId, ychartsReady, type YMetric, type YProfile } from '../data/ycharts';
 import { FUND_HELPER_VERSION, costBand, costWords, isFundRow, loadFund, riskWords, stars, versusCategory, type FundProfile } from './fund';
 import { dayKey, dividendSummary, keyLevels, pairedReturns, portfolioReturns, correlation, beta, riskWindow, type Close, type RiskWindow } from './stats';
+import { coversFundLife, fundAgeYears, totalReturns, ychartsPctScale } from './totalReturn';
 import { fig, kvGrid, KV_SPLIT, loadingNote, note, panel, reasonOf, type KV } from './ui';
 
 export interface SecurityDeps {
@@ -104,7 +105,7 @@ export function desTab(ctx: TabCtx) {
     .then((fund) => ctx.still() && (fund ? fundDes(ctx) : companyDes(ctx)));
 }
 
-function priceStatsSlot(ctx: TabCtx) {
+function priceStatsSlot(ctx: TabCtx, fund = false) {
   const s = ctx.symbol;
   return slot(ctx, 'price statistics', async () => {
         const [b, bars] = await Promise.all([loadBoard(s).catch(() => null), loadDaily(s)]);
@@ -120,14 +121,38 @@ function priceStatsSlot(ctx: TabCtx) {
           ['50-day average', h('span', {}, fig(fmtPrice(k.sma50)), ' ', fig(vsAvg(k.sma50), { tone: tone(ok(last) && ok(k.sma50) ? last - k.sma50 : null), reason: 'needs 50 days' }))],
           ['200-day average', h('span', {}, fig(fmtPrice(k.sma200)), ' ', fig(vsAvg(k.sma200), { tone: tone(ok(last) && ok(k.sma200) ? last - k.sma200 : null), reason: 'needs 200 days' }))],
           ['ATR (14 days)', fig(fmtPrice(k.atr14), { title: 'Average daily range over the last 14 sessions (gaps included)', reason: 'needs 15 days' }), 'Average true range'],
-          ['1 month', fig(fmtPct(row?.m1, 1, true), { tone: tone(row?.m1), reason: 'not in the board reply' })],
-          ['3 months', fig(fmtPct(row?.m3, 1, true), { tone: tone(row?.m3), reason: 'not in the board reply' })],
-          ['Year to date', fig(fmtPct(row?.ytd, 1, true), { tone: tone(row?.ytd), reason: 'not in the board reply' })],
-          ['1 year', fig(fmtPct(row?.y1, 1, true), { tone: tone(row?.y1), reason: 'not in the board reply' })],
+          ['1 month' + (fund ? ' (price only)' : ''), fig(fmtPct(row?.m1, 1, true), { tone: tone(row?.m1), reason: 'not in the board reply' })],
+          ['3 months' + (fund ? ' (price only)' : ''), fig(fmtPct(row?.m3, 1, true), { tone: tone(row?.m3), reason: 'not in the board reply' })],
+          ['Year to date' + (fund ? ' (price only)' : ''), fig(fmtPct(row?.ytd, 1, true), { tone: tone(row?.ytd), reason: 'not in the board reply' })],
+          ['1 year' + (fund ? ' (price only)' : ''), fig(fmtPct(row?.y1, 1, true), { tone: tone(row?.y1), reason: 'not in the board reply' })],
         ];
         ctx.share('keyLevels', k);
         return panel('Price statistics', `${SCHWAB} (daily bars and quotes)`, b?.asOf ?? (bars.length ? dayKey(bars[bars.length - 1].time) : null), kvGrid(rows));
       });
+}
+
+/**
+ * Total return (distributions reinvested on the ex-date), the industry's standard performance figure, next to the
+ * price change alone. For a mutual fund the daily price is its NAV, so this is NAV total return (Morningstar's basis).
+ */
+function totalReturnSlot(ctx: TabCtx) {
+  return slot(ctx, 'total return', async () => {
+    const [d, f] = await Promise.all([loadDividends(ctx.symbol), loadFund(ctx.symbol).catch(() => null)]);
+    const rows = totalReturns(d.closes, d.dividends);
+    if (!rows.length) return panel('Total return', SCHWAB, null, note('Not enough daily prices yet to work out a total return.'));
+    const atNav = f?.kind === 'mutualfund';
+    const last = rows[0].to;
+    return panel(
+      'Total return',
+      `${SCHWAB} daily ${atNav ? 'NAVs' : 'closes'} and Yahoo distributions, worked out here`,
+      last,
+      numTable(['Period', 'Total return', 'Price only', 'From payouts'], rows.map((r) => ({
+        label: r.label,
+        cells: [fig(fmtPct(r.total, 2, true), { tone: tone(r.total) }), fmtPct(r.price, 2, true), fmtPct(r.total - r.price, 2, true)],
+      }))),
+      h('p', { class: 'muted small' }, `Total return counts every distribution, reinvested on the day it was paid: the way fund reports and Morningstar show performance. “Price only” leaves the payouts out, so it always trails for a fund that pays. ${atNav ? 'A mutual fund’s price is its NAV, so this is its NAV total return.' : 'This is the return at market price; at NAV it is usually within a few hundredths.'} Periods the fund hasn’t existed for are left out.`),
+    );
+  });
 }
 
 /** Interval and tender-offer funds (helper 101): when you can sell back, from the fund's own SEC notices. */
@@ -247,11 +272,12 @@ function fillRows(el: HTMLElement, rows: [string, string, string?][]) {
 }
 
 const yAsset = (f: FundProfile) => (f.kind === 'etf' ? 'etf' : 'mutual_fund') as 'etf' | 'mutual_fund';
-const yPct = (v: unknown) => (typeof v === 'number' ? yFormat(v, 'pct') : '');
 const yText = (v: unknown) => (v == null ? '' : String(v));
 
 /** A card twice as wide as the others (one row stays flush instead of leaving a hole). */
 const span2 = (el: HTMLElement) => (el.classList.add('sv-span2'), el);
+/** A card across the whole row (the last card, so the page ends flush). */
+const full = (el: HTMLElement) => (el.classList.add('sv-full'), el);
 
 function fundDes(ctx: TabCtx) {
   const s = ctx.symbol;
@@ -283,7 +309,10 @@ function fundDes(ctx: TabCtx) {
           ]),
         );
         // YCharts fills what Yahoo left empty and adds its own facts (benchmark, style, share class ...)
-        return withYCharts(el, () => yProfile(s, yAsset(f), helper.version ?? 0), (y) =>
+        return withYCharts(el, () => yProfile(s, yAsset(f), helper.version ?? 0), (y) => {
+          // the Excel add-in sends percents as fractions: checked against Yahoo's expense ratio when it has one
+          const { scale } = ychartsPctScale('excel', y.figures.expense_ratio, f.expenseRatio);
+          const yPct = (v: unknown) => (typeof v === 'number' ? yFormat(v * scale, 'pct') : '');
           fillRows(el, [
             ['Family', yText(y.info.fund_family)],
             ['Category', yText(y.info.category_name)],
@@ -295,8 +324,8 @@ function fundDes(ctx: TabCtx) {
             ['Yield (12 months)', yPct(y.figures.distribution_yield)],
             ['Premium / discount to NAV', yPct(y.figures.discount_or_premium_to_nav), 'Price above (+) or below (−) the value of what the fund holds'],
             ...fundFactRows(y.info),
-          ]),
-        );
+          ]);
+        });
       }),
       fundSlot(ctx, 'objective', (f) => {
         const el = panel('Objective', YAHOO, f.fetched, f.objective ? h('p', { class: 'sv-desc' }, brief(f.objective, 320)) : note('The fund’s objective isn’t in the data. It is in the prospectus (the fund family’s website).'), h('p', { class: 'muted small' }, h('a', { href: f.url, target: '_blank', rel: 'noopener' }, 'Full fund page on Yahoo Finance ↗')));
@@ -320,7 +349,8 @@ function fundDes(ctx: TabCtx) {
             : null,
         ),
       ),
-      priceStatsSlot(ctx),
+      priceStatsSlot(ctx, true),
+      totalReturnSlot(ctx),
       wideSlot(
         fundSlot(ctx, 'top holdings', (f) => {
           if (!f.holdings.length) return panel('Top holdings', YAHOO, f.fetched, note('No holdings in the data for this fund.'));
@@ -385,13 +415,17 @@ function fundDes(ctx: TabCtx) {
         );
       }),
       fundSlot(ctx, 'returns against the category', (f) => {
-        if (!f.trailing.length) return panel('Returns', YAHOO, f.fetched, note('No return history in the data.'));
+        const age = fundAgeYears(f.inception);
+        const rows = f.trailing.filter((t) => coversFundLife(t.period, age));
+        if (!rows.length) return panel('Returns', YAHOO, f.fetched, note('No return history in the data.'));
+        const oldDays = f.trailingAsOf ? (Date.now() - Date.parse(f.trailingAsOf)) / 86_400_000 : 0;
         return panel(
           'Returns against its category',
           `${YAHOO}${f.trailingAsOf ? `, total returns to ${fmtDate(f.trailingAsOf)}` : ''}`,
           f.fetched,
-          numTable(['Period', 'Fund', 'Category', '+/− pts'], f.trailing.map((t) => ({ label: t.period, cells: [fp(t.fund), fp(t.category), gapCell(t.fund, t.category)] }))),
-          versusCategory(f.trailing) ? h('p', { class: 'muted small' }, versusCategory(f.trailing)!) : null,
+          oldDays > 45 ? h('p', { class: 'sv-stale small' }, `Yahoo’s figures stop at ${fmtDate(f.trailingAsOf!)}, so they are not today’s returns. Use “Total return” on this page for up-to-date figures.`) : null,
+          numTable(['Period', 'Fund', 'Category', '+/− pts'], rows.map((t) => ({ label: t.period, cells: [fp(t.fund), fp(t.category), gapCell(t.fund, t.category)] }))),
+          versusCategory(rows) ? h('p', { class: 'muted small' }, versusCategory(rows)!) : null,
         );
       }),
       fundSlot(ctx, 'calendar years', (f) =>
@@ -427,7 +461,7 @@ function fundDes(ctx: TabCtx) {
       })),
       liquiditySlot(ctx),
       ychartsSlot(ctx),
-      span2(eventsSlot(ctx, true)),
+      full(eventsSlot(ctx, true)),
     ),
   );
   void s;
@@ -450,7 +484,14 @@ function ychartsSlot(ctx: TabCtx) {
     const r = await yPoints(kind, [id], list.map((x) => x.code));
     const row = r.results[id] ?? Object.values(r.results)[0] ?? {};
     ctx.share('ycharts', row);
-    const have = list.filter((x) => row[x.code]?.value != null);
+    const fund = mf || etf ? await loadFund(ctx.symbol).catch(() => null) : null;
+    // percent units: the Excel add-in sends fractions (0.0169 = 1.69%); checked against Yahoo's expense ratio
+    const { scale } = ychartsPctScale(excel ? 'excel' : 'api', row.expense_ratio?.value, fund?.expenseRatio);
+    const shown = (x: YMetric) => (x.format === 'pct' && typeof row[x.code].value === 'number' ? (row[x.code].value as number) * scale : row[x.code].value);
+    // figures over more years than the fund has existed come back as 0.00%: left out, and said why
+    const age = fundAgeYears(fund?.inception ?? null);
+    const tooLong = list.filter((x) => row[x.code]?.value != null && !coversFundLife(x.label, age));
+    const have = list.filter((x) => row[x.code]?.value != null && coversFundLife(x.label, age));
     const groups = [...new Set(have.map((x) => x.group))];
     // a fund's biggest holdings from YCharts (YCH; Excel add-in only)
     const top = (mf || etf) && excel ? await yHoldings(id).then((r) => r.holdings.slice(0, 10), () => []) : [];
@@ -464,11 +505,14 @@ function ychartsSlot(ctx: TabCtx) {
             'div',
             { class: 'sv-groups' },
             ...groups.map((g) =>
-              h('div', { class: 'sv-group' }, h('h4', { class: 'fd-sub' }, g), kvGrid(have.filter((x) => x.group === g).map((x) => [x.label, fig(yFormat(row[x.code].value, x.format), { title: row[x.code].date ? `as of ${row[x.code].date}` : '' })] as KV), 'sv-kv-plain')),
+              h('div', { class: 'sv-group' }, h('h4', { class: 'fd-sub' }, g), kvGrid(have.filter((x) => x.group === g).map((x) => [x.label, fig(yFormat(shown(x), x.format), { title: row[x.code].date ? `as of ${row[x.code].date}` : '' })] as KV), 'sv-kv-plain')),
             ),
             top.length ? h('div', { class: 'sv-group' }, h('h4', { class: 'fd-sub' }, 'Biggest holdings'), kvGrid(top.map((t) => [t.holding, t.weight == null ? '—' : yFormat(t.weight, 'pct')] as KV), 'sv-kv-plain')) : null,
           )
         : note(`YCharts returned none of these figures for ${id}: ${row[list[0].code]?.error ?? 'no data'}.`),
+      tooLong.length && fund?.inception
+        ? h('p', { class: 'muted small' }, `Figures over 3, 5 or 10 years are left out: the fund started on ${fmtDate(fund.inception)}, so it has no history that long.`)
+        : null,
       // figures YCharts has no value for are simply left out (a stock fund has no duration, a bond fund no P/E)
     );
     el.classList.add('sv-report');

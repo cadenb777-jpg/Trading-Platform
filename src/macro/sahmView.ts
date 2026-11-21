@@ -11,7 +11,7 @@ import { rangeTrack } from '../ui/viz';
 import { HISTORY_SINCE, missedRecessions, month, nowWords, recordWords, sahmSignals, sahmState, TRIGGER, WATCH, type MonthPoint } from './sahm';
 
 type Raw = { data: MonthPoint[]; date?: string };
-/** Full history (helper 103; SAHMREALTIME begins in 1959): older helpers send 2006 onwards and the record says so. */
+/** Full history (helper 104; SAHMREALTIME begins in 1959): older helpers send 2006 onwards and the record says so. */
 const SINCE = HISTORY_SINCE;
 
 const STATE_LABEL = { triggered: 'Triggered', watch: 'Watch', calm: 'Calm' } as const;
