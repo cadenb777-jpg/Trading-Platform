@@ -252,7 +252,7 @@ whenever the owner repeats or adds one.
 - 2026-11-20 · Inflation expected + Jobs market on Macro (no helper change): the Cleveland Fed's expected inflation 1-30
   years (3.04% over the next year and 2.66% over 30 years in November 2026, each 0.2-0.4 points above a year earlier)
   against the market's breakevens, and the Kansas City Fed's labour market level (0.37, October 2026) and momentum
-  (0.27), from FRED via macro.series raw · proposed · backlog A38-A39. Finding: October 2026's 10-year breakeven averaged
+  (0.27), from FRED via macro.series raw · approved (merged 2026-11-20) · backlog A38-A39. Finding: October 2026's 10-year breakeven averaged
   0.32 points below the model's November estimate while the median gap since 2006 is 0.07 points above it; only 5% of
   months had a lower gap (late 2008, early 2016): TIPS cheap against normal Treasuries, shown as a reading of risk and
   liquidity premia, not a trade. Lessons: a monthly model estimate published early in its month (FRED's 'updated'
@@ -261,3 +261,25 @@ whenever the owner repeats or adds one.
   stop mid-month); share words never print 0% or 100% for some (sharePct); negative momentum is "losing momentum",
   not "getting worse". Review fixed: tilt and changes read from the figures as printed; ranking words follow the gap's
   own side; a single failed breakeven is named; drawing errors fall to Retry, not a stuck "Loading".
+- 2026-11-20 · Recession probability + Underlying inflation on Macro, and full history for recession records (helper
+  104: macro.series raw `since`, rounded to January 1, cached per year): Chauvet-Piger 0.4% for September 2026; since
+  1970 it crossed 50% within 2 months of the start of 6 of 8 recessions, late for Dec 1973's (Jul 1974), never for Apr
+  2001's, no false alarms (said as smoothed with hindsight). The Sahm record now covers 1959 onwards (all nine recessions,
+  two false alarms) instead of two recessions since 2006. Underlying inflation: median CPI 2.8%, sticky core 3.1% (3-month
+  pace 3.8%), trimmed PCE 2.3% · proposed · backlog A40-A41. Lessons: check FRED unit codes before quoting (158 = one
+  month at an annual rate, 159 = from a year ago: the backlog had quoted median CPI's 3.66% monthly rate as its 12-month
+  rate); BLS published no October 2025 CPI, so position-based 12-month maths silently compared with the wrong month:
+  look months up by date and name the gap, never fill it; a crossing inside a recession already caught is a repeat, one
+  inside an uncaught recession is late, neither is a false alarm; "50%" is our reading line, not the authors' dating rule.
+  Review fixed: since rounded to the year (no saved copy per day), week dates refused, an empty saved copy refused
+  plainly, recessions counted (not crossings), "both" and "same month" wording, one USREC start for every panel.
+- 2026-11-21 · Pay (Jobs market) + Activity across the economy (Growth this quarter) on Macro, stacked on #87 (no helper
+  change beyond its 104): Atlanta Fed wage growth tracker 3.9% for September 2026 (down from 4.2% a year before), about
+  1.3 points ahead of median CPI averaged over the same three months; Chicago Fed activity index 3-month average 0.03,
+  about trend; the Jobs market level now reads its full history from 1992 · proposed · backlog A42-A43. Lessons: compare
+  like with like (a 3-month average against the same three months of prices, not one month); a median minus a median
+  is a rough gap, said as such; the chip and the words share one value rounded as printed (the review found 635 in
+  200,000 cases where rounding twice differed); a threshold that can't be read at its source isn't drawn (the
+  Chicago Fed's recession line); our own "about trend" band is labelled as our choice. Review fixed: each block has its
+  own as-of stamp, shared FRED plumbing moved to src/macro/fred.ts (no panel module imports another), one Retry helper.
+

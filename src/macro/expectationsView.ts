@@ -7,7 +7,9 @@ import { h } from '../ui/dom';
 import { infoTip } from '../ui/glossary';
 import { rangeTrack } from '../ui/viz';
 import { signed } from './conditions';
-import { failed, link, older, panel, raw } from './conditionsView';
+import { failed, link, older, panel, raw } from './fred';
+import { HISTORY_SINCE } from './sahm';
+import { wageBlock } from './wagesActivityView';
 import { curveWords, expectations, expinfId, gapWords, HORIZONS, jobs, jobsWords, monthLabel, stateWords } from './expectations';
 
 const short = (iso: string) =>
@@ -126,7 +128,7 @@ function jobsPanel(): HTMLElement {
   const stamp = asOfStamp('fred', { source: 'FRED' });
   const section = panel('Jobs market', 'How strong hiring and work are, and which way they are moving', body, stamp.el);
   section.classList.add('exp-panel');
-  Promise.all([raw('FRBKCLMCILA'), raw('FRBKCLMCIM').catch(() => null)])
+  Promise.all([raw('FRBKCLMCILA', HISTORY_SINCE), raw('FRBKCLMCIM', HISTORY_SINCE).catch(() => null)])
     .then(([level, mom]) => {
       stamp.el.replaceWith(
         asOfStamp('fred', {
@@ -197,6 +199,8 @@ function jobsPanel(): HTMLElement {
       );
     })
     .catch(() => body.replaceChildren(failed(() => section, 'The labour market indicators', jobsPanel)));
+  // pay loads on its own: a failure there never hides the labour market reading
+  section.append(wageBlock());
   return section;
 }
 
