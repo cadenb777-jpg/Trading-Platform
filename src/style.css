@@ -14943,3 +14943,7 @@ html.touch-input body {
 /* an outside source's figures that stopped updating (said in words, amber) */
 .sv-stale { color: var(--label, #e0a040); margin: 0 0 6px; }
 .sv-grid > .sv-full { grid-column: 1 / -1; }
+/* Account: holdings without a price, with the fix next to the words */
+.price-warn { display: block; padding: 8px 12px; border-radius: 8px; }
+.price-warn p { margin: 0 0 6px; }
+.price-warn-actions { display: flex; gap: 8px; flex-wrap: wrap; }
