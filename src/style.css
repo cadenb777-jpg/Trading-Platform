@@ -14958,38 +14958,3 @@ html.touch-input body {
 @media (min-width: 1500px) { .hp-blocks { grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); } }
 @media (max-width: 520px) { .hp-blocks { grid-template-columns: minmax(0, 1fr); } .hp-blocks { overflow-x: auto; } }
 .hp-controls { min-width: 0; }
-
-/* ----- Home header, tidied (owner 2026-11-23): greeting left, the overnight boxes right, Actions in the corner, all in
-   one row with the ticker tape along the bottom. The old bottom padding sized for the bridge picture is gone. Narrower
-   windows put the boxes on their own row under the greeting, full width. ----- */
-.home > .home-hero {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) auto;
-  grid-template-areas: 'hello strip actions';
-  align-items: start;
-  gap: var(--sp-3) var(--sp-5);
-  padding: var(--sp-4) var(--sp-5) calc(40px + var(--sp-4));
-}
-.home-hero > .hero-left { grid-area: hello; align-self: center; }
-.home-hero > .brief-strip { grid-area: strip; justify-self: end; width: 100%; max-width: 680px; margin: 0; }
-.home-hero > .fn-bar { grid-area: actions; position: static; align-self: start; }
-@media (max-width: 1440px) {
-  .home > .home-hero {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: 'hello actions' 'strip strip';
-  }
-  .home-hero > .brief-strip { justify-self: stretch; max-width: none; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-@media (max-width: 700px) {
-  .home-hero > .brief-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-/* Market mood: both sides the same height; the sector tiles fill theirs (balanced rows, no empty half-row), with the
-   one-line read at the bottom, so nothing is left blank beside the gauge's explanation. */
-.mood { align-items: stretch; }
-.mood-heat, .mood-heat > .viz { display: flex; flex-direction: column; min-height: 0; }
-.mood-heat > .viz { flex: 1; }
-.mood-heat > .viz > div:first-child { display: flex; flex-direction: column; flex: 1; gap: 6px; }
-.mood-heat .viz-heat { display: flex; flex-wrap: wrap; align-content: stretch; gap: 6px; flex: 1; min-height: 140px; }
-.mood-heat .viz-heat-tile { flex: 1 1 calc(100% / 6 - 6px); min-width: 104px; display: flex; flex-direction: column; justify-content: center; }
-@media (max-width: 1100px) { .mood-heat .viz-heat-tile { flex-basis: calc(100% / 4 - 6px); } }
