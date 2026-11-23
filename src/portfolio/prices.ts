@@ -19,7 +19,8 @@ export async function fetchPrices(symbols: string[]): Promise<Record<string, Pri
   const missing = wanted.filter((s) => (cache.get(s)?.at ?? 0) < now - FRESH_MS);
   if (missing.length) {
     const { rows } = await engineRequest<{ rows: { symbol: string; price: number | null; divYield?: number | null; name?: string; change?: number | null }[] }>('invest.board', { symbols: missing }, 60000);
-    for (const r of rows) cache.set(r.symbol, { at: now, info: { price: r.price, yield: r.divYield != null ? r.divYield / 100 : null, name: r.name ?? '', change: r.change ?? null } });
+    // a missing price is not remembered, so Refresh (or the next paint) asks again
+    for (const r of rows) if (r.price != null) cache.set(r.symbol, { at: now, info: { price: r.price, yield: r.divYield != null ? r.divYield / 100 : null, name: r.name ?? '', change: r.change ?? null } });
   }
   return Object.fromEntries(wanted.map((s) => [s, cache.get(s)?.info ?? { price: null, yield: null, name: '' }]));
 }

@@ -522,6 +522,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   left out (coversFundLife; feeds print 0.00%), and Yahoo's category table says when its as-of date is 45+ days old.
   YCharts percent units: the Excel add-in sends fractions (MMNIX expense 0.0169 = 1.69%), the API percent units;
   ychartsPctScale checks against Yahoo's expense ratio when it has one; crosscheck.parse_ycharts takes fractions.
+  Options (v104): flow.analyze_chain's default expiry is the nearest with no same-day contracts (0DTE IV/straddle are
+  noise; an expiry asked by name is kept). Schwab's option `volatility` is in percent units (132.4 = 132.4%): Flow
+  prints it as is, the security view divides by 100 for fmtPct (tabs.ts ivFrac).
   Desk (src/pages/deskPage.ts): drag title bar to move, right/bottom/corner grips resize (snapSpan, snapRows), dense grid.
   Calm UI (owner): nothing expands on hover (no line-clamp that unclamps); long text is cut to whole sentences where it
   is written (src/ui/brief.ts). Live up/down colours use src/ui/steadyTone.ts (flat under 0.01%, hysteresis) so a flat
@@ -765,7 +768,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   before. Percentile = ratesdesk.percentile_rank against the others. Inventory against sales (src/research/inventory.ts,
   no helper change) is the third block of Cash health: flagged > 10 points ahead of sales and >= 1% of sales.
 - Macro → Recession check (src/macro/sahm.ts pure + sahmView.ts, class sahm-*, after Today's read):
-  FRED SAHMREALTIME (published real-time Sahm rule) and USREC via macro.series raw with `since` HISTORY_SINCE (helper 104:
+  FRED SAHMREALTIME (published real-time Sahm rule) and USREC via macro.series raw with `since` HISTORY_SINCE (helper 105:
   macro.history_start rounds to January 1 and refuses anything but YYYY-MM-DD >= 1850; macro.fred_from shares
   ratesdesk._full's cache key; older helpers send 2006 onwards); crossings(series, usrec, trigger) is the shared finder; a signal = first month >= 0.50 after
   6+ months below (QUIET_MONTHS; 12 hid the Aug 1981 recession), matched to an NBER start within 6 months; the record
@@ -790,7 +793,7 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   (CORESTICKM159/158), Dallas trimmed PCE (PCETRIM12M159/1M158): published 12-month rate + 3-month pace compounded from
   three consecutive monthly annual rates (FRED unit 158); headline/core CPI from index levels by date (FRED has no Oct
   2025 CPI: the 12-month rate shows a dash and the gap is named, never filled).
-- Macro → Pay (in Jobs market) and Activity across the economy (in Growth this quarter) (no helper change beyond 104;
+- Macro → Pay (in Jobs market) and Activity across the economy (in Growth this quarter) (no helper change beyond 105;
   src/macro/wagesActivity.ts pure + wagesActivityView.ts, class wa-block, appended to the panel and loading on its own
   with its own Retry): Atlanta Fed FRBATLWGT3MMAUMHWGO, real = tracker - median CPI 12-month of the same month (never
   filled); Chicago Fed CFNAIMA3 (+ CFNAI month), within NEAR_TREND 0.10 of zero = about trend, no recession line (the

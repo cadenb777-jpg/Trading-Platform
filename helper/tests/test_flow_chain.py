@@ -31,6 +31,17 @@ class ChainRows(unittest.TestCase):
         self.assertEqual(s105['putLast'], 0)  # Schwab's -999 "no value" becomes 0, never a price
         self.assertEqual(r['spot'], 101.0)
 
+    def test_same_day_expiry_is_not_the_default(self):
+        today = {'100.0': [contract(100, 0.1, 0.2, 0.15, 0.5, iv=13240.0, dte=0)]}
+        week = {'100.0': [contract(100, 2.0, 2.2, 2.1, 0.55, iv=40.0, dte=7)]}
+        chain = {'symbol': 'XYZ', 'underlying': {'last': 100.0},
+                 'callExpDateMap': {'2026-11-23:0': today, '2026-11-30:7': week},
+                 'putExpDateMap': {'2026-11-23:0': today, '2026-11-30:7': week}}
+        r = flow.analyze_chain(chain)
+        self.assertEqual(r['expiration'], '2026-11-30')
+        self.assertAlmostEqual(r['summary']['atmIv'], 40.0)
+        self.assertEqual(flow.analyze_chain(chain, '2026-11-23')['expiration'], '2026-11-23')  # asked by name
+
     def test_no_chain(self):
         with self.assertRaises(EngineError):
             flow.analyze_chain({'underlying': {'last': 1}})

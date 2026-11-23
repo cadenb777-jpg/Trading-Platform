@@ -262,7 +262,7 @@ whenever the owner repeats or adds one.
   not "getting worse". Review fixed: tilt and changes read from the figures as printed; ranking words follow the gap's
   own side; a single failed breakeven is named; drawing errors fall to Retry, not a stuck "Loading".
 - 2026-11-20 · Recession probability + Underlying inflation on Macro, and full history for recession records (helper
-  104: macro.series raw `since`, rounded to January 1, cached per year): Chauvet-Piger 0.4% for September 2026; since
+  105: macro.series raw `since`, rounded to January 1, cached per year): Chauvet-Piger 0.4% for September 2026; since
   1970 it crossed 50% within 2 months of the start of 6 of 8 recessions, late for Dec 1973's (Jul 1974), never for Apr
   2001's, no false alarms (said as smoothed with hindsight). The Sahm record now covers 1959 onwards (all nine recessions,
   two false alarms) instead of two recessions since 2006. Underlying inflation: median CPI 2.8%, sticky core 3.1% (3-month
@@ -274,7 +274,7 @@ whenever the owner repeats or adds one.
   Review fixed: since rounded to the year (no saved copy per day), week dates refused, an empty saved copy refused
   plainly, recessions counted (not crossings), "both" and "same month" wording, one USREC start for every panel.
 - 2026-11-21 · Pay (Jobs market) + Activity across the economy (Growth this quarter) on Macro, stacked on #87 (no helper
-  change beyond its 104): Atlanta Fed wage growth tracker 3.9% for September 2026 (down from 4.2% a year before), about
+  change beyond its 105): Atlanta Fed wage growth tracker 3.9% for September 2026 (down from 4.2% a year before), about
   1.3 points ahead of median CPI averaged over the same three months; Chicago Fed activity index 3-month average 0.03,
   about trend; the Jobs market level now reads its full history from 1992 · proposed · backlog A42-A43. Lessons: compare
   like with like (a 3-month average against the same three months of prices, not one month); a median minus a median
