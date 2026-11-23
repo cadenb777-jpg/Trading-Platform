@@ -13,9 +13,10 @@ import { conditions, conditionsWords, nowcast, nowcastWords, quarterLabel, round
 
 type Raw = { data: Point[] };
 /** One FRED series and its reply (the reply carries the fetch time for the as-of stamp). The helper loads FRED from
- * 2006, so 8,000 readings keeps every daily reading it has (about 5,200 by 2026). */
-export const raw = (series: string) =>
-  engineRequest<Raw>('macro.series', { series, raw: true, limit: 8000 }, 45_000).then((reply) => ({ reply, data: reply.data.filter((p) => Number.isFinite(p.value)) }));
+ * 2006, so 8,000 readings keeps every daily reading it has (about 5,200 by 2026); `since` (helper 105) asks for the
+ * full history from that date (older helpers ignore it and send 2006 onwards, which the panels' words then say). */
+export const raw = (series: string, since?: string) =>
+  engineRequest<Raw>('macro.series', { series, raw: true, limit: 8000, ...(since ? { since } : {}) }, 45_000).then((reply) => ({ reply, data: reply.data.filter((p) => Number.isFinite(p.value)) }));
 type Prov = { provenance?: { fetchedAt?: number; stale?: boolean } };
 /** The older of two replies (or the stale saved one), so a panel's stamp never looks fresher than its oldest figure. */
 export const older = (a: unknown, b: unknown) => {
