@@ -56,6 +56,8 @@ describe('Sahm rule recession check', () => {
     const rec = missedRecessions(sahm, usrec, s);
     expect(rec).toEqual({ testable: ['2001-04-01'], missed: [] });
     expect(recordWords(s, '2000-01-01', null, rec)).toMatch(/it confirms a recession more than it forecasts one\. It flagged the one recession since 2001\./);
+    // two recessions (a helper before 103 sends 2006 onwards): "both", never "all two"
+    expect(recordWords(s, '2000-01-01', null, { testable: ['2008-01-01', '2020-03-01'], missed: [] })).toMatch(/It flagged both recessions since 2008\./);
     // a recession with no signal near it is said as missed
     const quiet = months('2000-01', Array(30).fill(0.1));
     const miss = missedRecessions(quiet, usrec, sahmSignals(quiet, usrec));

@@ -15,6 +15,9 @@ export interface MonthPoint {
   value: number;
 }
 
+/** One start date for every full-history request of NBER dates (helper 105), so the Macro panels share one saved copy. */
+export const HISTORY_SINCE = '1948-01-01';
+
 /** Points at which the rule fires. */
 export const TRIGGER = 0.5;
 /** Points at which it is worth watching (a common desk threshold, shown as a mark only). */
@@ -44,14 +47,15 @@ export function recessionStarts(usrec: MonthPoint[]): string[] {
   return out;
 }
 
-/** Each time the reading reached the trigger after QUIET_MONTHS months below it, matched to the nearest recession start. */
-export function sahmSignals(sahm: MonthPoint[], usrec: MonthPoint[]): Signal[] {
+/** Each time a series reached `trigger` after `quiet` months below it, matched to the nearest NBER recession start
+ * within MATCH_MONTHS (shared by the Sahm rule and the recession probability). */
+export function crossings(series: MonthPoint[], usrec: MonthPoint[], trigger: number, quiet: number = QUIET_MONTHS): Signal[] {
   const starts = recessionStarts(usrec);
   const out: Signal[] = [];
   let below = 0;
-  for (const p of sahm) {
-    if (p.value >= TRIGGER) {
-      if (below >= QUIET_MONTHS) {
+  for (const p of series) {
+    if (p.value >= trigger) {
+      if (below >= quiet) {
         let best: string | null = null;
         let gap: number | null = null;
         for (const s of starts) {
@@ -68,6 +72,9 @@ export function sahmSignals(sahm: MonthPoint[], usrec: MonthPoint[]): Signal[] {
   }
   return out;
 }
+
+/** Each time the Sahm reading reached the trigger after QUIET_MONTHS months below it. */
+export const sahmSignals = (sahm: MonthPoint[], usrec: MonthPoint[]): Signal[] => crossings(sahm, usrec, TRIGGER);
 
 export type SahmState = 'triggered' | 'watch' | 'calm';
 export const sahmState = (v: number): SahmState => (v >= TRIGGER ? 'triggered' : v >= WATCH ? 'watch' : 'calm');
@@ -117,7 +124,7 @@ export function recordWords(signals: Signal[], since: string, usrecThrough: stri
     const first = record.testable[0].slice(0, 4);
     t += record.missed.length
       ? ` It missed ${record.missed.length === 1 ? 'the recession' : `${word(record.missed.length)} recessions`} starting ${record.missed.map(month).join(', ')}.`
-      : record.testable.length === 1 ? ` It flagged the one recession since ${first}.` : ` It flagged all ${word(record.testable.length)} recessions since ${first}.`;
+      : record.testable.length === 1 ? ` It flagged the one recession since ${first}.` : record.testable.length === 2 ? ` It flagged both recessions since ${first}.` : ` It flagged all ${word(record.testable.length)} recessions since ${first}.`;
   }
   if (misses.length) t += ` ${Word(misses.length)} (${misses.map((s) => month(s.date)).join(', ')}) ${misses.length === 1 ? 'was' : 'were'} not followed by a recession NBER has declared${usrecThrough ? ` (its dates run to ${month(usrecThrough)})` : ''}.`;
   return t;

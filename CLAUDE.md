@@ -767,8 +767,10 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   days; revenue = the contract-revenue tag unless Revenues is > 2x it, growth only from that tag; a CY frame under 4,000 net-income rows is skipped for the year
   before. Percentile = ratesdesk.percentile_rank against the others. Inventory against sales (src/research/inventory.ts,
   no helper change) is the third block of Cash health: flagged > 10 points ahead of sales and >= 1% of sales.
-- Macro → Recession check (no helper change; src/macro/sahm.ts pure + sahmView.ts, class sahm-*, after Today's read):
-  FRED SAHMREALTIME (published real-time Sahm rule) and USREC via macro.series raw; a signal = first month >= 0.50 after
+- Macro → Recession check (src/macro/sahm.ts pure + sahmView.ts, class sahm-*, after Today's read):
+  FRED SAHMREALTIME (published real-time Sahm rule) and USREC via macro.series raw with `since` HISTORY_SINCE (helper 105:
+  macro.history_start rounds to January 1 and refuses anything but YYYY-MM-DD >= 1850; macro.fred_from shares
+  ratesdesk._full's cache key; older helpers send 2006 onwards); crossings(series, usrec, trigger) is the shared finder; a signal = first month >= 0.50 after
   6+ months below (QUIET_MONTHS; 12 hid the Aug 1981 recession), matched to an NBER start within 6 months; the record
   says hits, recessions missed and false alarms (Nov 1976, Jul 2024). Neutral track: low is good.
 - Macro → Growth this quarter + Financial conditions (no helper change; src/macro/conditions.ts pure + conditionsView.ts,
@@ -784,6 +786,18 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   the median gap and the share of months with a lower/higher gap (sharePct: never 0%/100% for some); Kansas City Fed
   FRBKCLMCILA level / FRBKCLMCIM momentum, four Hakkio-Willis states from the figures as printed (stateWords), two
   range tracks over the months loaded. raw() asks for 8,000 readings so daily series since 2006 are whole.
+- Macro → Recession probability + Underlying inflation (src/macro/underlying.ts pure + underlyingView.ts, classes und-*):
+  FRED RECPROUSM156N (Chauvet-Piger, full history) with crossings of 50% sorted into on time (within 6 months of an
+  NBER start) / late (inside an uncaught recession) / false alarm, repeats and recessions under way before the NBER data
+  left out, recessions counted not crossings; Cleveland median CPI (MEDCPIM159/158), Atlanta sticky core
+  (CORESTICKM159/158), Dallas trimmed PCE (PCETRIM12M159/1M158): published 12-month rate + 3-month pace compounded from
+  three consecutive monthly annual rates (FRED unit 158); headline/core CPI from index levels by date (FRED has no Oct
+  2025 CPI: the 12-month rate shows a dash and the gap is named, never filled).
+- Macro → Pay (in Jobs market) and Activity across the economy (in Growth this quarter) (no helper change beyond 105;
+  src/macro/wagesActivity.ts pure + wagesActivityView.ts, class wa-block, appended to the panel and loading on its own
+  with its own Retry): Atlanta Fed FRBATLWGT3MMAUMHWGO, real = tracker - median CPI 12-month of the same month (never
+  filled); Chicago Fed CFNAIMA3 (+ CFNAI month), within NEAR_TREND 0.10 of zero = about trend, no recession line (the
+  Chicago Fed's threshold is unchecked).
 - Research → Financials → As reported (default; Standard = the old same-lines-for-everyone view): helper/engine/
   asreported.py reads the filing's own layout (presentation linkbase _pre.xml, schema role titles, every label role,
   instance) and returns each statement and "(Details)" note as rows (heading/line/total/member, depth, values per
