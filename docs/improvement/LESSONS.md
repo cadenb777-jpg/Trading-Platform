@@ -262,7 +262,7 @@ whenever the owner repeats or adds one.
   not "getting worse". Review fixed: tilt and changes read from the figures as printed; ranking words follow the gap's
   own side; a single failed breakeven is named; drawing errors fall to Retry, not a stuck "Loading".
 - 2026-11-20 · Recession probability + Underlying inflation on Macro, and full history for recession records (helper
-  104: macro.series raw `since`, rounded to January 1, cached per year): Chauvet-Piger 0.4% for September 2026; since
+  105: macro.series raw `since`, rounded to January 1, cached per year): Chauvet-Piger 0.4% for September 2026; since
   1970 it crossed 50% within 2 months of the start of 6 of 8 recessions, late for Dec 1973's (Jul 1974), never for Apr
   2001's, no false alarms (said as smoothed with hindsight). The Sahm record now covers 1959 onwards (all nine recessions,
   two false alarms) instead of two recessions since 2006. Underlying inflation: median CPI 2.8%, sticky core 3.1% (3-month

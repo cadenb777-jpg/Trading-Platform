@@ -15,7 +15,7 @@ export interface MonthPoint {
   value: number;
 }
 
-/** One start date for every full-history request of NBER dates (helper 104), so the Macro panels share one saved copy. */
+/** One start date for every full-history request of NBER dates (helper 105), so the Macro panels share one saved copy. */
 export const HISTORY_SINCE = '1948-01-01';
 
 /** Points at which the rule fires. */

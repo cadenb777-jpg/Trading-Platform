@@ -646,7 +646,7 @@ async function analystPanel(s: string): Promise<HTMLElement> {
         { class: 'anr-box' },
         h('span', { class: 'anr-label' }, 'Consensus'),
         h('b', { class: `anr-word ${(t.score ?? 0) >= 0.5 ? 'up' : (t.score ?? 0) <= -0.5 ? 'down' : ''}` }, t.consensus),
-        h('dl', { class: 'kv' }, h('dt', {}, 'Buy'), h('dd', { class: 'up' }, String(buys)), h('dt', {}, 'Hold'), h('dd', {}, String(t.hold)), h('dt', {}, 'Sell'), h('dd', { class: 'down' }, String(sells)), h('dt', {}, 'Month before'), h('dd', {}, prev ? prev.consensus : DASH)),
+        h('dl', { class: 'kv' }, h('dt', {}, 'Buy'), h('dd', { class: 'up' }, String(buys)), h('dt', {}, 'Hold'), h('dd', {}, String(t.hold)), h('dt', {}, 'Sell'), h('dd', { class: 'down' }, String(sells)), h('dt', {}, 'Last month'), h('dd', {}, prev ? prev.consensus : DASH)),
       ),
       ratingChart(r.trends ?? []),
     ),
@@ -895,6 +895,9 @@ export function cnTab(ctx: TabCtx) {
 
 // ---------- OMON ----------
 
+/** Schwab's option volatility is in percent units (132.4 = 132.4%); fmtPct wants a fraction. */
+const ivFrac = (v: number | null | undefined) => (v == null ? null : v / 100);
+
 export function omonTab(ctx: TabCtx) {
   const s = ctx.symbol;
   ctx.body.replaceChildren(slot(ctx, 'options', async () => {
@@ -904,13 +907,13 @@ export function omonTab(ctx: TabCtx) {
     const em = x.expectedMove;
     const exp = (d.byExpiration ?? []).slice(0, 8);
     return [
-      panel('Options summary', `Schwab option chain (${d.expiration} and nearer)`, Date.now(), kvGrid([
+      panel('Options summary', `Schwab option chain, expiry ${fmtDate(d.expiration)} (the nearest one not expiring today)`, Date.now(), kvGrid([
         ['Underlying', fmtPrice(d.spot)],
         ['Put/call volume', fig(fmtNum(x.putCallVolume), { reason: 'no call volume today' }), 'Above 1 = more puts traded than calls'],
         ['Put/call open interest', fig(fmtNum(x.putCallOi), { reason: 'no call open interest' })],
-        ['ATM implied volatility', fig(fmtPct(x.atmIv, 1), { reason: 'no at-the-money quote' })],
+        ['ATM implied volatility', fig(fmtPct(ivFrac(x.atmIv), 1), { reason: 'no at-the-money quote' })],
         ['Max pain', fig(fmtPrice(x.maxPain), { reason: 'no open interest' }), 'The strike where option holders lose the most at expiry'],
-        ['Expected move (to nearest expiry)', fig(em ? `±${fmtPrice(em.amount)} (${fmtPct(em.percent, 1)})` : DASH, { reason: 'no straddle price' })],
+        [`Expected move (to ${fmtDate(d.expiration)})`, fig(em ? `±${fmtPrice(em.amount)} (${fmtPct(em.percent, 1)})` : DASH, { reason: 'no straddle price' })],
         ['Call / put volume', `${fmtCompact(x.callVolume)} / ${fmtCompact(x.putVolume)}`],
         ['Net gamma exposure', fig(money(x.netGex), { tone: tone(x.netGex) })],
       ])),
@@ -918,13 +921,13 @@ export function omonTab(ctx: TabCtx) {
       exp.length
         ? panel('By expiration', 'Schwab option chain', Date.now(), numTable(['Expiry', 'Days', 'P/C vol', 'P/C OI', 'ATM IV', 'Max pain', 'Exp. move'], exp.map((e) => ({
             label: fmtDate(e.expiration),
-            cells: [String(e.dte), fmtNum(e.putCallVolume), fmtNum(e.putCallOi), fmtPct(e.atmIv, 1), fmtPrice(e.maxPain), e.expectedMove ? `±${fmtPct(e.expectedMove.percent, 1)}` : DASH],
+            cells: [String(e.dte), fmtNum(e.putCallVolume), fmtNum(e.putCallOi), fmtPct(ivFrac(e.atmIv), 1), fmtPrice(e.maxPain), e.expectedMove ? `±${fmtPct(e.expectedMove.percent, 1)}` : DASH],
           }))))
         : null,
       panel('Unusual activity (volume well above open interest)', 'Schwab option chain', Date.now(), d.unusual.length
         ? numTable(['Contract', 'Volume', 'Open int.', 'Vol/OI', 'IV', 'Premium'], d.unusual.slice(0, 12).map((c) => ({
             label: `${c.type === 'call' ? 'C' : 'P'} ${fmtPrice(c.strike)} ${fmtDate(c.expiration)}`,
-            cells: [fmtCompact(c.volume), fmtCompact(c.oi), fmtNum(c.ratio, 1), fmtPct(c.iv, 0), money(c.premium)],
+            cells: [fmtCompact(c.volume), fmtCompact(c.oi), fmtNum(c.ratio, 1), fmtPct(ivFrac(c.iv), 0), money(c.premium)],
           })))
         : note('Nothing unusual today.')),
       optionsAnalyticsBlock(s.replace(/^\$/, ''), undefined, { compact: true }),

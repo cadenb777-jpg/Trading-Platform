@@ -1,7 +1,7 @@
 /**
  * Macro → Recession probability (Chauvet-Piger) and Underlying inflation (median, sticky, trimmed), side by side under
  * Inflation expected / Jobs market. FRED through macro.series raw; the probability and NBER dates ask for their full
- * history (`since`, helper 104; older helpers send 2006 onwards and the words say the years they cover). Maths in
+ * history (`since`, helper 105; older helpers send 2006 onwards and the words say the years they cover). Maths in
  * underlying.ts.
  */
 import { asOfStamp } from '../ui/dataHealth';

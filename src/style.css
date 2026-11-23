@@ -14952,3 +14952,18 @@ html.touch-input body {
 /* an outside source's figures that stopped updating (said in words, amber) */
 .sv-stale { color: var(--label, #e0a040); margin: 0 0 6px; }
 .sv-grid > .sv-full { grid-column: 1 / -1; }
+/* Account: holdings without a price, with the fix next to the words */
+.price-warn { display: block; padding: 8px 12px; border-radius: 8px; }
+.price-warn p { margin: 0 0 6px; }
+.price-warn-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Analyst views: label left, value right; a two-word rating wraps under itself, never into the label */
+.anr { grid-template-columns: minmax(160px, 0.9fr) minmax(0, 2fr); }
+.anr-box .kv { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 10px; row-gap: 2px; margin: 0; }
+.anr-box .kv dt { white-space: nowrap; color: var(--muted); }
+.anr-box .kv dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.anr-word { font-size: 18px; line-height: 1.2; }
+/* Security → Prices: each block is as wide as its table (Volume included), so blocks never run into each other */
+.hp-blocks { grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); }
+@media (min-width: 1500px) { .hp-blocks { grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); } }
+@media (max-width: 520px) { .hp-blocks { grid-template-columns: minmax(0, 1fr); } .hp-blocks { overflow-x: auto; } }
+.hp-controls { min-width: 0; }

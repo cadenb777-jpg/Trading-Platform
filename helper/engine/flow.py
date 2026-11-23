@@ -143,7 +143,10 @@ def analyze_chain(chain, expiration=None):
     if not contracts or not spot:
         raise EngineError('No options data for this symbol.')
     expirations = sorted({c['expiration'] for c in contracts})
-    chosen = expiration if expiration in expirations else expirations[0]
+    # by default the nearest expiry at least a day out: an option expiring today has hours left, so its implied
+    # volatility and straddle swing wildly and say little (asked for by name, any expiry is used)
+    later = [e for e in expirations if all(c['dte'] >= 1 for c in contracts if c['expiration'] == e)]
+    chosen = expiration if expiration in expirations else (later or expirations)[0]
     near = [c for c in contracts if c['expiration'] == chosen]
     strikes = {}
     for c in near:
