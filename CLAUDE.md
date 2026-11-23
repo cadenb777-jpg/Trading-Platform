@@ -522,6 +522,9 @@ The owner is a beginner. Explain changes in plain language, keep steps small, an
   left out (coversFundLife; feeds print 0.00%), and Yahoo's category table says when its as-of date is 45+ days old.
   YCharts percent units: the Excel add-in sends fractions (MMNIX expense 0.0169 = 1.69%), the API percent units;
   ychartsPctScale checks against Yahoo's expense ratio when it has one; crosscheck.parse_ycharts takes fractions.
+  Options (v104): flow.analyze_chain's default expiry is the nearest with no same-day contracts (0DTE IV/straddle are
+  noise; an expiry asked by name is kept). Schwab's option `volatility` is in percent units (132.4 = 132.4%): Flow
+  prints it as is, the security view divides by 100 for fmtPct (tabs.ts ivFrac).
   Desk (src/pages/deskPage.ts): drag title bar to move, right/bottom/corner grips resize (snapSpan, snapRows), dense grid.
   Calm UI (owner): nothing expands on hover (no line-clamp that unclamps); long text is cut to whole sentences where it
   is written (src/ui/brief.ts). Live up/down colours use src/ui/steadyTone.ts (flat under 0.01%, hysteresis) so a flat
