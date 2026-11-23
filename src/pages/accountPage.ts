@@ -11,7 +11,7 @@
 import { guessMarket, subscribeQuote } from '../data/quotes';
 import { flashEnabled } from '../term/flash';
 import { listDocs, saveDoc } from '../data/store';
-import { clearEngineCache, loadNews, type NewsItem } from '../data/schwab';
+import { SCHWAB_LOGIN_HELPER_VERSION, clearEngineCache, helper, loadNews, type NewsItem } from '../data/schwab';
 import { ALL_ACCOUNTS, allocation, combineHoldings, holdingNewsSymbols, dividendPayload, myPortfolios, partKey, pickAccounts, receivedPayload, todayChange, type AccountPart, type CombinedHolding } from '../portfolio/account';
 import { drawDividends, fetchDividends, openStatementImport, type DividendHolding, type DividendReport } from '../portfolio/dividendsView';
 import { fetchPrices, type PriceInfo } from '../portfolio/prices';
@@ -32,6 +32,7 @@ import { openNewsSummary } from '../ui/newsSummary';
 import { keepScroll } from '../ui/keepScroll';
 import { tableTools } from '../ui/tableTools';
 import { tickerAttr } from '../ui/tickerCard';
+import { schwabLoginButton } from '../ui/schwabLogin';
 import { openSecurity } from '../security/open';
 
 type Saved = Portfolio & { id: string };
@@ -359,7 +360,7 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
     frame.body.replaceChildren(
       mine.length > 1 ? switcher(mine, picked.choice) : '',
       overviewBox,
-      unpriced.length ? h('p', { class: 'badge warn' }, `No live price for ${unpriced.join(', ')}: left out of the totals. Check the helper is logged in to Schwab, then Refresh.`) : '',
+      unpriced.length ? priceWarning(unpriced, symbols.length, pr.status === 'rejected' ? String((pr.reason as Error)?.message ?? pr.reason) : null, () => (clearEngineCache('invest.board'), clearEngineCache('dividends.'), load())) : '',
       // one account that isn't synced from Webull: its card would only repeat the summary, so its button moves up there
       single && !single.webullAccount ? '' : panel(single ? 'Account' : 'Accounts', 'Imported statements, synced Webull accounts and portfolios marked as yours', accountsBox, webull),
       workingOrdersCard(),
@@ -1020,4 +1021,28 @@ export function createAccountPage(openPortfolio: (id: string) => void, openTrade
       clearInterval(timer);
     },
   };
+}
+
+/**
+ * Holdings without a price. When none came back at all the cause is almost always the helper (not running) or
+ * Schwab's weekly login; the warning says which it can tell, and offers the fix right there.
+ */
+function priceWarning(unpriced: string[], total: number, reason: string | null, retry: () => void): HTMLElement {
+  const all = unpriced.length >= total;
+  const offline = !helper.isConnected;
+  const login = !offline && (helper.version ?? 0) >= SCHWAB_LOGIN_HELPER_VERSION;
+  const why = offline
+    ? 'The helper isn’t connected, so no prices can come in. Start the platform from its desktop icon, then Refresh.'
+    : helper.needsSchwabLogin
+      ? 'Schwab is asking you to log in again (its login lasts about a week). Log in, then Refresh.'
+      : all
+        ? 'No prices came back from Schwab at all. This is usually Schwab’s weekly login running out: log in again, then Refresh.'
+        : 'Schwab had no price for these just now (a symbol it doesn’t know, or a hiccup). Refresh in a minute.';
+  return h(
+    'div',
+    { class: 'badge warn price-warn', role: 'status' },
+    h('p', {}, h('b', {}, all ? 'No live prices: ' : `No live price for ${unpriced.join(', ')}: `), all ? 'holdings are left out of the totals. ' : 'left out of the totals. ', why),
+    reason ? h('p', { class: 'muted small' }, `What the helper said: ${reason}`) : null,
+    h('div', { class: 'price-warn-actions' }, login && (all || helper.needsSchwabLogin) ? schwabLoginButton() : null, h('button', { type: 'button', class: 'btn small', onclick: retry }, 'Refresh prices')),
+  );
 }
